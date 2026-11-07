@@ -53,7 +53,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   const mixLog = []; let lastStep = 0;
   // anti-air reads: the chance to read a jump-in at takeoff (0 at difficulty 0.3 and below), the
   // jump last looked at and the one being answered
-  const aaReadChance = () => (show ? 0.85 : Math.max(0, Math.min(0.8, (difficulty - 0.3) * 1.1 + (aerial ? 0.15 : 0))));
+  const aaReadChance = () => (show ? 0.85 : Math.max(0.12, Math.min(0.8, (difficulty - 0.3) * 1.1 + (aerial ? 0.15 : 0))));   // a 12% floor: even the INTERN sometimes swats a jump-in
   let aaSeen = -1, aaFor = -1;
   // where and when a launched body lands (y down, vy positive down)
   const landTime = (o, floorY) => (-o.vy + Math.sqrt(Math.max(0, o.vy * o.vy + 2 * GRAV * Math.max(0, floorY - o.y)))) / GRAV;

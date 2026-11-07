@@ -105,7 +105,7 @@ The ladder lives in `src/flow/ladder.js`. Each stage opens on a card (STAGE 3, Y
 
 The demo fighters are the CPU at difficulty 10 in its **showcase** flavor (`sim.setAI(i, 1, { style: 'showcase' })`, `src/combat/ai.js`): it keeps spacing at the edge of reach, steps out of pokes and punishes the whiff, reads and guards highs, mids and lows, opens with string starters at all three heights instead of jabs, blocks rather than mashing out of hitstun, keeps its stamina up, jumps in and meets jump-ins with an uppercut or a standing guard, and saves the stairwell for later in the round. THE MANAGER fights the same way.
 
-**Anti-airs.** Every CPU decides at your takeoff whether it read the jump: never at difficulty 0.3 or below (INTERN gets jumped on), then rising with difficulty to 80% (0.85 for showcase, +15% for the aerial style). A read drops whatever it was doing, stands its ground until you come into the uppercut's reach about when it would go live, and presses d+2 (a jab instead if you're already on top of it with a strike out); a jump that will land short is let land. A CPU that doesn't read it still has the old once-per-jump uppercut reflex.
+**Anti-airs.** Every CPU decides at your takeoff whether it read the jump: 12% at difficulty 0.3 or below (INTERN mostly gets jumped on, but not always), then rising with difficulty to 80% (0.85 for showcase, +15% for the aerial style). A read drops whatever it was doing, stands its ground until you come into the uppercut's reach about when it would go live, and presses d+2 (a jab instead if you're already on top of it with a strike out); a jump that will land short is let land. A CPU that doesn't read it still has the old once-per-jump uppercut reflex.
 
 ## Controls
 
