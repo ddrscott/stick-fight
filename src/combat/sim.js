@@ -536,6 +536,9 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       if (u.glide) tx -= u.glide.vx * Math.min(22, t * 120) / 120;   // the glide carries the root (and the tip) that far
       opt = { target: { x: tx, y: ty } };
     }
+    // an air attack's body travel (the homing lunge, the ease onto the arc) is spread over the time
+    // the player actually sees: from the pre-roll to the moment the strike goes live
+    if (fd0.air) opt = { ...(opt || {}), shownAt: PREROLL * 1000, liveMs: earlyMs(u) };
     safePlay(u.rig, FRAME_DATA[move].anim || move, opt);
     // pre-roll: the frame the button is seen already shows the anticipation (the rig's first
     // 17ms moves under 6px, which reads as no response)

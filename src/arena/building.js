@@ -636,12 +636,14 @@ function drawVending(ctx, pal) {
   for (let i = 1; i < 4; i++) line(ctx, v.x + 6, v.y + 10 + i * 21, v.x + v.w - 6, v.y + 10 + i * 21, pal.lineSoft, pal.lineW * 0.8);
 }
 
-function drawClock(ctx, pal) {
+function drawClock(ctx, pal, cam) {
+  // in the guest's mirrored view the canvas is flipped, so draw the hands pre-flipped and the time reads the same
+  const sx = cam && cam.mirror ? -1 : 1;
   ctx.fillStyle = pal.clock; ctx.strokeStyle = pal.line; ctx.lineWidth = pal.lineW;
   ctx.beginPath(); ctx.arc(CLOCK.x, CLOCK.y, CLOCK.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(CLOCK.x, CLOCK.y); ctx.lineTo(CLOCK.x, CLOCK.y - CLOCK.r * 0.7);
-  ctx.moveTo(CLOCK.x, CLOCK.y); ctx.lineTo(CLOCK.x + CLOCK.r * 0.5, CLOCK.y + CLOCK.r * 0.2);
+  ctx.moveTo(CLOCK.x, CLOCK.y); ctx.lineTo(CLOCK.x + sx * CLOCK.r * 0.5, CLOCK.y + CLOCK.r * 0.2);
   ctx.stroke();
 }
 
@@ -652,7 +654,7 @@ function drawTubes(ctx, pal) {
   }
 }
 
-function drawMainFloor(ctx, pal) {
+function drawMainFloor(ctx, pal, cam) {
   rect(ctx, -200, CEIL_Y, W + 400, FLOOR_Y - CEIL_Y, pal.wall, null);
   line(ctx, ELEVATOR.x1, FLOOR_Y - 10, PARTITION.x, FLOOR_Y - 10, pal.lineSoft, pal.lineW); // baseboard
   line(ctx, 760, CEIL_Y, 760, FLOOR_Y - 10, pal.lineSoft, pal.lineW); // wall seam
@@ -665,7 +667,7 @@ function drawMainFloor(ctx, pal) {
   }
   drawDoors(ctx, pal);
   drawVending(ctx, pal);
-  drawClock(ctx, pal);
+  drawClock(ctx, pal, cam);
   drawOpening(ctx, pal, WINDOW);
   drawPlants(ctx, pal);
   drawTubes(ctx, pal);
@@ -782,7 +784,7 @@ export function drawBuilding(ctx, pal, cam, state) {
   ctx.clearRect(-400, -400, W + 800, H + 800);
   rect(ctx, -400, -400, W + 800, H + 800, pal.void, null);
   drawUpperStrip(ctx, pal);
-  drawMainFloor(ctx, pal);
+  drawMainFloor(ctx, pal, cam);
   drawLowerFloor(ctx, pal);
   drawSlabs(ctx, pal);
   ctx.clearRect(EXTERIOR.x, EXTERIOR.y, EXTERIOR.w, EXTERIOR.h);

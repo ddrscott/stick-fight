@@ -7,6 +7,7 @@ import { createArena, drawJoints } from './arena/index.js';
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
 import { createHUD } from './combat/hud.js';
+import { FRAME_DATA } from './combat/frameData.js';
 import { mulberry32 } from './combat/rng.js';
 import { gameAudio } from './audio/index.js';   // audio: all sound logic lives in src/audio/
 import { createOnline } from './net/online.js';   // online play: rooms, lockstep, readout (src/net/)
@@ -572,11 +573,14 @@ function render() {
   const order = [...sim.units].sort((p, q) => (p.state === 'attack') - (q.state === 'attack') || q.id - p.id);
   for (const u of order) {
     if (u.hidden) continue;
+    const off = drawOffset(u);
+    ctxs.figures.save(); ctxs.figures.translate(off.x, off.y);
     u.rig.draw(ctxs.figures);
     if (u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld)) drawGuard(u, ctxs.figures);
     if (u.flash > 0) drawFlash(u, ctxs.figures);
     // a knocked-down body reads as down: 30% darker while it is on the floor
     else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);
+    ctxs.figures.restore();
   }
   // ragdolls: KO'd horde goons still in the air after their unit respawned
   for (const r of sim.ragdolls || []) {
@@ -591,6 +595,47 @@ function render() {
   const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help,
     attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl });
   if (fl) flow.frame(layout);
+}
+// ---- draw smoothing: a visual-only catch-up for air moves ---------------------------------------
+// Some air attacks have to cover 50-90px between the press and the contact pose in two or three
+// frames, and a jumper landing on the defender gets pushed apart in one. The sim and the rig keep
+// those positions (hit detection, contact accuracy and the netcode's state all use them); only the
+// drawing is held to HEAD_STEP px per 60fps frame and catches up at that pace, which it finishes in
+// the hit freeze, so a contact still draws touching. Launches, throws and ragdolls draw raw.
+const HEAD_STEP = 20, AIR_TAIL_MS = 220;
+const SMOOTH_STATES = new Set(['jump', 'attack', 'landing', 'idle', 'walk', 'crouch', 'block', 'blockstun', 'vault']);
+const drawState = new Map();
+function drawOffset(u) {
+  const h = u.rig && u.rig.joints && u.rig.joints.head;
+  let st = drawState.get(u);
+  if (!h) return { x: 0, y: 0 };
+  if (!st) { st = { x: 0, y: 0, px: h.x, py: h.y, airAt: -1e9, t: 0 }; drawState.set(u, st); }
+  const dt = Math.max(1, lastFrameMs);
+  st.t += dt;
+  // only the fighter's own jump, air attacks and the landing after them; a launched or juggled body draws raw
+  // (the stairwell vault is the fighter's own move too: its leap and its handoff to standing get the catch-up)
+  const ownAir = u.state === 'jump' || u.state === 'vault' || (u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air);
+  if (ownAir) st.airAt = st.t;
+  const calm = SMOOTH_STATES.has(u.state) && !u.rag;
+  const smoothing = calm && st.t - st.airAt < AIR_TAIL_MS;
+  st.on = smoothing;
+  const jump = Math.hypot(h.x - st.px, h.y - st.py);
+  // a strike that connects draws touching (owner requirement): the catch-up ends on the contact frame,
+  // under the impact flash
+  if (u.hitstop > 0 || (st.on && sim.hitstopActive > 0 && u.state === 'attack')) { st.x = st.y = 0; st.px = h.x; st.py = h.y; return st; }
+  if (!smoothing || jump > 240) {
+    // raw drawing; an offset left over from an air move fades out quickly instead of popping
+    st.x *= 0.5; st.y *= 0.5; if (Math.abs(st.x) + Math.abs(st.y) < 0.5) st.x = st.y = 0;
+    if (jump > 240) st.x = st.y = 0;   // a reset or a respawn: no catching up across the room
+  } else {
+    const cap = HEAD_STEP * dt / (1000 / 60);
+    const dx = h.x - st.px, dy = h.y - st.py, d = Math.hypot(dx, dy);
+    const k = d > cap ? cap / d : 1;
+    const nx = st.px + dx * k, ny = st.py + dy * k;
+    st.x = nx - h.x; st.y = ny - h.y;
+  }
+  st.px = h.x + st.x; st.py = h.y + st.y;
+  return st;
 }
 function copyJoints(src, dst) {
   if (!src) return dst;
@@ -710,7 +755,7 @@ window.__gauntlet = {
   step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
   ready: false,   // true once fonts are in and the first frame has rendered
 };
-window.__game = { sim, camera, fx, arena, fighters, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; } };
+window.__game = { drawState, sim, camera, fx, arena, fighters, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; } };
 // no load race for captures: fonts first, then one real rendered frame, then ready
 // the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
 // loads on its own); offline, the system fallbacks are used after a short wait

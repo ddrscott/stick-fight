@@ -210,8 +210,12 @@ const MOVE_DEFS = {
   walk: { loop: true, blend: 120, speed: WALK_STEP / WALK_HALF * 1000, keys: [...walkHalf, ...walkHalf.map(mirror)] },
   run: { loop: true, blend: 100, speed: 470, keys: [...runHalf, ...runHalf.map(mirror)] },
   jump: { blend: 110, keys: [
-    K({ hx: -4, torso: 30, head: -12, ll: [50, -40], rl: [0, -62], la: [-70, -50], ra: [-70, -50] }, 60, 'anticip'),
-    K({ hx: 4, torso: 12, head: -4, ll: [25, 10], rl: [-20, -30], la: [40, 110], ra: [30, 100], air: 6 }, 40, 'out'),
+    // The push-off is drawn 'in' then 'linear' (it was 'anticip' then 'out'): the crouch released
+    // at full speed into a key that started at full speed again, the takeoff's one big head step
+    // (19-22px a frame, now 13-15). arcEase keeps the old eases for the arc air attacks ride
+    // (play()), so where they strike off the jump is unchanged.
+    { ...K({ hx: -4, torso: 30, head: -12, ll: [50, -40], rl: [0, -62], la: [-70, -50], ra: [-70, -50] }, 60, 'in'), arcEase: 'anticip' },
+    { ...K({ hx: 4, torso: 12, head: -4, ll: [25, 10], rl: [-20, -30], la: [40, 110], ra: [30, 100], air: 6 }, 40, 'linear'), arcEase: 'out' },
     K({ hx: 6, torso: 4, head: -2, ll: [10, 5], rl: [-15, -20], la: [165, 175], ra: [150, 170], air: 28 }, 110, 'out'),
     K({ hx: 6, torso: 10, head: -4, ll: [70, -50], rl: [55, -60], la: [120, 150], ra: [100, 140], air: 66 }, 140, 'sine'),
     K({ hx: 6, torso: 6, head: -4, ll: [70, -50], rl: [55, -60], la: [120, 150], ra: [100, 140], air: 76 }, 120, 'in'),
@@ -709,7 +713,8 @@ Object.assign(MOVE_DEFS, {
 // (the move's own keys animate limbs and torso only), so striking mid-jump never breaks the arc.
 // Their blends are long and linear (blendEase) with a short key before contact, the same time to
 // contact as before: the sim shows an attack's first frame 50ms in, and an 'out' blend had all
-// but finished by then, so the homing lunge arrived in one frame.
+// but finished by then, so the homing lunge arrived in one frame. update() goes further: the head
+// travels evenly from the press to the moment the strike can hit (see its air-attack block).
 const TUCK = { ll: [64, -54], rl: [50, -64] };
 Object.assign(MOVE_DEFS, {
   jumpJab: { blend: 60, blendEase: 'linear', limb: 'lHand', air: true, keys: [
@@ -860,6 +865,15 @@ function samplePose(keys, t) {
   }
   return keys[keys.length - 1].p;
 }
+// The jump as an air attack's arc: a key's arcEase (if any) in place of its drawn ease.
+const arcKeys = ks => (ks.some(k => k.arcEase) ? ks.map(k => (k.arcEase ? { ...k, ease: k.arcEase } : k)) : ks);
+const JUMP_ARC = arcKeys(MOVE_DEFS.jump.keys);
+// The head's offset from the hip in a pose (pose units, x forward, y up), the way solve() builds it.
+function headRel(p) {
+  const a1 = p.torso * DEG, a2 = (p.torso + p.bend) * DEG, a3 = (p.torso + p.bend + p.head) * DEG, hl = RIG.neck + RIG.headR;
+  return { x: dm.sin(a1) * RIG.lowerTorso + dm.sin(a2) * RIG.upperTorso + dm.sin(a3) * hl,
+    y: dm.cos(a1) * RIG.lowerTorso + dm.cos(a2) * RIG.upperTorso + dm.cos(a3) * hl };
+}
 
 export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scale = 1 } = {}) {
   const f = {
@@ -923,9 +937,9 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       if (move && move.air && airTrack) track = { ...airTrack };
       else if (move === MOVE_DEFS.jump && !f.current.done) {
         const el = keys.slice(0, ki).reduce((s2, kk) => s2 + kk.d, 0) + kt;
-        track = { keys, t: el, landAt: keys.slice(0, keys.findIndex(kk => kk.ev === 'land')).reduce((s2, kk) => s2 + kk.d, 0) };
+        track = { keys: arcKeys(keys), t: el, landAt: keys.slice(0, keys.findIndex(kk => kk.ev === 'land')).reduce((s2, kk) => s2 + kk.d, 0) };
       } else {
-        const jk = MOVE_DEFS.jump.keys, la = jk.findIndex(kk => kk.ev === 'land');
+        const jk = JUMP_ARC, la = jk.findIndex(kk => kk.ev === 'land');
         track = { keys: jk, t: jk[0].d + jk[1].d, landAt: jk.slice(0, la).reduce((s2, kk) => s2 + kk.d, 0) };
       }
     }
@@ -954,6 +968,15 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
         mm = adapted(base, e, aim);
       }
       m = mm;
+    }
+    // shownAt: ms of the move the caller skips before its first shown frame (the sim's pre-roll);
+    // liveMs: how long before the contact key the strike can already hit (update() uses both to
+    // show an air attack's startup in the time the player sees); headFrom: where the head is now
+    // (the blend's first key is carried forward by momentum, so it isn't). Kept on the move def,
+    // which getState() already carries.
+    if (m && m.air) {
+      const r = headRel(f.pose);
+      m = { ...m, shownAt: (opt && opt.shownAt) || 0, liveMs: (opt && opt.liveMs) || 0, headFrom: { x: f.pose.hx + r.x, y: r.y } };
     }
     if (m && opt && opt.chain) {
       const ai = m.keys.findIndex(k => k.ev === 'active'), from = Math.max(0, (m.chainFrom != null ? m.chainFrom : ai - 2));
@@ -1036,7 +1059,29 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     }
     const k = keys[ki], n = keys[Math.min(ki + 1, last)];
     const u = k.d > 0 ? EASE[k.ease](Math.min(1, kt / k.d)) : 1;
-    const base = lerpPose(k.p, n.p, u);
+    let base = lerpPose(k.p, n.p, u);
+    // An air attack's startup, in the time the player sees. The sim shows it from shownAt ms in
+    // (its pre-roll) and the strike can hit from liveMs before the contact key (live). The keys
+    // put most of the homing lunge (up to 70px) and the torso's swing inside the pre-roll, which
+    // showed as one frame. Instead the head travels in a straight line, evenly over the frames
+    // from the press to live (vis: 0..1), from where it was to where the keys have it at live;
+    // the hips carry the difference (they lead, the upper body swings over them). The ease onto
+    // the arc (update's hipLock) uses the same clock. From live on nothing changes, so the strike
+    // is where it was whenever it can hit, and at contact.
+    let el = kt, ramp = 0, live = 0, vis = 1, liftY = 0;
+    if (move.air) {
+      const ai = keys.findIndex(kk => kk.ev === 'active');
+      for (let i = 0; i < ki; i++) el += keys[i].d;
+      for (let i = 0; i < ai; i++) ramp += keys[i].d;
+      live = ramp - (move.liveMs || 0);
+      const shown = move.shownAt || 0;
+      if (el < live && live > shown) {
+        vis = clamp((el - shown) / (live - shown), 0, 1);
+        const a = move.headFrom, pL = samplePose(keys, live), rL = headRel(pL), rt = headRel(base);
+        base = { ...base, hx: a.x + (pL.hx + rL.x - a.x) * vis - rt.x };
+        liftY = a.y + (rL.y - a.y) * vis - rt.y;
+      }
+    }
     if (lastBase && dt > 0) vel = poseVel(lastBase, base, dt);
     lastBase = base;
     f.pose = reactL ? applyReact(base, dt) : base;
@@ -1051,24 +1096,25 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     if (move.air && airTrack) {
       airTrack.t += dt * 1000 * (move.airRate || 1);
       if (airTrack.t >= airTrack.landAt) { const h0 = lastHipLock != null ? lastHipLock : HIP, fast = (move.airRate || 1) > 1; airTrack = null; play('airLand'); landEase = { from: h0, t: 0, dur: fast ? 220 : 160 }; update(0); return; }   // airLand fires 'land'
-      const J0 = solve({ ...samplePose(airTrack.keys, airTrack.t), hipLock: null });
-      let h = (f.y - J0.hip.y) / f.scale;
+      const arcAt = t => (f.y - solve({ ...samplePose(airTrack.keys, t), hipLock: null }).hip.y) / f.scale;
+      // before live, the arc's height where it will be at live: the ease onto it is a straight line
+      // (not the dive's, whose hip speed limit below makes its path depend on every frame before)
+      const dive = (move.airRate || 1) > 1;
+      let h = arcAt(vis < 1 && !dive ? Math.min(airTrack.landAt, airTrack.t + (live - el)) : airTrack.t);
       // Ease onto the arc: from the hip height the move started at (its blend key holds it) to the
-      // arc's, linearly over the startup, so the first frame (the sim shows it 50ms in) doesn't
-      // jump there. A dive never climbs: it drops out of the jump from where it was.
+      // arc's, linearly over the startup (on the shown clock, vis), so the first frame doesn't jump
+      // there; liftY keeps the head's height on its straight line. A dive never climbs: it drops
+      // out of the jump from where it was.
       const h0 = keys[0].p.hipLock;
       if (h0 != null) {
-        if ((move.airRate || 1) > 1) h = Math.min(h, h0);
-        const ai = keys.findIndex(kk => kk.ev === 'active');
-        let el = kt, ramp = 0;
-        for (let i = 0; i < ki; i++) el += keys[i].d;
-        for (let i = 0; i < ai; i++) ramp += keys[i].d;
-        if (ramp > 0 && el < ramp) h = h0 + (h - h0) * (el / ramp);
+        if (dive) h = Math.min(h, h0);
+        if (ramp > 0 && el < ramp) h = h0 + (h - h0) * (vis < 1 ? vis * live / ramp : el / ramp);
         // the dive races the rest of the arc (airRate): its hip comes down at most 600px/s
         // relative to the root, which is falling too; airLand's ease takes it from there
-        if ((move.airRate || 1) > 1 && lastHipLock != null) h = Math.max(h, lastHipLock - 600 * dt);
+        if (dive && lastHipLock != null) h = Math.max(h, lastHipLock - 600 * dt);
       }
-      f.pose = { ...f.pose, hipLock: h }; lastHipLock = h;
+      // a dive remembers its hip without liftY, so its speed limit sees the same hip as before
+      f.pose = { ...f.pose, hipLock: h + liftY }; lastHipLock = dive ? h : h + liftY;
     }
     const total = keys.reduce((s, kk) => s + kk.d, 0);
     const elapsed = keys.slice(0, ki).reduce((s, kk) => s + kk.d, 0) + kt;
