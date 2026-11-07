@@ -149,7 +149,7 @@ function createGameAudio() {
     switch (ev.type) {
       case 'attack': {
         const u = ev.unit, fd = FRAME_DATA[ev.move] || {};
-        sfx.whoosh({ move: ev.move, limb: fd.limb, pan: pan(u && u.x), gassed: !!(u && u.gassed > 0) });
+        sfx.whoosh({ move: ev.move, limb: fd.limb, pan: pan(u && u.x), gassed: !!(u && u.faint > 0) });   // the strike that emptied the bar sounds spent
         break;
       }
       case 'hit': {
@@ -191,7 +191,7 @@ function createGameAudio() {
       case 'footstep': sfx.footstep({ weight: 0.4, pan: p }); break;
       case 'dust': sfx.jump({ pan: p }); break;   // the sim's jump takeoff
       case 'callout':
-        if (ev.kind === 'gassed') sfx.gassed({ pan: pan(unitX(ev.by)) });
+        if (ev.kind === 'faint') sfx.gassed({ pan: pan(unitX(ev.by)) });
         else if (ev.kind === 'ender') {
           enderStep = sim ? sim.stepCount : -1;
           sfx.ender({ count: Math.max(2, (sim && sim.combo && sim.combo.count) || 2), pan: pan(unitX(ev.by)) });

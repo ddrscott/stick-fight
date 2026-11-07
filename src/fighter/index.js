@@ -696,6 +696,14 @@ Object.assign(MOVE_DEFS, {
     K({ ...F(-1, HIP - 7, LF, RF), torso: 16, bend: 10, head: 14, tw: 2, la: [18, 40], ra: [8, 30] }, 550, 'sine'),
     K({ ...F(1, HIP - 4, LF, RF, 0, 2), torso: 10, bend: 4, head: 4, tw: -2, la: [22, 52], ra: [12, 40] }, 550, 'sine'),
   ] },
+  // Faint (out of stamina): out on his feet. The guard is gone, the hips sway side to side and dip
+  // on each swing, the torso folds forward and the head lolls. It loops until he comes to.
+  dizzy: { loop: true, blend: 140, keys: [
+    K({ ...F(-7, HIP - 10, LF, RF, 0, 3), torso: 24, bend: 14, head: 24, tw: 5, la: [8, 26], ra: [2, 20] }, 360, 'sine'),
+    K({ ...F(0, HIP - 6, LF, RF), torso: 15, bend: 7, head: 8, tw: 0, la: [16, 42], ra: [8, 32] }, 360, 'sine'),
+    K({ ...F(7, HIP - 11, LF, RF, 3, 0), torso: 22, bend: 14, head: 20, tw: -5, la: [12, 32], ra: [0, 18] }, 360, 'sine'),
+    K({ ...F(0, HIP - 6, LF, RF), torso: 13, bend: 6, head: 4, tw: 0, la: [18, 44], ra: [10, 34] }, 360, 'sine'),
+  ] },
   // A hit taken on the standing guard: the arms absorb it, the body rocks back a step's worth and
   // returns. And the same from the crouching guard.
   blockHit: { blend: 20, keys: [

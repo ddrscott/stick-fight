@@ -49,7 +49,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   let act = null;
   let nextThink = 0, lastReactedTo = -1, lastFollowed = -1, lastCounter = -1, lastBlockedId = -1, lastHitBlocked = false, blockedStreak = 0, mixupTurn = 0;
   let seenAttackId = -1, lastAttackStep = -9999, lastStale = -9999, myRun = 0, lastHitTakenId = -1;
-  let plannedLaunch = -1, blockedClasses = new Set(), stringPick = null, lastPunish = -1;
+  let plannedLaunch = -1, blockedClasses = new Set(), stringPick = null, lastPunish = -1, lastFaintPunish = -1;
   const mixLog = []; let lastStep = 0;
   // anti-air reads: the chance to read a jump-in at takeoff (0 at difficulty 0.3 and below), the
   // jump last looked at and the one being answered
@@ -90,13 +90,25 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const score = (st) => {
       const last = FRAME_DATA[st.moves[st.moves.length - 1]] || {};
       let w = 1 + rng();
-      if (last.ender) w += me.stamina >= 30 && !me.gassed ? 1.2 * difficulty : -3;
+      // an ender only when the rest of the string fits in the bar (the last point faints)
+      if (last.ender) w += me.stamina > restCost(st, me.seq.length) + 4 && !me.faint ? 1.2 * difficulty : -3;
       if (last.splat && wallNear) w += 2;
       if (wellBeyond(well(me, sim), me, opp) && (last.juggle || last.splat || (last.kb && last.kb.x >= 400))) w += 2.5;
       if (blocked && last.ender) w -= 1.5;   // a blocked string ends early more often
       return w;
     };
     return m.reduce((a, b) => (score(b) > score(a) ? b : a));
+  }
+  // stamina: what the rest of a string costs from press n on, and what an act's press will cost
+  const restCost = (st, n) => st.moves.slice(n).reduce((t, m) => t + ((FRAME_DATA[m] && FRAME_DATA[m].cost) || 20), 0);
+  const PLAIN = { 1: 'jab', 2: 'cross', 3: 'lkick', 4: 'roundhouse', d1: 'lowJab', d2: 'uppercut', d3: 'lowKick', d4: 'sweep' };
+  function actCost(me, a) {
+    if (a.attack) return (FRAME_DATA[a.attack] && FRAME_DATA[a.attack].cost) || 20;
+    const tok = a.press;
+    if (!tok) return 22;   // a press picked on the spot (pressFn): about a kick
+    let m = PLAIN[tok];
+    if (me.seq && me.state === 'attack') { const st = matchStrings([...me.seq, tok]); if (st.length) m = st[0].moves[me.seq.length]; }
+    return (FRAME_DATA[m] && FRAME_DATA[m].cost) || 20;
   }
   const landed = (me) => me.grounded && me.state !== 'jump' && me.state !== 'landing';
   const closer = (px) => (me, opp) => Math.abs(opp.x - me.x) <= px;
@@ -221,10 +233,10 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     if (blockedStreak >= 2 && dist < r('cross') + 40) return mixup(dist, toward, opp);
     // jump-ins: a dive kick on a croucher, and now and then from jump range (the anti-air game)
-    const free = !DOWN_STATES.has(opp.state) && opp.state !== 'attack' && !HIT_STATES.has(opp.state) && me.stamina > 25;
+    const free = !DOWN_STATES.has(opp.state) && opp.state !== 'attack' && !HIT_STATES.has(opp.state) && me.stamina > 45;   // the jump, the air attack and a string after it
     if (free && opp.crouch && dist > 100 && dist < 240 && chance(0.6)) return jumpIn(toward, 'jab');
     if (free && dist > 110 && dist < (aerial ? 300 : 230) && chance(show ? 0.3 : aerial ? 0.55 : 0.12 + 0.12 * difficulty)) return jumpIn(toward, 'jab');
-    if (recovering && dist < r('roundhouse') + 8 && me.stamina > 12 && chance((opp.hitConfirmed ? 0.3 : 0.4) + 0.6 * difficulty)) {
+    if (recovering && dist < r('roundhouse') + 8 && me.stamina > 26 && chance((opp.hitConfirmed ? 0.3 : 0.4) + 0.6 * difficulty)) {
       return [attack(dist < r('cross') - 5 ? 'cross' : 'roundhouse')];
     }
     if ((opp.state === 'block' || opp.state === 'blockstun') && dist < r('sweep')) {
@@ -263,15 +275,15 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       return [move(0, 4 + irnd(4))];
     }
     const losing = !rush && me.health < 0.3 * sim.startHealth && me.health < opp.health;
-    if (grap && dist < 95 && !opp.crouch && me.stamina > 15 && chance(0.4)) return [move(toward, closer(78)), attack('throw')];
+    if (grap && dist < 95 && !opp.crouch && me.stamina > 30 && chance(0.4)) return [move(toward, closer(78)), attack('throw')];
     if (losing && dist < 170 && !cornered && !wellBehindMe(well(me, sim), me, opp) && chance(0.4)) return [move(-toward, 10, chance(0.3))];
     if (dist > (show ? 230 : turtle ? 140 : 175)) return approach(me, opp, dist, toward);
     const aggression = Math.max(0.1, Math.min(0.95, 0.3 + 0.5 * difficulty + (rush ? 0.3 : turtle ? -0.2 : 0)));
-    // spent: stay out and let the meter come back
-    if (me.stamina < (show ? 38 : 28) || me.gassed > 0) return dist < 200 && !cornered && !wellBehindMe(well(me, sim), me, opp) ? [move(-toward, 10)] : [blockFor(10)];
+    // spent: stay out and let the meter come back (it refills in about two seconds)
+    if (me.stamina < (show ? 28 : 30) || me.faint > 0) return dist < 200 && !cornered && !wellBehindMe(well(me, sim), me, opp) ? [move(-toward, 10)] : [blockFor(10)];
     // the stairwell: send him over the railing when he's by it; never back up into it myself
     const w = well(me, sim);
-    if (wellBeyond(w, me, opp) && me.stamina > 30 && chance(0.35 + 0.45 * difficulty + (grap ? 0.3 : 0))) {
+    if (wellBeyond(w, me, opp) && me.stamina > 40 && chance(0.35 + 0.45 * difficulty + (grap ? 0.3 : 0))) {
       if (dist < 95) return [move(toward, closer(78)), attack('throw')];   // a throw toward the opening goes over
       if (dist > 140 && dist < 320) return [move(toward, (m, o) => Math.abs(o.x - m.x) < 150, true), { ...move(toward, 2, true), attack: 'cometCross' }];
       if (dist < r('spinKick') && chance(0.4)) return [attack('spinKick')];
@@ -281,7 +293,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     if (wellBehindMe(w, me, opp) && chance(0.6)) return dist < r('jab') + 10 ? [attack(pick(['jab', 'lowKick', 'throw']))] : [move(toward, 6, true)];
     // the wall is behind him: go for the wall payoffs
     const wallBehind = (toward > 0 ? sim.bounds.x1 - opp.x : opp.x - sim.bounds.x0) < 220;
-    if (wallBehind && me.stamina > 35 && chance(0.35 + 0.4 * difficulty)) {
+    if (wallBehind && me.stamina > 45 && chance(0.35 + 0.4 * difficulty)) {
       const k = rng();
       if (k < 0.35 && dist < r('spinKick')) return [attack('spinKick')];
       if (k < 0.6 && dist > 140 && dist < 320) return [move(toward, (m, o) => Math.abs(o.x - m.x) < 150, true), { ...move(toward, 2, true), attack: 'cometCross' }];
@@ -291,7 +303,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // he's crouching: mids, the overhead, or a jump-in dive kick from range; a standing guard: lows
     // (a d+1,d+1,d+3 crouch string) and throws
     if (opp.crouch && dist < r('lkick') + 10 && chance(0.6)) return [attack(pick(['lkick', 'bodyBlow', 'overhead', 'uppercut']))];
-    if (opp.backHeld && !opp.crouch && dist < r('lowJab') && me.stamina > 25 && chance(0.35)) return [press('d1')];
+    if (opp.backHeld && !opp.crouch && dist < r('lowJab') && me.stamina > 50 && chance(0.35)) return [press('d1')];   // the whole d1,d1,d3
     if (show) {
       // string starters at every height (the follow-up reflex carries them on), a launcher up
       // close, a throw on a standing guard; otherwise work the spacing
@@ -373,6 +385,17 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // a juggle: keep it in the air with jabs when no string continues
       else if (opp.state === 'knockdown' && opp.juggle && (opp.airHits || 0) < 4) { queue = [press('1')]; act = null; }
     }
+    // reflex: he fainted (out of stamina, no guard for about a second and a half): get there and
+    // open a string on him; the follow-up reflex carries it on. Once per faint; the better the CPU
+    // the more often it sees it.
+    if (opp.faint > 0 && opp.faintAt !== lastFaintPunish && opp.state === 'idle' && opp.grounded && /^(idle|walk|block|crouch|run)$/.test(me.state) && me.stamina > 40) {
+      lastFaintPunish = opp.faintAt;
+      if (chance(show ? 1 : 0.35 + 0.65 * difficulty)) {
+        const tok = me.stamina > 80 ? pick(['1', '1', '2', '3']) : '1';
+        queue = dist < reach('jab') - 2 ? [{ ...press(tok), ok: true }] : [move(toward, closer(reach('jab') - 8), true), { ...press(tok), ok: true }];
+        act = null;
+      }
+    }
     // reflex: block or counter a visible startup, once per opponent attack
     // (an air attack from a jump-in I've read is left to the anti-air below)
     const readingJump = aaFor === opp.jumpAt && !opp.grounded && FRAME_DATA[opp.move] && FRAME_DATA[opp.move].air;
@@ -394,7 +417,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     // reflex (showcase): his strike whiffed and he's stuck in recovery: punish it, a string
     // starter or the launcher up close, the lunge from further, Comet Cross from a dash
-    if ((show || turtle) && opp.state === 'attack' && opp.phase === 'recovery' && !opp.hitConfirmed && opp.attackId !== lastPunish && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 15) {
+    if ((show || turtle) && opp.state === 'attack' && opp.phase === 'recovery' && !opp.hitConfirmed && opp.attackId !== lastPunish && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 26) {
       lastPunish = opp.attackId;
       if (chance(0.85)) {
         if (dist < reach('jab') - 12) queue = [press(pick(['d2', '2', '1']))];
@@ -424,8 +447,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       me.grabId = opp.attackId;
       if (chance(show ? 0.5 : 0.15 + 0.55 * difficulty)) { queue = [move(0, 4 + irnd(16)), { ...press('1'), lk: true, ok: true }]; act = null; }
     }
-    // stamina: low or gassed, back off and let it come back (a beat of guard if he presses)
-    if ((me.gassed > 0 || me.stamina < (show ? 38 : 28)) && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'hitstun' && !DOWN_STATES.has(opp.state)) {
+    // stamina: low or fainted, back off and let it come back (a beat of guard if he presses; a
+    // fainted CPU just staggers away, it can't guard)
+    if ((me.faint > 0 || me.stamina < (show ? 28 : 30)) && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'hitstun' && !DOWN_STATES.has(opp.state) && !(opp.faint > 0 && !me.faint)) {
       const cornered = me.x - sim.bounds.x0 < 90 || sim.bounds.x1 - me.x < 90 || wellBehindMe(well(me, sim), me, opp);
       queue = opp.state === 'attack' && dist < 200 ? [blockFor(14)] : cornered ? [blockFor(16)] : [move(-toward, 12 + irnd(10))]; act = null;
     }
@@ -433,7 +457,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // (once per opponent attack; the jab is the fast one and his extended arm is in its reach)
     if (me.state === 'hitstun' && Math.abs(me.vx) < 420 && dist < reach('cross') + 20 && opp.attackId !== lastCounter) {
       lastCounter = opp.attackId;
-      if (me.stamina > 18 && chance(show ? 0.2 : 0.55 + 0.6 * difficulty)) { queue = [attack(dist < reach('jab') + 45 ? 'jab' : 'cross')]; act = null; }
+      if (me.stamina > 26 && chance(show ? 0.2 : 0.55 + 0.6 * difficulty)) { queue = [attack(dist < reach('jab') + 45 ? 'jab' : 'cross')]; act = null; }
       else if (show && chance(0.6)) { queue = [blockFor(14)]; act = null; }   // respect his advantage
     }
     // reflex: floored with him standing over me: roll away (once per knockdown)
@@ -445,7 +469,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // reflex: in range and nobody has swung for a while: swing
     // (a plan in progress, like a jump-in or a step into kick range, is left alone)
     const staleGap = show ? 60 : turtle ? 48 : 24;
-    if (dist < 120 && me.stamina > 25 && step - lastAttackStep > staleGap && step - lastStale > staleGap && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'attack' && !DOWN_STATES.has(opp.state)) {
+    if (dist < 120 && me.stamina > 32 && step - lastAttackStep > staleGap && step - lastStale > staleGap && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'attack' && !DOWN_STATES.has(opp.state)) {
       lastStale = step;
       queue = (opp.state === 'block' || blockedStreak >= 1) ? mixup(dist, toward, opp) : show ? [opener(opp, dist)] : [attack(dist < reach('jab') + 10 ? 'jab' : 'cross')]; act = null;
     }
@@ -471,9 +495,18 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     if (show && act && (act.attack || act.press || act.pressFn) && !act.ok && opp.state === 'attack' && opp.phase !== 'recovery' && dist < reach(opp.move) + 40 && /^(idle|walk|block|crouch|run)$/.test(me.state)) {
       act = heightOf(opp.move) === 'low' ? lowGuard(14) : blockFor(14); queue = [];
     }
-    // showcase: an expert doesn't swing himself into the gassed state; under 30 he backs off to breathe
-    else if (show && act && (act.attack || act.press || act.pressFn) && !act.ok && me.stamina < 30 && !DOWN_STATES.has(opp.state)) {
+    // showcase: an expert doesn't swing himself toward a faint; under 24 he backs off to breathe
+    else if (show && act && (act.attack || act.press || act.pressFn) && !act.ok && me.stamina < 24 && !DOWN_STATES.has(opp.state) && !(opp.faint > 0)) {
       act = dist < 200 ? move(-toward, 12) : blockFor(10); queue = [];
+    }
+    // stamina: never press the strike that would empty the bar (the last point faints). The bottom
+    // of the ladder slips now and then and faints anyway; the showcase never does.
+    if (act && (act.attack || act.press || act.pressFn) && !act.pressed && me.stamina - actCost(me, act) <= 0) {
+      if (act.faintOK == null) act.faintOK = !show && chance((1 - difficulty) * 0.4);
+      if (!act.faintOK) {
+        const cornered = me.x - sim.bounds.x0 < 90 || sim.bounds.x1 - me.x < 90;
+        act = dist < 200 && !cornered ? move(-toward, 10) : blockFor(10); queue = [];
+      }
     }
     const out = { ...EMPTY_INPUT };
     if (!act && dist < 140 && (opp.state === 'block' || opp.state === 'blockstun') && /^(idle|walk)$/.test(me.state)) {

@@ -77,15 +77,30 @@ const HEIGHT = { jab: 'high', cross: 'high', roundhouse: 'high', flashRoundhouse
 for (const [m, fd] of Object.entries(FRAME_DATA)) { fd.height = HEIGHT[m] || 'mid'; fd.low = fd.height === 'low'; }
 for (const m of ['sweep', 'lowKick']) FRAME_DATA[m].tc = true;
 
-// stamina costs (v2 spec): jab 6, cross 9, kicks 12, launchers 16, enders 20, throws 15
-const COST = { jab: 6, lowJab: 6, cross: 9, bodyBlow: 9, lungeCross: 10, uppercut: 16, risingUppercut: 16, risingKnee: 16, throw: 15, wallSlam: 15 };
-const AIR_COST = { jumpJab: 6, jumpCross: 9, flyingKick: 10, airRoundhouse: 12, diveKick: 10 };
+// Stamina costs. A fighter has 100 and faints at 0 (sim.js), so the costs are the attack budget:
+// plain jabs faint you on the 6th press, crosses and kicks on the 5th, and a full four-hit string
+// with its ender (1,1,2,4 is 85, 1,2,3,4 is 90, Sky Spike 92) fits from full but leaves you low.
+const COST = { jab: 17, lowJab: 15, cross: 21, bodyBlow: 19, lungeCross: 22, lowKick: 18, uppercut: 24, risingUppercut: 24, risingKnee: 24, throw: 22, wallSlam: 22 };
+const AIR_COST = { jumpJab: 12, jumpCross: 15, flyingKick: 16, airRoundhouse: 18, diveKick: 16 };
 Object.assign(COST, AIR_COST);
-for (const [m, fd] of Object.entries(FRAME_DATA)) fd.cost = fd.ender ? 20 : COST[m] != null ? COST[m] : fd.limb === 'foot' ? 12 : 9;
+for (const [m, fd] of Object.entries(FRAME_DATA)) fd.cost = fd.ender ? 30 : COST[m] != null ? COST[m] : fd.limb === 'foot' ? 22 : 19;
 // callout names for enders reached outside a string (the string's own name wins when there is one)
 for (const [m, name] of Object.entries({ flashRoundhouse: 'FLASH ROUNDHOUSE', neonTornado: 'NEON TORNADO', spinHeel: 'SPIN HEEL', crescent: 'CRESCENT',
   rushKnee: 'GROUND RUSH', skySpike: 'SKY SPIKE', cometCross: 'COMET CROSS', wallSlam: 'WALL SLAM' })) FRAME_DATA[m].callout = name;
-export const STAMINA = { max: 100, regen: 22, regenBlock: 8, delay: 0.6, run: 10, jump: 6, gassedTime: 1.2, gassedStartup: 1.4, gassedDamage: 1.15 };
+// regen per second once `delay` has passed since the last spend (none while attacking or running);
+// regenBlock while guarding, from the first frame. Blocking a hit costs blockCost of its price and
+// never faints you. At 0 the fighter faints for faintTime seconds (no attacks, no guard, walks at
+// faintWalk speed), wakes with faintRecover, and wakes early from a knockdown or after taking
+// faintDmgCap damage.
+export const STAMINA = { max: 100, regen: 50, regenBlock: 20, delay: 0.4, run: 14, jump: 8, blockCost: 1 / 3,
+  faintTime: 1.5, faintRecover: 30, faintDmgCap: 20, faintWalk: 0.35 };
+// Combo decay, by the hit's place in the combo (1st, 2nd, ...; the last entry repeats). Hitstun
+// shrinks from the 3rd hit so a repeated loop drops and the defender can act; damage from the 4th,
+// and past COMBO_SOFTCAP damage in one combo the rest counts COMBO_OVERCAP as much.
+export const COMBO_STUN = [1, 1, 0.85, 0.65, 0.45, 0.3];
+export const COMBO_DMG = [1, 1, 1, 0.8, 0.65, 0.5];
+export const COMBO_SOFTCAP = 30, COMBO_OVERCAP = 0.25;
+export const comboScale = (table, n) => table[Math.max(0, Math.min(table.length - 1, n - 1))];
 
 export const ATTACKS = Object.keys(FRAME_DATA);
 export const STEP_HZ = 120;

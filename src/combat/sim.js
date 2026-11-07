@@ -2,7 +2,7 @@
 // physics, hit resolution with hitstop, rounds and KO. step(ms) is deterministic given
 // the same inputs and seed. Events for the glue (fx, camera) go through onEvent.
 
-import { FRAME_DATA, ATTACKS, DT, f60, STAMINA } from './frameData.js';
+import { FRAME_DATA, ATTACKS, DT, f60, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
 import { matchStrings, MOVE_TOKEN } from './strings.js';
 import { buildHitboxes, buildHurtboxes, testHit } from './hitboxes.js';
 import { EMPTY_INPUT } from './input.js';
@@ -89,7 +89,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   const pickAnim = (list, key) => { const a = list.find(has) || 'idle'; if (a !== list[0]) warnOnce(key, `no '${list[0]}' clip in the rig yet, using '${a}'`); return a; };
   ANIM.crouch = pickAnim(['crouch', 'crouchIdle', 'block'], 'crouch');
   ANIM.crouchBlock = pickAnim(['crouchBlock', 'crouch', 'block'], 'crouchBlock');
-  ANIM.gassed = pickAnim(['gassed', 'idleOpen', 'idle'], 'gassed');
+  ANIM.faint = pickAnim(['dizzy', 'gassed', 'idle'], 'faint');
   ANIM.throwTech = pickAnim(['throwTech', 'block'], 'throwTech');
   ANIM.fakeCrouch = !has('crouch') && !has('crouchIdle');
   ANIM.blockHit = has('blockHit') ? 'blockHit' : null;
@@ -188,8 +188,9 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       hitstop: 0, flash: 0, stun: 0, downTimer: 0, buffer: null, bufferAge: 0,
       health: 100, hidden: false, controller: null, kind: 'none',
       last: EMPTY_INPUT, tapDir: 0, tapTimer: 0, running: false, koDone: false, prevJoints: null,
-      stamina: STAMINA.max, gassed: 0, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
+      stamina: STAMINA.max, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
+      combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
     };
   }
   sim.units = fighters.map(makeUnit);
@@ -229,7 +230,8 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.state = 'idle'; u.move = null; u.phase = null; u.hitstop = 0; u.flash = 0; u.stun = 0; u.buffer = null;
     u.health = (sim.horde && i >= 1) ? sim.horde.goonHealth : sim.startHealth; u.hidden = false; u.koDone = false; u.running = false; u.hitConfirmed = false;
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
-    u.stamina = STAMINA.max; u.gassed = 0; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
+    u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
+    u.comboDmg = 0; u.selfChain = 0;
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
     if (typeof u.rig.reset === 'function') { u.rig.x = u.x; u.rig.y = u.y; u.rig.facing = u.facing; u.rig.reset(); }
     else if ((u.rig.airborne || u.ragUsed) && makeRig) { const r = makeRig(u.color); r.color = u.color; u.rig = r; }
@@ -452,7 +454,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     try { rig.play(name, opt); } catch (e) { warnOnce('play' + name, `rig can't play '${name}', using idle`); rig.play('idle'); }
   }
   function setState(u, state, anim = state) {
-    if (state === 'idle' && anim === 'idle' && u.gassed > 0) anim = ANIM.gassed;   // the slump
+    if (state === 'idle' && anim === 'idle' && u.faint > 0) anim = ANIM.faint;   // out on his feet
     if (u.state === state && (state === 'walk' || state === 'run' || state === 'idle' || state === 'block' || state === 'crouch')) {
       if (anim && u.rig.current.move !== anim && (state === 'idle' || state === 'crouch')) safePlay(u.rig, anim);
       return;
@@ -462,24 +464,48 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     if (state !== 'crouch' && state !== 'blockstun') u.crouch = false;
     if (anim) safePlay(u.rig, anim);
   }
-  // stamina: every action spends; at 0 the fighter is gassed for 1.2s
-  function spend(u, n) {
+  // Stamina: every action spends, and at 0 the fighter faints. The strike (or jump) that emptied
+  // the bar still comes out, but nothing cancels out of it; the faint itself starts when he is back
+  // on his feet (see regen). Blocking spends too, but never takes the last point.
+  const FAINT_STEPS = Math.round(STAMINA.faintTime * 120);
+  function spend(u, n, { noFaint = false } = {}) {
     if (!n) return;
-    u.stamina = Math.max(0, u.stamina - n);
+    u.stamina = Math.max(noFaint ? Math.min(u.stamina, 1) : 0, u.stamina - n);
     u.regenAt = sim.stepCount + Math.round(STAMINA.delay * 120);
-    if (u.stamina <= 0 && u.gassed <= 0) { u.gassed = Math.round(STAMINA.gassedTime * 120); u.running = false; callout('GASSED', u.id, 'gassed'); }
+    if (u.stamina <= 0 && !(u.faint > 0)) {
+      u.faint = FAINT_STEPS; u.faintDmg = 0; u.faintAt = sim.stepCount; u.running = false; u.queued = null;
+      callout('FAINT', u.id, 'faint');
+      note({ type: 'faint', def: u.id });
+    }
   }
+  function endFaint(u) {
+    u.faint = 0; u.faintDmg = 0;
+    u.stamina = Math.max(u.stamina, STAMINA.faintRecover); u.regenAt = sim.stepCount;
+    if (u.state === 'idle') safePlay(u.rig, 'idle');
+  }
+  sim.endFaint = endFaint;
   function regen(u) {
-    if (u.gassed > 0) { u.gassed--; if (u.gassed === 0 && u.state === 'idle') safePlay(u.rig, 'idle'); return; }
+    if (u.faint > 0) {
+      // a knockdown (or a throw) knocks him out of it: he gets up with the recovery stamina
+      if (LYING.has(u.state) || u.state === 'knockdown' || u.state === 'splat' || u.state === 'grabbed') { endFaint(u); return; }
+      // the clock runs once he's back on his feet; the bar refills toward the recovery stamina
+      if (u.state === 'attack' || !u.grounded) return;
+      u.faint--;
+      u.stamina = STAMINA.faintRecover * (1 - u.faint / FAINT_STEPS);
+      if (u.faint <= 0) endFaint(u);
+      return;
+    }
     const guarding = u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld);
     if (u.state === 'attack' || u.state === 'run') return;
-    if (sim.stepCount >= u.regenAt) u.stamina = Math.min(STAMINA.max, u.stamina + STAMINA.regen * DT);
-    else if (guarding) u.stamina = Math.min(STAMINA.max, u.stamina + STAMINA.regenBlock * DT);
+    if (guarding) u.stamina = Math.min(STAMINA.max, u.stamina + STAMINA.regenBlock * DT);
+    else if (sim.stepCount >= u.regenAt) u.stamina = Math.min(STAMINA.max, u.stamina + STAMINA.regen * DT);
   }
   // where the wall is behind a body pushed in direction dir
   const wallGap = (u, dir) => (dir > 0 ? bounds.x1 - u.x : u.x - bounds.x0);
   function startAttack(u, move) {
     const isCancel = u.state === 'attack';   // chained out of a strike that connected
+    // how many times in a row this move has cancelled into itself (cancelOK limits it)
+    u.selfChain = isCancel && u.move === move ? (u.selfChain || 0) + 1 : 0;
     // turn to face the opponent as the attack starts: a chain of buffered attacks never
     // passes through an idle tick, and after a chase the two can have swapped sides
     const opp = oppOf(u);
@@ -500,7 +526,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       if (fd0.dive) { u.vy = Math.max(u.vy, 560); u.vx = u.facing * 240; }
     }
     u.buffer = null; u.running = false;
-    if (u.queued) { const q = u.queued; u.queued = null; if (!(FRAME_DATA[q.attack].ender && u.gassed > 0)) { u.buffer = q.attack; u.bufferKeys = q.keys; u.bufferName = q.name; u.bufferAge = 0; } }
+    if (u.queued) { const q = u.queued; u.queued = null; if (!(u.faint > 0)) { u.buffer = q.attack; u.bufferKeys = q.keys; u.bufferName = q.name; u.bufferAge = 0; } }
     const carry = u.followThrough;          // a cancel keeps the momentum of the hit it came from
     u.followThrough = false; u.chase = false;
     if (u.grounded && !carry) u.vx = 0;
@@ -589,8 +615,8 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   }
 
   // A press inside a live string continues it (the string table decides the move); otherwise
-  // it is the plain button move and may start a string. Enders need stamina in hand: a gassed
-  // fighter gets the plain move.
+  // it is the plain button move and may start a string. An ender costs a big chunk of stamina;
+  // one thrown with too little left still comes out, and the fighter faints after it.
   function seqLive(u) {
     if (!u.seq) return false;
     if (u.state === 'attack') return true;
@@ -606,17 +632,28 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       if (m.length) {
         const s0 = m.find(s => s.keys.length === cand.length) || m[0];
         const move = s0.moves[cand.length - 1];
-        if (!(FRAME_DATA[move].ender && u.gassed > 0)) return { attack: move, keys: cand, name: s0.name };
+        return { attack: move, keys: cand, name: s0.name };
       }
     }
     return { attack: resolveButton(b, inp, u, sim.stepCount), keys: [tok], name: '' };
   }
   sim.resolvePress = resolvePress;
 
+  // Which buffered strike may cancel the one that just connected. A button press cancels only as
+  // the next hit of a string in the table (strings.js), so mashing one button gives that button's
+  // string and then has to wait out the recovery. A move named directly (the AI, the test scripts)
+  // goes by the move's own `cancels` list, and cancels into itself at most once in a row.
+  function cancelOK(u) {
+    if (u.bufferKeys) return u.bufferKeys.length > 1;
+    const fd = FRAME_DATA[u.move];
+    if (!fd || !fd.cancels.includes(u.buffer)) return false;
+    return !(u.buffer === u.move && (u.selfChain || 0) >= 1);
+  }
   // a button pressed in the air but landing first is the ground move of that button (the jump-in
   // combo's first ground hit, and it starts a string)
   const GROUND_OF = { jumpJab: ['jab', '1'], jumpCross: ['cross', '2'], flyingKick: ['lkick', '3'], airRoundhouse: ['roundhouse', '4'], diveKick: ['sweep', 'd4'] };
   function tryAttack(u) {
+    if (u.faint > 0) { u.buffer = null; u.bufferKeys = null; u.queued = null; return false; }   // fainted: nothing comes out
     if (!u.buffer || !u.grounded) return false;
     const g = GROUND_OF[u.buffer];
     if (g) { u.buffer = g[0]; u.bufferKeys = [g[1]]; u.bufferName = ''; }
@@ -631,19 +668,29 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     if (FACE_STATES.has(u.state) && u.grounded && Math.abs(opp.x - u.x) > 4) u.facing = opp.x > u.x ? 1 : -1;
     switch (u.state) {
       case 'idle': case 'walk': case 'run': {
+        if (u.faint > 0 && u.grounded) {
+          // fainted: no attack, guard, crouch, jump or run; a slow stagger in the held direction
+          tryAttack(u); u.running = false;
+          if (e.dx) { u.vx = e.dx * WALK * STAMINA.faintWalk; u.followThrough = false; }
+          else if (u.followThrough) { u.vx *= STUMBLE_FRICTION; if (Math.abs(u.vx) < 60) { u.vx = 0; u.followThrough = false; u.chase = false; } }
+          else u.vx = Math.abs(u.vx) > 20 ? u.vx * 0.85 : 0;
+          setState(u, 'idle');
+          break;
+        }
         if (tryAttack(u)) break;
         if (e.down) { u.vx = 0; u.followThrough = false; setState(u, 'crouch', e.block ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; break; }
         // holding back walks back, and stands in guard when something is coming
         if (e.block && (threat(u, opp) || !e.dx)) { u.vx = 0; setState(u, 'block'); break; }
         if (e.jump) {
-          u.vy = -JUMP_VY; u.vx = e.dx * ((e.run || u.running) && !u.gassed ? RUN * 0.8 : WALK * 1.15); u.grounded = false;
+          u.vy = -JUMP_VY; u.vx = e.dx * ((e.run || u.running) && u.stamina > 0 ? RUN * 0.8 : WALK * 1.15); u.grounded = false;
           u.jumpVx = u.vx; u.jumpAt = sim.stepCount; u.airUsed = 0; u.airWhiffEarly = false;
           spend(u, STAMINA.jump);
           setState(u, 'jump'); onEvent({ type: 'dust', x: u.x, y: u.y, dir: u.facing }); break;
         }
         if (e.dx) {
-          const run = (e.run || u.running) && u.gassed <= 0 && u.stamina > 0 && e.dx === u.facing;
-          if (run) { u.lastRunStep = sim.stepCount; u.stamina = Math.max(0, u.stamina - STAMINA.run * DT); u.regenAt = sim.stepCount + 72; if (u.stamina <= 0) spend(u, 1); }
+          // running drains the bar down to 1 but never faints; then he walks
+          const run = (e.run || u.running) && u.stamina > 1 && e.dx === u.facing;
+          if (run) { u.lastRunStep = sim.stepCount; u.stamina = Math.max(1, u.stamina - STAMINA.run * DT); u.regenAt = sim.stepCount + Math.round(STAMINA.delay * 120); }
           u.vx = e.dx * (run ? RUN : WALK);
           setState(u, run ? 'run' : 'walk');
         } else {
@@ -656,12 +703,14 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       }
       case 'block':
         u.vx = 0;
+        if (u.faint > 0) { setState(u, 'idle'); break; }
         if (tryAttack(u)) break;
         if (e.down) { setState(u, 'crouch', e.block ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; break; }
         if (!e.block || (e.dx && !threat(u, opp) && sim.stepCount - (u.blockedAt || -99) > 20)) setState(u, 'idle');
         break;
       case 'crouch': {
         u.vx = 0; u.crouch = true;
+        if (u.faint > 0) { u.crouchEnd = null; setState(u, 'idle'); break; }
         if (tryAttack(u)) break;
         if (!e.down) { u.crouchEnd = sim.stepCount; setState(u, 'idle'); break; }
         // crouch-walk forward (down-back is the crouching guard)
@@ -688,7 +737,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
         // a little steering in the air (the jump's direction is set at takeoff)
         const cap = Math.max(Math.abs(u.jumpVx || 0), WALK * 0.6) + 40;
         if (e.dx) u.vx = Math.max(-cap, Math.min(cap, u.vx + e.dx * 520 * DT));
-        if (u.buffer && FRAME_DATA[u.buffer] && FRAME_DATA[u.buffer].air && (u.airUsed || 0) === 0) startAttack(u, u.buffer);
+        if (u.buffer && FRAME_DATA[u.buffer] && FRAME_DATA[u.buffer].air && (u.airUsed || 0) === 0 && !(u.faint > 0)) startAttack(u, u.buffer);
         break;
       }
       case 'landing':
@@ -702,7 +751,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
           // swinging in the air: it lands on the floor (physics); a first air attack that whiffs while
           // still rising leaves room for one more
           if (u.rig.current.done && !u.hitConfirmed && u.vy < 0 && u.airUsed === 1) u.airWhiffEarly = true;
-          if (u.airWhiffEarly && u.rig.current.done && u.buffer && FRAME_DATA[u.buffer] && FRAME_DATA[u.buffer].air) { u.airWhiffEarly = false; startAttack(u, u.buffer); }
+          if (u.airWhiffEarly && u.rig.current.done && u.buffer && FRAME_DATA[u.buffer] && FRAME_DATA[u.buffer].air && !(u.faint > 0)) { u.airWhiffEarly = false; startAttack(u, u.buffer); }
           break;
         }
         // pressure: while the victim is stumbling, the attacker may walk in during recovery
@@ -714,12 +763,13 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
         const md = MOVE_DATA_ && MOVE_DATA_[fd.anim || u.move];
         const ms = md && md.duration ? u.rig.current.t * md.duration : 0;
         const inWindow = md && md.cancel ? ms >= md.cancel[0] - 40 && ms <= md.cancel[1] : fd.cancels.includes(u.buffer);
-        if (u.hitConfirmed && u.buffer && (u.phase === 'active' || u.phase === 'recovery') && inWindow) { startAttack(u, u.buffer); break; }
+        if (u.faint > 0) u.buffer = null;   // the strike that emptied the bar: nothing cancels out of it
+        if (u.hitConfirmed && u.buffer && (u.phase === 'active' || u.phase === 'recovery') && inWindow && cancelOK(u)) { startAttack(u, u.buffer); break; }
         // a stomp that landed cancels into a punch, so the meaty can meet the rise
         if (u.otgConfirm && (u.buffer === 'cross' || u.buffer === 'jab') && (u.phase === 'active' || u.phase === 'recovery')) { startAttack(u, u.buffer); break; }
         // after a knockdown lands, the launcher's recovery is cut short: six frames of
         // follow-through, then he can move or attack (the body's flight is shorter than the recovery)
-        if (u.launchCancelAt && sim.stepCount >= u.launchCancelAt && u.phase !== 'startup') {
+        if (u.launchCancelAt && sim.stepCount >= u.launchCancelAt && u.phase !== 'startup' && !(u.faint > 0)) {
           if (u.buffer) { u.launchCancelAt = 0; startAttack(u, u.buffer); break; }
           if (e.dx) { u.launchCancelAt = 0; setState(u, 'idle'); break; }
         }
@@ -1145,7 +1195,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     def.x = att.x + att.facing * 70; syncRig(def); rigUpd(def, 0);
     // near a wall behind him it becomes the wall slam
     if (wallGap(def, att.facing) < 190 && att.move === 'throw') { att.move = 'wallSlam'; att.seqName = 'WALL SLAM'; }
-    const pre = def.buffer === 'throw' && def.bufferAge < 8;   // pressed just before the grab
+    const pre = def.buffer === 'throw' && def.bufferAge < 8 && !(def.faint > 0);   // pressed just before the grab
     def.state = 'grabbed'; def.grabbedBy = att.id; def.grabT = BREAK_STEPS; def.phase = null; def.move = null; def.crouch = false;
     def.vx = 0; att.vx = 0; att.glide = null;
     att.hitstop = BREAK_STEPS + 2; def.hitstop = 0;
@@ -1174,6 +1224,16 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   }
   sim.breakThrow = breakThrow;
 
+  // A combo hit's damage after the decay: past COMBO_SOFTCAP points in one combo the rest counts
+  // COMBO_OVERCAP as much. Whole points, at least 1. Damage on a fainted body counts toward
+  // waking him (faintDmgCap), so a faint is a punish but not a free kill.
+  function comboDamage(def, raw) {
+    const room = Math.max(0, COMBO_SOFTCAP - (def.comboDmg || 0));
+    const dmg = Math.max(1, Math.round(raw <= room ? raw : room + (raw - room) * COMBO_OVERCAP));
+    def.comboDmg = (def.comboDmg || 0) + dmg;
+    if (def.faint > 0 && (def.faintDmg += dmg) >= STAMINA.faintDmgCap) endFaint(def);
+    return dmg;
+  }
   function applyHit(att, def, pt, { move = att.move, trade = false } = {}) {
     const fd = FRAME_DATA[move];
     const dir = att.facing;
@@ -1193,14 +1253,14 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.4, move, limb: fd.limb, flashR: 24, ko: false, knockdown: true, otg: true, attacker: att, defender: def });
       return;
     }
-    const gasMul = def.gassed > 0 ? STAMINA.gassedDamage : 1;
     if ((def.state === 'knockdown' && inAir(def)) || def.state === 'splat') {
       // airborne: a juggle hit. Each one adds gravity, so juggles end after about four.
       const splat = def.state === 'splat';
-      def.combo = (def.combo || 1) + 1; def.comboBy = att.id;
+      def.combo = (def.combo || 1) + 1; def.comboBy = att.id; def.lastHitAt = sim.stepCount;
       sim.combo = { count: def.combo, by: att.id, on: def.id };
-      const scale = Math.max(0.4, 0.6 - 0.05 * def.airHits);
-      const dmg = Math.max(1, Math.round(fd.damage * scale * gasMul));
+      // the juggle's own scaling, or the combo's if that is lower by now
+      const scale = Math.min(Math.max(0.4, 0.6 - 0.05 * def.airHits), comboScale(COMBO_DMG, def.combo));
+      const dmg = comboDamage(def, fd.damage * scale);
       const ko = def.health - dmg <= 0;
       def.health = Math.max(0, def.health - dmg);
       def.airHits++; def.gScale = 1 + JUGGLE_G * def.airHits; def.flash = FLASH_STEPS;
@@ -1242,7 +1302,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     }
     // guards (Tekken): standing guard (holding back) stops high and mid; a croucher holding back
     // stops low; mids hit a croucher, lows hit a standing guard; throws are unblockable
-    const canGuard = def.grounded && def.backHeld && GUARD_STATES.has(def.state) || def.state === 'blockstun';
+    const canGuard = !(def.faint > 0) && (def.grounded && def.backHeld && GUARD_STATES.has(def.state) || def.state === 'blockstun');   // fainted: no guard
     const lowGuard = def.state === 'blockstun' ? !!def.crouch : isLow(def);
     const blocking = canGuard && !fd.unblockable && (lowGuard ? fd.height === 'low' : fd.height !== 'low');
     const hp = { x: pt.x - dir * 10, y: pt.y };   // burst sits on the striking limb, not the victim
@@ -1253,7 +1313,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       att.vx = -dir * 520;
       att.hitstop = def.hitstop = f60(3);   // a short freeze so the block reads
       def.facing = -dir; def.flash = 2;
-      spend(def, fd.cost / 2);            // blocking costs half the strike
+      spend(def, fd.cost * STAMINA.blockCost, { noFaint: true });   // blocking costs a third of the strike, never the last point
       if (lowGuard) safePlay(def.rig, ANIM.crouchBlockHit); else if (ANIM.blockHit) safePlay(def.rig, ANIM.blockHit);
       syncRig(def); rigUpd(def, 0.03); def.rig.events.length = 0;
       seatStrike(att, def, dir);
@@ -1261,12 +1321,14 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       onEvent({ type: 'block', x: hp.x, y: hp.y, dir, strength: fd.damage / 14, move, low: lowGuard, attacker: att, defender: def });
       return;
     }
-    // combos: a hit on a body still in hitstun extends the string; each link scales damage down
-    const chained = def.comboBy === att.id && (def.state === 'hitstun' || sim.stepCount - (def.hitstunEnd || -99) <= 6);
-    def.combo = chained ? def.combo + 1 : 1; def.comboBy = att.id;
+    // combos: a hit on a body still in hitstun extends the string, and so does every hit on a fainted
+    // body (so the decay keeps running through the faint instead of starting over)
+    const fadeChain = def.faint > 0 && (def.lastHitAt || -1) >= def.faintAt;
+    const chained = def.comboBy === att.id && (def.state === 'hitstun' || sim.stepCount - (def.hitstunEnd || -99) <= 6 || fadeChain);
+    def.combo = chained ? def.combo + 1 : 1; def.comboBy = att.id; def.lastHitAt = sim.stepCount;
+    if (!chained) def.comboDmg = 0;
     sim.combo = { count: def.combo, by: att.id, on: def.id };
-    const dmgScale = Math.max(0.5, 1 - 0.15 * (def.combo - 1));
-    def.health = Math.max(0, def.health - Math.max(1, Math.round(fd.damage * dmgScale * gasMul * (counter ? COUNTER_DMG : 1))));
+    def.health = Math.max(0, def.health - comboDamage(def, fd.damage * comboScale(COMBO_DMG, def.combo) * (counter ? COUNTER_DMG : 1)));
     def.flash = FLASH_STEPS; def.phase = null; def.move = null;
     def.wasLow = isLow(def);
     def.facing = -dir; def.crouch = false;
@@ -1340,7 +1402,8 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       else if (move === 'lungeCross') react = HAS_HITBACK ? 'hitBack' : 'hitHeavy';
       else if (fd.low && HAS_HITLOW) react = 'hitLow';
       else if (fd.low || move === 'lkick' || move === 'bodyBlow' || move === 'uptown') react = HAS_HITBODY ? 'hitBody' : 'hitLight';
-      const stun = (sim.horde && att.id >= 1 ? fd.hitstun * 0.5 : fd.hitstun) * (counter ? COUNTER_STUN : 1);
+      // hitstun shrinks with the hit's place in the combo, so a loop drops and the defender can act
+      const stun = (sim.horde && att.id >= 1 ? fd.hitstun * 0.5 : fd.hitstun) * (counter ? COUNTER_STUN : 1) * comboScale(COMBO_STUN, def.combo);
       const wasAttacking = trade || counter;
       const wasCrouching = !!def.wasLow;   // a croucher reels low: the reaction is layered over the crouch
       def.state = 'hitstun'; def.stun = f60(stun);
@@ -1547,7 +1610,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       }
       if (u.flash > 0) u.flash--;
       if (u.state === 'grabbed') {
-        if (e.attack === 'throw') breakThrow(u);
+        if (e.attack === 'throw' && !(u.faint > 0)) breakThrow(u);
         else if (--u.grabT <= 0) landThrow(u);
         u.buffer = null;
         continue;
@@ -1563,8 +1626,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       if (sim.phase === 'fight') regen(u);
       physics(u);
       syncRig(u);
-      // gassed: attacks start 40% slower
-      const rate = u.state === 'getup' ? GETUP_SPEED : (u.gassed > 0 && u.state === 'attack' && u.phase === 'startup') ? 1 / STAMINA.gassedStartup : 1;
+      const rate = u.state === 'getup' ? GETUP_SPEED : 1;
       rigUpd(u, DT * rate);
       drainRig(u);
       floorStep(u);

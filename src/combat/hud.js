@@ -10,7 +10,7 @@ const DISPLAY = "'Bungee', 'Arial Black', Impact, system-ui, sans-serif";
 const LABEL = "'Teko', 'Arial Narrow', 'Helvetica Neue', system-ui, sans-serif";
 const BAR_W = 420, BAR_H = 18, BAR_Y = 16, SKEW = 12, STRIP_H = 70, ST_H = 5;
 const SIDE = [NEON.cyan, NEON.pink];
-const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, break: NEON.cyan, gassed: NEON.pink, finish: NEON.amber };
+const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, break: NEON.cyan, faint: NEON.pink, finish: NEON.amber };
 
 export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) {
   const ctx = canvas.getContext('2d');
@@ -72,19 +72,24 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.shadowColor = color; ctx.shadowBlur = 14; ctx.lineWidth = 2.5; ctx.strokeStyle = color; ctx.stroke();
     ctx.shadowBlur = 0; ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.stroke(); ctx.restore();
 
-    // stamina: a thin amber bar under the health bar; gassed dims it and flickers a tag
+    // stamina: a thin amber bar under the health bar. Under 35 (two jabs from fainting) it turns
+    // pink and flashes, and its track pulses; fainted, it dims to a violet refill and a FAINT tag flickers
     const sy = y + BAR_H + 6, st = Math.max(0, Math.min(1, (u.stamina == null ? 100 : u.stamina) / 100));
-    const gassed = u.gassed > 0;
-    para(x + (side === 0 ? 30 : 0), sy, BAR_W - 30, ST_H, side); ctx.fillStyle = 'rgba(14,4,30,0.7)'; ctx.fill();
+    const faint = u.faint > 0, low = !faint && st < 0.35, blink = Math.floor(clock * 7) % 2 === 0;
+    para(x + (side === 0 ? 30 : 0), sy, BAR_W - 30, ST_H, side);
+    ctx.fillStyle = low && blink ? 'rgba(255,43,214,0.28)' : 'rgba(14,4,30,0.7)'; ctx.fill();
+    if (low) { ctx.save(); ctx.shadowColor = NEON.pink; ctx.shadowBlur = blink ? 10 : 4; ctx.lineWidth = 1; ctx.strokeStyle = blink ? NEON.pink : 'rgba(255,43,214,0.45)'; ctx.stroke(); ctx.restore(); }
     const sw = (BAR_W - 30) * st;
     if (sw > 0) {
       ctx.save(); para(x + (side === 0 ? 30 : 0), sy, BAR_W - 30, ST_H, side); ctx.clip();
-      ctx.globalAlpha = gassed ? 0.35 : 1;
-      ctx.shadowColor = NEON.amber; ctx.shadowBlur = gassed ? 0 : 8; ctx.fillStyle = st < 0.25 ? NEON.pink : NEON.amber;
+      const c = faint ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
+      ctx.globalAlpha = faint ? 0.6 : 1;
+      ctx.shadowColor = faint ? NEON.violet : low ? NEON.pink : NEON.amber; ctx.shadowBlur = faint ? 4 : low ? 12 : 8; ctx.fillStyle = c;
       ctx.fillRect(side === 0 ? x + 30 + (BAR_W - 30) - sw : x - SKEW, sy, sw + SKEW, ST_H);
       ctx.restore();
     }
-    if (gassed && Math.floor(clock * 8) % 2 === 0) neonText('GASSED', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 13, NEON.pink, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.6 });
+    if (faint && Math.floor(clock * 8) % 2 === 0) neonText('FAINT', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 13, NEON.pink, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.6 });
+    else if (low && blink) neonText('LOW', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 13, NEON.pink, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.6 });
 
     // name and pips
     const ly = sy + ST_H + 12;
