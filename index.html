@@ -19,6 +19,12 @@
   #credits { display: none; position: absolute; right: 2.2%; bottom: 9%; font: 500 15px/1 'Teko', sans-serif; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-decoration: none; padding: 4px 6px; }
   #credits:hover { color: #4df3ff; }
   html.attract #credits { display: block; }
+  /* the arcade flow (src/flow/): touch controls only while fighting, no HORDE hotkey button (the
+     mode select has HORDE), and the credits link only on the title screen, above the flow's overlay */
+  html.flow-on:not(.fl-play) .tc-stickzone, html.flow-on:not(.fl-play) .tc-cluster { display: none !important; }
+  html.flow-on .tc-top [data-tap="KeyG"] { display: none; }
+  html.fl-attract #credits { display: block; z-index: 6; }
+  html:not(.online) .tc-leave { display: none !important; }   /* online.js's LEAVE: only in an online match */
 </style>
 <script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
 </head>

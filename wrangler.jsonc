@@ -1,9 +1,14 @@
-// Static Worker serving the game at https://askscottpierce.com/stick-fight (see README, "Hosting").
-// No Worker script: the routes hand /stick-fight and /stick-fight/* to the assets, which
-// live under dist/stick-fight/ so the file path equals the URL path. scripts/build.sh fills it.
+// The game at https://askscottpierce.com/stick-fight (see README, "Hosting" and "Multiplayer").
+// The routes hand /stick-fight and /stick-fight/* to this Worker. Static files come from the
+// assets binding, which lives under dist/stick-fight/ so the file path equals the URL path
+// (vite build fills it). Only /stick-fight/api/* runs the script first: online rooms, one
+// Durable Object each (worker/index.ts). Anything else the assets don't have reaches the
+// script and gets a 404.
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "stick-fight",
   "account_id": "0223b96fe77599b23ff8ec7fcd32e2f1",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-11-01",
   "routes": [
     { "pattern": "askscottpierce.com/stick-fight", "zone_name": "askscottpierce.com" },
@@ -11,10 +16,17 @@
   ],
   "workers_dev": false,
   "preview_urls": false,
+  "observability": { "enabled": true },
   "assets": {
     "directory": "dist",
     // /stick-fight redirects to /stick-fight/, so the page's relative ./src/... paths resolve
     "html_handling": "auto-trailing-slash",
-    "not_found_handling": "none"
-  }
+    "not_found_handling": "none",
+    "run_worker_first": ["/stick-fight/api/*"]
+  },
+  "durable_objects": {
+    // One per room, named by the room code (worker/index.ts)
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
 }

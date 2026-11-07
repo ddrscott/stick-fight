@@ -8,6 +8,7 @@ import { buildHitboxes, buildHurtboxes, testHit } from './hitboxes.js';
 import { EMPTY_INPUT } from './input.js';
 import { createAI } from './ai.js';
 import { mulberry32 } from './rng.js';
+import * as dm from './dmath.js';   // bit-identical hypot on every engine (online play)
 
 let WALK = 180, RUN = 380, CROUCH_WALK = 70;           // replaced by the rig's own stride speeds (MOVE_DATA) so planted feet don't skate
 const JUMP_VY = 500, GRAVITY = 2000;
@@ -154,6 +155,7 @@ export function createCombat({ fighters, arena, input, onEvent = () => {}, makeR
     rig.x = x; rig.y = y; rig.facing = fc; rig.play('idle'); rig.update(0); rig.events.length = 0;
   }
   calibrate(fighters[0]);
+  const reachCalibrated = { ...reachSeen };   // reachSeen grows from real hits; a fresh match starts from this
 
   const sim = {
     units: [], bounds, get floors() { return floorsNow(); }, phase: 'intro', phaseTimer: 0, stepCount: 0, round: 1, timer: ROUND_TIME,
@@ -360,7 +362,10 @@ export function createCombat({ fighters, arena, input, onEvent = () => {}, makeR
       startWave();
     }
   }
-  sim.resetMatch = ({ seed = 1, skipIntro = false, startHealth = 100, introTime = INTRO_TIME, horde = null } = {}) => {
+  // fresh: also forget everything left over from earlier play (online: both machines must start a
+  // match from the same state, whatever each was showing before, e.g. different attract demos)
+  sim.resetMatch = ({ seed = 1, skipIntro = false, startHealth = 100, introTime = INTRO_TIME, horde = null, fresh = false } = {}) => {
+    if (fresh) freshState();
     sim.seed = seed; sim.startHealth = startHealth; sim.introTime = introTime;
     sim.hordeCfg = horde;   // a lost run restarts as a fresh run, not as a 1v1
     sim.horde = horde ? { goonHealth: 40, goonDifficulty: 0.5, heal: 6, count: 0, goonsAI: true, floor: 0, floorsCleared: 0, doorTurn: 0, wave: null, transit: null, ...horde } : null;
@@ -372,6 +377,19 @@ export function createCombat({ fighters, arena, input, onEvent = () => {}, makeR
     sim.startRound(1, { skipIntro });
     if (sim.horde) startWave();
   };
+
+  function freshState() {
+    if (sim.units.length > 2) sim.units.length = 2;
+    sim.units.forEach((u, i) => {
+      const { rig, controller, kind } = u;
+      for (const k of Object.keys(u)) delete u[k];
+      Object.assign(u, makeUnit(rig, i), { controller, kind });
+      if (typeof rig.reset === 'function') rig.reset({ full: true });
+    });
+    for (const k of Object.keys(reachSeen)) delete reachSeen[k];
+    Object.assign(reachSeen, reachCalibrated);
+    sim.log.length = 0; sim.callouts.length = 0; sim.hitstopActive = 0; sim.koSlow = 0; sim.finisher = false; sim.banner = ''; sim.bannerT = 0;
+  }
 
   // ---- helpers ---------------------------------------------------------------------
   function syncRig(u) {
@@ -527,7 +545,7 @@ export function createCombat({ fighters, arena, input, onEvent = () => {}, makeR
       const a = { x: p.x + dx, y: p.y + dy }, b = { x: q.x + dx, y: q.y + dy };
       const abx = b.x - a.x, aby = b.y - a.y, l2 = abx * abx + aby * aby;
       let t = l2 ? ((origin.x - a.x) * abx + (origin.y - a.y) * aby) / l2 : 0; t = Math.max(0, Math.min(1, t));
-      const c = { x: a.x + abx * t, y: a.y + aby * t }, d = Math.hypot(origin.x - c.x, origin.y - c.y) || 1;
+      const c = { x: a.x + abx * t, y: a.y + aby * t }, d = dm.hypot(origin.x - c.x, origin.y - c.y) || 1;
       if (d - r < bd) { bd = d - r; best = { x: c.x + (origin.x - c.x) / d * r, y: c.y + (origin.y - c.y) / d * r }; }
     }
     return best;
@@ -1585,7 +1603,7 @@ function segDistPt(p, a, b) {
   const abx = b.x - a.x, aby = b.y - a.y, l2 = abx * abx + aby * aby;
   let t = l2 ? ((p.x - a.x) * abx + (p.y - a.y) * aby) / l2 : 0;
   t = Math.max(0, Math.min(1, t));
-  return Math.hypot(p.x - a.x - abx * t, p.y - a.y - aby * t);
+  return dm.hypot(p.x - a.x - abx * t, p.y - a.y - aby * t);
 }
 // closest distance between two segments (exact for non-crossing; crossing gives 0)
 function segSeg(a, b, c, d) {

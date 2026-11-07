@@ -7,7 +7,8 @@
 //   right thumb  Tekken diamond of round arcade buttons, one per limb: 1 LP (U)  2 RP (I) /
 //                3 LK (J)  4 RK (K), plus GUARD (B), which means hold back. Stick + button gives
 //                the directional and crouch moves; two buttons together (1+3, 2+4) throw.
-//   top corner   HORDE (G), SOUND (the src/audio/ui.js settings panel) and fullscreen
+//   top corner   HORDE (G), SOUND (the src/audio/ui.js settings panel) and fullscreen; in an online
+//                match HORDE gives way to LEAVE (Escape)
 //
 // Every touch is tracked by its identifier, so a held stick and an attack press coexist.
 // Keys are reference counted per code.
@@ -23,7 +24,7 @@ const isTouch = (typeof matchMedia === 'function' && matchMedia('(pointer: coars
 if (isTouch) init();
 
 function init() {
-  const KEY_NAMES = { KeyB: 'b', KeyA: 'a', KeyD: 'd', KeyW: 'w', KeyS: 's', KeyJ: 'j', KeyK: 'k', KeyL: 'l', KeyI: 'i', KeyU: 'u', KeyG: 'g', Semicolon: ';', ShiftLeft: 'Shift' };
+  const KEY_NAMES = { Escape: 'Escape', KeyB: 'b', KeyA: 'a', KeyD: 'd', KeyW: 'w', KeyS: 's', KeyJ: 'j', KeyK: 'k', KeyL: 'l', KeyI: 'i', KeyU: 'u', KeyG: 'g', Semicolon: ';', ShiftLeft: 'Shift' };
   const held = new Map();               // code -> count of sources holding it
   const send = (type, code) => TARGET.dispatchEvent(new KeyboardEvent(type, { code, key: KEY_NAMES[code] || code, bubbles: true, cancelable: true }));
   const press = (code) => { const n = held.get(code) || 0; held.set(code, n + 1); if (!n) send('keydown', code); };
@@ -51,6 +52,7 @@ function init() {
     </div>
     <div class="tc-top">
       <button class="tc-btn tc-mini" data-tap="KeyG" aria-label="Toggle horde mode">HORDE</button>
+      <button class="tc-btn tc-mini tc-leave" data-tap="Escape" aria-label="Leave the online match">LEAVE</button>
       <button class="tc-btn tc-mini tc-sound" data-role="sound" aria-label="Sound settings">SND</button>
       <button class="tc-btn tc-mini" data-role="fullscreen" aria-label="Fullscreen"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
     </div>
@@ -195,6 +197,7 @@ function injectStyle() {
   }
   html.touch-ui #stage { touch-action: none; }
   html.pad-ui .tc-stickzone, html.pad-ui .tc-cluster { display: none; }
+  .tc-leave { --c: var(--pink); display: none; } html.online .tc-leave { display: flex; }   /* online play (src/net/) */
   .tc-root {
     --btn: clamp(58px, 18vmin, 74px); --gap: 10px;
     --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff;

@@ -9,6 +9,9 @@ import { createInput, EMPTY_INPUT } from './combat/input.js';
 import { createHUD } from './combat/hud.js';
 import { mulberry32 } from './combat/rng.js';
 import { gameAudio } from './audio/index.js';   // audio: all sound logic lives in src/audio/
+import { createOnline } from './net/online.js';   // online play: rooms, lockstep, readout (src/net/)
+import { createFlow } from './flow/index.js';     // the arcade flow: title, menus, ladder, continue, scores (src/flow/)
+import { setNet, adaptOnline } from './flow/netApi.js';
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
@@ -66,6 +69,7 @@ const trailPrev = [null, null];
 const blockSparks = [];                // hard glyphs at a blocked contact, drawn on the emissive layer
 let debug = false, paused = false, driven = false, sceneName = 'play', help = false;
 let attract = false;                   // the attract mode's demo bout is on (see ---- attract mode)
+let flow = null;                       // the arcade flow (see ---- arcade flow); null until it's made, off for ?scene= URLs
 
 function light(x, y, radius, color, intensity, ttl) { lights.push({ x, y, radius, color, intensity, ttl, max: ttl }); }
 function onEvent(ev) {
@@ -116,6 +120,7 @@ function onEvent(ev) {
       fx.dust({ x: ev.x, y: ev.y, dir: -ev.dir });
       break;
     case 'round':
+      if (look.floor) startOnFloor(look.floor);   // an arcade stage fought downstairs: every round starts there
       arena.liveColors = [P1_COLOR, sim.units[1].color || P2_COLOR];
       syncArenaToFx();
       break;
@@ -124,12 +129,18 @@ function onEvent(ev) {
       if (ev.unit) fx.dust({ x: ev.unit.x, y: ev.unit.y, dir: ev.unit.facing });
       break;
   }
+  if (flow && flow.on) flow.event(ev);   // flow: scoring
 }
 
 // extra horde goons need their own rigs
 const makeRig = (color) => { const g = sim.units[0]; return createFighter({ color, x: g.x, y: g.y, facing: -1 }); };
 const sim = createCombat({ fighters, arena, input, onEvent, makeRig, moves: MOVES || [], moveData: MOVE_DATA || null });
 gameAudio.attach(sim);   // audio
+// online: net.host()/join(code)/openLobby(); a match runs as the 'online' scene, stepped by online.advance
+// endMatch goes to the flow (its VERSUS ONLINE end screen) when the flow is running, and only
+// falls back to the demo for a ?scene= page; online.js's own "rival left" panel is closed in favor of it
+const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o),
+  endMatch: (reason) => { if (flow && flow.on) { flow.netEnded(reason); setTimeout(() => online.closeLobby(), 0); } else setScene('attract'); } });
 
 // ---- scenes ---------------------------------------------------------------------------
 // A scripted controller: walks into range, then presses each move in turn as soon as the
@@ -295,6 +306,14 @@ const scenes = {
     place(0, 330, 1); place(1, 630, -1);
   },
   'ai-fight-3'(o) { scenes['ai-fight']({ seed: seedOf(o, 1234) }); },
+  // an arcade ladder stage (src/flow/ladder.js): you against a named CPU with its own difficulty and
+  // style; its look (preset, color, floor) is applied by setScene from opts.stage
+  arcade(o) {
+    const st = o.stage || {};
+    if (arena.clearBodies) arena.clearBodies();
+    sim.setHuman(0); sim.setAI(1, st.difficulty != null ? st.difficulty : 0.6, { style: st.style || undefined });
+    sim.resetMatch({ seed: seedOf(o, st.seed || 1), fresh: true });
+  },
   'scripted-combo'(o) {
     sim.setController(0, 'script', script(['jab', 'cross', 'roundhouse']));
     sim.setController(1, 'none');
@@ -350,6 +369,13 @@ const scenes = {
   'floor-break-test'(o) { timeline(PHASES.floorBreak, o); },
   'jump-in-test'(o) { timeline(PHASES.jumpIn, o); },
   'anti-air-test'(o) { timeline(PHASES.antiAir, o); },
+  // an online match (src/net/online.js): each unit's controller reads the lockstep's input for the frame
+  online(o) {
+    if (!o.lockstep) { scenes.play(o); return; }
+    if (arena.clearBodies) arena.clearBodies();
+    sim.setController(0, 'net', o.lockstep.controller(0)); sim.setController(1, 'net', o.lockstep.controller(1));
+    sim.resetMatch({ seed: o.seed >>> 0, fresh: true });   // fresh: nothing carried over from this machine's demo
+  },
   ko(o) {
     sim.setAI(0, 0.8); sim.setAI(1, 0.8);
     sim.resetMatch({ seed: seedOf(o, 3), skipIntro: true, startHealth: 24, introTime: 0.8 });
@@ -361,7 +387,8 @@ function setScene(name, opts) {
   if (!scenes[name]) name = 'play';
   sceneName = name;
   attract = name === 'attract'; attractKO = false; idleMs = 0; lastPhase = '';
-  document.documentElement.classList.toggle('attract', attract);   // index.html hides the touch controls
+  document.documentElement.classList.toggle('attract', attract && !(flow && flow.on));   // index.html hides the touch controls (the flow has its own classes)
+  applyLook(name === 'arcade' && opts && opts.stage ? opts.stage : null);
   try { gameAudio.attach(attract ? null : sim); } catch (e) { /* audio: no whiff or pool watching during the demo */ }
   farDrawnW = 0; bodiesDrawn = true; // redraw the static layers once
   shakeRng = mulberry32(7);
@@ -433,12 +460,13 @@ function updateCamera(dt) {
 
 // ---- frame ----------------------------------------------------------------------------------
 function advance(ms) {
-  if (paused) return;
-  if (attractFlow(ms)) return;
+  if (flow && flow.on) { if (!flow.update(ms)) return; }   // flow: menus, stage cards, pause and results hold the sim
+  else { if (paused) return; if (attractFlow(ms)) return; }
   // the finisher beat: a KO by an ender runs at quarter speed
   const slow = sim.koSlow > 0 ? (sim.finisher ? 0.25 : 0.5) : 1;
-  sim.step(ms * slow);
-  if (attract && (sim.round > 1 || sim.phase === 'match')) { setScene('attract'); return; }   // one round per demo bout
+  if (online.active) online.advance(ms * slow); else sim.step(ms * slow);   // online: lockstep owns the stepping
+  if (flow && flow.on) { if (flow.afterStep()) return; }   // flow: demo bouts, round and match ends
+  else if (attract && (sim.round > 1 || sim.phase === 'match')) { setScene('attract'); return; }   // one round per demo bout
   const dt = ms / 1000;
   for (let i = lights.length - 1; i >= 0; i--) { lights[i].ttl -= dt; if (lights[i].ttl <= 0) lights.splice(i, 1); }
   for (let i = blockSparks.length - 1; i >= 0; i--) { blockSparks[i].ttl -= dt * slow; if (blockSparks[i].ttl <= 0) blockSparks.splice(i, 1); }
@@ -541,7 +569,10 @@ function render() {
   if (arena.drawForeground) arena.drawForeground(ctxs.foreground || ctxs.figures);
   fx.lights = [...(arena.lights || []), ...lights.map(l => ({ x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity * (l.ttl / l.max) }))];
   fx.render(camera);
-  hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused, help, attract: attract ? { touch: touchUI() } : null });
+  const fl = flow && flow.on ? flow.hud() : null;   // flow: score, names, no HUD under a menu, the title card only on the title
+  const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help,
+    attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl });
+  if (fl) flow.frame(layout);
 }
 function copyJoints(src, dst) {
   if (!src) return dst;
@@ -581,23 +612,65 @@ function attractFlow(ms) {
 // any key (but a bare modifier or a shortcut), any pad button, any touch or click starts a game
 window.addEventListener('keydown', (e) => {
   idleMs = 0;
-  if (!attract || e.repeat || /^(Meta|Control|Alt|Shift|OS|CapsLock)/.test(e.code) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!attract || (flow && flow.on) || e.repeat || /^(Meta|Control|Alt|Shift|OS|CapsLock)/.test(e.code) || e.metaKey || e.ctrlKey || e.altKey) return;
   startFromAttract();
 });
-input.onPad(() => { idleMs = 0; startFromAttract(); });
+input.onPad(() => { idleMs = 0; if (!(flow && flow.on)) startFromAttract(); });
 for (const t of ['pointerdown', 'touchstart']) {
   window.addEventListener(t, (e) => {
     idleMs = 0;
-    if (!attract) return;
+    if (!attract || (flow && flow.on)) return;   // with the flow on, a tap only wakes the sound (src/audio/); START is a button
     const el = e.target instanceof Element ? e.target : null;
     if (el && el.closest('[class^="sf-"], [class*=" sf-"], #credits')) return;   // the sound button, panel and credits link are left alone
     startFromAttract();
   }, { capture: true, passive: true });
 }
 
+// ---- arcade flow ---------------------------------------------------------------------------------
+// Plain index.html runs the flow (src/flow/): title and demo, mode select, the arcade ladder,
+// continue, game over, initials and the high score table, pause, and the online menus. It holds
+// or steps the sim through advance() above, and picks scenes through setScene. A ?scene= URL or
+// __gauntlet.setScene turns it off, and the code above behaves as it always has.
+const DEFAULT_LOOK = { preset: 'night-rain', color: P2_COLOR, floor: 0 };
+let look = DEFAULT_LOOK, lookPreset = 'night-rain';
+function applyLook(l) {
+  look = l || DEFAULT_LOOK;
+  if (look.preset !== lookPreset && typeof fx.preset === 'function') {
+    lookPreset = look.preset;
+    try { fx.preset(look.preset); } catch (e) { console.warn('[glue] fx.preset:', e.message); }
+    if (/-rain$/.test(look.preset) && arena.rainRegion && typeof fx.weather === 'function') fx.weather('rain', { rate: 160, wind: -0.3, region: arena.rainRegion });
+  }
+  const u = sim.units[1];
+  if (u && u.rig) { u.rig.color = look.color || P2_COLOR; u.color = u.rig.color; }
+}
+// a fight that starts on another floor (the lower one has no way down, so no floor break)
+function startOnFloor(f) {
+  const info = sim.floorInfo(f);
+  if (!info) return;
+  sim.floor = f; sim.floorBroken = true;
+  sim.units.forEach((u, i) => {
+    const sp = info.spawns[Math.min(i, info.spawns.length - 1)];
+    u.floor = f; u.x = sp.x; u.y = sp.y; u.facing = sp.facing;
+    u.rig.x = sp.x; u.rig.y = sp.y; u.rig.facing = sp.facing; u.rig.update(0);
+  });
+}
+const padUI = () => document.documentElement.classList.contains('pad-ui');
+setNet(adaptOnline(online));
+flow = createFlow({
+  sim, input,
+  scene: (name, opts) => setScene(name, opts),
+  sceneName: () => sceneName,
+  touchUI, padUI,
+  click: (kind) => { try { gameAudio.actions && gameAudio.actions.click(kind); } catch (e) { /* audio off */ } },   // audio: menu clicks through the public API
+  netBusy: () => !!online.busy,
+});
+window.__flow = flow;
+
 // ---- hotkeys -----------------------------------------------------------------------------------
 input.onKey((code) => {
-  if (attract) return;   // in the demo every key (pad Start included) starts a game instead, above
+  if (online.onKey(code)) return;   // online: no pause, reset or horde mid-match; Esc / Select asks to leave
+  if (flow && flow.on) { if (!flow.allowHotkey(code)) return; }   // flow: P, R and G belong to its pause menu
+  else if (attract) return;   // in the demo every key (pad Start included) starts a game instead, above
   if (code === 'KeyH') debug = !debug;
   else if (code === 'F1' || code === 'Slash') help = !help;
   else if (code === 'KeyP') paused = !paused;
@@ -610,14 +683,15 @@ input.onKey((code) => {
 // ---- loop + gauntlet hook ---------------------------------------------------------------------------
 let lastFrameMs = 16;
 let last = performance.now();
-setScene(params.get('scene') || 'attract');
+if (attractHome) flow.start({ room: online.roomFromUrl() });   // plain index.html: the arcade flow (?room=CODE opens JOIN with the code)
+else setScene(params.get('scene'));
 window.__gauntlet = {
   scenes: Object.keys(scenes),
-  setScene(name, opts) { driven = true; setScene(name, opts); render(); },
+  setScene(name, opts) { driven = true; flow.off(); setScene(name, opts); render(); },   // a scene on demand: the flow steps aside
   step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
   ready: false,   // true once fonts are in and the first frame has rendered
 };
-window.__game = { sim, camera, fx, arena, fighters, setScene, advance, get attract() { return attract; }, get sceneName() { return sceneName; } };
+window.__game = { sim, camera, fx, arena, fighters, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; } };
 // no load race for captures: fonts first, then one real rendered frame, then ready
 // the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
 // loads on its own); offline, the system fallbacks are used after a short wait

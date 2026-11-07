@@ -23,6 +23,11 @@
 // pokes to make them whiff and punishes the whiff, reads heights more often and blocks instead
 // of mashing out of hitstun, opens with string starters at all three heights (not jab spam),
 // jumps in more, and meets jump-ins with an uppercut or a standing guard.
+//
+// The arcade ladder's personalities (src/flow/ladder.ts), opt-in the same way, each a few knobs
+// on the normal CPU: 'turtle' guards more, waits at range and punishes whiffs; 'rushdown' runs in,
+// swings more and never backs off; 'grappler' throws up close and hunts the wall and the stairwell;
+// 'aerial' jumps in from further out and much more often.
 
 import { EMPTY_INPUT } from './input.js';
 import { matchStrings } from './strings.js';
@@ -39,6 +44,7 @@ const heightOf = (m) => (FRAME_DATA[m] ? FRAME_DATA[m].height : 'mid');
 
 export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   const show = style === 'showcase';
+  const turtle = style === 'turtle', rush = style === 'rushdown', grap = style === 'grappler', aerial = style === 'aerial';
   let queue = [];            // plan: acts run in order
   let act = null;
   let nextThink = 0, lastReactedTo = -1, lastFollowed = -1, lastCounter = -1, lastBlockedId = -1, lastHitBlocked = false, blockedStreak = 0, mixupTurn = 0;
@@ -102,6 +108,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
 
   function footsies(toward) {
     const k = rng();
+    if (turtle && k < 0.5) return k < 0.3 ? [blockFor(10 + irnd(8))] : [move(-toward, 4 + irnd(4))];
     if (k < 0.3) return [move(toward, 3 + irnd(4))];
     if (k < 0.55) return [move(-toward, 3 + irnd(4))];
     if (k < 0.7) return [move(toward, 2)];                      // feint
@@ -141,6 +148,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       return [move(toward, closer(reach('cross') + 24), dist > 260), move(-toward, 7), move(toward, closer(reach('jab') + 6), true), opener(opp, reach('jab') - 1)]; // bait
     }
     const pokeAt = reach('jab') - 4;
+    if (aerial && k < 0.55 && dist < 330) return jumpIn(toward, chance(0.5) ? 'sweep' : 'jab');
+    if (rush && k < 0.6) return [move(toward, closer(reach('jab') + 6), true), press(pick(['1', '1', '2', 'd1', '3']))];
+    if (grap && k < 0.45) return [move(toward, closer(80), true), attack('throw')];
     if (k < 0.3) return [move(toward, closer(reach('jab') + 6), true), attack(chance(0.6) ? 'cross' : 'jab')];   // dash-in to the pocket
     if (k < 0.45 && dist < 280) return jumpIn(toward, chance(0.5) ? 'sweep' : 'jab');                                      // jump-in
     if (k < 0.75) return [move(toward, closer(pokeAt), dist > 200), attack('jab')];                                       // walk and poke
@@ -192,7 +202,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // jump-ins: a dive kick on a croucher, and now and then from jump range (the anti-air game)
     const free = !DOWN_STATES.has(opp.state) && opp.state !== 'attack' && !HIT_STATES.has(opp.state) && me.stamina > 25;
     if (free && opp.crouch && dist > 100 && dist < 240 && chance(0.6)) return jumpIn(toward, 'jab');
-    if (free && dist > 110 && dist < 230 && chance(show ? 0.3 : 0.12 + 0.12 * difficulty)) return jumpIn(toward, 'jab');
+    if (free && dist > 110 && dist < (aerial ? 300 : 230) && chance(show ? 0.3 : aerial ? 0.55 : 0.12 + 0.12 * difficulty)) return jumpIn(toward, 'jab');
     if (recovering && dist < r('roundhouse') + 8 && me.stamina > 12 && chance((opp.hitConfirmed ? 0.3 : 0.4) + 0.6 * difficulty)) {
       return [attack(dist < r('cross') - 5 ? 'cross' : 'roundhouse')];
     }
@@ -231,15 +241,16 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (k < 0.7) return [move(toward, 2), blockFor(2), move(0, 3)]; // feint
       return [move(0, 4 + irnd(4))];
     }
-    const losing = me.health < 0.3 * sim.startHealth && me.health < opp.health;
+    const losing = !rush && me.health < 0.3 * sim.startHealth && me.health < opp.health;
+    if (grap && dist < 95 && !opp.crouch && me.stamina > 15 && chance(0.4)) return [move(toward, closer(78)), attack('throw')];
     if (losing && dist < 170 && !cornered && !wellBehindMe(well(me, sim), me, opp) && chance(0.4)) return [move(-toward, 10, chance(0.3))];
-    if (dist > (show ? 230 : 175)) return approach(me, opp, dist, toward);
-    const aggression = 0.3 + 0.5 * difficulty;
+    if (dist > (show ? 230 : turtle ? 140 : 175)) return approach(me, opp, dist, toward);
+    const aggression = Math.max(0.1, Math.min(0.95, 0.3 + 0.5 * difficulty + (rush ? 0.3 : turtle ? -0.2 : 0)));
     // spent: stay out and let the meter come back
     if (me.stamina < (show ? 38 : 28) || me.gassed > 0) return dist < 200 && !cornered && !wellBehindMe(well(me, sim), me, opp) ? [move(-toward, 10)] : [blockFor(10)];
     // the stairwell: send him over the railing when he's by it; never back up into it myself
     const w = well(me, sim);
-    if (wellBeyond(w, me, opp) && me.stamina > 30 && chance(0.35 + 0.45 * difficulty)) {
+    if (wellBeyond(w, me, opp) && me.stamina > 30 && chance(0.35 + 0.45 * difficulty + (grap ? 0.3 : 0))) {
       if (dist < 95) return [move(toward, closer(78)), attack('throw')];   // a throw toward the opening goes over
       if (dist > 140 && dist < 320) return [move(toward, (m, o) => Math.abs(o.x - m.x) < 150, true), { ...move(toward, 2, true), attack: 'cometCross' }];
       if (dist < r('spinKick') && chance(0.4)) return [attack('spinKick')];
@@ -350,7 +361,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       const guess = read ? h : pick(['high', 'mid', 'low']);
       // showcase: at the tip of his reach, step back so it whiffs (the punish reflex takes it from there)
       if (show && dist > reach(opp.move) - 20 && opp.move !== 'throw' && chance(0.45)) { queue = [move(-toward, 10 + irnd(6))]; act = null; }
-      else if (chance(show ? 0.85 : 0.1 + 0.65 * difficulty)) {
+      else if (chance(show ? 0.85 : 0.1 + 0.65 * difficulty + (turtle ? 0.25 : rush ? -0.1 : 0))) {
         if (guess === 'high' || guess === 'throw') queue = dist < reach('risingKnee') + 10 && chance(0.6) ? [duck(16 + irnd(6)), { ...press(chance(0.5) ? '4' : '2'), ok: true }] : [duck(18 + irnd(8))];
         else if (guess === 'low') queue = [lowGuard(18 + irnd(10))];
         else queue = [blockFor(18 + irnd(10))];
@@ -360,7 +371,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     // reflex (showcase): his strike whiffed and he's stuck in recovery: punish it, a string
     // starter or the launcher up close, the lunge from further, Comet Cross from a dash
-    if (show && opp.state === 'attack' && opp.phase === 'recovery' && !opp.hitConfirmed && opp.attackId !== lastPunish && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 15) {
+    if ((show || turtle) && opp.state === 'attack' && opp.phase === 'recovery' && !opp.hitConfirmed && opp.attackId !== lastPunish && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 15) {
       lastPunish = opp.attackId;
       if (chance(0.85)) {
         if (dist < reach('jab') - 12) queue = [press(pick(['d2', '2', '1']))];
@@ -402,7 +413,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     // reflex: in range and nobody has swung for a while: swing
     // (a plan in progress, like a jump-in or a step into kick range, is left alone)
-    const staleGap = show ? 60 : 24;
+    const staleGap = show ? 60 : turtle ? 48 : 24;
     if (dist < 120 && me.stamina > 25 && step - lastAttackStep > staleGap && step - lastStale > staleGap && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'attack' && !DOWN_STATES.has(opp.state)) {
       lastStale = step;
       queue = (opp.state === 'block' || blockedStreak >= 1) ? mixup(dist, toward, opp) : show ? [opener(opp, dist)] : [attack(dist < reach('jab') + 10 ? 'jab' : 'cross')]; act = null;
@@ -418,7 +429,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         queue = decide(me, opp, sim, dist, toward); act = queue.shift();
         // against a guard, think again fast so there is never a still beat
         const guarding = opp.state === 'block' || opp.state === 'blockstun';
-        nextThink = step + (guarding ? 2 : 4 + Math.round(6 * (1 - difficulty)) + irnd(3));
+        nextThink = step + (guarding ? 2 : Math.max(2, 4 + Math.round(6 * (1 - difficulty)) + irnd(3) - (rush ? 2 : 0)));
       }
       else act = null;
     }

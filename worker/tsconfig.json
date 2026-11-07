@@ -1,0 +1,16 @@
+{
+  // The Worker (worker/index.ts) type-checks on its own: Workers runtime types, no DOM.
+  // worker-configuration.d.ts comes from `npx wrangler types worker/worker-configuration.d.ts`.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": []
+  },
+  "include": ["index.ts", "worker-configuration.d.ts"]
+}

@@ -7,9 +7,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:worker": "mkdir -p dist/stick-fight && wrangler dev --port 8787",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
+    "types:worker": "wrangler types worker/worker-configuration.d.ts",
     "deploy": "vite build && wrangler deploy"
   },
   "devDependencies": {

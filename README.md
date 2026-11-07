@@ -9,32 +9,86 @@ A browser fighting game. Stick figures animated at Xiao Xiao quality, lit like a
 ```sh
 npm install
 npm run dev          # Vite on http://localhost:8077/ (also reachable through the dev tunnel)
-npm run typecheck    # tsc over src/
+npm run dev:worker   # the online-rooms Worker under wrangler dev on :8787 (Vite proxies ./api to it)
+npm run typecheck    # tsc over src/, then over worker/
 ```
+
+Online play needs both: `npm run dev` for the game and `npm run dev:worker` for the room server. Vite forwards `/api/*` (HTTP and WebSocket) to `http://127.0.0.1:8787/stick-fight/api/*`. To run the production layout instead, `npm run build` and then `npx wrangler dev` serves the game at `http://localhost:8787/stick-fight/` with the API beside it.
 
 The game is plain ES modules with canvas 2D for drawing and WebGL for the lighting composite. Vite serves it in development and bundles it for deploys. New modules can be TypeScript (`.ts`) next to the JavaScript ones; `tsconfig.json` has `allowJs` on and `checkJs` off, so add `// @ts-check` to a JS file to type-check it. The demo pages (`demo/*.html`) and the capture tool work against the dev server as before.
 
 ## Hosting
 
-The game is a static Cloudflare Worker (no Worker script, assets only) on two zone routes, `askscottpierce.com/stick-fight` and `askscottpierce.com/stick-fight/*`, on the Scott Personal Account. Every other path on askscottpierce.com stays with the main site. `/stick-fight` redirects to `/stick-fight/`, so the page's relative asset paths resolve.
+The game is a Cloudflare Worker on two zone routes, `askscottpierce.com/stick-fight` and `askscottpierce.com/stick-fight/*`, on the Scott Personal Account. Every other path on askscottpierce.com stays with the main site. `/stick-fight` redirects to `/stick-fight/`, so the page's relative asset paths resolve.
+
+Static files come from the assets binding (`dist/`). The Worker script (`worker/index.ts`) runs first only for `/stick-fight/api/*` (`run_worker_first`), where it serves online rooms through a Durable Object class `Room` (binding `ROOMS`, migration `v1` with `new_sqlite_classes: ["Room"]`). A request that reaches the script anywhere else gets a 404. The first deploy with the script creates the Durable Object class from that migration; there are no secrets, KV, D1 or cookies. `npm run types:worker` regenerates `worker/worker-configuration.d.ts` after a change to `wrangler.jsonc`.
 
 ```sh
 npm run deploy       # vite build into dist/stick-fight/ (file path = URL path), then wrangler deploy
 ```
 
-The places that hard-code the `stick-fight` path are `wrangler.jsonc` (routes) and `vite.config.ts` (`outDir`). Vite builds with `base: './'` and the game code uses only relative paths, so it runs the same at `/`, on the dev tunnel and at the subpath. The askscottpierce.com origin is shared by every app on it, so localStorage keys start with `stick-fight-`. The page carries the site's Plausible tag (`data-domain="askscottpierce.com"`), so visits count under the main site by path.
+The places that hard-code the `stick-fight` path are `wrangler.jsonc` (routes, `run_worker_first`), `worker/index.ts` (the API prefix), and `vite.config.ts` (`outDir`, and the dev proxy's rewrite). Vite builds with `base: './'` and the game code uses only relative paths, so it runs the same at `/`, on the dev tunnel and at the subpath. The askscottpierce.com origin is shared by every app on it, so localStorage keys start with `stick-fight-`. The page carries the site's Plausible tag (`data-domain="askscottpierce.com"`), so visits count under the main site by path.
 
 Serving the game publicly ships the vendored Strudel bundle, which is AGPL-3.0, so the game is AGPL-3.0 too (see License and credits).
 
-## Attract mode
+## Arcade flow
 
-Like an arcade cabinet, the page opens on a demo: two CPU fighters play one round on the full arena under the title, a blinking PRESS START (TAP TO PLAY on a touch screen) and a DEMO tag. After the KO a new bout starts under a new seed, so it doesn't repeat. The demo is silent; at most the music keeps playing.
+Plain `index.html` runs like a cabinet. Everything around a fight is one state machine in `src/flow/index.js`; every move between screens goes through one `go()` that refuses any move not in its transition table, so a double press can't skip a screen.
 
-- **Any key, any gamepad button (Start included) or a tap/click starts a game** (the `play` scene: you against the CPU). The key or button that started it is ignored until you let go, so it doesn't throw a punch. Bare modifiers (Shift, Ctrl, Alt, Cmd) don't start it, and neither does the sound button. A first tap also turns the sound on.
-- On a touch screen the touch controls stay hidden during the demo and come up when the game starts.
-- **Back to the demo:** 30 seconds with no input during a game (play or horde), or when a match ends (after the WINS card).
-- Only plain `index.html` does this. Any `?scene=` URL stays on its scene exactly as before (no demo, no timeout), and `?scene=attract` opens the demo on purpose.
-- The demo fighters are the CPU at difficulty 10 in its **showcase** flavor (`sim.setAI(i, 1, { style: 'showcase' })`, `src/combat/ai.js`): it keeps spacing at the edge of reach, steps out of pokes and punishes the whiff, reads and guards highs, mids and lows, opens with string starters at all three heights instead of jabs, blocks rather than mashing out of hitstun, keeps its stamina up, jumps in and meets jump-ins with an uppercut or a standing guard, and saves the stairwell for later in the round. The CPU you fight in `play` doesn't use it.
+**Title (attract).** Two CPU fighters play one round under the title, with a START button and a DEMO tag. Between demo bouts a high score table shows for 7 seconds, like a cabinet's attract loop; the arcade and horde tables take turns. The demo is silent; at most the music keeps playing.
+
+- **Only START starts.** Tap or click the START button, press Enter or Space, or press Start or A on a gamepad. A tap or click anywhere else, and every game key, only wakes the sound (browsers keep a page silent until it's touched). The sound button, its panel and the SOURCE & CREDITS link don't start anything either.
+- The START button sits where the title card's prompt is and fades the same way when a fighter is under it.
+
+**Mode select.** ARCADE, VERSUS ONLINE, HORDE, TRAINING. Arrows, WASD, the D-pad or the stick move; Enter, Space, A or Start pick; Esc, Backspace or B go back. The mouse hovers and clicks, and a tap picks.
+
+**Arcade.** Six stages up the building, best of 3 rounds each, against a named CPU that gets harder and plays its own way (opt-in AI styles in `src/combat/ai.js`):
+
+| Stage | Opponent | CPU | Style | Look |
+|---|---|---|---|---|
+| 1 | INTERN, "unpaid, and swinging like it" | 2 | the normal scrapper | night with rain, orange-amber |
+| 2 | HELPDESK, "have you tried blocking?" | 4 | turtle: guards more, waits at range, punishes whiffs | dry night, cyan |
+| 3 | COURIER, "delivers in thirty seconds or less" | 5.5 | rushdown: runs in, swings more, never backs off | the bright neon street, pink |
+| 4 | SECURITY, "will escort you out. through the railing" | 7 | grappler: throws up close, hunts the wall and the stairwell | night with rain, green |
+| 5 | JANITOR, "works the lower floor" | 8.5 | aerial: jumps in from further out, much more often | the lower floor, violet |
+| 6 | THE MANAGER (boss) | 10 | showcase, the expert the demo uses | neon street with rain, red |
+
+The ladder lives in `src/flow/ladder.js`. Each stage opens on a card (STAGE 3, YOU VS COURIER, the tagline, the ladder's pips); START or a tap skips it. A won match says YOU WIN, then STAGE CLEAR with the stage bonus; the boss says BOSS DOWN, then the credits roll and the score goes to the table. A lost (or drawn) match says YOU LOSE, then **CONTINUE?** with a 10 second countdown: YES retries the stage with the score set back to what it was when the stage started, NO or the countdown running out is GAME OVER.
+
+**Score** (shown in the HUD beside PLAYER 1, with the last bonus next to it):
+
+| For | Points |
+|---|---|
+| damage you deal | 10 per point of health |
+| a hit in a combo | 30 times its place past the first (2nd +30, 3rd +60, ...) |
+| counter hit | 200 |
+| ender | 500 |
+| wall splat, wall bounce, ground bounce | 300 |
+| floor break | 1,000 |
+| breaking a throw | 300 |
+| KO by an ender (FINISH) | 1,000 |
+| round won | 1,000, plus 100 per second left on the clock |
+| perfect round (no damage taken) | 5,000 more |
+| stage clear | 2,000 times the stage number |
+| horde: goon down / floor clear | 300 / 2,000 |
+
+**High scores.** A top-5 table for arcade and one for horde, kept in localStorage as `stick-fight-scores` (the origin is shared with the rest of askscottpierce.com). A score that makes the table gets three initials: type them, or use up and down to turn a letter and left and right to move, then ENTER; on touch, tap the arrows. Left alone for 30 seconds the initials go in as they stand.
+
+**Horde** is the floor-by-floor mode, scored the same way; it ends when the hero goes down, then GAME OVER, initials and the horde table. **Training** is the dummy scene, no score.
+
+**Pause** (P, Esc, pad Start, or the small pause button in the top-left corner on a touch screen) in arcade, horde and training: RESUME, RESTART STAGE (RESTART RUN in horde, RESET in training), QUIT TO TITLE. P, Esc or Start again resumes. Nothing runs while paused, the round clock included.
+
+**Idle.** 30 seconds with no input goes back to the title only where nothing is lost: mode select, the online menu and join screen, the end of an online match, and training. Never mid-match: an arcade or horde run left alone plays itself out (the CPU or the goons win), CONTINUE runs down, a table score is entered as it stands, and the cabinet is back on the demo. A paused game stays paused. An online match never times out.
+
+**Versus online.** HOST A GAME shows the room code, the link (COPY LINK, and SHARE where the phone has a share sheet) and WAITING FOR A FRIEND; JOIN A GAME takes the code from the keyboard or an on-screen keypad (tap, mouse, or D-pad and A). A `?room=CODE` link opens JOIN with the code filled in. When the match starts the menus go away; Esc, pad Select or the touch LEAVE button asks to leave (that's `online.js`'s confirm, not the pause menu). When either side leaves, the other gets YOUR RIVAL LEFT (or CONNECTION LOST) and goes back to the online menu. See Multiplayer for the network side.
+
+**Touch.** The stick and the buttons show only while fighting; menus are tapped directly. The sound button stays in the top-right gutter on every screen.
+
+**Swallowed presses.** The key or button that confirmed a menu, skipped a stage card or resumed from pause is ignored until it's let go, so it doesn't throw a punch.
+
+**`?scene=` URLs skip all of this** and behave as before: the scene they name, no menus, no timeout, and the old hotkeys (G horde, R reset, P pause). `?scene=attract` is the old demo, where any key starts `play`. `__gauntlet.setScene` and `__game.setScene` also turn the flow off, so the capture tool works on plain `index.html` too.
+
+The demo fighters are the CPU at difficulty 10 in its **showcase** flavor (`sim.setAI(i, 1, { style: 'showcase' })`, `src/combat/ai.js`): it keeps spacing at the edge of reach, steps out of pokes and punishes the whiff, reads and guards highs, mids and lows, opens with string starters at all three heights instead of jabs, blocks rather than mashing out of hitstun, keeps its stamina up, jumps in and meets jump-ins with an uppercut or a standing guard, and saves the stairwell for later in the round. THE MANAGER fights the same way.
 
 ## Controls
 
@@ -55,9 +109,10 @@ Tekken-style, one button per limb, from the fighter's own point of view:
 - **Directions:** d+1 low jab, d+2 uppercut (launcher), d+3 low kick, d+4 sweep, f+1 body blow, f+2 lunge cross, f+4 overhead (mid, beats crouch), b+4 spin kick. Release down, then 2 = rising uppercut, 4 = rising knee (both launch).
 - **Heights:** high = jab, cross, roundhouse, spin kick, spin heel. Low = low jab, low kick, sweep. Everything else is mid.
 - **Stamina** (the thin bar under health): every strike, jump and run spends it; it comes back 0.6s after your last attack, slowly while guarding. Blocking a hit costs half its price. At zero you're **gassed** for 1.2s: slower startups, no run, no enders, 15% more damage taken.
-- G toggles horde mode, F1 shows the move list, R resets, P pauses, H shows hitboxes.
-- **Sound:** M turns the music on and off, N skips to the next track. The speaker button in the bottom-left corner (on a phone, the speaker button in the touch layer's top-right gutter, under HORDE) opens the sound panel: a SOUND switch for everything, a MUSIC switch, the track playing with NEXT, and MUSIC and EFFECTS volume sliders. The settings are remembered in localStorage (`stickfight-audio`). Browsers keep a page silent until it's touched, so the first tap or key starts the sound (the button pulses until then).
-- Gamepad, USB or Bluetooth (any pad the browser reports with the standard mapping: Xbox, PlayStation, 8BitDo, most Android pads): X/Y/A/B = 1/2/3/4, D-pad or left stick moves, L1/L2 guard, R1 throw (1+3), R2 run, Start pause (the move list shows while paused), Select restart, R3 horde. Pressing any button hides the touch controls; touching the screen brings them back. Browsers don't count a pad press as a user gesture, so tap the screen once to turn the sound on.
+- P or Esc pauses (the pause menu, see Arcade flow), F1 shows the move list, H shows hitboxes. On a `?scene=` page G toggles horde mode, R resets and P just pauses.
+- **Online match:** Esc (pad Select, touch LEAVE in the top-right gutter, where HORDE usually sits) asks whether to leave. Pause, reset, horde and the difficulty keys do nothing in an online match; H and F1 still work, since they only change your own screen.
+- **Sound:** M turns the music on and off, N skips to the next track. The speaker button in the bottom-left corner (on a phone, the speaker button in the touch layer's top-right gutter) opens the sound panel: a SOUND switch for everything, a MUSIC switch, the track playing with NEXT, and MUSIC and EFFECTS volume sliders. The settings are remembered in localStorage (`stickfight-audio`). Browsers keep a page silent until it's touched, so the first tap or key starts the sound (the button pulses until then).
+- Gamepad, USB or Bluetooth (any pad the browser reports with the standard mapping: Xbox, PlayStation, 8BitDo, most Android pads): X/Y/A/B = 1/2/3/4, D-pad or left stick moves, L1/L2 guard, R1 throw (1+3), R2 run, Start pause. In menus the D-pad or stick moves, A or Start picks, B goes back. On a `?scene=` page Select restarts and R3 toggles horde. Pressing any button hides the touch controls; touching the screen brings them back. Browsers don't count a pad press as a user gesture, so tap the screen once to turn the sound on.
 - Touch devices get a floating stick (down crouches, away guards) and a 2x2 diamond of arcade buttons in the same 1 2 / 3 4 layout plus GUARD (src/touch.js).
 
 ### Strings and enders
@@ -93,15 +148,37 @@ Trick shots: a **wall splat** sticks the body to the wall for 0.4s, open for one
 
 URL `?scene=NAME` picks a scene: attract (the demo, which plain `index.html` opens on), play, dummy, ai-fight, ai-fight-2, ai-fight-3, scripted-combo, combo-test, string-test, ko, horde, horde-ai, horde-floors-ai, plus the test timelines mixup-test, stamina-test, string-ender-test, wall-test, juggle-test, trade-test, throw-test, floor-break-test, jump-in-test, anti-air-test (`__gauntlet.setScene(name, { only: k })` runs one phase of a timeline).
 
+## Multiplayer
+
+Two players, each on their own phone or computer, fight online. One hosts a room and gets a four-character code and a share link (`https://askscottpierce.com/stick-fight/?room=K7QX`); the other opens the link or types the code. Codes skip 0, O, 1, I and L so they survive being read aloud.
+
+**How it fits together.**
+
+- `worker/index.ts`: `POST /stick-fight/api/rooms` makes a room and returns its code; `GET /stick-fight/api/rooms/<code>/ws?role=host|guest` opens the room's WebSocket. Each room is one Durable Object (hibernating WebSockets). It passes every message from one player to the other unchanged, and writes only its own `{"t":"sys"}` notices: welcome, peer joined or left, and errors (`no-room`, `full`). A room with nobody connected is cleared 30 minutes after its last use.
+- `src/net/link.js`: the WebSocket carries the WebRTC offer, answer and ICE candidates; game packets then go peer to peer over a DataChannel (unordered, no retransmits). Public STUN only (Cloudflare and Google), no TURN. If the DataChannel isn't open within 5 seconds, packets go through the room's WebSocket instead (the relay); a DataChannel that opens later takes over. `?relay=1` on the URL forces the relay, for testing.
+- `src/net/lockstep.js`: delay-based lockstep. Both machines run the whole sim. Each samples its own input a few frames ahead (the input delay) and sends it with every input the other side hasn't acknowledged, so a lost packet is covered by the next one. Frame f runs only when both players' inputs for f are in; otherwise it waits. The delay starts at 3 frames (25 ms at 120 Hz) and follows the measured ping (one way, plus one send gap, plus twice the jitter), between 3 and 12 frames, one frame a second at most. The side that's ahead gives back a little time so neither waits every frame. Every 30 frames each side hashes the sim (`src/net/hash.js`: positions, velocities, states, health, stamina, timers and every rig joint, by exact bits) and sends the hash; on a mismatch both show DESYNC and log the fields that differ to the console.
+- `src/net/codec.js`: an input is 11 bits (direction, jump, guard, crouch, run, the four limbs, and whether it came from the touch stick, which turns off double-tap run). An input packet is 14 bytes plus 2 per frame.
+- `src/net/online.js`: the session (host, join, start, leave), the connection readout (bottom-left; centered under the timer on a touch screen: `P2P 13 MS · DELAY 5`, amber when relayed, plus DESYNC or WAITING FOR RIVAL), and a lobby panel. The host is P1 (white, left), the guest P2 (orange); the HUD names them YOU and RIVAL. When both are linked the host picks the seed and both start the `online` scene from frame 0. Rematches follow by themselves: after the WINS card the sim reseeds from the match seed the same way on both machines. If the other player leaves, or nothing arrives for 10 seconds, the match ends; with the arcade flow running that's its VERSUS ONLINE end screen (YOUR RIVAL LEFT, CONNECTION LOST), and on a `?scene=` page it's a notice and the demo.
+
+**Starting a match.** The game's menus call the API on `window.__net` (also returned by `createOnline` in `main.js`): `net.host()` resolves to `{ code, url }`, `net.join(code)`, `net.leave()`, `net.roomFromUrl()` reads `?room=`, and `net.on('status' | 'connected' | 'start' | 'peer-left' | 'end' | 'desync', fn)`. `net.openLobby('menu' | 'host' | 'join', code?)` opens the built-in panel (keyboard, gamepad and touch: arrows or D-pad move, Enter or A presses, Esc or B backs out, and on the code box up and down turn the letter like arcade initials). `net.busy` is true while that panel is up, so the title screen shouldn't start a game then. The menu flow (`src/flow/`) owns the VERSUS ONLINE entry, its own HOST and JOIN screens and the `?room=` hand-off; it talks to `online.js` only through `src/flow/netApi.js` (`adaptOnline`), ignores its own input while `net.busy`, and gets the end of a match through the `endMatch` hook in `main.js` (which closes the lobby's notice in favor of the flow's screen).
+
+**Determinism.** Lockstep only works if both machines compute the same sim to the last bit. Run the same recorded input log through the sim in Chromium, Firefox and WebKit, with the builtin `Math.sin`, `cos`, `atan2`, `acos`, `hypot` and `pow`, and the rig's joints differ in the last bit by step 6 to 40 in every engine pair (the outcome still matched over 100 seconds, but every hash check would fail and the drift can flip a close hit). The sim and the rig now use `src/combat/dmath.js` instead: fdlibm's polynomials written with only + - * / and `Math.sqrt`, which IEEE 754 makes identical on every engine. With it, all three engines produce identical hashes on every step over 6000 steps, for a scripted bout and for a CPU-vs-CPU match. A match also starts with `sim.resetMatch({ fresh: true })`, which clears every leftover of earlier play (unit fields, the rig's jump arc and fall surfaces, the reach table the sim learns from hits): without it, each player's attract demo leaked in and the first hash check already failed.
+
+**Still to do: rollback.** The lockstep keeps every frame's inputs for both players in a 1024-frame history and moves the sim only through `simulate(frame)`, so rollback can replace it: guess the missing remote input (repeat the last), save the sim state each frame, and when the real input differs, restore and re-run `simulate()` from that frame. What's missing is the save and restore. The sim's state is plain objects and would serialize, but the rig (`src/fighter/index.js`) keeps its animation state (current keys, springs, the ragdoll's points, crossfades) in closures, so it needs a `getState()`/`setState()`, and re-simulating 8 or so frames per frame has to fit a phone's frame budget, which wants the events (sound, particles) muted during a re-run.
+
 ## Layout
 
 - `index.html`, `src/main.js` — the game. Wires the modules below.
 - `src/fighter/` — stick figure rig, poses, animation. Draws to a 2D context.
 - `src/fx/` — lighting and effects compositor (WebGL), particles, camera shake.
 - `src/combat/` — input, state machine, frame data (heights, stamina costs, enders), the string table (`strings.js`), hitboxes, AI, the neon HUD, rounds.
+- `src/flow/` — the arcade flow (see Arcade flow): `index.js` the state machine and its screens, `ui.js` the DOM overlay (neon, hard corners, scales with the stage), `menuInput.js` keys and pad for menus, `ladder.js` the six stages, `scores.js` score rules and the high score tables, `netApi.js` the seam to `src/net/online.js`.
+- `src/net/` — online play (see Multiplayer): `online.js` session, readout and lobby; `link.js` WebSocket and WebRTC; `lockstep.js` netcode; `codec.js` wire format; `hash.js` state hash.
+- `worker/` — the Worker script and its room Durable Object (`index.ts`), with its own `tsconfig.json`.
+- `src/combat/dmath.js` — bit-identical trig for the sim and the rig on every browser engine (see Multiplayer, Determinism).
 - `src/touch.js` — mobile touch controls (synthetic key events, active only on coarse pointers).
 - `src/arena/` — the stage: geometry, background art, static lights.
-- `src/audio/` — sound effects and music (see Sound). `main.js` makes two calls into it: `gameAudio.attach(sim)` and `gameAudio.event(ev)` from its event router. During the attract demo it holds the events back and attaches `null` instead of the sim (so the whiff watcher is quiet too), then attaches the sim again when a game starts.
+- `src/audio/` — sound effects and music (see Sound). `main.js` makes two calls into it: `gameAudio.attach(sim)` and `gameAudio.event(ev)` from its event router. During the attract demo (and the menus over it) it holds the events back and attaches `null` instead of the sim (so the whiff watcher is quiet too), then attaches the sim again when a game starts.
 - `demo/*.html` — one page per module so each can be judged alone.
 - `window.__game.advance(ms)` steps the game without drawing a frame (fast, for counting events over a long demo); `window.__gauntlet.step(ms)` steps and draws.
 - `gauntlet/` — the quality loop: the brief (with the owner requirements), the capture tool and the workbench log. The reference images and per-round critic captures stay out of the public repo (see `.gitignore`); the reference images belong to their owners.
@@ -140,8 +217,9 @@ The sound panel and the attract screen link back here.
 
 ## Practices
 
-- No framework, no bundler, no npm deps at runtime. Playwright (global) only for `gauntlet/capture.mjs`.
+- No framework, no npm deps at runtime. Game modules stay plain `.js` (not `.ts`) so the capture tool's raw file server can load them; the Worker is TypeScript, built by wrangler. Playwright (global) only for `gauntlet/capture.mjs`.
 - Logical resolution 1280x720, DPR-aware. Everything positions in logical pixels.
 - Each module owns its folder and its demo page. Cross-module contracts live in `gauntlet/BRIEF.md`.
 - Commit after every gauntlet round with the round number in the subject.
+- The capture tool serves files raw, without Vite, so anything `main.js` imports has to be plain JavaScript; that's why `src/flow/` is JS with JSDoc types rather than TypeScript.
 - Capture output is large (about 1.3 MB per frame). Delete capture folders when a round is done; `gauntlet/captures/` is gitignored.

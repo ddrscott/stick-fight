@@ -11,6 +11,7 @@
 // (minus the pose's `air`), so crouches, walks and falls get their height from the
 // legs and never float or sink.
 
+import * as dm from '../combat/dmath.js';   // bit-identical trig on every engine: online play runs this rig on both machines
 const DEG = Math.PI / 180;
 
 // Segment lengths, ~130px tall standing.
@@ -25,15 +26,15 @@ const EASE = {
   in: t => t * t,
   out: t => 1 - (1 - t) * (1 - t),
   inOut: t => (t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t)),
-  sine: t => 0.5 - 0.5 * Math.cos(Math.PI * t),
+  sine: t => 0.5 - 0.5 * dm.cos(Math.PI * t),
   // Wind-up: slow start, accelerating into the strike.
   anticip: t => t * t * t,
   // Strike: arrives in a frame or two, then sits.
-  snap: t => 1 - Math.pow(1 - t, 4),
+  snap: t => 1 - dm.pow(1 - t, 4),
   // Settle with a small overshoot past the target.
   back: t => { const s = 1.4; t -= 1; return 1 + t * t * ((s + 1) * t + s); },
   // Recovery: biggest step first, then roughly halving each frame (58%, 30%, 10%, 2% at 40ms steps over 160ms).
-  settle: t => 1 - Math.pow(1 - t, 3),
+  settle: t => 1 - dm.pow(1 - t, 3),
 };
 
 // Pose fields. l* = far side limbs (lead side when facing right), r* = near side.
@@ -45,13 +46,13 @@ const EASE = {
 // position so it stays put while the hip moves, instead of sliding with the angles.
 function leg(dx, dy) {
   const U = RIG.upperLeg, L = RIG.lowerLeg, max = U + L - 0.5;
-  let d = Math.hypot(dx, dy);
+  let d = dm.hypot(dx, dy);
   if (d > max) { dx *= max / d; dy *= max / d; d = max; }
-  const phi = Math.atan2(dx, dy);
-  const alpha = Math.acos(Math.max(-1, Math.min(1, (U * U + d * d - L * L) / (2 * U * d))));
+  const phi = dm.atan2(dx, dy);
+  const alpha = dm.acos(Math.max(-1, Math.min(1, (U * U + d * d - L * L) / (2 * U * d))));
   const a1 = phi + alpha;
-  const kx = Math.sin(a1) * U, ky = Math.cos(a1) * U;
-  return [a1 / DEG, Math.atan2(dx - kx, dy - ky) / DEG];
+  const kx = dm.sin(a1) * U, ky = dm.cos(a1) * U;
+  return [a1 / DEG, dm.atan2(dx - kx, dy - ky) / DEG];
 }
 // Both legs from the hip offset hx, hip height H above the floor, and each foot's x in figure
 // space (so a foot keeps the same x across keys while hx changes). lift/rlift raise a foot.
@@ -85,11 +86,11 @@ const walkHalf = Array.from({ length: WALK_KEYS }, (_, i) => {
   const plant = WALK_STEP / 2 - u * WALK_STEP;                  // planted foot, linear = travel speed
   const sm = u * u * (3 - 2 * u);
   const swing = -WALK_STEP / 2 + WALK_STEP * (1 - (1 - u) * (1 - u));   // reaches under the hip early, no flick
-  const lift = 2 + 10 * Math.pow(Math.sin(Math.PI * u), 1.6);
-  const dip = Math.max(0, Math.sin(Math.PI * Math.min(1, u / 0.3)));           // just after contact
-  const rise = Math.max(0, Math.sin(Math.PI * Math.min(1, Math.max(0, (u - 0.2) / 0.6)))); // around passing
+  const lift = 2 + 10 * dm.pow(dm.sin(Math.PI * u), 1.6);
+  const dip = Math.max(0, dm.sin(Math.PI * Math.min(1, u / 0.3)));           // just after contact
+  const rise = Math.max(0, dm.sin(Math.PI * Math.min(1, Math.max(0, (u - 0.2) / 0.6)))); // around passing
   const H = 52 - 4 * dip + 4 * rise;                            // low after contact, high at passing
-  const arm = Math.cos(Math.PI * u);                            // +1: near arm forward
+  const arm = dm.cos(Math.PI * u);                            // +1: near arm forward
   return K({ ...F(0, H, plant, swing, 0, lift), torso: 7, bend: 1, head: -3, tw: arm * 6,
     la: [55 - 34 * arm, 140 - 24 * arm - 8 * dip], ra: [30 + 34 * arm, 150 + 20 * arm - 8 * dip] },
     WALK_HALF / WALK_KEYS, 'linear', i === 0 ? 'footstep' : null);
@@ -143,7 +144,7 @@ function adapted(def, e, aim = 0) {
     if (mode !== 'step') { const r = i - ai; w = r < -2 ? 0 : r === -2 ? 0.4 : r === -1 ? 0.75 : r <= 2 ? 1 : r === 3 ? 0.6 : r === 4 ? 0.25 : 0; lead = 0; rear = 0; }
     else { w = i < ai - 2 ? 0 : i === ai - 2 ? 0.5 : i === ai - 1 ? 0.8 : 1; lead = i >= ai - 2 ? 1 : 0; rear = rf >= 0 && i >= rf ? 1 : 0; }
     if (!w && !lead && !rear) return k;
-    const p = k.p, foot = a2 => ({ x: Math.sin(a2[0] * DEG) * RIG.upperLeg + Math.sin(a2[1] * DEG) * RIG.lowerLeg, y: Math.cos(a2[0] * DEG) * RIG.upperLeg + Math.cos(a2[1] * DEG) * RIG.lowerLeg });
+    const p = k.p, foot = a2 => ({ x: dm.sin(a2[0] * DEG) * RIG.upperLeg + dm.sin(a2[1] * DEG) * RIG.lowerLeg, y: dm.cos(a2[0] * DEG) * RIG.upperLeg + dm.cos(a2[1] * DEG) * RIG.lowerLeg });
     const lf = foot(p.ll), rr = foot(p.rl), hx = p.hx + e * w;
     const o = { ...p, hx };
     if (mode === 'air') { o.ll = p.ll; o.rl = p.rl; }
@@ -577,8 +578,8 @@ Object.assign(MOVE_DEFS, {
   ] },
   // Crouch walk: short shuffling steps on the IK, feet locked while down.
   crouchWalk: { loop: true, blend: 100, speed: 70, keys: [0, 1, 2, 3].map(i => {
-    const u = i / 4, plant = 14 - 28 * u, swing = -14 + 28 * (1 - (1 - u) * (1 - u)), lift = 1 + 6 * Math.sin(Math.PI * u);
-    return K({ ...crouchP, ...F(0, CH - Math.sin(Math.PI * u) * 1.5, plant, swing, 0, lift) }, 100, 'linear', i === 0 ? 'footstep' : null);
+    const u = i / 4, plant = 14 - 28 * u, swing = -14 + 28 * (1 - (1 - u) * (1 - u)), lift = 1 + 6 * dm.sin(Math.PI * u);
+    return K({ ...crouchP, ...F(0, CH - dm.sin(Math.PI * u) * 1.5, plant, swing, 0, lift) }, 100, 'linear', i === 0 ? 'footstep' : null);
   }).flatMap((k, i, a) => i === a.length - 1 ? [k, ...a.map(mirror)] : [k]) },
   crouchBlock: { blend: 50, keys: [
     K({ ...crouchP, ...F(-3, CH - 1, LF + 2, RF - 2), torso: 22, bend: 8, head: -2, la: [70, 176], ra: [56, 170] }, 80, 'out'),
@@ -1046,7 +1047,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     }
     if (strikeTimer > 0 && !strikeDir && move.limb && prevJoints[move.limb]) {
       const a = prevJoints[move.limb], b = f.joints[move.limb];
-      const vx = b.x - a.x, vy = b.y - a.y, v = Math.hypot(vx, vy);
+      const vx = b.x - a.x, vy = b.y - a.y, v = dm.hypot(vx, vy);
       strikeDir = v > 2 ? { x: vx / v, y: vy / v } : { x: f.facing, y: 0 };
     }
   }
@@ -1116,7 +1117,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     if (!rag) {
       rag = { pts: {}, len: [], t: 0, rest: 0, splat: 0, bounceNext: false, landed: false, wall };
       for (const k in J) rag.pts[k] = { x: J[k].x, y: J[k].y, px: J[k].x, py: J[k].y, r: k === 'head' ? RIG.headR * f.scale : RIG.limbW / 2 * f.scale };
-      rag.len = BONES.map(([a, b]) => Math.hypot(J[a].x - J[b].x, J[a].y - J[b].y));
+      rag.len = BONES.map(([a, b]) => dm.hypot(J[a].x - J[b].x, J[a].y - J[b].y));
       f.airborne = true; reactL = null;
       f.current = { move: 'airborne', t: 0, frame: 0, done: false };
     }
@@ -1132,10 +1133,12 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
   // arms thrown up and out, legs hanging, and slides down it for 0.4s before falling.
   // Round reset: drop the point simulation, any crossfade, reaction and spring state, and stand in
   // idle at the current x, y.
-  function reset() {
+  // full: also forget the jump arc, the strike direction and the fall surfaces (a fresh match, online)
+  function reset(opt = {}) {
     rag = null; f.airborne = false; fadeFrom = null; fadeT = 0; reactL = null; vel = null; lastBase = null;
     for (const k in springs) delete springs[k];
     f.pose = clonePose(STANCE); move = null; limbHot = false; strikeTimer = 0;
+    if (opt.full) { airTrack = null; landEase = null; lastHipLock = null; strikeDir = null; prevJoints = null; keys = []; ki = 0; kt = 0; shifted = false; dropped = false; f.walls = null; f.treads = null; f.floorY = null; }
     play('idle'); update(0); f.events.length = 0;
   }
   function wallSplat(side) {
@@ -1143,7 +1146,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const P = rag.pts, sc = f.scale;
     if (!side) side = f.walls ? (Math.abs(P.hip.x - f.walls[1]) < Math.abs(P.hip.x - f.walls[0]) ? 1 : -1) : -f.facing;
     const wx = f.walls ? f.walls[side > 0 ? 1 : 0] : P.hip.x + side * 20;
-    const s2 = side, v = (x, y) => ({ x, y }), add = (a2, ang, len) => v(a2.x + Math.sin(ang * DEG) * len * sc * -s2, a2.y + Math.cos(ang * DEG) * len * sc);
+    const s2 = side, v = (x, y) => ({ x, y }), add = (a2, ang, len) => v(a2.x + dm.sin(ang * DEG) * len * sc * -s2, a2.y + dm.cos(ang * DEG) * len * sc);
     // Angles here are from straight down, positive pointing away from the wall.
     const gnd = f.floorY != null ? f.floorY : f.y;
     const hipY = Math.min(P.hip.y, gnd - 92 * sc);   // high enough to slide down the wall
@@ -1158,7 +1161,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     for (const k in pose) { const r = P[k].r; edge = Math.max(edge, pose[k].x * s2 + r); low = Math.max(low, pose[k].y + r); }
     const dx = wx - s2 * edge, dy = Math.min(0, gnd - low);
     for (const k in pose) { const q = P[k]; q.x = q.px = pose[k].x + dx; q.y = q.py = pose[k].y + dy; }
-    rag.len = BONES.map(([a2, b2]) => Math.hypot(P[a2].x - P[b2].x, P[a2].y - P[b2].y));
+    rag.len = BONES.map(([a2, b2]) => dm.hypot(P[a2].x - P[b2].x, P[a2].y - P[b2].y));
     rag.splat = 0.4; rag.wallDone = true; rag.wallSide = s2;
     f.events.push({ type: 'wall', move: 'airborne', side: s2 });
   }
@@ -1186,7 +1189,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       }
       for (let it = 0; it < 8; it++) {
         BONES.forEach(([a, b], i) => {
-          const A2 = P[a], B2 = P[b], dx = B2.x - A2.x, dy = B2.y - A2.y, d = Math.hypot(dx, dy) || 1, k2 = (d - rag.len[i]) / d * 0.5;
+          const A2 = P[a], B2 = P[b], dx = B2.x - A2.x, dy = B2.y - A2.y, d = dm.hypot(dx, dy) || 1, k2 = (d - rag.len[i]) / d * 0.5;
           A2.x += dx * k2; A2.y += dy * k2; B2.x -= dx * k2; B2.y -= dy * k2;
         });
         const ground = f.floorY != null ? f.floorY : f.y;
@@ -1225,7 +1228,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const J = {}; let speed = 0, onFloor = 0;
     const ground = f.floorY != null ? f.floorY : f.y;
     let surf = -Infinity;
-    for (const k in P) { J[k] = { x: P[k].x, y: P[k].y }; speed = Math.max(speed, Math.hypot(P[k].x - P[k].px, P[k].y - P[k].py) / h); surf = Math.max(surf, P[k].y + P[k].r); }
+    for (const k in P) { J[k] = { x: P[k].x, y: P[k].y }; speed = Math.max(speed, dm.hypot(P[k].x - P[k].px, P[k].y - P[k].py) / h); surf = Math.max(surf, P[k].y + P[k].r); }
     for (const k in P) if (P[k].y + P[k].r >= surf - 1.5) onFloor++;
     rag.surf = surf;
     prevJoints = f.joints; f.joints = J;
@@ -1264,13 +1267,13 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
   // Forward kinematics in body space, then mirror, scale, ground snap, world offset.
   function solve(p) {
     const s = f.scale, R = RIG;
-    const seg = (from, ang, len) => ({ x: from.x + Math.sin(ang * DEG) * len, y: from.y + Math.cos(ang * DEG) * len });
+    const seg = (from, ang, len) => ({ x: from.x + dm.sin(ang * DEG) * len, y: from.y + dm.cos(ang * DEG) * len });
     const hip = { x: p.hx, y: -R.hipH };
-    const chest = { x: hip.x + Math.sin(p.torso * DEG) * R.lowerTorso, y: hip.y - Math.cos(p.torso * DEG) * R.lowerTorso };
+    const chest = { x: hip.x + dm.sin(p.torso * DEG) * R.lowerTorso, y: hip.y - dm.cos(p.torso * DEG) * R.lowerTorso };
     const ua = (p.torso + p.bend) * DEG;
-    const neck = { x: chest.x + Math.sin(ua) * R.upperTorso, y: chest.y - Math.cos(ua) * R.upperTorso };
+    const neck = { x: chest.x + dm.sin(ua) * R.upperTorso, y: chest.y - dm.cos(ua) * R.upperTorso };
     const ha = (p.torso + p.bend + p.head) * DEG;
-    const head = { x: neck.x + Math.sin(ha) * (R.neck + R.headR), y: neck.y - Math.cos(ha) * (R.neck + R.headR) };
+    const head = { x: neck.x + dm.sin(ha) * (R.neck + R.headR), y: neck.y - dm.cos(ha) * (R.neck + R.headR) };
     // Shoulders sit just below the neck on the chest segment; twist pushes them apart.
     const sh = { x: lerp(neck.x, chest.x, 0.2), y: lerp(neck.y, chest.y, 0.2) };
     const lShoulder = { x: sh.x - p.tw * 0.5, y: sh.y };
@@ -1281,7 +1284,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const rKnee = seg(hip, p.rl[0], R.upperLeg), rFoot = seg(rKnee, p.rl[1], R.lowerLeg);
     const j = { head, neck, chest, hip, lShoulder, rShoulder, lElbow, rElbow, lHand, rHand, lKnee, rKnee, lFoot, rFoot };
     if (p.spin) {
-      const c = Math.cos(p.spin * DEG), dz = Math.abs(Math.sin(p.spin * DEG)) * 12;
+      const c = dm.cos(p.spin * DEG), dz = Math.abs(dm.sin(p.spin * DEG)) * 12;
       for (const k in j) if (k !== 'hip') {
         const off = /^r(Shoulder|Elbow|Hand|Knee|Foot)/.test(k) ? dz : /^l(Shoulder|Elbow|Hand|Knee|Foot)/.test(k) ? -dz : 0;
         j[k] = { x: hip.x + (j[k].x - hip.x) * c + off, y: j[k].y };
@@ -1333,8 +1336,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
 
   // A tapered stroke with round ends: w0 at a, w1 at b.
   function taper(ctx, a, b, w0, w1) {
-    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len, ny = dx / len, ang = Math.atan2(dy, dx);
+    const dx = b.x - a.x, dy = b.y - a.y, len = dm.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len, ang = dm.atan2(dy, dx);
     ctx.beginPath();
     ctx.arc(a.x, a.y, w0 / 2, ang + Math.PI / 2, ang - Math.PI / 2);
     ctx.lineTo(b.x + nx * w1 / 2 * -1, b.y + ny * w1 / 2 * -1);

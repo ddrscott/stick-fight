@@ -16,6 +16,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   const ctx = canvas.getContext('2d');
   const ghost = [100, 100], seen = [100, 100], tick = [0, 0];
   let lastBanner = '', bannerAge = 0, clock = 0;
+  let names = null;          // the flow's fighter names (the arcade ladder), else the labels below
+  let layout = {};           // what draw() returns: where the title's prompt sits (src/flow/ puts its START button there)
 
   // neon text: a dark outline for contrast, a colored glow stroke, then a hot white-tinted core
   function neonText(text, x, y, size, color, { font = DISPLAY, align = 'center', glow = 1, core = true, weight = '' } = {}) {
@@ -85,7 +87,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     // name and pips
     const ly = sy + ST_H + 12;
     const diff = u.kind === 'ai' && u.controller && u.controller.getDifficulty ? u.controller.getDifficulty() : sim.difficulty;
-    const label = u.kind === 'ai' ? (sim.horde && side === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? 'PLAYER 1' : u.kind === 'script' ? 'TRAINER' : 'DUMMY';
+    const label = names && names[side] ? names[side] : u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && side === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? 'PLAYER 1' : u.kind === 'script' ? 'TRAINER' : 'DUMMY';
     neonText(label, side === 0 ? x : x + BAR_W, ly, 22, color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.7, core: false });
     if (sim.horde) {
       const H = sim.horde, wv = H.wave || { downed: 0, size: 0 };
@@ -189,12 +191,14 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
 
     // PRESS START blinks like a cabinet: under the title at the top; with the title at the bottom
     // (the fighters' feet are just above it) it goes up top on its own
-    const prompt = at.touch ? 'TAP TO PLAY' : 'PRESS START', pw = measure(prompt, 30) + 30, ph = 40;
-    const py = card.slot === 0 ? spot.y + titleH / 2 + 30 : 150;
+    // at.domPrompt: the flow draws a real START button there instead (it's told where, and how faded)
+    const prompt = at.touch ? 'TAP TO PLAY' : 'PRESS START', pw = measure(prompt, 30) + 30, ph = at.domPrompt ? 56 : 40;
+    const py = card.slot === 0 ? spot.y + titleH / 2 + (at.domPrompt ? 40 : 30) : 150;
     const pr = { x0: width / 2 - pw / 2, x1: width / 2 + pw / 2, y0: py - ph / 2, y1: py + ph / 2 };
     card.promptAlpha += ((overlaps(pr, boxes) ? 0.16 : overlaps(pr, taken) ? 0 : 1) - card.promptAlpha) * (1 - Math.exp(-dt * 12));
     taken.push(pr);
-    if ((clock % 1.1) < 0.7) { ctx.save(); ctx.globalAlpha = card.alpha * card.promptAlpha; neonText(prompt, width / 2, py, 30, NEON.amber, { glow: 1.1 }); ctx.restore(); }
+    layout.prompt = { x: width / 2, y: py, w: pw, h: ph, alpha: card.alpha * card.promptAlpha };
+    if (!at.domPrompt && (clock % 1.1) < 0.7) { ctx.save(); ctx.globalAlpha = card.alpha * card.promptAlpha; neonText(prompt, width / 2, py, 30, NEON.amber, { glow: 1.1 }); ctx.restore(); }
 
     // DEMO: a small boxed tag in the bottom-right corner, where the key hint usually sits
     const dw = measure('DEMO', 22, LABEL, 600) + 22, dh = 28, dx = width - 30 - dw / 2, dy = height - 26;
@@ -207,16 +211,22 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.restore();
   }
 
-  function draw({ sim, camera, dt = 0, debug = false, scene = '', paused = false, help = false, attract = null }) {
+  // flow (src/flow/, null for a ?scene= URL): { bare, score, bonus, names, hint }. bare = a menu is
+  // up over a dimmed scene, so no HUD at all. Returns { prompt } on the title (see attractCard).
+  function draw({ sim, camera, dt = 0, debug = false, scene = '', paused = false, help = false, attract = null, flow = null }) {
     clock += dt;
+    layout = {};
+    names = flow && flow.names ? flow.names : null;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
+    if (flow && flow.bare) return layout;
     // a soft violet fade behind the strip so the bars read over the bright sign row
     const g = ctx.createLinearGradient(0, 0, 0, STRIP_H + 18);
     g.addColorStop(0, 'rgba(10,2,24,0.62)'); g.addColorStop(0.75, 'rgba(10,2,24,0.3)'); g.addColorStop(1, 'rgba(10,2,24,0)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, width, STRIP_H + 18);
     bar(sim.units[0], 0, sim, dt); bar(sim.focus || sim.units[1], 1, sim, dt);
     timer(sim);
+    if (flow && flow.score != null) score(flow);
 
     const boxes = fighterBoxes(sim, camera), taken = [];
     if (sim.banner !== lastBanner) { lastBanner = sim.banner; bannerAge = 0; } else bannerAge += dt;
@@ -265,7 +275,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       const spot = placeFree(measure(sim.card.text, 30) * s + 20, 40, [[width / 2, STRIP_H + 26], [width / 2, STRIP_H + 60]], boxes, taken);
       if (spot) { ctx.save(); ctx.globalAlpha = k; ctx.translate(spot.x, spot.y); ctx.scale(s, s); neonText(sim.card.text, 0, 0, 30, NEON.amber); ctx.restore(); }
     }
-    if (attract) { if (debug) drawDebug(sim, camera, scene); return; }
+    if (attract) { if (debug) drawDebug(sim, camera, scene); return layout; }
     if (paused) neonText('PAUSED', width / 2, STRIP_H + 40, 34, NEON.violet);
     const cls = typeof document !== 'undefined' ? document.documentElement.classList : null;
     const padUI = !!cls && cls.contains('pad-ui');
@@ -274,11 +284,21 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       // the hint sits in the bottom corner, and steps aside for a fighter
       const hint = { x0: width - 230, x1: width - 20, y0: height - 26, y1: height - 4 };
       ctx.save(); ctx.globalAlpha = overlaps(hint, boxes) ? 0.15 : 0.85;
-      neonText(padUI ? 'R3  HORDE     START  PAUSE' : 'F1  MOVES     G  HORDE', width - 24, height - 14, 16, NEON.violet, { font: LABEL, align: 'right', weight: 500, glow: 0.4, core: false });
+      const hintText = flow ? flow.hint : padUI ? 'R3  HORDE     START  PAUSE' : 'F1  MOVES     G  HORDE';
+      if (hintText) neonText(hintText, width - 24, height - 14, 16, NEON.violet, { font: LABEL, align: 'right', weight: 500, glow: 0.4, core: false });
       ctx.restore();
     }
     if ((help || (padUI && paused)) && !touchUI) legend(boxes, padUI);
     if (debug) drawDebug(sim, camera, scene);
+    return layout;
+  }
+
+  // the run's score, in the strip between P1's name and his round pips, with the last bonus beside it
+  function score(flow) {
+    const y = BAR_Y + BAR_H + 6 + ST_H + 12, x = 44 + 118;
+    const txt = String(Math.max(0, Math.floor(flow.score))).padStart(7, '0');
+    const w = neonText(txt, x, y, 22, NEON.amber, { font: LABEL, align: 'left', weight: 600, glow: 0.7 });
+    if (flow.bonus) neonText(flow.bonus, x + w + 10, y, 18, NEON.white, { font: LABEL, align: 'left', weight: 600, glow: 0.6, core: false });
   }
 
   // the move list, two lines at the bottom; it fades out wherever a fighter is under it

@@ -15,5 +15,14 @@ export default defineConfig({
     strictPort: true,
     host: true,
     allowedHosts: ['.dataturd.com'],   // the dev tunnel for phone testing
+    // online rooms: the page calls ./api/..., which in production is /stick-fight/api/* on the
+    // Worker. In development that Worker runs under `npm run dev:worker` (wrangler dev, :8787).
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8787',
+        ws: true,
+        rewrite: (p) => '/stick-fight' + p,
+      },
+    },
   },
 });
