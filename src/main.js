@@ -1,0 +1,636 @@
+// The game. Wires fighter (A), fx (B), arena (D) and the combat sim (C), routes combat
+// events to effects and camera, draws the HUD, and exposes window.__gauntlet.
+import { camera } from './camera.js';
+import { createFighter, MOVES, MOVE_DATA } from './fighter/index.js';
+import { createFX } from './fx/index.js';
+import { createArena, drawJoints } from './arena/index.js';
+import { createCombat } from './combat/sim.js';
+import { createInput, EMPTY_INPUT } from './combat/input.js';
+import { createHUD } from './combat/hud.js';
+import { mulberry32 } from './combat/rng.js';
+import { gameAudio } from './audio/index.js';   // audio: all sound logic lives in src/audio/
+
+const W = 1280, H = 720;
+const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
+const glCanvas = document.getElementById('game');
+const hudCanvas = document.getElementById('hud');
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+glCanvas.width = W * dpr; glCanvas.height = H * dpr;
+hudCanvas.width = W * dpr; hudCanvas.height = H * dpr;
+
+const fx = createFX(glCanvas, { width: W, height: H, dpr, layerScaling: true });   // every layer is drawn through applyCamera (scale = layer.width / W)
+const arena = createArena('building');
+const groundY = arena.floors && arena.floors.length ? arena.floors[0].y : 480;
+const spawns = arena.spawns && arena.spawns.length >= 2 ? arena.spawns : [{ x: 480, y: groundY, facing: 1 }, { x: 800, y: groundY, facing: -1 }];
+const fighters = [
+  createFighter({ color: P1_COLOR, x: spawns[0].x, y: spawns[0].y, facing: spawns[0].facing }),
+  createFighter({ color: P2_COLOR, x: spawns[1].x, y: spawns[1].y, facing: spawns[1].facing }),
+];
+const input = createInput(window);
+const hud = createHUD(hudCanvas, { width: W, height: H, dpr });
+
+// ---- integration wiring ------------------------------------------------------------------
+// The glue owns camera shake (hitstop has to hold the frame dead still), so the FX's own
+// shake and punch are off. The pile is drawn on the figures layer with the live fighters,
+// the arena's foreground goes to the FX foreground layer, and the FX learns the floors.
+if (fx.options) fx.options.shake = false;
+// (no foreground opacity here: the compositor thins the foreground over fighters and bodies itself, owner req 5)
+if ('bodiesInBackground' in arena) arena.bodiesInBackground = false;
+function syncArenaToFx() {
+  if (fx.reflect) {
+    if (typeof arena.reflectY === 'number') fx.reflect.y = arena.reflectY;
+    if (arena.gloss && typeof arena.gloss.strength === 'number') fx.reflect.strength = arena.gloss.strength;
+    // the mirror covers the floor plane only: its depth, between the walls, not over the stairwell
+    if (arena.gloss && typeof arena.gloss.depth === 'number') fx.reflect.depth = arena.gloss.depth;
+    if (arena.gloss && typeof arena.gloss.x0 === 'number') { fx.reflect.x0 = arena.gloss.x0; fx.reflect.x1 = arena.gloss.x1; }
+    if (arena.gloss && arena.gloss.gaps) fx.reflect.gaps = arena.gloss.gaps.map(g => ({ ...g }));
+  }
+  if (arena.floors && arena.floors.length) {
+    try { fx.floors = arena.floors; fx.ground = Math.max(...arena.floors.map(f => f.y)); } catch (e) { /* older fx */ }
+  }
+}
+syncArenaToFx();
+// The compositor's preset owns exposure, sky, fog, far plane, lift, toe, vignette and
+// weather; the arena's fills are pitched for it. Nothing else here touches those.
+if (typeof fx.preset === 'function') { try { fx.preset('night-rain'); } catch (e) { console.warn('[glue] fx.preset:', e.message); } }
+else if (typeof fx.weather === 'function') fx.weather('rain', { rate: 160, wind: -0.3 });
+// the rain comes through the smashed pane: confine it to the arena's region (the preset's
+// rate and wind are kept; an FX that ignores `region` just keeps raining everywhere)
+if (arena.rainRegion && typeof fx.weather === 'function') fx.weather('rain', { rate: 160, wind: -0.3, region: arena.rainRegion });
+
+// ---- effects state owned by the glue -------------------------------------------------
+const lights = [];                     // dynamic point lights with a ttl
+const shake = { trauma: 0, kickX: 0, kickY: 0, zoomPunch: 0 };
+let shakeRng = mulberry32(7);
+const trailPrev = [null, null];
+const blockSparks = [];                // hard glyphs at a blocked contact, drawn on the emissive layer
+let debug = false, paused = false, driven = false, sceneName = 'play', help = false;
+let attract = false;                   // the attract mode's demo bout is on (see ---- attract mode)
+
+function light(x, y, radius, color, intensity, ttl) { lights.push({ x, y, radius, color, intensity, ttl, max: ttl }); }
+function onEvent(ev) {
+  if (!attract) gameAudio.event(ev);   // audio: every event also goes to the sound router (src/audio/index.js); the attract demo is silent
+  switch (ev.type) {
+    case 'hit':
+      // the FX burst is small and sits on the striking limb; the camera does nothing until
+      // release. A body hit sheds no crate chunks.
+      fx.hit({ x: ev.x, y: ev.y, strength: ev.ko ? 1.0 : ev.counter ? 0.9 : 0.3 + 0.4 * ev.strength, dir: ev.dir, flashR: (ev.flashR || 36) * (ev.counter ? 1.3 : 1), debris: 'none' });
+      // a counter hit gets its own flash (magenta), drawn behind the fighters
+      if (ev.counter && typeof fx.counterFlash === 'function') fx.counterFlash({ x: ev.x, y: ev.y });
+      light(ev.x, ev.y, 120 + 140 * ev.strength, ev.counter ? [1.0, 0.25, 0.75] : [1.0, 0.62, 0.3], 0.8 + 0.5 * ev.strength, ev.ko ? 0.5 : 0.22);
+      if (ev.knockdown || ev.ko) fx.dust({ x: ev.defender.x, y: ev.defender.y, dir: ev.dir });
+      break;
+    case 'release':
+      // the freeze lets go: shake, a directional kick (with a real vertical component), and
+      // a zoom punch all land on this frame
+      shake.trauma = Math.min(1, shake.trauma + (ev.ko ? 0.9 : 0.3 + 0.5 * ev.strength));
+      shake.kickX = ev.dir * (12 + 14 * ev.strength); shake.kickY = -(13 + 10 * ev.strength);
+      shake.zoomPunch = 0.04 + 0.04 * ev.strength;
+      break;
+    case 'block':
+      blockSparks.push({ x: ev.x, y: ev.y, dir: ev.dir, ttl: 0.1, max: 0.1 });
+      light(ev.x, ev.y, 90, [0.6, 0.75, 1.0], 0.5, 0.1);
+      shake.trauma = Math.min(1, shake.trauma + 0.06);
+      break;
+    case 'thud':
+      fx.dust({ x: ev.x - 10, y: ev.y, dir: -1 }); fx.dust({ x: ev.x + 10, y: ev.y, dir: 1 });
+      shake.trauma = Math.min(1, shake.trauma + 0.3);
+      break;
+    case 'wallImpact':
+      // splats and bounces: the compositor's wall helper (camera jolt, dust), cyan light on the wall
+      if (typeof fx.wallImpact === 'function') fx.wallImpact({ x: ev.x, y: ev.y, side: ev.side, strength: ev.strength });
+      else fx.dust({ x: ev.x, y: ev.y + 60, dir: -ev.side });
+      light(ev.x, ev.y, 160, [0.3, 0.9, 1.0], 0.6 * ev.strength + 0.2, 0.25);
+      shake.trauma = Math.min(1, shake.trauma + 0.2 * ev.strength);
+      break;
+    case 'wall':
+      // a body into the wall: dust, not chunks (crate chunks live 6 to 10s and litter the floor)
+      fx.hit({ x: ev.x, y: ev.y, strength: ev.strength * 0.5, dir: ev.dir, flashR: 24, debris: 'none' });   // no grey chunks on the floor line
+      fx.dust({ x: ev.x, y: ev.y + 60, dir: ev.dir });
+      shake.trauma = Math.min(1, shake.trauma + 0.35);
+      break;
+    case 'land': case 'body':
+      fx.dust({ x: ev.x, y: ev.y, dir: ev.dir || 1 });
+      break;
+    case 'footstep':
+      fx.dust({ x: ev.x, y: ev.y, dir: -ev.dir });
+      break;
+    case 'round':
+      arena.liveColors = [P1_COLOR, sim.units[1].color || P2_COLOR];
+      syncArenaToFx();
+      break;
+    case 'goon':
+      arena.liveColors = [P1_COLOR, ...sim.units.slice(1).map(u => u.color)];
+      if (ev.unit) fx.dust({ x: ev.unit.x, y: ev.unit.y, dir: ev.unit.facing });
+      break;
+  }
+}
+
+// extra horde goons need their own rigs
+const makeRig = (color) => { const g = sim.units[0]; return createFighter({ color, x: g.x, y: g.y, facing: -1 }); };
+const sim = createCombat({ fighters, arena, input, onEvent, makeRig, moves: MOVES || [], moveData: MOVE_DATA || null });
+gameAudio.attach(sim);   // audio
+
+// ---- scenes ---------------------------------------------------------------------------
+// A scripted controller: walks into range, then presses each move in turn as soon as the
+// previous one connected (cancel) or finished.
+function script(seq) {
+  let stage = 0, pressUntil = 0, pressing = null, waitId = -1;
+  return (me, opp, sim) => {
+    if (sim.phase !== 'fight') return EMPTY_INPUT;
+    const out = { ...EMPTY_INPUT };
+    const step = sim.stepCount;
+    const next = seq[stage];
+    // press the next move only once the previous press has become an attack (attackId moved)
+    if (next && step >= pressUntil && me.attackId !== waitId) {
+      const dist = Math.abs(opp.x - me.x);
+      const idle = me.state === 'idle' || me.state === 'walk';
+      // keep walking in (also through recovery: the sim lets an attacker press a stumbling
+      // victim), press when the next move reaches
+      if (me.state === 'attack' && me.hitConfirmed) { pressing = next; pressUntil = step + 3; waitId = me.attackId; stage++; }   // cancel on hit, wherever he is
+      else if (dist > sim.reach(next) - 12) out.dx = Math.sign(opp.x - me.x);
+      else if (idle) { pressing = next; pressUntil = step + 3; waitId = me.attackId; stage++; }
+    }
+    if (step < pressUntil && pressing) out[pressing] = true;
+    return out;
+  };
+}
+function place(i, x, facing) { const u = sim.units[i]; u.x = x; u.facing = facing; u.rig.x = x; u.rig.facing = facing; u.rig.update(0); }
+
+// v2 test scenes: a timeline of phases. Each phase resets the round, places the pair, holds
+// P2's input (crouch, guard, down-back...) and presses P1's buttons at fixed steps, so heights,
+// strings, enders and trick shots can be measured deterministically. setScene(name, { only: k })
+// runs one phase; otherwise the phases cycle.
+const W0 = () => sim.bounds.x0, W1 = () => sim.bounds.x1;
+function timeline(phases, o = {}) {
+  let k = o.only != null ? +o.only : 0, t = 0;
+  sim.phaseName = '';
+  const begin = () => {
+    const ph = phases[k];
+    sim.startRound(1, { skipIntro: true });
+    const [x0, x1] = ph.at ? ph.at() : [560, 650];
+    place(0, x0, x0 < x1 ? 1 : -1); place(1, x1, x0 < x1 ? -1 : 1);
+    if (ph.setup) ph.setup();
+    sim.phaseName = ph.name; t = 0; sim.units.forEach(u => { u.reacted = 0; });
+  };
+  const p1 = (me, opp, s) => {
+    if (s.phase !== 'fight') return EMPTY_INPUT;
+    const ph = phases[k];
+    if (t === 0 && !sim.phaseName) begin();
+    const out = { ...EMPTY_INPUT, ...(ph.hold1 || {}) };
+    if (ph.dash && t < ph.dash) Object.assign(out, { dx: me.facing, run: true });
+    if (ph.react && !me.reacted) { const r = ph.react(me, opp, t); if (r) { me.reacted = t; Object.assign(out, r); } }
+    if (ph.react && me.reacted && t - me.reacted < 3 && t > me.reacted) Object.assign(out, ph.react(me, opp, -1) || {});
+    if (ph.walkIn && t < ph.walkIn) { if (Math.abs(opp.x - me.x) > 78) out.dx = me.facing; else if (!me.walkedIn) { me.walkedIn = true; Object.assign(out, { rk: true, down: true }); } }
+    if (t === 0) me.walkedIn = false;
+    // after the scripted part: walk up and jab (to show the fight goes on wherever they ended up)
+    if (ph.chase && t >= ph.chase && me.state !== 'vault' && opp.state !== 'down' && opp.state !== 'getup') {
+      const d = opp.x - me.x;
+      if (Math.abs(d) > 82) out.dx = Math.sign(d); else if (t % 24 === 0) out.lp = true;
+    }
+    for (const [at, inp] of ph.p1) if (t >= at && t < at + 3) Object.assign(out, typeof inp === 'function' ? inp(me) : inp);
+    if (++t > ph.dur) { if (o.only != null) { t = ph.dur; return EMPTY_INPUT; } k = (k + 1) % phases.length; sim.phaseName = ''; t = 0; }
+    return out;
+  };
+  const p2 = (me, opp, s) => {
+    const ph = phases[k];
+    if (s.phase !== 'fight' || !ph || t < 2) return EMPTY_INPUT;
+    const h = typeof ph.p2 === 'function' ? ph.p2(me, opp, t) : ph.p2 || {};
+    // `back: true` is held away from P1, whichever side he is on
+    return { ...EMPTY_INPUT, ...h, dx: h.back ? (me.x > opp.x ? 1 : -1) : (h.dx || 0) };
+  };
+  sim.setController(0, 'script', p1);
+  sim.setController(1, 'script', p2);
+  sim.resetMatch({ seed: 1, skipIntro: true });
+  begin();
+}
+const B = (b, extra) => ({ [b]: true, ...(extra || {}) });
+const D = (b) => ({ [b]: true, down: true });
+const nearRight = () => [W1() - 150, W1() - 50];
+const PHASES = {
+  mixup: [
+    { name: 'high vs crouch (ducks)', p2: { down: true }, p1: [[20, B('lp')]], dur: 90 },
+    { name: 'low vs standing guard (hits)', p2: { back: true }, at: () => [578, 650], p1: [[20, D('lk')]], dur: 100 },
+    { name: 'mid vs crouch (hits)', p2: { down: true, back: true }, p1: [[20, B('lk')]], dur: 100 },
+    { name: 'low vs down-back (blocked)', p2: { down: true, back: true }, p1: [[20, D('lk')]], dur: 100 },
+    { name: 'high vs standing guard (blocked)', p2: { back: true }, p1: [[20, B('rp')]], dur: 100 },
+    { name: 'overhead vs crouch (hits)', p2: { down: true }, at: () => [540, 650], p1: [[20, (me) => ({ rk: true, dx: me.facing })]], dur: 120 },
+  ],
+  stamina: [
+    { name: 'spam on a guard', p2: { block: true }, hold1: { dx: 1 }, at: () => [570, 650], dur: 600,
+      p1: Array.from({ length: 70 }, (_, i) => [10 + i * 8, B(['lp', 'rp', 'lk', 'rk'][i % 4])]) },
+  ],
+  strings: [
+    { name: 'FLASH ROUNDHOUSE 1,1,2,4', p1: [[10, B('lp')], [26, B('lp')], [42, B('rp')], [62, B('rk')]], dur: 200 },
+    { name: 'UPTOWN 1,2,3', p1: [[10, B('lp')], [26, B('rp')], [46, B('lk')]], dur: 150 },
+    { name: 'NEON TORNADO 1,2,3,4', p1: [[10, B('lp')], [26, B('rp')], [46, B('lk')], [70, B('rk')], [150, B('rp')]], dur: 260 },
+    { name: 'SPIN HEEL 2,1,4 (wall)', at: () => [W1() - 260, W1() - 170], p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], dur: 220 },
+    { name: 'CRESCENT 3,3,4', p1: [[10, B('lk')], [30, B('lk')], [52, B('rk')]], dur: 220 },
+    { name: 'GROUND RUSH d3,d3,4', p1: [[10, D('lk')], [30, D('lk')], [52, B('rk')]], dur: 220 },
+    { name: 'SKY SPIKE d2 then 1,2,4', at: () => [570, 640], p1: [[10, D('rp')], [64, B('lp')], [84, B('rp')], [108, B('rk')], [168, B('rp')]], dur: 280 },
+    { name: 'COMET CROSS f,f+2 (wall)', at: () => [W1() - 420, W1() - 150], dash: 40, p1: [[40, (me) => ({ rp: true, dx: me.facing })]], dur: 220 },
+    { name: 'WALL SPIN b+4 (wall)', at: () => nearRight(), p1: [[10, (me) => ({ rk: true, dx: -me.facing })]], dur: 220 },
+    { name: 'WALL SLAM throw (wall)', at: () => [W1() - 140, W1() - 60], p1: [[10, { lp: true, lk: true }]], dur: 220 },
+  ],
+  wall: [
+    { name: 'splat then one more', at: () => [W1() - 260, W1() - 170], p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')], [150, (me) => ({ rp: true, dx: me.facing })]], dur: 260 },
+  ],
+  juggle: [
+    { name: 'launch then mash 1', at: () => [570, 640], p1: [[10, D('rp')], ...Array.from({ length: 24 }, (_, i) => [60 + i * 8, B('lp')])], dur: 300 },
+  ],
+  trade: [
+    { name: 'jab trade', at: () => [560, 646], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { lp: true } : {}), dur: 100 },
+    { name: 'counter hit', at: () => [560, 646], p1: [[22, B('lp')]], p2: (me, o, t) => (t >= 20 && t < 23 ? { rk: true } : {}), dur: 100 },
+  ],
+  // v3: knock him down the stairwell (fallback opening x 700..880 until the arena has one), the
+  // attacker vaults after him, and the fight goes on downstairs
+  floorBreak: [
+    { name: 'SPIN HEEL into the stairwell', at: () => [500, 590], p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], chase: 420, dur: 760 },
+    { name: 'throw toward the stairwell', at: () => [600, 668], p1: [[10, { lp: true, lk: true }]], chase: 420, dur: 760 },
+    { name: 'NEON TORNADO by the stairwell', at: () => [640, 730], p1: [[10, B('lp')], [26, B('rp')], [46, B('lk')], [70, B('rk')]], chase: 420, dur: 760 },
+  ],
+  // v3b: air and crouch attacks
+  jumpIn: [
+    { name: 'flying kick jump-in, then 1,1,2 on landing', at: () => [530, 650], p1: [[10, (me) => ({ jump: true, dx: me.facing })], [44, B('lk')], [74, B('lp')], [100, B('lp')], [124, B('rp')]], dur: 240 },
+    { name: 'dive kick on a croucher', at: () => [540, 650], p2: { down: true }, p1: [[10, (me) => ({ jump: true, dx: me.facing })], [34, D('rk')]], dur: 200 },
+    { name: 'air roundhouse vs standing guard (blocked)', at: () => [530, 650], p2: { back: true }, p1: [[10, (me) => ({ jump: true, dx: me.facing })], [42, B('rk')]], dur: 200 },
+    { name: 'whiffed jump cross: landing lag', at: () => [400, 900], p1: [[10, (me) => ({ jump: true })], [22, B('rp')]], dur: 160 },
+    { name: 'crouch string d+1,d+1,d+3 (LOW RUSH)', at: () => [560, 650], p1: [[4, { down: true }], [12, D('lp')], [30, D('lp')], [50, D('lk')]], hold1: { down: true }, dur: 200 },
+    { name: 'crouch-walk in, then d+4', at: () => [470, 650], hold1: { down: true }, p1: [[2, (me) => ({ down: true, dx: me.facing })], [6, (me) => ({ down: true, dx: me.facing })]], walkIn: 240, dur: 320 },
+  ],
+  antiAir: [
+    // P1 reacts to the jump: the uppercut as he comes in close and high, the jab as his kick starts
+    { name: 'uppercut anti-airs a jump-in (counter, launch)', at: () => [560, 700], p2: (me, o, t) => (t >= 10 && t < 13 ? { jump: true, dx: me.x > o.x ? -1 : 1 } : t >= 42 && t < 45 ? { rk: true } : {}), p1: [],
+      react: (me, o, t) => (t < 0 ? D('rp') : !o.grounded && o.vy > -260 && Math.abs(o.x - me.x) < 140 ? D('rp') : null), dur: 240 },
+    { name: 'jab stuffs a late air attack', at: () => [560, 690], p2: (me, o, t) => (t >= 10 && t < 13 ? { jump: true, dx: me.x > o.x ? -1 : 1 } : t >= 62 && t < 65 ? { lk: true } : {}), p1: [],
+      react: (me, o, t) => (t < 0 ? B('lp') : !o.grounded && o.vy > 160 && Math.abs(o.x - me.x) < 96 ? B('lp') : null), dur: 200 },
+  ],
+  throws: [
+    { name: 'throw lands', at: () => [560, 632], p1: [[10, { lp: true, lk: true }]], dur: 150 },
+    { name: 'throw broken', at: () => [560, 632], p1: [[10, { lp: true, lk: true }]], p2: (me, o, t) => (me.state === 'grabbed' && t % 6 < 3 ? { lp: true, lk: true } : {}), dur: 150 },
+    { name: 'throw whiffs on crouch', at: () => [560, 632], p1: [[10, { lp: true, lk: true }]], p2: { down: true }, dur: 150 },
+  ],
+};
+
+// Seeds: ?seed=N on the URL overrides every scene's default; setScene(name, { seed })
+// overrides that. 'ai-fight-2' / 'ai-fight-3' are the same fight under other seeds.
+const params = new URLSearchParams(location.search);
+const urlSeed = params.has('seed') ? (+params.get('seed') >>> 0) : null;
+const seedOf = (opts, dflt) => (opts && opts.seed != null ? +opts.seed >>> 0 : urlSeed != null ? urlSeed : dflt);
+
+const scenes = {
+  play(o) { sim.setHuman(0); sim.setAI(1, 0.6); sim.resetMatch({ seed: seedOf(o, 1) }); },
+  idle(o) { sim.setController(0, 'none'); sim.setController(1, 'none'); sim.resetMatch({ seed: seedOf(o, 1), skipIntro: true }); },
+  dummy(o) { sim.setHuman(0); sim.setController(1, 'none'); sim.resetMatch({ seed: seedOf(o, 1), skipIntro: true }); },
+  'ai-fight'(o) { sim.setAI(0, 0.7); sim.setAI(1, 0.7); sim.resetMatch({ seed: seedOf(o, 42), skipIntro: true }); },
+  'ai-fight-2'(o) { scenes['ai-fight']({ seed: seedOf(o, 7) }); },
+  // the arcade attract mode: two expert CPUs (the showcase flavor, ai.js) fight one round under the
+  // title, then a new bout under a new seed. Any key, pad button or touch starts 'play'.
+  attract(o) {
+    sim.setAI(0, 1.0, { style: 'showcase' }); sim.setAI(1, 1.0, { style: 'showcase' });
+    if (arena.clearBodies) arena.clearBodies();   // the demo's pile doesn't grow forever
+    sim.resetMatch({ seed: seedOf(o, (Math.random() * 4294967296) >>> 0), introTime: 1.2 });
+    // start them left of the stairwell (P2's spawn is right beside it), so the floor break comes
+    // out of the fight instead of the first exchange
+    place(0, 330, 1); place(1, 630, -1);
+  },
+  'ai-fight-3'(o) { scenes['ai-fight']({ seed: seedOf(o, 1234) }); },
+  'scripted-combo'(o) {
+    sim.setController(0, 'script', script(['jab', 'cross', 'roundhouse']));
+    sim.setController(1, 'none');
+    sim.resetMatch({ seed: seedOf(o, 1), skipIntro: true });
+    place(0, sim.units[1].x - 70, 1);
+  },
+  // P1 presses real buttons on a standing dummy: 1,1,2 then (after a reset beat) 1,2,4. Each string
+  // should come out as a true combo through the button table and the rig's cancel windows.
+  'string-test'(o) {
+    const presses = [[0, 'lp'], [20, 'lp'], [44, 'rp'], [190, 'lp'], [212, 'rp'], [250, 'rk']];
+    let t0 = -1;
+    sim.setController(0, 'script', (me, opp, s) => {
+      if (s.phase !== 'fight') return EMPTY_INPUT;
+      if (t0 < 0) t0 = s.stepCount + 6;
+      const out = { ...EMPTY_INPUT, dx: Math.abs(opp.x - me.x) > 120 && me.state === 'idle' ? Math.sign(opp.x - me.x) : 0 }, t = s.stepCount - t0;
+      for (const [at, b] of presses) if (t >= at && t < at + 4) out[b] = true;
+      return out;
+    });
+    sim.setController(1, 'none');
+    sim.resetMatch({ seed: seedOf(o, 1), skipIntro: true });
+    place(0, sim.units[1].x - 90, 1);
+  },
+  // P1 mashes J, J, K, L in rhythm on a standing dummy: the string should come out as a 4-hit combo
+  'combo-test'(o) {
+    const presses = [[0, 'jab'], [20, 'jab'], [44, 'cross'], [80, 'roundhouse']];   // in 120Hz steps from the first press: a human mash
+    let t0 = -1;
+    sim.setController(0, 'script', (me, opp, s) => {
+      if (s.phase !== 'fight') return EMPTY_INPUT;
+      if (t0 < 0) t0 = s.stepCount + 6;
+      const out = { ...EMPTY_INPUT }, t = s.stepCount - t0;
+      for (const [at, m] of presses) if (t >= at && t < at + 4) out[m] = true;
+      return out;
+    });
+    sim.setController(1, 'none');
+    sim.resetMatch({ seed: seedOf(o, 1), skipIntro: true });
+    place(0, sim.units[1].x - 90, 1);
+  },
+  // Horde: P1 against a stream of goons, each KO adds a body to the pile. 'horde' is
+  // for Scott (G on the title line), 'horde-ai' is the deterministic one for captures.
+  horde(o) { sim.setHuman(0); sim.setAI(1, 0.45); sim.resetMatch({ seed: seedOf(o, 5), horde: { goonHealth: 30, goonDifficulty: 0.45, heal: 10 } }); },
+  // v3: horde floor by floor, a strong AI hero against light goons so floors clear inside a capture
+  'horde-floors-ai'(o) { sim.setAI(0, 1.0); sim.setAI(1, 0.05); sim.resetMatch({ seed: seedOf(o, 9), skipIntro: true, horde: { goonHealth: 7, goonDifficulty: 0.02, heal: 40 } }); },
+  'horde-ai'(o) { sim.setAI(0, 1.0); sim.setAI(1, 0.1); sim.resetMatch({ seed: seedOf(o, 5), skipIntro: true, horde: { goonHealth: 10, goonDifficulty: 0.05, heal: 45 } }); },
+  // Two aggressive AIs on short health: each round ends in a few hits, so a full
+  // best-of-3 and its body pile fit in a capture.
+  'mixup-test'(o) { timeline(PHASES.mixup, o); },
+  'stamina-test'(o) { timeline(PHASES.stamina, o); },
+  'string-ender-test'(o) { timeline(PHASES.strings, o); },
+  'wall-test'(o) { timeline(PHASES.wall, o); },
+  'juggle-test'(o) { timeline(PHASES.juggle, o); },
+  'trade-test'(o) { timeline(PHASES.trade, o); },
+  'throw-test'(o) { timeline(PHASES.throws, o); },
+  'floor-break-test'(o) { timeline(PHASES.floorBreak, o); },
+  'jump-in-test'(o) { timeline(PHASES.jumpIn, o); },
+  'anti-air-test'(o) { timeline(PHASES.antiAir, o); },
+  ko(o) {
+    sim.setAI(0, 0.8); sim.setAI(1, 0.8);
+    sim.resetMatch({ seed: seedOf(o, 3), skipIntro: true, startHealth: 24, introTime: 0.8 });
+    place(0, sim.units[1].x - 110, 1);
+  },
+};
+
+function setScene(name, opts) {
+  if (!scenes[name]) name = 'play';
+  sceneName = name;
+  attract = name === 'attract'; attractKO = false; idleMs = 0; lastPhase = '';
+  document.documentElement.classList.toggle('attract', attract);   // index.html hides the touch controls
+  try { gameAudio.attach(attract ? null : sim); } catch (e) { /* audio: no whiff or pool watching during the demo */ }
+  farDrawnW = 0; bodiesDrawn = true; // redraw the static layers once
+  shakeRng = mulberry32(7);
+  shake.trauma = 0; shake.kickX = shake.kickY = 0; shake.zoomPunch = 0;
+  lights.length = 0; blockSparks.length = 0; paused = false;
+  camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camera.shakeX = camera.shakeY = 0;
+  scenes[name](opts || {});
+  updateCamera(1);
+}
+
+// ---- camera ------------------------------------------------------------------------------
+// Frozen while either fighter is in hitstop: the contact pose has to hold on screen.
+function updateCamera(dt) {
+  if (sim.hitstopActive > 0) { camera.shakeX = 0; camera.shakeY = 0; return; }
+  // the hero and the goon he is on (a second goon off at range doesn't pull the frame)
+  const a = sim.units[0], b = sim.focus;
+  const live = [a, b].filter(u => u && !u.hidden);
+  // where each body is on screen: a tumbling (point-simulated) or vaulting body is wherever its hip
+  // is, not its floor line (a body falling down the stairwell already belongs to the floor below)
+  const at = (u) => {
+    const h = u.rig && u.rig.joints && u.rig.joints.hip;
+    return (u.rag || u.state === 'vault') && h ? { x: h.x, y: h.y + 58 } : { x: u.x, y: u.y };
+  };
+  const P = live.map(at);
+  const mx = P.reduce((s, p) => s + p.x, 0) / Math.max(1, P.length);
+  const my = P.reduce((s, p) => s + p.y, 0) / Math.max(1, P.length) - 120;
+  const dist = P.length > 1 ? Math.abs(P[0].x - P[1].x) : 0, dy = P.length > 1 ? Math.abs(P[0].y - P[1].y) : 0;
+  // tight on the pair: 1.55 when they're in each other's face, backing off to 1.0 by about 520px
+  // apart; two floors apart (a floor break, the follow-down) it pulls back so both stay in frame
+  let zt = Math.max(1.0, Math.min(1.55, 1.75 - dist / 700));
+  // whatever the zoom, both heads (about 200 over the floor line) and both feet stay in frame,
+  // so a jump or a launch at close range eases the zoom instead of cropping a head
+  if (P.length) {
+    const top = Math.min(...P.map(p => p.y)) - 215, bot = Math.max(...P.map(p => p.y)) + 25;
+    const reach = Math.max(my - top, bot - my);
+    zt = Math.min(zt, Math.max(1.0, H / 2 / reach));
+  }
+  if (dy > 120) zt = Math.max(0.85, Math.min(zt, H / (dy + 330)));
+  if (sim.koSlow > 0) zt += sim.finisher ? 0.18 : 0.1;
+  shake.zoomPunch *= Math.exp(-dt * 14);
+  zt += shake.zoomPunch;
+  camera.zoom += (zt - camera.zoom) * (1 - Math.exp(-dt * (shake.zoomPunch > 0.01 ? 40 : 5)));
+  const z = camera.zoom, hw = W / 2 / z, hh = H / 2 / z;
+  // the view may run 120px past either wall (the exterior is painted), so a body thrown
+  // into the corner lands on screen
+  const x0 = sim.bounds.x0 - 120 + hw, x1 = sim.bounds.x1 + 120 - hw;
+  const tx = x1 > x0 ? Math.max(x0, Math.min(x1, mx)) : (x0 + x1) / 2;
+  // a flying body is followed hard; otherwise the camera eases
+  const flying = sim.units.some(u => !u.hidden && !u.grounded && (u.state === 'knockdown' || u.state === 'ko'));
+  const falling = sim.units.some(u => !u.hidden && (u.falling || u.state === 'vault'));
+  const followX = flying ? 22 : 8, followY = falling ? 10 : 6;
+  // vertical: center on the fighters, but never show past the arena's lowest floor
+  // (plus a little ground) or far above its highest one
+  const fl = sim.floors;
+  const yMax = Math.max(...fl.map(f => f.y)) + 80, yMin = Math.min(...fl.map(f => f.y)) - 440;
+  const ty = yMax - hh < yMin + hh ? yMax - hh : Math.max(yMin + hh, Math.min(yMax - hh, my));
+  camera.x += (tx - camera.x) * (1 - Math.exp(-dt * followX));
+  camera.y += (ty - camera.y) * (1 - Math.exp(-dt * followY));
+  shake.trauma = Math.max(0, shake.trauma - dt * 2.4);
+  // the kick snaps back to center (it was leaving a lurch); trauma jitters around zero
+  const k = Math.exp(-dt * 32);
+  shake.kickX *= k; shake.kickY *= k;
+  if (Math.abs(shake.kickX) < 0.5) shake.kickX = 0;
+  if (Math.abs(shake.kickY) < 0.5) shake.kickY = 0;
+  const amp = shake.trauma * shake.trauma * 20;
+  camera.shakeX = shake.kickX + (amp ? (shakeRng() * 2 - 1) * amp : 0);
+  camera.shakeY = shake.kickY + (amp ? (shakeRng() * 2 - 1) * amp * 0.8 : 0);
+}
+
+// ---- frame ----------------------------------------------------------------------------------
+function advance(ms) {
+  if (paused) return;
+  if (attractFlow(ms)) return;
+  // the finisher beat: a KO by an ender runs at quarter speed
+  const slow = sim.koSlow > 0 ? (sim.finisher ? 0.25 : 0.5) : 1;
+  sim.step(ms * slow);
+  if (attract && (sim.round > 1 || sim.phase === 'match')) { setScene('attract'); return; }   // one round per demo bout
+  const dt = ms / 1000;
+  for (let i = lights.length - 1; i >= 0; i--) { lights[i].ttl -= dt; if (lights[i].ttl <= 0) lights.splice(i, 1); }
+  for (let i = blockSparks.length - 1; i >= 0; i--) { blockSparks[i].ttl -= dt * slow; if (blockSparks[i].ttl <= 0) blockSparks.splice(i, 1); }
+  for (const u of sim.units) {
+    if (u.state === 'attack' && u.phase === 'active' && trailPrev[u.id] && u.hitstop === 0) fx.trail(trailPrev[u.id], u.rig.joints, u.color);
+    trailPrev[u.id] = copyJoints(u.rig.joints, trailPrev[u.id]);
+  }
+  fx.update(dt * slow);
+  updateCamera(dt);
+}
+
+const flashCanvas = document.createElement('canvas');
+// parallax > 1 makes a layer follow the camera harder (the foreground: the street lamp outside)
+function applyCamera(ctx, layer, parallax = 1) {
+  const s = layer.width / W, z = camera.zoom * parallax;
+  ctx.setTransform(s * z, 0, 0, s * z, s * (W / 2 - (camera.x + camera.shakeX) * z), s * (H / 2 - (camera.y + camera.shakeY) * z));
+}
+function drawFlash(u, figCtx, color = '#fff', alpha = 0.3) {
+  const L = fx.layers.figures;
+  if (flashCanvas.width !== L.width || flashCanvas.height !== L.height) { flashCanvas.width = L.width; flashCanvas.height = L.height; }
+  const c = flashCanvas.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, L.width, L.height);
+  applyCamera(c, flashCanvas);
+  u.rig.draw(c);
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-in';
+  c.fillStyle = color; c.fillRect(0, 0, L.width, L.height);
+  // a tint, not a replacement: the body's own color has to stay readable through it
+  figCtx.save(); figCtx.setTransform(1, 0, 0, 1, 0, 0); figCtx.globalAlpha = alpha; figCtx.drawImage(flashCanvas, 0, 0); figCtx.restore();
+}
+// The rig's block pose is close to its idle guard, so the glue draws a guard mark:
+// a double bar in front of the chest, in the fighter's color.
+function drawGuard(u, ctx) {
+  // standing guard covers the head and chest; a crouching guard sits low, at the shins
+  const low = !!u.crouch;
+  const x = u.x + u.facing * 24, top = u.y - (low ? 62 : 112), bot = u.y - (low ? 14 : 58);
+  ctx.save();
+  ctx.strokeStyle = u.color; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.globalAlpha = 0.95;
+  ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + u.facing * 4, bot); ctx.stroke();
+  ctx.lineWidth = 2.5; ctx.globalAlpha = 0.7;
+  ctx.beginPath(); ctx.moveTo(x + u.facing * 9, top + 8); ctx.lineTo(x + u.facing * 13, bot - 6); ctx.stroke();
+  ctx.restore();
+}
+// Block read: a hard chevron at the forearms pointing back at the attacker plus three
+// short static spark lines. No burst, no ring: it should not look like a hit.
+function drawBlockSpark(s, ctx) {
+  const k = s.ttl / s.max, d = s.dir;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, k * 1.6);
+  ctx.strokeStyle = '#e6f2ff'; ctx.lineWidth = 3.5; ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  ctx.beginPath(); ctx.moveTo(s.x - d * 12, s.y - 16); ctx.lineTo(s.x + d * 2, s.y); ctx.lineTo(s.x - d * 12, s.y + 16); ctx.stroke();
+  ctx.lineWidth = 2;
+  for (const [ax, ay, len] of [[-0.9, -0.5, 16], [-1, 0.1, 20], [-0.8, 0.6, 14]]) {
+    ctx.beginPath(); ctx.moveTo(s.x - d * 14 + d * ax * 4, s.y + ay * 4); ctx.lineTo(s.x - d * 14 + d * ax * (4 + len), s.y + ay * (4 + len)); ctx.stroke();
+  }
+  ctx.restore();
+}
+// Layer uploads are the costliest per-frame step on phones, so layers that did not change are not
+// redrawn and the FX is told to skip their upload: the far skyline is static (redrawn when the FX
+// resizes its layers for a quality tier, or on a scene change), and an empty body layer stays empty.
+let farDrawnW = 0, bodiesDrawn = true;
+function render() {
+  const ctxs = {};
+  const haveBodies = !arena.bodiesInBackground && arena.bodies && arena.bodies.length > 0;
+  if (fx.skip) { fx.skip.far = false; fx.skip.bodies = !haveBodies && !bodiesDrawn; }
+  for (const k of ['far', 'background', 'bodies', 'figures', 'emissive', 'foreground']) {
+    const L = fx.layers[k];
+    if (!L) continue;
+    if (fx.skip && k === 'far' && farDrawnW === L.width) { fx.skip.far = true; continue; }
+    if (fx.skip && k === 'bodies' && fx.skip.bodies) continue;
+    const ctx = L.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, L.width, L.height);
+    // far: identity camera, the FX applies its own parallax and haze; foreground: harder follow
+    if (k === 'far') ctx.setTransform(L.width / W, 0, 0, L.height / H, 0, 0);
+    else applyCamera(ctx, L, k === 'foreground' ? (arena.foregroundParallax || 1) : 1);
+    ctxs[k] = ctx;
+  }
+  // far first: the background leaves its window openings transparent so the skyline shows through
+  if (ctxs.far && arena.drawFar) { arena.drawFar(ctxs.far, camera); farDrawnW = fx.layers.far.width; }
+  bodiesDrawn = haveBodies;
+  arena.drawBackground(ctxs.background, camera);
+  if (arena.drawEmissive) arena.drawEmissive(ctxs.emissive, camera);
+  // the pile goes on the FX bodies layer (lit like the room, so corpses take the scene's color),
+  // under the live fighters; older FX without that layer get it on the figures layer
+  if (!arena.bodiesInBackground && arena.drawBodies && !(fx.skip && fx.skip.bodies)) arena.drawBodies(ctxs.bodies || ctxs.figures);
+  const order = [...sim.units].sort((p, q) => (p.state === 'attack') - (q.state === 'attack') || q.id - p.id);
+  for (const u of order) {
+    if (u.hidden) continue;
+    u.rig.draw(ctxs.figures);
+    if (u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld)) drawGuard(u, ctxs.figures);
+    if (u.flash > 0) drawFlash(u, ctxs.figures);
+    // a knocked-down body reads as down: 30% darker while it is on the floor
+    else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);
+  }
+  // ragdolls: KO'd horde goons still in the air after their unit respawned
+  for (const r of sim.ragdolls || []) {
+    const j = {}; for (const k in r.joints) j[k] = { x: r.x + r.joints[k].x, y: r.y + r.joints[k].y };
+    if (typeof drawJoints === 'function') drawJoints(ctxs.figures, j, r.color, 5, r.radius);
+  }
+  for (const s of blockSparks) drawBlockSpark(s, ctxs.emissive);
+  if (arena.drawForeground) arena.drawForeground(ctxs.foreground || ctxs.figures);
+  fx.lights = [...(arena.lights || []), ...lights.map(l => ({ x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity * (l.ttl / l.max) }))];
+  fx.render(camera);
+  hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused, help, attract: attract ? { touch: touchUI() } : null });
+}
+function copyJoints(src, dst) {
+  if (!src) return dst;
+  dst = dst || {};
+  for (const k in src) { const p = dst[k] || (dst[k] = { x: 0, y: 0 }); p.x = src[k].x; p.y = src[k].y; }
+  return dst;
+}
+
+// ---- attract mode ------------------------------------------------------------------------------
+// index.html with no ?scene= opens on the demo (attract) and comes back to it: after 30s with no
+// input during a game, and when a match ends. A ?scene= URL never leaves the scene it asked for.
+const attractHome = !params.has('scene');
+const IDLE_MS = 30000;
+let idleMs = 0, lastPhase = '', attractKO = false;
+const touchUI = () => { const c = document.documentElement.classList; return c.contains('touch-ui') && !c.contains('pad-ui'); };
+function startFromAttract() {
+  if (!attract) return;
+  input.swallowHeld();   // the key or button that started it doesn't also throw a punch
+  if (arena.clearBodies) arena.clearBodies();
+  setScene('play');
+}
+// before each step: the demo's KO card holds a beat longer; a game left alone goes back to the demo
+function attractFlow(ms) {
+  if (attract) {
+    if (sim.phase === 'ko' && !attractKO) { attractKO = true; sim.phaseTimer = 1.6; }   // hold the KO after the body rests
+    return false;
+  }
+  if (!attractHome || (sceneName !== 'play' && sceneName !== 'horde')) return false;
+  const s = input.snapshot();
+  if (s.dx || s.jump || s.down || s.block || s.run || s.lp || s.rp || s.lk || s.rk) idleMs = 0;
+  else idleMs += ms;
+  const matchOver = lastPhase === 'match' && sim.phase !== 'match';   // the sim just reset after the WINS card
+  lastPhase = sim.phase;
+  if (idleMs > IDLE_MS || matchOver) { setScene('attract'); return true; }
+  return false;
+}
+// any key (but a bare modifier or a shortcut), any pad button, any touch or click starts a game
+window.addEventListener('keydown', (e) => {
+  idleMs = 0;
+  if (!attract || e.repeat || /^(Meta|Control|Alt|Shift|OS|CapsLock)/.test(e.code) || e.metaKey || e.ctrlKey || e.altKey) return;
+  startFromAttract();
+});
+input.onPad(() => { idleMs = 0; startFromAttract(); });
+for (const t of ['pointerdown', 'touchstart']) {
+  window.addEventListener(t, (e) => {
+    idleMs = 0;
+    if (!attract) return;
+    const el = e.target instanceof Element ? e.target : null;
+    if (el && el.closest('[class^="sf-"], [class*=" sf-"], #credits')) return;   // the sound button, panel and credits link are left alone
+    startFromAttract();
+  }, { capture: true, passive: true });
+}
+
+// ---- hotkeys -----------------------------------------------------------------------------------
+input.onKey((code) => {
+  if (attract) return;   // in the demo every key (pad Start included) starts a game instead, above
+  if (code === 'KeyH') debug = !debug;
+  else if (code === 'F1' || code === 'Slash') help = !help;
+  else if (code === 'KeyP') paused = !paused;
+  else if (code === 'KeyR') setScene(sceneName);
+  else if (code === 'KeyG') setScene(sceneName === 'horde' ? 'play' : 'horde');
+  else if (code === 'Minus') sim.setDifficulty(sim.difficulty - 0.1);
+  else if (code === 'Equal') sim.setDifficulty(sim.difficulty + 0.1);
+});
+
+// ---- loop + gauntlet hook ---------------------------------------------------------------------------
+let lastFrameMs = 16;
+let last = performance.now();
+setScene(params.get('scene') || 'attract');
+window.__gauntlet = {
+  scenes: Object.keys(scenes),
+  setScene(name, opts) { driven = true; setScene(name, opts); render(); },
+  step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
+  ready: false,   // true once fonts are in and the first frame has rendered
+};
+window.__game = { sim, camera, fx, arena, fighters, setScene, advance, get attract() { return attract; }, get sceneName() { return sceneName; } };
+// no load race for captures: fonts first, then one real rendered frame, then ready
+// the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
+// loads on its own); offline, the system fallbacks are used after a short wait
+try {
+  if (document.fonts && document.fonts.load) await Promise.race([Promise.all(['40px Bungee', '600 20px Teko', '500 20px Teko'].map(f => document.fonts.load(f))), new Promise(r => setTimeout(r, 2500))]);
+  await document.fonts.ready;
+} catch (e) { /* no font API */ }
+render();
+await new Promise(r => requestAnimationFrame(r));
+function frame(now) {
+  const ms = Math.min(100, now - last); last = now;
+  if (!driven) { lastFrameMs = ms; advance(ms); render(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.__gauntlet.ready = true;

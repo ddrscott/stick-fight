@@ -1,0 +1,93 @@
+// Frame data per attack. Startup / active / recovery come from the fighter rig's own
+// 'active' and 'recover' events, so they follow whatever piece A animates. Everything
+// here is what the sim adds on top. Durations are in 60fps frames (the language of
+// frame data); f60() converts them to 120Hz sim steps.
+//
+//   limb       which joints carry the hitbox: 'hand' or 'foot' (the most forward one)
+//   damage     out of 100 health
+//   kb         knockback velocity px/s: x away from the attacker, y upward
+//   hitstun    frames the victim is locked after a standing hit
+//   blockstun  frames the victim is locked after blocking it
+//   hitstop    frames BOTH fighters freeze on contact (half that on block)
+//   knockdown  victim goes to the floor instead of hitstun
+//   low        goes under a standing block
+//   cancels    moves this can cancel into once it has connected
+//   reach      AI's starting guess for horizontal reach; the sim measures the real one
+
+export const FRAME_DATA = {
+  // kb.x on a standing hit is a stumble: it decays at 0.95/step, so the victim slides
+  // kb.x/6 px in total (jab ~70px, cross ~100px: at least one body width per hit).
+  // flashR is the FX burst radius passed to fx.hit; kicks get a small one so the
+  // defender stays readable at contact.
+  jab:        { limb: 'hand', damage: 6,  kb: { x: 360, y: 0 },   hitstun: 26, blockstun: 8,  hitstop: 5,  knockdown: false, low: false, cancels: ['cross', 'jab', 'sweep'],        reach: 80,  flashR: 36 },
+  cross:      { limb: 'hand', damage: 10, kb: { x: 300, y: 0 },   hitstun: 30, blockstun: 12, hitstop: 7,  knockdown: false, low: false, cancels: ['roundhouse', 'sweep'], reach: 100, flashR: 40 },
+  roundhouse: { limb: 'foot', damage: 16, kb: { x: 480, y: 280 }, hitstun: 0,  blockstun: 16, hitstop: 8,  knockdown: true,  low: false, cancels: [],                       reach: 85,  flashR: 26 },
+  sweep:      { limb: 'foot', damage: 9,  kb: { x: 260, y: 190 }, hitstun: 0,  blockstun: 0,  hitstop: 7,  knockdown: true,  low: true,  cancels: [],                       reach: 85,  flashR: 26 },
+};
+
+// throw: point-blank grab on the cross clip, can't be blocked, knocks down. The guard's
+// second answer next to the sweep (a standing block stops everything else).
+// the rest of the four-limb table (fighter round 12): one strike per limb plus direction variants
+Object.assign(FRAME_DATA, {
+  lkick:      { limb: 'foot', damage: 7,  kb: { x: 0, y: 0 },     hitstun: 24, blockstun: 10, hitstop: 5, knockdown: false, low: false, cancels: [], reach: 80, flashR: 28 },
+  lowKick:    { limb: 'foot', damage: 6,  kb: { x: 0, y: 0 },     hitstun: 22, blockstun: 0,  hitstop: 5, knockdown: false, low: true,  cancels: [], reach: 75, flashR: 24 },
+  lungeCross: { limb: 'hand', damage: 11, kb: { x: 0, y: 0 },     hitstun: 28, blockstun: 12, hitstop: 7, knockdown: false, low: false, cancels: [], reach: 120, flashR: 40 },
+  spinKick:   { limb: 'foot', damage: 15, kb: { x: 420, y: 260 }, hitstun: 0,  blockstun: 16, hitstop: 8, knockdown: true,  low: false, cancels: [], reach: 80, flashR: 26 },
+  uppercut:   { limb: 'hand', damage: 9,  kb: { x: 120, y: 420 }, hitstun: 0,  blockstun: 12, hitstop: 7, knockdown: true,  low: false, juggle: true, cancels: [], reach: 50, flashR: 34 },
+});
+FRAME_DATA.throw = { limb: 'hand', damage: 8, kb: { x: 300, y: 240 }, hitstun: 0, blockstun: 0, hitstop: 6, knockdown: true, low: false, unblockable: true, range: 100, anim: 'cross', cancels: [], reach: 60, flashR: 30 };
+FRAME_DATA.throw.throw = true;
+FRAME_DATA.throw.anims = ['throw', 'wallSlam', 'cross'];
+// v2: crouch attacks, rising attacks, forward attacks and the string enders. `anims` lists the
+// rig clips to try in order; createCombat resolves `anim` to the first one the rig has, so the
+// game keeps working while the rig builder adds the new clips. `tc` keeps the body low through
+// the move (it ducks highs). Enders are the last hit of a string (strings.js) and pay off with
+// `payoff`: knockdown, launch (a juggle), splat (wall splat if the body reaches a wall),
+// groundBounce (a downward hit on an airborne body) .
+Object.assign(FRAME_DATA, {
+  lowJab:         { limb: 'hand', damage: 5,  kb: { x: 0, y: 0 },     hitstun: 20, blockstun: 6,  hitstop: 4, knockdown: false, tc: true, cancels: [], reach: 75, flashR: 24, anims: ['lowJab', 'jab'] },
+  bodyBlow:       { limb: 'hand', damage: 9,  kb: { x: 0, y: 0 },     hitstun: 26, blockstun: 10, hitstop: 6, knockdown: false, cancels: [], reach: 80, flashR: 32, anims: ['bodyBlow', 'jab'] },
+  risingUppercut: { limb: 'hand', damage: 11, kb: { x: 110, y: 460 }, hitstun: 0,  blockstun: 14, hitstop: 7, knockdown: true, juggle: true, cancels: [], reach: 55, flashR: 34, anims: ['risingUppercut', 'uppercut'] },
+  risingKnee:     { limb: 'foot', damage: 12, kb: { x: 100, y: 460 }, hitstun: 0,  blockstun: 14, hitstop: 7, knockdown: true, juggle: true, cancels: [], reach: 60, flashR: 30, anims: ['risingKnee', 'lkick'] },
+  overhead:       { limb: 'foot', damage: 13, kb: { x: 0, y: 0 },     hitstun: 32, blockstun: 14, hitstop: 8, knockdown: false, cancels: [], reach: 85, flashR: 30, anims: ['overhead', 'roundhouse'] },
+  uptown:         { limb: 'foot', damage: 10, kb: { x: 0, y: 0 },     hitstun: 30, blockstun: 12, hitstop: 7, knockdown: false, cancels: [], reach: 80, flashR: 30, anims: ['lkick'], callout: 'UPTOWN' },
+  flashRoundhouse:{ limb: 'foot', damage: 18, kb: { x: 500, y: 300 }, hitstun: 0,  blockstun: 16, hitstop: 9, knockdown: true, ender: true, cancels: [], reach: 85, flashR: 34, anims: ['roundhouse'] },
+  neonTornado:    { limb: 'foot', damage: 14, kb: { x: 140, y: 470 }, hitstun: 0,  blockstun: 16, hitstop: 9, knockdown: true, juggle: true, ender: true, cancels: [], reach: 80, flashR: 36, anims: ['neonTornado', 'spinKick'] },
+  spinHeel:       { limb: 'foot', damage: 15, kb: { x: 720, y: 180 }, hitstun: 0,  blockstun: 16, hitstop: 9, knockdown: true, splat: true, ender: true, cancels: [], reach: 80, flashR: 34, anims: ['spinHeel', 'spinKick'] },
+  crescent:       { limb: 'foot', damage: 16, kb: { x: 440, y: 320 }, hitstun: 0,  blockstun: 16, hitstop: 9, knockdown: true, ender: true, cancels: [], reach: 85, flashR: 34, anims: ['crescent', 'roundhouse'] },
+  rushKnee:       { limb: 'foot', damage: 14, kb: { x: 400, y: 340 }, hitstun: 0,  blockstun: 14, hitstop: 8, knockdown: true, ender: true, cancels: [], reach: 70, flashR: 32, anims: ['risingKnee', 'lkick'] },
+  skySpike:       { limb: 'foot', damage: 12, kb: { x: 120, y: 300 }, hitstun: 0,  blockstun: 14, hitstop: 9, knockdown: true, groundBounce: true, ender: true, cancels: [], reach: 85, flashR: 36, anims: ['overhead', 'roundhouse'] },
+  cometCross:     { limb: 'hand', damage: 16, kb: { x: 760, y: 160 }, hitstun: 0,  blockstun: 16, hitstop: 9, knockdown: true, splat: true, ender: true, special: true, cancels: [], reach: 120, flashR: 40, anims: ['cometCross', 'lungeCross'] },
+});
+// v3b: air attacks, one per jump. Overheads: mid, so a croucher can't duck or low-guard them but a
+// standing guard holds. A hit leaves the defender stumbling long enough for a ground string on landing.
+Object.assign(FRAME_DATA, {
+  jumpJab:       { limb: 'hand', damage: 6,  kb: { x: 0, y: 0 },     hitstun: 34, blockstun: 10, hitstop: 5, knockdown: false, air: true, cancels: [], reach: 80, flashR: 30, anims: ['jumpJab', 'jab'] },
+  jumpCross:     { limb: 'hand', damage: 9,  kb: { x: 0, y: 0 },     hitstun: 38, blockstun: 12, hitstop: 6, knockdown: false, air: true, cancels: [], reach: 95, flashR: 34, anims: ['jumpCross', 'cross'] },
+  flyingKick:    { limb: 'foot', damage: 10, kb: { x: 0, y: 0 },     hitstun: 38, blockstun: 12, hitstop: 7, knockdown: false, air: true, cancels: [], reach: 110, flashR: 32, anims: ['flyingKick', 'lkick'] },
+  airRoundhouse: { limb: 'foot', damage: 13, kb: { x: 420, y: 240 }, hitstun: 0,  blockstun: 14, hitstop: 8, knockdown: true,  air: true, cancels: [], reach: 95, flashR: 34, anims: ['airRoundhouse', 'roundhouse'] },
+  diveKick:      { limb: 'foot', damage: 11, kb: { x: 0, y: 0 },     hitstun: 36, blockstun: 12, hitstop: 7, knockdown: false, air: true, dive: true, cancels: [], reach: 90, flashR: 32, anims: ['diveKick', 'overhead', 'roundhouse'] },
+});
+FRAME_DATA.wallSlam = { ...FRAME_DATA.throw, damage: 14, kb: { x: 760, y: 160 }, splat: true, anims: ['wallSlam', 'cross'], anim: undefined };
+FRAME_DATA.uppercut.kb = { x: 90, y: 420 };   // a launcher: the body flies at jab height on the rig's point simulation
+
+// heights (Tekken): high is ducked by a croucher, low beats standing guard, mid beats crouch
+const HEIGHT = { jab: 'high', cross: 'high', roundhouse: 'high', flashRoundhouse: 'high', spinKick: 'high', spinHeel: 'high', crescent: 'mid',
+  sweep: 'low', lowKick: 'low', lowJab: 'low', throw: 'throw', wallSlam: 'throw' };
+for (const [m, fd] of Object.entries(FRAME_DATA)) { fd.height = HEIGHT[m] || 'mid'; fd.low = fd.height === 'low'; }
+for (const m of ['sweep', 'lowKick']) FRAME_DATA[m].tc = true;
+
+// stamina costs (v2 spec): jab 6, cross 9, kicks 12, launchers 16, enders 20, throws 15
+const COST = { jab: 6, lowJab: 6, cross: 9, bodyBlow: 9, lungeCross: 10, uppercut: 16, risingUppercut: 16, risingKnee: 16, throw: 15, wallSlam: 15 };
+const AIR_COST = { jumpJab: 6, jumpCross: 9, flyingKick: 10, airRoundhouse: 12, diveKick: 10 };
+Object.assign(COST, AIR_COST);
+for (const [m, fd] of Object.entries(FRAME_DATA)) fd.cost = fd.ender ? 20 : COST[m] != null ? COST[m] : fd.limb === 'foot' ? 12 : 9;
+// callout names for enders reached outside a string (the string's own name wins when there is one)
+for (const [m, name] of Object.entries({ flashRoundhouse: 'FLASH ROUNDHOUSE', neonTornado: 'NEON TORNADO', spinHeel: 'SPIN HEEL', crescent: 'CRESCENT',
+  rushKnee: 'GROUND RUSH', skySpike: 'SKY SPIKE', cometCross: 'COMET CROSS', wallSlam: 'WALL SLAM' })) FRAME_DATA[m].callout = name;
+export const STAMINA = { max: 100, regen: 22, regenBlock: 8, delay: 0.6, run: 10, jump: 6, gassedTime: 1.2, gassedStartup: 1.4, gassedDamage: 1.15 };
+
+export const ATTACKS = Object.keys(FRAME_DATA);
+export const STEP_HZ = 120;
+export const DT = 1 / STEP_HZ;
+export const f60 = (frames) => Math.round(frames * STEP_HZ / 60);

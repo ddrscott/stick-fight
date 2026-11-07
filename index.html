@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Neon Stick Fight</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Teko:wght@500;600&display=swap">
+<style>
+  html, body { margin: 0; height: 100%; background: #07020f; overflow: hidden; font-family: 'Teko', 'Arial Narrow', system-ui, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; }
+  #stage { position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }
+  #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { pointer-events: none; }
+  /* attract mode (the demo bout): no touch controls until a tap starts the game */
+  html.attract .tc-root { display: none; }
+  /* source and credits link, shown only on the attract screen, just above the DEMO tag */
+  #credits { display: none; position: absolute; right: 2.2%; bottom: 9%; font: 500 15px/1 'Teko', sans-serif; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-decoration: none; padding: 4px 6px; }
+  #credits:hover { color: #4df3ff; }
+  html.attract #credits { display: block; }
+</style>
+<script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+  <canvas id="hud"></canvas>
+  <a id="credits" href="https://github.com/ddrscott/stick-fight#license-and-credits" target="_blank" rel="noopener">SOURCE &amp; CREDITS</a>
+</div>
+<script type="module" src="./src/main.js"></script>
+<script type="module" src="./src/touch.js"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+// Hitboxes come from the striking limb's joints; hurtboxes are a head circle plus
+// capsules along the spine and limbs. Everything is in world space from rig.joints.
+import { FRAME_DATA } from './frameData.js';
+
+const HAND_R = 15, FOOT_R = 18;
+
+export function buildHitboxes(rig, move, facing) {
+  const j = rig.joints, fd = FRAME_DATA[move];
+  if (!j || !j.lHand) return [];
+  // the limb the move names (the rig's MOVE_DATA limb, set on FRAME_DATA as joint); the old
+  // "most forward hand/foot" guess measured some jabs off the guard hand
+  const PARENT = { lHand: 'lElbow', rHand: 'rElbow', lFoot: 'lKnee', rFoot: 'rKnee', lKnee: 'hip', rKnee: 'hip', lElbow: 'lShoulder', rElbow: 'rShoulder' };
+  let chain;
+  if (fd.joint && PARENT[fd.joint]) chain = [PARENT[fd.joint], fd.joint];
+  else {
+    const chains = fd.limb === 'hand' ? [['lElbow', 'lHand'], ['rElbow', 'rHand']] : [['lKnee', 'lFoot'], ['rKnee', 'rFoot']];
+    const fwd = (name) => (j[name].x - rig.x) * facing;
+    chain = fwd(chains[0][1]) >= fwd(chains[1][1]) ? chains[0] : chains[1];
+  }
+  const mid = j[chain[0]], end = j[chain[1]];
+  const r = fd.limb === 'hand' ? HAND_R : FOOT_R;
+  // the whole striking segment, fist/foot first: at point-blank range the fist is past
+  // the opponent's torso and it is the forearm or shin that lands
+  const out = [{ x: end.x, y: end.y, r }];
+  // just behind the tip only: solid bodies keep a fist from passing the torso, and a forearm
+  // circle further back registered hits with the fist nowhere near the body
+  out.push({ x: mid.x + (end.x - mid.x) * 0.75, y: mid.y + (end.y - mid.y) * 0.75, r: r * 0.7 });
+  return out;
+}
+
+export function buildHurtboxes(rig) {
+  const j = rig.joints;
+  if (!j || !j.hip) return { circles: [], capsules: [] };
+  return {
+    circles: [{ x: j.head.x, y: j.head.y, r: (rig.radius || 11) + 3 }],
+    capsules: [
+      [j.neck, j.hip, 9],
+      [j.hip, j.lKnee, 6], [j.lKnee, j.lFoot, 6],
+      [j.hip, j.rKnee, 6], [j.rKnee, j.rFoot, 6],
+      [j.lShoulder, j.lElbow, 5], [j.lElbow, j.lHand, 5],
+      [j.rShoulder, j.rElbow, 5], [j.rElbow, j.rHand, 5],
+    ],
+  };
+}
+
+function segDist2(p, a, b) {
+  const abx = b.x - a.x, aby = b.y - a.y;
+  const l2 = abx * abx + aby * aby;
+  let t = l2 > 0 ? ((p.x - a.x) * abx + (p.y - a.y) * aby) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const dx = p.x - (a.x + abx * t), dy = p.y - (a.y + aby * t);
+  return dx * dx + dy * dy;
+}
+
+// Returns the contact point of the first overlapping pair, or null.
+export function testHit(hits, hurt) {
+  for (const h of hits) {
+    for (const c of hurt.circles) {
+      const d = h.r + c.r, dx = h.x - c.x, dy = h.y - c.y;
+      if (dx * dx + dy * dy <= d * d) return { x: h.x, y: h.y };   // at the fist/foot, not the head
+    }
+    for (const [a, b, r] of hurt.capsules) {
+      const d = h.r + r;
+      if (segDist2(h, a, b) <= d * d) return { x: h.x, y: h.y };
+    }
+  }
+  return null;
+}
+
+// Debug overlay for the HUD.
+export function drawBoxes(ctx, hits, hurt) {
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(46,242,255,0.8)';
+  for (const c of hurt.circles) { ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.lineCap = 'round';
+  for (const [a, b, r] of hurt.capsules) { ctx.lineWidth = r * 2; ctx.strokeStyle = 'rgba(46,242,255,0.18)'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+  ctx.lineWidth = 2; ctx.strokeStyle = '#ff2bd6';
+  for (const h of hits) { ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.restore();
+}

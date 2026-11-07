@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arena demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --night: #0b0814;
+    --pink: #ff4fa3;
+    --cyan: #45e0ff;
+    --violet: #9b7bff;
+    --ink: #f4ecff;
+  }
+  html, body { margin: 0; height: 100%; background: var(--night); overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; font: 13px/1.3 "Bungee", Impact, "Arial Black", system-ui, sans-serif; color: var(--ink); letter-spacing: 0.04em; }
+  canvas { display: block; width: 100vw; height: calc(100vw * 9 / 16); max-height: 100vh; max-width: calc(100vh * 16 / 9); background: #000; }
+  #bar { position: fixed; left: 14px; top: 14px; display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: rgba(14, 8, 28, 0.72);
+    border: 2px solid var(--violet); border-radius: 10px; box-shadow: 0 0 10px rgba(155, 123, 255, 0.55), inset 0 0 8px rgba(155, 123, 255, 0.25); }
+  #bar .title { font-size: 18px; margin-right: 6px; color: var(--pink);
+    text-shadow: 0 0 4px var(--pink), 0 0 12px rgba(255, 79, 163, 0.8), 0 0 24px rgba(255, 79, 163, 0.5); }
+  #bar button { font: inherit; color: var(--ink); background: rgba(20, 12, 40, 0.8); border: 2px solid var(--cyan); border-radius: 8px; padding: 4px 12px; cursor: pointer;
+    box-shadow: 0 0 6px rgba(69, 224, 255, 0.5); text-shadow: 0 0 6px rgba(69, 224, 255, 0.7); transition: box-shadow 120ms, border-color 120ms; }
+  #bar button:hover { box-shadow: 0 0 12px rgba(69, 224, 255, 0.85); }
+  #bar button.on { border-color: var(--pink); color: #fff; box-shadow: 0 0 10px rgba(255, 79, 163, 0.85), inset 0 0 6px rgba(255, 79, 163, 0.4); text-shadow: 0 0 8px var(--pink); }
+  #bar .hint { margin-left: 6px; font-size: 11px; color: #c9b8ff; opacity: 0.85; text-shadow: 0 0 6px rgba(155, 123, 255, 0.6); }
+  body.capturing #bar { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="bar"><span class="title">Arena</span>
+  <button data-scene="lineart">lineart</button>
+  <button data-scene="lit">lit</button>
+  <button data-scene="pile">pile</button>
+  <span class="hint">Keys 1 2 3 · B drops a body · D overlay · O opens doors</span>
+</div>
+<script type="module">
+import { createArena, drawJoints, lighten, BODY_PALETTE } from '../src/arena/index.js';
+
+const W = 1280, H = 720;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+// One 2D canvas per layer, the way the FX compositor keeps them.
+const far = mk(), scene = mk(), figures = mk(), live = mk(), foreground = mk(), light = mk(), farLight = mk(), emissive = mk(), tmp = mk(), tmp2 = mk();
+function mk() { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; }
+
+// --- deterministic bits ----------------------------------------------------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const grain = (() => {
+  const c = document.createElement('canvas'); c.width = 160; c.height = 160;
+  const g = c.getContext('2d'); const img = g.createImageData(160, 160);
+  const r = mulberry32(7);
+  for (let i = 0; i < img.data.length; i += 4) { const v = (r() * 255) | 0; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+  g.putImageData(img, 0, 0); return c;
+})();
+
+// A standing figure in a loose idle: stand-ins at the spawns, and the "before"
+// pose of a body about to hit the floor.
+function standingJoints(x, y, facing, lean = 0) {
+  const f = facing;
+  const P = (dx, dy) => ({ x: x + f * dx, y: y + dy });
+  return {
+    head: P(4 + lean, -118), neck: P(2 + lean * 0.8, -104), hip: P(0, -60),
+    lShoulder: P(1, -100), rShoulder: P(3, -100),
+    lElbow: P(-12, -78), lHand: P(-6, -58),
+    rElbow: P(16, -80), rHand: P(24, -64),
+    lKnee: P(-6, -32), lFoot: P(-10, 0),
+    rKnee: P(10, -32), rFoot: P(14, 0),
+  };
+}
+
+// Live fighter colors (coral and yellow). Snapshot colors near these get shifted by the arena.
+const STANDIN = { shaded: ['#ff4a4a', '#ffd23a'], lineart: ['#1a1a1a', '#7b1e3a'] };
+
+// --- scenes ----------------------------------------------------------------
+const SCENES = {
+  lineart: { style: 'lineart', lit: false, pile: false },
+  lit: { style: 'shaded', lit: true, pile: false },
+  pile: { style: 'shaded', lit: true, pile: true },
+  debug: { style: 'shaded', lit: true, pile: true, debug: true }, // the pile with the collision overlay on
+};
+
+let arena, cfg, sceneName = 'lit', t = 0, queue = [];
+const camera = { x: 640, y: 360, zoom: 1 };
+
+function setScene(name) {
+  cfg = SCENES[name] || SCENES.lit;
+  sceneName = SCENES[name] ? name : 'lit';
+  arena = createArena('building').setStyle(cfg.style);
+  arena.bodiesInBackground = false; // the pile goes on the figures layer, outside the ambient tint
+  arena.liveColors = STANDIN[cfg.style];
+  t = 0; queue = []; camera.x = 640;
+  if (cfg.pile) {
+    const r = mulberry32(42);
+    const main = arena.floors[0], lower = arena.floors[1] || main;
+    for (let i = 0; i < 9; i++) {
+      const onLower = i >= 6;
+      const floor = onLower ? lower : main;
+      const x = onLower ? 560 + (r() - 0.5) * 120 : (i % 2 ? 800 : 380) + (r() - 0.5) * 110;
+      const facing = r() < 0.5 ? -1 : 1;
+      queue.push({ at: i * 0.06, snap: { x, y: floor.y, facing, color: BODY_PALETTE[i], radius: 11, lineWidth: 5, joints: standingJoints(x, floor.y, facing, 10) } });
+    }
+  }
+  for (const b of document.querySelectorAll('#bar button')) b.classList.toggle('on', b.dataset.scene === sceneName);
+  render();
+}
+
+function advance(dt) {
+  t += dt;
+  while (queue.length && queue[0].at <= t) arena.addBody(queue.shift().snap);
+  arena.update(dt);
+  // the game camera follows the fighters; here it drifts a few px so the layers
+  // can be seen moving at their own rates across a capture
+  camera.x = 640 + Math.min(24, t * 30);
+}
+
+// A live fighter: full-color stroke with a lighter core, so the living always carry
+// a luma floor the pile cannot reach. Piece A owns the real figure; this is the stand-in.
+function drawLive(c, joints, color) {
+  drawJoints(c, joints, color, 7, 12);
+  drawJoints(c, joints, lighten(color, 0.45), 3, 9);
+}
+
+// --- rendering -------------------------------------------------------------
+// The camera, with a parallax factor: a layer at k follows the camera k times as far.
+function withCamera(c, fn, k = 1) {
+  c.save();
+  c.translate(W / 2, H / 2); c.scale(camera.zoom, camera.zoom);
+  c.translate(-(W / 2 + (camera.x - W / 2) * k), -(H / 2 + (camera.y - H / 2) * k));
+  fn(c);
+  c.restore();
+}
+
+function reset(c) { c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none'; c.clearRect(0, 0, W, H); }
+
+function lightmap(c, ambient, scale) {
+  reset(c);
+  c.fillStyle = `rgb(${ambient.map((v) => Math.round(v * 255)).join(',')})`;
+  c.fillRect(0, 0, W, H);
+  c.globalCompositeOperation = 'lighter';
+  for (const l of arena.lights) {
+    const I = l.intensity * scale;
+    if (I <= 0) continue;
+    const sx = (l.x - camera.x) * camera.zoom + W / 2, sy = (l.y - camera.y) * camera.zoom + H / 2, r = l.radius * camera.zoom;
+    const [cr, cg, cb] = l.color.map((v) => Math.round(v * 255));
+    const g = c.createRadialGradient(sx, sy, 0, sx, sy, r);
+    g.addColorStop(0, `rgba(${cr},${cg},${cb},${I})`);
+    g.addColorStop(0.3, `rgba(${cr},${cg},${cb},${I * 0.5})`);
+    g.addColorStop(0.65, `rgba(${cr},${cg},${cb},${I * 0.14})`);
+    g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    c.fillStyle = g; c.fillRect(sx - r, sy - r, r * 2, r * 2);
+  }
+}
+
+// Flipped, faded copies of the figures into a glossy band: the floor reflects the actors.
+function reflectFigures(target, floorY, bandH, alpha) {
+  const ry = (floorY - camera.y) * camera.zoom + H / 2;
+  const tc = tmp2.getContext('2d');
+  reset(tc);
+  tc.save();
+  tc.translate(0, ry); tc.scale(1, -0.22); tc.translate(0, -ry);
+  tc.drawImage(figures, 0, 0);
+  tc.drawImage(live, 0, 0);
+  tc.restore();
+  tc.globalCompositeOperation = 'destination-in';
+  const fade = tc.createLinearGradient(0, ry, 0, ry + bandH);
+  fade.addColorStop(0, `rgba(0,0,0,${alpha})`); fade.addColorStop(1, 'rgba(0,0,0,0)');
+  tc.fillStyle = fade; tc.fillRect(0, ry, W, bandH);
+  // cut by the same smear as the prop reflections
+  tc.globalCompositeOperation = 'destination-out';
+  for (let x = 0; x < W; x += 9) { tc.fillStyle = 'rgba(0,0,0,0.5)'; tc.fillRect(x + ((x / 9) % 3) * 2, ry, 3, bandH); }
+  target.globalCompositeOperation = 'lighter';
+  target.drawImage(tmp2, 0, 0);
+}
+
+let debugOverlay = false;
+function render() {
+  renderScene();
+  if (debugOverlay || cfg.debug) withCamera(ctx, drawDebug);
+}
+
+// Collision and fight data, in world space: treads (cyan), stair rails (dim cyan), the stairwell
+// opening and its guard rail (pink), each floor's fight band (yellow) and walls (orange), spawns
+// (white ticks), goon doors (green arrows).
+function drawDebug(c) {
+  c.save();
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none'; c.lineWidth = 2;
+  c.strokeStyle = '#45e0ff';
+  for (const t of arena.treads) { c.beginPath(); c.moveTo(t.x0, t.y); c.lineTo(t.x1, t.y); c.stroke(); }
+  c.strokeStyle = 'rgba(69,224,255,0.5)'; c.setLineDash([4, 4]);
+  for (const r of arena.stairRail) { c.beginPath(); c.moveTo(r.x0, r.y0); c.lineTo(r.x1, r.y1); c.stroke(); }
+  c.setLineDash([]);
+  const sw = arena.stairwell;
+  if (sw) {
+    c.strokeStyle = '#ff4fa3'; c.strokeRect(sw.x0, sw.y, sw.x1 - sw.x0, 80);
+    c.beginPath(); c.moveTo(sw.rail.x0, sw.y - sw.rail.h); c.lineTo(sw.rail.x1, sw.y - sw.rail.h); c.stroke();
+  }
+  arena.floors.forEach((f, i) => {
+    if (f.fightBand) { c.fillStyle = 'rgba(255,214,58,0.18)'; c.fillRect(f.fightBand.x0, f.y - 220, f.fightBand.x1 - f.fightBand.x0, 220); }
+    if (f.walls) { c.strokeStyle = '#ff8a2e'; for (const x of [f.walls.left, f.walls.right]) { c.beginPath(); c.moveTo(x, f.y - 220); c.lineTo(x, f.y); c.stroke(); } }
+    c.strokeStyle = '#ffffff'; for (const p of arena.spawnsByFloor[i] || []) { c.beginPath(); c.moveTo(p.x, f.y - 12); c.lineTo(p.x, f.y); c.stroke(); }
+    c.fillStyle = '#4fc46a'; for (const d of (arena.doors[i] || [])) { c.beginPath(); c.moveTo(d.x - 8, d.y - 18); c.lineTo(d.x + 8, d.y - 18); c.lineTo(d.x, d.y - 6); c.closePath(); c.fill(); }
+  });
+  c.restore();
+}
+function renderScene() {
+  const fc0 = far.getContext('2d'), sc = scene.getContext('2d'), fc = figures.getContext('2d'), vc = live.getContext('2d'), gc = foreground.getContext('2d');
+  reset(fc0); reset(sc); reset(fc); reset(vc); reset(gc);
+  withCamera(fc0, (c) => arena.drawFar(c, camera), arena.farParallax);
+  withCamera(sc, (c) => arena.drawBackground(c, camera));
+  withCamera(fc, (c) => arena.drawBodies(c));
+  withCamera(vc, (c) => arena.spawns.forEach((s, i) => (cfg.lit ? drawLive : (c2, j, col) => drawJoints(c2, j, col, 5, 11))(c, standingJoints(s.x, s.y, s.facing), STANDIN[cfg.style][i])));
+  withCamera(gc, (c) => arena.drawForeground(c), arena.foregroundParallax);
+
+  reset(ctx);
+  if (!cfg.lit) { ctx.drawImage(far, 0, 0); ctx.drawImage(scene, 0, 0); ctx.drawImage(figures, 0, 0); ctx.drawImage(live, 0, 0); ctx.drawImage(foreground, 0, 0); return; }
+
+  // A stand-in for the FX compositor. Ambient matches src/fx's default.
+  // the compositor's 'night' preset: ambient, and the far plane lit by ambient + 0.1 of the lights
+  const ambient = [0.34, 0.23, 0.52];
+  lightmap(light.getContext('2d'), ambient, 1);
+  lightmap(farLight.getContext('2d'), ambient, 0.1);
+
+  // 1. far layer: lit by ambient + 0.45 of the point lights, then hazed toward deep blue, like fx.far
+  const tc = tmp.getContext('2d');
+  reset(tc);
+  tc.drawImage(far, 0, 0);
+  tc.globalCompositeOperation = 'multiply'; tc.drawImage(farLight, 0, 0);
+  // the haze the arena expects from fx.far in the night preset: [0.04, 0.10, 0.28] at amount 0.6
+  tc.globalCompositeOperation = 'source-over'; tc.fillStyle = 'rgba(10,26,71,0.6)'; tc.fillRect(0, 0, W, H);
+  ctx.drawImage(tmp, 0, 0);
+
+  // 2. the room: scene * lightmap, keeping the openings transparent so the far layer shows
+  reset(tc);
+  tc.drawImage(scene, 0, 0);
+  tc.globalCompositeOperation = 'multiply'; tc.drawImage(light, 0, 0);
+  tc.globalCompositeOperation = 'destination-in'; tc.drawImage(scene, 0, 0);
+  ctx.drawImage(tmp, 0, 0);
+
+  // 3. figures: the pile luma-capped and exempt from the point lights; live fighters self-lit
+  ctx.drawImage(figures, 0, 0);
+  ctx.drawImage(live, 0, 0);
+
+  // 4. the floor reflects the actors: flipped, faded copies into both glossy bands
+  reflectFigures(ctx, arena.reflectY, arena.gloss.height, 0.38);
+  if (arena.floors[1]) reflectFigures(ctx, arena.floors[1].y, 20, 0.38);
+
+  // 5. emissive, with bloom from a bright pass (value cubed, like the FX threshold)
+  const ec = emissive.getContext('2d');
+  reset(ec);
+  withCamera(ec, (c) => arena.drawEmissive(c, camera));
+  reset(tc);
+  tc.drawImage(emissive, 0, 0);
+  tc.globalCompositeOperation = 'multiply'; tc.drawImage(emissive, 0, 0); tc.drawImage(emissive, 0, 0);
+  tc.globalCompositeOperation = 'destination-in'; tc.drawImage(emissive, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(emissive, 0, 0);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.filter = 'blur(28px)'; ctx.globalAlpha = 1; ctx.drawImage(tmp, 0, 0);
+  ctx.filter = 'blur(8px)'; ctx.globalAlpha = 0.8; ctx.drawImage(tmp, 0, 0);
+  ctx.filter = 'none'; ctx.globalAlpha = 1;
+
+  // 6. foreground silhouettes at their own parallax, untinted, with a touch of blur like the FX layer
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.filter = 'blur(0.8px)'; ctx.drawImage(foreground, 0, 0); ctx.filter = 'none';
+
+  // 7. vignette and grain, lightly; the vignette floor is purple, not black
+  ctx.globalCompositeOperation = 'multiply';
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95);
+  v.addColorStop(0, 'rgba(255,255,255,1)'); v.addColorStop(1, 'rgba(190,172,215,1)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = 0.07;
+  ctx.fillStyle = ctx.createPattern(grain, 'repeat'); ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
+}
+
+// --- loop and hooks --------------------------------------------------------
+let manual = false, last = performance.now();
+function frame(now) {
+  if (!manual) { advance(Math.min(0.05, (now - last) / 1000)); render(); }
+  last = now;
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('#bar button').forEach((b) => b.addEventListener('click', () => { manual = false; setScene(b.dataset.scene); }));
+addEventListener('keydown', (e) => {
+  if (e.key === '1') setScene('lineart');
+  if (e.key === '2') setScene('lit');
+  if (e.key === '3') setScene('pile');
+  if (e.key === 'd') { debugOverlay = !debugOverlay; render(); }
+  if (e.key === 'o') { arena.openDoor(0, 0, 1.4); arena.openDoor(0, 1, 1.4); arena.openDoor(1, 1, 1.4); }
+  if (e.key === 'b') {
+    const f = arena.floors[arena.bodies.length % 3 === 2 ? 1 : 0] || arena.floors[0];
+    const x = f.x0 + 100 + Math.random() * (f.x1 - f.x0 - 200), facing = Math.random() < 0.5 ? -1 : 1;
+    arena.addBody({ x, y: f.y, facing, color: BODY_PALETTE[arena.bodies.length % BODY_PALETTE.length], radius: 11, lineWidth: 5, joints: standingJoints(x, f.y, facing, 10) });
+  }
+});
+
+window.__gauntlet = {
+  scenes: Object.keys(SCENES),
+  setScene(name) { manual = true; document.body.classList.add('capturing'); setScene(name); },
+  step(ms) { manual = true; advance(ms / 1000); render(); },
+  ready: false,
+};
+
+setScene('lit');
+requestAnimationFrame(frame);
+window.__gauntlet.ready = true;
+</script>
+</body>
+</html>

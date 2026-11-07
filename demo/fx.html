@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FX Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  /* Neon arcade panel (v2 spec: no terminal look). Palette from the arena: magenta, cyan, amber. */
+  :root { --bg: #0b0814; --fg: #f1ecff; --dim: #a99cc8; --magenta: #ff4fd8; --cyan: #5aebff; --amber: #ffbe5a; --panel: #150f24;
+    --display: "Orbitron", "Arial Black", "Helvetica Neue", Arial, sans-serif; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 600 12px/1.5 var(--display); letter-spacing: .03em; }
+  #stage { position: relative; width: 1280px; height: 720px; }
+  #gl { display: block; width: 1280px; height: 720px; background: #000; }
+  #panel { position: absolute; left: 0; top: 720px; width: 1280px; box-sizing: border-box; padding: 14px 16px 18px; display: flex; gap: 32px; flex-wrap: wrap;
+    background: linear-gradient(180deg, var(--panel), var(--bg)); border-top: 2px solid var(--magenta); box-shadow: 0 -2px 18px rgba(255, 79, 216, .45); }
+  .group h3 { margin: 0 0 8px; font-size: 13px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan);
+    text-shadow: 0 0 6px rgba(90, 235, 255, .8), 0 0 16px rgba(90, 235, 255, .45); }
+  .group:nth-child(2) h3 { color: var(--magenta); text-shadow: 0 0 6px rgba(255, 79, 216, .85), 0 0 16px rgba(255, 79, 216, .45); }
+  .group:nth-child(3) h3 { color: var(--amber); text-shadow: 0 0 6px rgba(255, 190, 90, .85), 0 0 16px rgba(255, 190, 90, .45); }
+  .group label { display: inline-block; margin: 0 12px 4px 0; color: var(--dim); cursor: pointer; text-transform: uppercase; font-size: 11px; }
+  .group label input { accent-color: var(--magenta); vertical-align: -1px; margin-right: 4px; }
+  .group button { font: 800 11px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; background: rgba(90, 235, 255, .06); color: var(--fg);
+    border: 2px solid rgba(90, 235, 255, .55); border-radius: 6px; padding: 6px 12px; margin: 0 6px 6px 0; cursor: pointer;
+    box-shadow: 0 0 6px rgba(90, 235, 255, .35), inset 0 0 6px rgba(90, 235, 255, .15); transition: box-shadow .12s, border-color .12s; }
+  .group button:hover { border-color: var(--cyan); box-shadow: 0 0 10px rgba(90, 235, 255, .7), inset 0 0 8px rgba(90, 235, 255, .25); }
+  .group button.on { border-color: var(--magenta); color: #fff; background: rgba(255, 79, 216, .16);
+    box-shadow: 0 0 12px rgba(255, 79, 216, .85), inset 0 0 10px rgba(255, 79, 216, .35); text-shadow: 0 0 6px rgba(255, 79, 216, .9); }
+  #stat { color: var(--dim); font-size: 11px; text-transform: uppercase; }
+  body.headless #panel { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="gl" width="1280" height="720"></canvas></div>
+<div id="panel">
+  <div class="group"><h3>Scene</h3><div id="scenes"></div></div>
+  <div class="group"><h3>Effects</h3><div id="toggles"></div></div>
+  <div class="group"><h3>Keys</h3><div id="stat">H hit &nbsp; D dust &nbsp; R rain &nbsp; Space pause</div></div>
+</div>
+<script type="module">
+import { createFX } from '../src/fx/index.js';
+import { camera } from '../src/camera.js';
+import { mulberry32 } from '../src/fx/particles.js';
+
+const W = 1280, H = 720, GROUND = 640, DT = 1 / 60;
+const canvas = document.getElementById('gl');
+let fx = null, initError = null;
+try { fx = createFX(canvas, { width: W, height: H }); }
+catch (e) { initError = e; console.error('FX init failed:', e); }
+window.__fx = fx; // for debugging and measurement
+
+// ---------- scene state ----------
+let rnd = mulberry32(7);
+const S = { name: 'neon', t: 0, figures: [], events: [], rain: false, lights: [] };
+
+const PALETTE = { red: '#e8585a', blue: '#55a3e6', green: '#86d35a', yellow: '#f1c243' };
+
+function makeFigure(color, x, facing = 1, pose = 'idle') { return { color, x, y: GROUND, facing, pose, pt: 0, vy: 0, airborne: false }; }
+
+// All lights the placeholder arena owns. Scenes pick a subset.
+const LIGHTS = {
+  lamp:    { x: 700,  y: 338, radius: 360, color: [1.0, 0.86, 0.62], intensity: 2.0 },
+  window:  { x: 335,  y: 472, radius: 230, color: [1.0, 0.55, 0.22], intensity: 3.0 },
+  sign:    { x: 592,  y: 470, radius: 250, color: [1.0, 0.32, 0.72], intensity: 1.2 },
+  cyan:    { x: 1055, y: 310, radius: 360, color: [0.35, 0.85, 1.0], intensity: 1.6 },
+  green:   { x: 1185, y: 520, radius: 260, color: [0.4, 1.0, 0.55], intensity: 1.6 },
+  store:   { x: 1050, y: 505, radius: 300, color: [1.0, 0.75, 0.6], intensity: 1.6 },
+  moon:    { x: 1140, y: 95,  radius: 320, color: [0.8, 0.85, 1.0], intensity: 0.9 },
+};
+
+const SCENES = {
+  // Quiet: lamp and one warm window, two figures idling, a slightly wet street.
+  ambient() {
+    S.lights = ['lamp', 'window'];
+    S.figures = [makeFigure(PALETTE.red, 470, 1), makeFigure(PALETTE.blue, 760, -1)];
+    fx.weather('none'); fx.reflect.strength = 0.5; fx.shafts.on = false; fx.foreground.on = true;
+  },
+  // The owner's bar: every colored light, rain, wet floor, blurred foreground, motes.
+  neon() {
+    S.lights = Object.keys(LIGHTS);
+    S.figures = [makeFigure(PALETTE.red, 470, 1), makeFigure(PALETTE.blue, 760, -1), makeFigure(PALETTE.yellow, 1010, -1)];
+    fx.weather('rain', { rate: 160, wind: -0.3 }); fx.reflect.strength = 0.7; fx.shafts.on = false; fx.foreground.on = true;
+  },
+  // Big impact at a fixed frame. Rain off so the sparks and debris read.
+  hit() {
+    S.lights = Object.keys(LIGHTS);
+    S.figures = [makeFigure(PALETTE.blue, 450, 1, 'punch'), makeFigure(PALETTE.red, 530, -1, 'idle')];
+    fx.weather('none'); fx.reflect.strength = 0.7; fx.shafts.on = false; fx.foreground.on = true;
+    S.events.push({ at: 0.15, run() {
+      const red = S.figures[1];
+      red.pose = 'hitReact'; red.pt = 0; red.vx = 420; red.vy = -180; red.airborne = true;
+      fx.hit({ x: 518, y: GROUND - 112, strength: 1.3, dir: 1, color: [0.42, 0.35, 0.17] });
+    } });
+  },
+  // Landing dust: the yellow figure drops in and lands at a fixed frame.
+  dust() {
+    S.lights = ['lamp', 'window', 'sign'];
+    const y = makeFigure(PALETTE.yellow, 640, 1, 'fall'); y.y = GROUND - 240; y.vy = 300; y.airborne = true; y.landDust = true;
+    S.figures = [makeFigure(PALETTE.red, 420, 1), y];
+    fx.weather('none'); fx.reflect.strength = 0.35; fx.shafts.on = false; fx.foreground.on = true;
+  },
+  // Stick Fight style warm light shafts from the top right.
+  shafts() {
+    S.lights = ['lamp'];
+    S.figures = [makeFigure(PALETTE.green, 520, 1), makeFigure(PALETTE.blue, 820, -1, 'punch')];
+    fx.weather('none'); fx.reflect.strength = 0.25; fx.foreground.on = true;
+    Object.assign(fx.shafts, { on: true, x: 1560, y: -160, angle: 2.42, spacing: 150, width: 34, length: 1150, count: 5, color: [1.0, 0.82, 0.5], intensity: 0.5 });
+  },
+  // Raw layers, nothing applied, so the before/after is obvious.
+  off() {
+    SCENES.neon();
+    fx.options.enabled = false;
+  },
+};
+
+function setScene(name) {
+  if (!SCENES[name]) name = 'neon';
+  S.name = name; S.t = 0; S.events = [];
+  rnd = mulberry32(1234);
+  if (!fx) return;
+  fx.seed(99);
+  fx.particles.clear();
+  fx.options.enabled = true;
+  fx.preset('neon');
+  fx.ground = GROUND;
+  fx.reflect.y = GROUND;
+  SCENES[name]();
+  fx.lights = S.lights.map(k => ({ ...LIGHTS[k] }));
+  syncPanel();
+  // Let motes and rain fill the view before the first frame so captures aren't empty.
+  for (let i = 0; i < 90; i++) { fx.update(DT); }
+}
+
+// ---------- simulation ----------
+function simStep(dt) {
+  S.t += dt;
+  for (const ev of S.events) if (!ev.done && S.t >= ev.at) { ev.done = true; ev.run(); }
+  for (const f of S.figures) {
+    f.pt += dt;
+    if (f.airborne) {
+      f.vy += 1500 * dt; f.y += f.vy * dt; f.x += (f.vx || 0) * dt;
+      if (f.vx) f.vx *= Math.max(0, 1 - 3 * dt);
+      if (f.y >= GROUND) {
+        f.y = GROUND; f.airborne = false;
+        if (f.landDust) { fx.dust({ x: f.x, y: GROUND, dir: 0, amount: 1.2 }); fx.addTrauma(0.3); f.pose = 'land'; f.pt = 0; }
+        else if (f.pose === 'hitReact') { f.pose = 'lying'; f.pt = 0; fx.dust({ x: f.x, y: GROUND, dir: f.vx || 1, amount: 0.8 }); }
+      }
+    }
+    if (f.pose === 'land' && f.pt > 0.35) { f.pose = 'idle'; f.pt = 0; }
+  }
+  // Lamp flicker, slow and subtle.
+  const lamp = fx.lights.find(l => l === LIGHTS.lamp || (l.x === LIGHTS.lamp.x && l.y === LIGHTS.lamp.y));
+  if (lamp) lamp.intensity = LIGHTS.lamp.intensity * (0.96 + 0.04 * Math.sin(S.t * 9.1) * Math.sin(S.t * 2.3));
+  fx.update(dt);
+}
+
+// ---------- drawing: placeholder arena ----------
+const FAR_TOWERS = [[0, 300, 90, 340], [110, 250, 70, 390], [200, 330, 120, 310], [340, 210, 60, 430], [420, 290, 110, 350], [560, 180, 90, 460], [660, 260, 80, 380], [760, 320, 140, 320], [920, 150, 70, 490], [1000, 230, 110, 410], [1130, 290, 90, 350], [1230, 200, 60, 440]];
+function drawFar(ctx) {
+  ctx.clearRect(0, 0, W, H);
+  // Far skyline: the compositor hazes it toward the sky and parallaxes it.
+  ctx.fillStyle = '#5c4a78';
+  for (const [x, y, w, h] of FAR_TOWERS) ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#3a2c50';
+  for (const [x, y, w, h] of FAR_TOWERS) for (let yy = y + 14; yy < y + h - 10; yy += 22) for (let xx = x + 8; xx < x + w - 8; xx += 18) ctx.fillRect(xx, yy, 7, 10);
+}
+function drawBackground(ctx) {
+  ctx.clearRect(0, 0, W, H);
+  // Mid building, left.
+  ctx.fillStyle = '#6a5a86'; ctx.fillRect(150, 290, 380, 352);
+  ctx.fillStyle = '#4a3b60'; ctx.fillRect(150, 290, 380, 14);
+  ctx.fillStyle = '#3d3052';
+  for (let y = 330; y < 420; y += 38) for (let x = 180; x < 520; x += 46) ctx.fillRect(x, y, 26, 22);
+  ctx.fillStyle = '#2f2442'; ctx.fillRect(278, 430, 116, 86); // the window frame (the orange glow goes on emissive)
+  ctx.fillStyle = '#5f5078'; ctx.fillRect(160, 560, 150, 82); // door-ish
+  ctx.fillStyle = '#2f2442'; ctx.fillRect(176, 576, 118, 66);
+  // Sign board under the window.
+  ctx.fillStyle = '#2a2140'; ctx.fillRect(548, 418, 90, 110);
+  ctx.fillStyle = '#403458'; ctx.fillRect(590, 528, 6, 112);
+  // Storefront, right.
+  ctx.fillStyle = '#6b5b88'; ctx.fillRect(860, 430, 400, 212);
+  ctx.fillStyle = '#3b2f50'; ctx.fillRect(860, 430, 400, 44);
+  ctx.fillStyle = '#6a5a86'; ctx.fillRect(876, 490, 368, 150);
+  ctx.fillStyle = '#2d2340'; for (let x = 884; x < 1240; x += 62) ctx.fillRect(x, 500, 52, 134);
+  ctx.fillStyle = '#4a3c60'; ctx.fillRect(1160, 500, 14, 134);
+  // Lamp post.
+  ctx.fillStyle = '#241c33'; ctx.fillRect(694, 350, 12, 292); ctx.fillRect(694, 350, 40, 8);
+  ctx.beginPath(); ctx.arc(700, 338, 16, Math.PI, 0); ctx.fill();
+  // Crates.
+  ctx.fillStyle = '#6c5a2c'; ctx.strokeStyle = '#4f4120'; ctx.lineWidth = 3;
+  for (const [x, y] of [[585, 580], [625, 600], [605, 540]]) { ctx.fillRect(x - 20, y - 20, 40, 40); ctx.strokeRect(x - 17, y - 17, 34, 34); ctx.beginPath(); ctx.moveTo(x - 17, y + 17); ctx.lineTo(x + 17, y - 17); ctx.stroke(); }
+  // Street.
+  ctx.fillStyle = '#3a3052'; ctx.fillRect(0, GROUND, W, H - GROUND);
+  ctx.fillStyle = '#3d3356'; ctx.fillRect(0, GROUND, W, 5);
+  ctx.fillStyle = '#2c2340'; ctx.fillRect(0, 700, W, 20);
+  // Railing.
+  ctx.fillStyle = '#1f1830'; ctx.fillRect(0, 606, W, 4);
+  for (let x = 20; x < W; x += 60) ctx.fillRect(x, 606, 4, 36);
+}
+
+function drawEmissive(ctx) {
+  ctx.clearRect(0, 0, W, H);
+  const on = (k) => S.lights.includes(k);
+  if (on('moon')) { ctx.fillStyle = '#ececfa'; ctx.beginPath(); ctx.arc(1140, 95, 42, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); ctx.arc(1120, 80, 36, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
+  if (on('lamp')) { ctx.fillStyle = '#ffeac0'; ctx.beginPath(); ctx.arc(700, 340, 9, 0, 7); ctx.fill(); }
+  if (on('window')) { ctx.fillStyle = '#ffd890'; ctx.fillRect(282, 434, 110, 80); ctx.fillStyle = '#fff0c8'; ctx.fillRect(282, 472, 110, 4); ctx.fillRect(335, 434, 4, 80); }
+  if (on('sign')) {
+    // Pink neon tubes: a saturated 5px tube with a paler 2px center line, like a real tube.
+    ctx.lineCap = 'round';
+    for (const [col, w] of [['#f060b8', 5], ['#ffd8f4', 2.5]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = w;
+      ctx.beginPath(); ctx.arc(593, 452, 20, 0, 7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(566, 486); ctx.lineTo(620, 486); ctx.moveTo(566, 500); ctx.lineTo(620, 500); ctx.stroke();
+      ctx.beginPath(); ctx.arc(593, 520, 14, 0, 7); ctx.stroke();
+    }
+    ctx.fillStyle = '#f49ad0'; ctx.fillRect(587, 448, 12, 8);
+  }
+  if (on('cyan')) {
+    ctx.fillStyle = '#48e4ff'; ctx.fillRect(956, 170, 8, 160); ctx.fillRect(948, 170, 24, 6); ctx.fillStyle = '#d8f8ff'; ctx.fillRect(958, 172, 4, 156);
+    // Billboard on the right tower: a pale cyan panel with darker bars, like the bar's blue sign.
+    ctx.fillStyle = '#def4fc'; ctx.fillRect(1008, 246, 96, 130);
+    ctx.fillStyle = '#38b8e0'; for (let y = 258; y < 370; y += 26) ctx.fillRect(1016, y, 80, 9);
+  }
+  if (on('green')) { ctx.fillStyle = '#6cf494'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(1176, 480, 18, 80, 9) : ctx.rect(1176, 480, 18, 80); ctx.fill(); ctx.fillStyle = '#dcf8e4'; ctx.fillRect(1182, 486, 6, 68); }
+  if (on('store')) { ctx.fillStyle = '#fbe8d0'; ctx.fillRect(884, 432, 196, 40); ctx.fillStyle = '#ff6a4a'; ctx.fillRect(1092, 436, 66, 32); ctx.fillStyle = '#58ff78'; ctx.fillRect(1166, 436, 60, 32); }
+  // Lit windows: a deterministic subset of the far-tower window grid, warm or cool. Small emissives.
+  for (const [x, y, w, h] of FAR_TOWERS) for (let yy = y + 14; yy < y + h - 10; yy += 22) for (let xx = x + 8; xx < x + w - 8; xx += 18) {
+    const hsh = ((xx * 7919 + yy * 104729) % 1000) / 1000;
+    if (hsh > 0.18 && !(xx === 568 && yy === 216)) continue;
+    // Only windows that are actually visible: the mid building and the storefront cover the towers behind them.
+    if (xx > 150 && xx < 530 && yy > 290) continue;
+    if (xx > 860 && xx < 1260 && yy > 430) continue;
+    const flick = 0.94 + 0.06 * Math.sin(S.t * 1.3 + xx * 0.1 + yy * 0.05);
+    ctx.globalAlpha = flick;
+    ctx.fillStyle = hsh < 0.05 ? '#ffe4b8' : '#e6f0ff';
+    ctx.fillRect(xx, yy, 7, 10);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawForeground(ctx) {
+  ctx.clearRect(0, 0, W, H);
+  if (!fx.foreground.on) return;
+  ctx.fillStyle = '#0b0712';
+  // Branch with leaves, top left: crisp shapes, the compositor softens the edge a few px.
+  const r = mulberry32(5);
+  ctx.strokeStyle = '#0b0712'; ctx.lineCap = 'round'; ctx.lineWidth = 14;
+  ctx.beginPath(); ctx.moveTo(-20, 30); ctx.quadraticCurveTo(140, 70, 300, 40); ctx.stroke();
+  ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(150, 60); ctx.quadraticCurveTo(190, 120, 250, 150); ctx.moveTo(90, 50); ctx.quadraticCurveTo(70, 110, 110, 160); ctx.stroke();
+  const leaf = (x, y, a, len) => { ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(len * 0.5, -len * 0.32, len, 0); ctx.quadraticCurveTo(len * 0.5, len * 0.32, 0, 0); ctx.fill(); ctx.restore(); };
+  for (let i = 0; i < 26; i++) { const x = r() * 300, y = 20 + r() * 150, a = 0.3 + r() * 2.2, len = 40 + r() * 50; leaf(x, y, a, len); }
+  // Pole on the right.
+  ctx.fillRect(1118, 0, 34, H);
+  ctx.fillRect(1040, 150, 190, 10);
+  // Low bushes bottom-left.
+  for (let i = 0; i < 10; i++) { const x = -20 + r() * 320, y = 690 + r() * 60, s = 30 + r() * 40; ctx.beginPath(); ctx.ellipse(x, y, s, s * 0.5, 0, 0, 7); ctx.fill(); }
+}
+
+// ---------- drawing: stick figures (placeholder, piece A owns the real rig) ----------
+function pose(f) {
+  const t = f.pt;
+  const bob = Math.sin(t * 2.4) * 2;
+  let j;
+  switch (f.pose) {
+    case 'punch': j = { head: [16, 120], neck: [14, 102], hip: [4, 62], lElbow: [0, 90], lHand: [8, 94], rElbow: [30, 104], rHand: [50, 100], lKnee: [-10, 32], lFoot: [-22, 0], rKnee: [14, 34], rFoot: [20, 0] }; break;
+    case 'hitReact': j = { head: [-26, 112], neck: [-18, 97], hip: [-4, 60], lElbow: [-30, 102], lHand: [-40, 114], rElbow: [-10, 110], rHand: [-6, 124], lKnee: [-12, 30], lFoot: [-16, 4], rKnee: [10, 32], rFoot: [16, 0] }; break;
+    case 'fall': j = { head: [6, 112], neck: [4, 94], hip: [0, 58], lElbow: [-16, 80], lHand: [-24, 96], rElbow: [20, 82], rHand: [30, 98], lKnee: [-10, 36], lFoot: [-6, 14], rKnee: [12, 34], rFoot: [10, 12] }; break;
+    case 'land': { const c = Math.min(1, t / 0.12); const k = 1 - 0.5 * Math.sin(c * Math.PI); j = { head: [8, 100 * k + 14], neck: [6, 84 * k + 12], hip: [0, 50 * k + 8], lElbow: [-18, 60], lHand: [-30, 44], rElbow: [22, 62], rHand: [34, 46], lKnee: [-18, 26], lFoot: [-20, 0], rKnee: [18, 26], rFoot: [20, 0] }; break; }
+    case 'lying': j = { head: [-66, 10], neck: [-48, 9], hip: [-6, 6], lElbow: [-40, 24], lHand: [-24, 30], rElbow: [-56, 20], rHand: [-70, 26], lKnee: [18, 16], lFoot: [40, 6], rKnee: [16, 4], rFoot: [38, 2] }; break;
+    default: j = { head: [0, 118 + bob], neck: [0, 100 + bob], hip: [0, 62 + bob * 0.5], lElbow: [-8, 78 + bob], lHand: [-12, 56 + bob], rElbow: [9, 78 + bob], rHand: [12, 55 + bob], lKnee: [-6, 32], lFoot: [-10, 0], rKnee: [7, 32], rFoot: [12, 0] };
+  }
+  const out = {};
+  for (const k in j) out[k] = { x: f.x + j[k][0] * f.facing, y: f.y - j[k][1] };
+  return out;
+}
+
+function drawFigure(ctx, f) {
+  const j = pose(f);
+  ctx.strokeStyle = f.color; ctx.fillStyle = f.color; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const seg = (a, b) => { ctx.moveTo(j[a].x, j[a].y); ctx.lineTo(j[b].x, j[b].y); };
+  ctx.beginPath();
+  seg('neck', 'hip'); seg('neck', 'lElbow'); seg('lElbow', 'lHand'); seg('neck', 'rElbow'); seg('rElbow', 'rHand');
+  seg('hip', 'lKnee'); seg('lKnee', 'lFoot'); seg('hip', 'rKnee'); seg('rKnee', 'rFoot');
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(j.head.x, j.head.y, 11, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawFrame() {
+  if (!fx) return;
+  drawFar(fx.layers.far.getContext('2d'));
+  drawBackground(fx.layers.background.getContext('2d'));
+  const fg = fx.layers.figures.getContext('2d');
+  fg.clearRect(0, 0, W, H);
+  for (const f of S.figures) drawFigure(fg, f);
+  drawEmissive(fx.layers.emissive.getContext('2d'));
+  drawForeground(fx.layers.foreground.getContext('2d'));
+  fx.render(camera);
+}
+
+// ---------- gauntlet hook (deterministic) ----------
+let headless = false, acc = 0;
+window.__gauntlet = {
+  scenes: ['ambient', 'neon', 'hit', 'dust', 'shafts', 'off'],
+  setScene(name) { headless = true; document.body.classList.add('headless'); acc = 0; setScene(name); drawFrame(); },
+  step(ms) {
+    headless = true;
+    acc += ms;
+    const stepMs = 1000 / 60;
+    while (acc >= stepMs - 1e-6) { simStep(DT); acc -= stepMs; }
+    drawFrame();
+  },
+  ready: false,
+};
+
+// ---------- live loop + panel ----------
+const toggles = ['lighting', 'shadows', 'bloom', 'stars', 'fog', 'haze', 'shafts', 'reflect', 'foreground', 'particles', 'motes', 'shake', 'aberration', 'vignette', 'grain', 'grade'];
+const tg = document.getElementById('toggles'), sc = document.getElementById('scenes');
+for (const k of toggles) {
+  const l = document.createElement('label');
+  const i = document.createElement('input'); i.type = 'checkbox'; i.dataset.k = k;
+  i.addEventListener('change', () => { if (fx) fx.options[k] = i.checked; });
+  l.append(i, k); tg.append(l);
+}
+for (const name of window.__gauntlet.scenes) {
+  const b = document.createElement('button'); b.textContent = name; b.dataset.scene = name;
+  b.addEventListener('click', () => { headless = false; setScene(name); });
+  sc.append(b);
+}
+function syncPanel() {
+  if (!fx) return;
+  for (const i of tg.querySelectorAll('input')) i.checked = !!fx.options[i.dataset.k];
+  for (const b of sc.querySelectorAll('button')) b.classList.toggle('on', b.dataset.scene === S.name);
+}
+let paused = false, last = performance.now(), frames = 0, fpsT = 0;
+const stat = document.getElementById('stat');
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (headless || !fx) return;
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!paused) {
+    acc += dt;
+    while (acc >= DT) { simStep(DT); acc -= DT; }
+  }
+  drawFrame();
+  frames++; fpsT += dt;
+  if (fpsT > 0.5) { stat.textContent = `H hit  D dust  R rain  space pause   ${Math.round(frames / fpsT)} fps  ${fx.particles.count} particles  webgl${fx.version}`; frames = 0; fpsT = 0; }
+}
+window.addEventListener('keydown', (e) => {
+  if (!fx) return;
+  if (e.code === 'KeyH') { const f = S.figures[rnd() * S.figures.length | 0] || { x: 640 }; fx.hit({ x: f.x + 10, y: GROUND - 100, strength: 0.6 + rnd() * 1.0, dir: rnd() < 0.5 ? 1 : -1 }); }
+  if (e.code === 'KeyD') { const f = S.figures[0] || { x: 640 }; fx.dust({ x: f.x, y: GROUND, dir: 0, amount: 1 }); }
+  if (e.code === 'KeyR') { S.rain = !S.rain; fx.weather(S.rain ? 'rain' : 'none'); }
+  if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
+});
+
+if (fx) { setScene('neon'); drawFrame(); }
+window.__gauntlet.ready = true;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

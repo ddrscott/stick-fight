@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+dist/
+.wrangler/
+.dev.vars
+# local quality-loop artifacts: critic captures and third-party reference images
+gauntlet/captures/
+gauntlet/rounds/
+gauntlet/progress-files/
+gauntlet/reference/
+gauntlet/progress.html
+*.png
+!public/**/*.png

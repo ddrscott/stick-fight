@@ -1,0 +1,29 @@
+// Strings: button sequences pressed inside the rig's cancel windows. Tokens are the limb
+// buttons '1'..'4', with a 'd' prefix when down is held. After the first token, a plain token
+// also matches its down variant (holding down through a string doesn't break it).
+// Strings that share a prefix agree on the moves of that prefix, so the move for the next
+// press is always unambiguous. The last move of an ender string is its ender (frameData.js).
+export const STRINGS = [
+  { name: 'ONE-TWO',          keys: ['1', '1', '2'],        moves: ['jab', 'jab', 'cross'] },
+  { name: 'FLASH ROUNDHOUSE', keys: ['1', '1', '2', '4'],   moves: ['jab', 'jab', 'cross', 'flashRoundhouse'] },
+  { name: 'TRIPLE JAB',       keys: ['1', '1', '1'],        moves: ['jab', 'jab', 'jab'] },
+  { name: 'ONE-TWO KICK',     keys: ['1', '2', '4'],        moves: ['jab', 'cross', 'roundhouse'] },
+  { name: 'UPTOWN',           keys: ['1', '2', '3'],        moves: ['jab', 'cross', 'uptown'] },
+  { name: 'NEON TORNADO',     keys: ['1', '2', '3', '4'],   moves: ['jab', 'cross', 'uptown', 'neonTornado'] },
+  { name: 'CROSS SNAP',       keys: ['2', '3'],             moves: ['cross', 'lkick'] },
+  { name: 'SPIN HEEL',        keys: ['2', '1', '4'],        moves: ['cross', 'jab', 'spinHeel'] },
+  { name: 'CRESCENT',         keys: ['3', '3', '4'],        moves: ['lkick', 'lkick', 'crescent'] },
+  { name: 'LOW RUSH',         keys: ['d1', 'd1', 'd3'],     moves: ['lowJab', 'lowJab', 'lowKick'] },
+  { name: 'GROUND RUSH',      keys: ['d3', 'd3', '4'],      moves: ['lowKick', 'lowKick', 'rushKnee'] },
+  { name: 'SKY SPIKE',        keys: ['d2', '1', '2', '4'],  moves: ['uppercut', 'jab', 'cross', 'skySpike'] },
+];
+
+// the token a plain move would have come from (the AI names moves; this starts a string for it)
+export const MOVE_TOKEN = { jab: '1', cross: '2', lkick: '3', roundhouse: '4', lowJab: 'd1', uppercut: 'd2', lowKick: 'd3', sweep: 'd4' };
+
+const tokMatch = (want, got, i) => want === got || (i > 0 && got === 'd' + want);
+
+// strings whose keys start with `seq`
+export function matchStrings(seq) {
+  return STRINGS.filter(s => s.keys.length >= seq.length && seq.every((t, i) => tokMatch(s.keys[i], t, i)));
+}

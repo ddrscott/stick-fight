@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fighter demo</title>
+<style>
+  :root { --bg: #0b0820; --magenta: #ff3fd2; --cyan: #34e7ff; --amber: #ffb43a; --ink: #e9e4ff; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 600 13px/1.4 "Avenir Next", "Futura", "Trebuchet MS", "Segoe UI", sans-serif; letter-spacing: 0.02em; }
+  canvas { display: block; width: 1280px; height: 720px; }
+  #hud { position: fixed; left: 18px; top: 14px; pointer-events: none; text-transform: uppercase; }
+  #hud .title { font-weight: 800; font-size: 20px; letter-spacing: 0.12em; color: var(--magenta); text-shadow: 0 0 8px var(--magenta), 0 0 22px rgba(255, 63, 210, 0.55); }
+  #hud #info { display: block; margin-top: 2px; color: var(--cyan); text-shadow: 0 0 6px rgba(52, 231, 255, 0.7); font-size: 12px; }
+  #bar { position: fixed; left: 14px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px; max-width: 1252px; }
+  button { font: inherit; text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; border: 1.5px solid var(--cyan); background: rgba(52, 231, 255, 0.06); color: var(--cyan);
+    padding: 4px 10px; border-radius: 2px; cursor: pointer; box-shadow: 0 0 8px rgba(52, 231, 255, 0.35); text-shadow: 0 0 6px rgba(52, 231, 255, 0.6); }
+  button.on { background: var(--cyan); color: var(--bg); box-shadow: 0 0 14px var(--cyan); text-shadow: none; }
+  button.side { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 8px rgba(255, 180, 58, 0.4); text-shadow: 0 0 6px rgba(255, 180, 58, 0.6); }
+  button.side.on { background: var(--amber); color: var(--bg); }
+  body.capture #bar { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="hud"><span class="title">Neon Fighter</span><span id="info"></span></div>
+<div id="bar"></div>
+<script type="module">
+import { createFighter, MOVES, MOVE_DATA } from '../src/fighter/index.js';
+import { camera } from '../src/camera.js';
+
+const GROUND = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const info = document.getElementById('info');
+const bar = document.getElementById('bar');
+
+// The demo defender is unguarded (hands low), so clean hits land on the head or chest.
+const B_IDLE = 'idleOpen';
+const A = createFighter({ color: '#ff3fd2', x: 560, y: GROUND, facing: 1 });
+const B = createFighter({ color: '#34e7ff', x: 680, y: GROUND, facing: -1 });
+const fighters = [A, B];
+
+// ---- scenes -------------------------------------------------------------
+// Each scene resets both fighters and installs a `tick(dt)` that drives the
+// scene from simulation time only.
+let simT = 0, scene = 'idle', tick = () => {}, manual = false, selected = A, showB = true;
+const STRIKES = ['jab', 'cross', 'roundhouse', 'sweep', 'lkick', 'lowKick', 'lungeCross', 'spinKick', 'uppercut',
+  'lowJab', 'bodyBlow', 'risingKnee', 'risingUppercut', 'overhead', 'crescent', 'neonTornado', 'spinHeel', 'cometCross', 'wallSlam', 'throw'];
+const HIT_FOR = { jab: 'hitLight', cross: 'hitBack', roundhouse: 'knockdown', sweep: 'knockdown',
+  lkick: 'hitBody', lowKick: 'hitLow', lungeCross: 'hitBack', spinKick: 'hitHeavy', uppercut: 'knockdown',
+  lowJab: 'hitLow', bodyBlow: 'hitBody', overhead: 'hitHeavy', crescent: 'knockdown', throw: 'thrown' };
+// A clean hit on the defender: launchers and splats hand the body to the point simulation.
+function hitDefender(move) {
+  const eff = MOVE_DATA[move] && MOVE_DATA[move].effect;
+  if (eff === 'launch') B.launch({ vx: 70, vy: -640, spin: 140 });
+  else if (eff === 'splat') { B.walls = [0, B.x + 80]; B.launch({ vx: 520, vy: -240, spin: 80, wall: 'splat' }); }
+  else if (move === 'throw') B.play('thrown');
+  else B.play(HIT_FOR[move] || 'hitLight');
+}
+// A move that ends on the floor continues into the getup instead of snapping to idle.
+const FOLLOW = { knockdown: 'getup', ko: 'getup', thrown: 'getup' };
+
+// Knockback comes from the reactions themselves: hitLight and hitBack step back and carry the
+// root with them ('shift'), so the defender's planted feet never skate.
+function frontExtent(f) { return Math.max(...Object.values(f.joints).map(j => (j.x - f.x) * f.facing)) + 3; }
+// Measured once on the guard pose, so the target spot doesn't
+// wander with the defender's breathing.
+const B_EXT = frontExtent(createFighter({ x: 0, y: GROUND, facing: -1 }));
+// The defender's surface at the height the strike tip arrives (MOVE_DATA.reachY): the frontmost
+// point of any limb capsule, torso or head crossing that row, on the open-guard pose.
+const GUARD = createFighter({ x: 0, y: GROUND, facing: -1 }); GUARD.play(B_IDLE); GUARD.update(0.2);
+function surfaceAt(f, y) {
+  const J = f.joints, segs = [['lShoulder', 'lElbow', 5], ['lElbow', 'lHand', 4.5], ['rShoulder', 'rElbow', 5], ['rElbow', 'rHand', 4.5],
+    ['hip', 'lKnee', 5.5], ['lKnee', 'lFoot', 4.5], ['hip', 'rKnee', 5.5], ['rKnee', 'rFoot', 4.5], ['hip', 'chest', 6.5], ['chest', 'neck', 7.5]];
+  let best = -Infinity;
+  for (const [a, b, r] of segs) for (let t = 0; t <= 1.001; t += 0.05) {
+    const px = J[a].x + (J[b].x - J[a].x) * t, py = J[a].y + (J[b].y - J[a].y) * t, dy = Math.abs(py - y);
+    if (dy < r) best = Math.max(best, (px - f.x) * f.facing + Math.sqrt(r * r - dy * dy));
+  }
+  const hy = Math.abs(J.head.y - y);
+  if (hy < 15) best = Math.max(best, (J.head.x - f.x) * f.facing + Math.sqrt(225 - hy * hy));
+  return best;
+}
+// Reach that puts the strike tip on the defender's surface at the moment of contact: replay the
+// defender's idle (deterministic since it started) on a ghost, advanced to contact time.
+let bIdleSince = 0, bPrevMove = '';
+function trackB() { if (B.current.move === B_IDLE && bPrevMove !== B_IDLE) bIdleSince = simT; bPrevMove = B.current.move; }
+function liveReach(move) {
+  const d = MOVE_DATA[move];
+  const g = createFighter({ x: B.x, y: B.y, facing: B.facing });
+  g.play(B_IDLE);
+  const total = (simT - bIdleSince) + d.blend + d.activeAt;
+  for (let t = 0; t < total; t += 40) g.update(0.04);
+  const sf = Math.max(...[-4, 0, 4].map(dy => surfaceAt(g, GROUND - d.reachY + dy)));
+  return ((g.x + sf * g.facing) - A.x) * A.facing;
+}
+function spaceFor(move) {
+  // Frontmost over the whole idle cycle, so the bob can only open a gap, never let the tip in.
+  const d = MOVE_DATA[move] || {};
+  let s = -Infinity;
+  if (d.reachY != null) for (let t = 0; t < 16; t++) { GUARD.update(0.1); for (const dy of [-4, 0, 4]) s = Math.max(s, surfaceAt(GUARD, GROUND - d.reachY + dy)); }
+  // -1.5: the frontmost-over-the-cycle surface sits slightly proud of the typical pose; this puts contact at 0-2px.
+  return (d.reach || 120) + (isFinite(s) ? s - 1.5 : B_EXT);
+}
+let nextStrike = 'jab';
+// After a reaction the defender walks back to contact distance with a real two-step of exactly
+// the right length (play('advance', { distance })), so it never slides into place.
+let autoReturn = true;   // solo scenes: the defender walks back in on its own; strings drive it
+function applyKnock() {
+  if (!autoReturn) return;
+  const off = B.x - (A.x + spaceFor(nextStrike));
+  if (B.current.move === B_IDLE && Math.abs(off) > 1) B.play('advance', { distance: Math.sign(off) * Math.min(40, Math.abs(off)) });
+}
+
+function reset() {
+  simT = 0; autoReturn = true; B.walls = null; stage = null;
+  for (const f of [A, B]) { f.treads = null; f.floorY = null; f.walls = null; if (f.airborne) f.reset(); }
+  A.x = 560; A.y = GROUND; A.facing = 1; A.events.length = 0; A.play('idle');
+  B.x = 680; B.y = GROUND; B.facing = -1; B.events.length = 0; B.play(B_IDLE);
+  A.update(0); B.update(0.3); B.events.length = 0; bIdleSince = -300; bPrevMove = B_IDLE;
+  showB = true;
+  // Fresh fighters start on a clean stance so a scene's first frame is the move itself.
+}
+
+// Advance a fighter silently so a scene can begin mid-state (lying down, for example).
+function settle(f, ms) { for (let t = 0; t < ms; t += 20) f.update(0.02); f.events.length = 0; }
+
+// Replay one move on A, with B idle. Non-loop moves restart after a short idle so
+// long captures show the move more than once.
+function soloScene(name) {
+  return () => {
+    reset();
+    if (name === 'getup') { A.play('knockdown'); settle(A, 700); }
+    if (name === 'walk' || name === 'run') { A.x = 200; showB = false; }
+    nextStrike = STRIKES.includes(name) ? name : 'jab';
+    if (STRIKES.includes(name)) B.x = A.x + spaceFor(name);
+    A.play(name, STRIKES.includes(name) ? { reach: liveReach(name) } : undefined);
+    let restAt = null;
+    tick = dt => {
+      if (MOVE_DATA[name].speed) {
+        A.x += MOVE_DATA[name].speed * dt * A.facing;
+        if (A.x > 1180) { A.x = 100; }
+      }
+      if (A.current.done && name !== 'block') {
+        if (FOLLOW[A.current.move]) A.play(FOLLOW[A.current.move]);
+        else if (restAt == null) { restAt = simT + 450; A.play('idle'); }
+        else if (simT >= restAt && (B.current.move === B_IDLE || !STRIKES.includes(name))) {
+          if (name === 'getup') { A.play('knockdown'); settle(A, 700); }
+          if (STRIKES.includes(name)) { A.x = 560; B.facing = -1; B.walls = null; B.x = A.x + spaceFor(name); }
+          A.play(name, STRIKES.includes(name) ? { reach: liveReach(name) } : undefined); restAt = null;
+        }
+      }
+      // B reacts in strike scenes so reach and contact read.
+      for (const e of A.events.splice(0)) if (e.type === 'active' && STRIKES.includes(name)) hitDefender(name);
+      B.events.length = 0;
+      if (B.current.done) B.play(FOLLOW[B.current.move] || B_IDLE);
+    };
+  };
+}
+
+
+// Strings: each strike starts as soon as the previous one reaches its cancel window
+// (MOVE_DATA[move].cancel, ms after the blend), blending straight out of the recovery. The
+// defender's reactions are chosen so the spacing works without walking: a hitStun keeps it in
+// place, a hitLight carries it exactly the cross's extra reach.
+// Where the defender's surface will be for a strike landing at height y: its root plus any root
+// travel its current reaction still has to make (shift), plus its guard surface at that height.
+// Where the defender's surface will be when a chained strike lands: replay its current reaction
+// on a ghost fighter, advanced to the moment of contact (40ms blend + the chained keys up to
+// 'active'), and read the surface at the strike's height. Covers reeling poses and root shifts.
+function targetReach(move) {
+  const d = MOVE_DATA[move], bm = MOVE_DATA[B.current.move] || {};
+  const tContact = 40 + d.activeAt - d.chainSkip;
+  const g = createFighter({ x: B.x, y: B.y, facing: B.facing });
+  g.play(B.current.move);
+  const elapsed = B.current.t * ((bm.blend || 0) + (bm.duration || 0));
+  for (let t = 0; t < elapsed + tContact; t += 10) g.update(0.01);
+  const sf = Math.max(...[-4, 0, 4].map(dy => surfaceAt(g, GROUND - d.reachY + dy)));
+  return ((g.x + sf * g.facing) - A.x) * A.facing + 1.5;
+}
+// Walk a fighter toward x with two-steps (advance), so nothing ever teleports. True when there.
+function walkTo(f, x) {
+  const off = (x - f.x) * f.facing;
+  if (Math.abs(off) <= 1) return true;
+  if (f.current.done || f.current.move === 'idle' || f.current.move === B_IDLE) f.play('advance', { distance: Math.sign(off) * Math.min(40, Math.abs(off)) });
+  return false;
+}
+function stringScene(chain, reacts) {
+  return () => {
+    reset(); autoReturn = false;
+    let i = 0, t0 = 0, phase = 'string', actAt = 0, hover = 1;
+    const start = () => { A.x = 560; nextStrike = chain[0]; B.x = A.x + spaceFor(chain[0]); B.play(B_IDLE); B.update(0.3); i = 0; t0 = simT; phase = 'string'; A.play(chain[0]); };
+    start();
+    tick = () => {
+      for (const e of A.events.splice(0)) if (e.type === 'active' && phase === 'string') { B.play(reacts[i]); nextStrike = chain[Math.min(i + 1, chain.length - 1)]; }
+      if (phase === 'string') {
+        const md = MOVE_DATA[chain[i]], lead = i === 0 ? md.blend : 40 - md.chainSkip;
+        if (i < chain.length - 1 && simT - t0 >= lead + md.cancel[0]) {
+          i++; t0 = simT;
+          const n = chain[i], opt = { chain: true };
+          A.commitShift();   // measure from where the previous move's travel leaves the root
+          opt.reach = targetReach(n);
+          A.play(n, opt);
+        } else if (i === chain.length - 1 && A.current.done) { phase = 'after'; actAt = simT; A.play('idle'); }
+      } else if (phase === 'after') {
+        // While the defender is down: follow it in, then hover (half steps in and out) so the
+        // striker never stands still. When the defender is up, both walk back to their marks.
+        const gap = (B.x - A.x) * A.facing - spaceFor(chain[0]);
+        if (B.current.move === B_IDLE && (A.current.done || A.current.move === 'idle')) { phase = 'reset'; A.play('idle'); }
+        else if ((A.current.done || A.current.move === 'idle') && simT >= actAt) {
+          if (gap > 30) A.play('advance', { distance: Math.min(40, gap - 10) });
+          else { A.play('advance', { distance: 16 * hover }); hover = -hover; }
+          actAt = simT + 160;
+        }
+      } else if (phase === 'reset') {
+        const a = walkTo(A, 560), b = walkTo(B, 560 + spaceFor(chain[0]));
+        if (a && b && A.current.move === 'idle' && B.current.move === B_IDLE) start();
+      }
+      if (A.current.done && phase !== 'string') A.play('idle');
+      if (B.current.done) B.play(FOLLOW[B.current.move] || B_IDLE);
+    };
+  };
+}
+
+// Trade: both throw a jab in the same frames; each takes an additive reaction on top of its own
+// strike, so the punches bend instead of one side snapping to a hit pose.
+function tradeScene() {
+  reset(); autoReturn = false;
+  B.x = A.x + spaceFor('jab');
+  let again = 0;
+  const go = () => { A.play('jab'); B.play('jab'); again = 0; };
+  go();
+  tick = () => {
+    for (const e of A.events.splice(0)) if (e.type === 'active') B.react('hitLight', { weight: 0.85 });
+    for (const e of B.events.splice(0)) if (e.type === 'active') A.react('hitLight', { weight: 0.85 });
+    for (const f of [A, B]) if (f.current.done) f.play(f === A ? 'idle' : B_IDLE);
+    if (A.current.move === 'idle' && B.current.move === B_IDLE) { again = again || simT + 700; if (simT >= again) go(); }
+  };
+}
+// Juggle (Sky Spike): uppercut launches, a jab and a cross keep the body up, the axe kick slams it
+// into a ground bounce, and the roundhouse relaunches it off the bounce.
+// Where the airborne body's chest will be when a chained strike lands (constant-velocity guess).
+let lastChest = null, curChest = null;
+function airTarget(n) {
+  const d = MOVE_DATA[n], t = (40 + d.activeAt - d.chainSkip) / 1000, c = B.joints.chest;
+  const v = lastChest && curChest ? { x: (curChest.x - lastChest.x) / 0.04, y: (curChest.y - lastChest.y) / 0.04 } : { x: 0, y: 0 };
+  return { x: c.x + v.x * t - 6 * B.facing * -1, y: c.y + v.y * t + 950 * t * t };
+}
+function juggleScene() {
+  reset(); autoReturn = false;
+  B.x = A.x + spaceFor('uppercut');
+  const plan = [['uppercut', 0], ['jab', 400], ['cross', 620], ['overhead', 900]];
+  let i = 0, t0 = simT, waitBounce = false, phase = 'go';
+  const effect = { uppercut: () => B.launch({ vx: 30, vy: -640, spin: 90 }), jab: () => B.launch({ vx: 20, vy: -260, spin: 40 }),
+    cross: () => B.launch({ vx: 20, vy: -240, spin: 50 }), overhead: () => { B.groundBounce(); waitBounce = true; },
+    roundhouse: () => B.launch({ vx: 200, vy: -380, spin: 220 }) };
+  tick = () => {
+    for (const e of A.events.splice(0)) if (e.type === 'active' && effect[A.current.move]) effect[A.current.move]();
+    for (const e of B.events.splice(0)) if (e.type === 'bounce' && waitBounce) { waitBounce = false; A.commitShift(); A.play('roundhouse', { chain: true, target: airTarget('roundhouse') }); }
+    lastChest = curChest; curChest = { ...B.joints.chest };
+    if (phase === 'go' && i < plan.length && simT - t0 >= plan[i][1]) {
+      A.commitShift();
+      const n = plan[i][0], opt = i ? { chain: true } : { reach: liveReach(n) };
+      if (i && B.airborne) opt.target = airTarget(n);
+      A.play(n, opt); i++;
+    }
+    if (A.current.done) A.play('idle');
+    if (B.current.done) B.play(FOLLOW[B.current.move] || B_IDLE);
+    if (i >= plan.length && B.current.move === B_IDLE && A.current.move === 'idle') { phase = 'wait'; }
+    if (phase === 'wait') { const a = walkTo(A, 560), b = walkTo(B, 560 + spaceFor('uppercut')); if (a && b && A.current.move === 'idle' && B.current.move === B_IDLE) { B.facing = -1; i = 0; t0 = simT; phase = 'go'; } }
+  };
+}
+// Wall: Spin Heel into a wall just behind the defender: wall splat, stick, slide down, get up.
+function wallScene() {
+  reset(); autoReturn = false;
+  B.x = A.x + spaceFor('spinHeel'); B.walls = [0, B.x + 70];
+  let phase = 'go', again = 0;
+  A.play('spinHeel');
+  tick = () => {
+    for (const e of A.events.splice(0)) if (e.type === 'active') B.launch({ vx: 560, vy: -220, spin: 60, wall: 'splat' });
+    B.events.length = 0;
+    if (A.current.done) A.play('idle');
+    if (B.current.done) B.play(FOLLOW[B.current.move] || B_IDLE);
+    if (phase === 'go' && A.current.move === 'idle' && B.current.move === B_IDLE) { phase = 'back'; B.facing = -1; }
+    if (phase === 'back') { const a = walkTo(A, 560), b = walkTo(B, 560 + spaceFor('spinHeel')); if (a && b && B.current.move === B_IDLE && A.current.move === 'idle') { again = again || simT + 300; if (simT >= again) { phase = 'go'; again = 0; A.play('spinHeel'); } } }
+  };
+}
+
+// ---- multi-floor stage (demo geometry; the game takes it from arena.stairwell / arena.treads)
+let stage = null;
+function makeStage() {
+  const U = 400, D = 700, open = [820, 1100], rail = { x0: 820, x1: 1100, h: 44 };
+  const steps = []; for (let i = 0; i < 20; i++) steps.push({ x0: 900 + i * 16, x1: 916 + i * 16, y: U + (i + 1) * 15 });
+  const treads = [{ x0: 0, x1: open[0], y: U }, { x0: open[1], x1: 1280, y: U }, ...steps];
+  return { U, D, open, rail, steps, treads };
+}
+function useStage() {
+  stage = makeStage();
+  for (const f of [A, B]) { f.y = stage.U; f.treads = stage.treads; f.walls = [0, 1280]; f.floorY = stage.D; f.reset(); }
+}
+// Stairwell: a Neon Tornado launches the defender over the railing; it drops through the opening,
+// clatters down the stair (a 'tread' event per step hit), lands on the floor below and gets up there.
+function stairwellScene() {
+  reset(); autoReturn = false; useStage();
+  const go = () => {
+    A.x = 640; B.x = A.x + spaceFor('neonTornado'); A.y = B.y = stage.U; B.facing = -1;
+    for (const f of [A, B]) { f.reset(); f.floorY = stage.D; }
+    A.play('neonTornado');
+  };
+  go();
+  let again = 0;
+  tick = () => {
+    for (const e of A.events.splice(0)) if (e.type === 'active') B.launch({ vx: 380, vy: -560, spin: 220 });
+    B.events.length = 0;
+    if (A.current.done) A.play('idle');
+    if (B.current.done) B.play(FOLLOW[B.current.move] || B_IDLE);
+    if (B.y === stage.D && B.current.move === B_IDLE) { again = again || simT + 600; if (simT >= again) { again = 0; go(); } }
+  };
+}
+// Vault: the fighter plants a hand on the railing, swings over, drops to the floor below and lands
+// in a crouch, then stands; the ground line follows it down (f.y becomes the lower floor).
+function vaultScene() {
+  reset(); autoReturn = false; useStage(); showB = false;
+  const go = () => { A.x = 790; A.y = stage.U; A.reset(); A.play('vault', { drop: stage.D - stage.U, railH: stage.rail.h }); };
+  go();
+  let again = 0;
+  tick = () => {
+    A.events.length = 0;
+    if (A.current.done && A.current.move === 'vault') A.play('crouchUp');
+    else if (A.current.done && A.current.move === 'crouchUp') A.play('idle');
+    if (A.current.move === 'idle' && A.y === stage.D) { again = again || simT + 500; if (simT >= again) { again = 0; go(); } }
+  };
+}
+
+// Where on the defender a strike should land, at height y (world): its surface at that height.
+function surfacePoint(y) { return { x: B.x + surfaceAt(B, y) * B.facing, y }; }
+// Jump-in: jump forward, flying kick aimed at the defender's chest, land (landing lag), then a jab
+// and a cross chained off the landing.
+function jumpInScene() {
+  reset(); autoReturn = false;
+  let phase = 'go', drift = 0, step = 0, t0 = 0, again = 0;
+  const go = () => { A.x = 470; B.x = 700; B.facing = -1; B.play(B_IDLE); B.update(0.3); A.play('jump'); phase = 'jump'; drift = 230; t0 = simT; };
+  go();
+  tick = dt => {
+    A.x += drift * dt * A.facing;
+    for (const e of A.events.splice(0)) {
+      if (e.type === 'active' && A.current.move === 'flyingKick') { drift = 0; B.play('hitBack'); }
+      else if (e.type === 'active') B.play(A.current.move === 'cross' ? 'hitBack' : 'hitStun');
+      if (e.type === 'land') drift = 0;
+    }
+    B.events.length = 0;
+    if (phase === 'jump' && simT - t0 >= 200) {
+      const d = MOVE_DATA.flyingKick, tc = (d.blend + d.activeAt) / 1000, y = B.joints.chest.y + 6;
+      const tgt = surfacePoint(y); tgt.x -= drift * tc * A.facing;
+      A.play('flyingKick', { target: tgt }); phase = 'kick';
+    }
+    if (phase === 'kick' && A.current.move === 'airLand' && A.current.done) { A.play('jab', { chain: true, reach: targetReach('jab') }); phase = 'jab'; t0 = simT; }
+    if (phase === 'jab' && simT - t0 >= 40 + MOVE_DATA.jab.cancel[0] - MOVE_DATA.jab.chainSkip) { A.commitShift(); A.play('cross', { chain: true, reach: targetReach('cross') }); phase = 'cross'; }
+    if (phase === 'cross' && A.current.done) { A.play('idle'); phase = 'rest'; again = simT + 900; }
+    if (B.current.done) B.play(FOLLOW[B.current.move] || B_IDLE);
+    if (phase === 'rest' && simT >= again && B.current.move === B_IDLE) go();
+  };
+}
+// Crouch string: d+1, d+1, d+3 from the crouch, staying down the whole way (no stand-up pop).
+function crouchStringScene() {
+  const sc = stringScene(['lowJab', 'lowJab', 'lowKick'], ['hitLow', 'hitLow', 'hitLow']);
+  return () => { sc(); A.play('crouch'); for (let i = 0; i < 6; i++) A.update(0.04); A.play('lowJab', { reach: liveReach('lowJab') }); };
+}
+
+const scenes = { ...Object.fromEntries(MOVES.map(m => [m, soloScene(m)])), jumpIn: jumpInScene, crouchString: crouchStringScene(), stairwell: stairwellScene, vault: vaultScene, trade: tradeScene, juggle: juggleScene, wall: wallScene,
+  combo: stringScene(['jab', 'jab', 'cross', 'roundhouse'], ['hitStun', 'hitLight', 'hitStun', 'knockdown']),
+  'string-112': stringScene(['jab', 'jab', 'cross'], ['hitStun', 'hitLight', 'hitBack']),
+  'string-124': stringScene(['jab', 'cross', 'roundhouse'], ['hitLight', 'hitStun', 'knockdown']) };
+
+function setScene(name) {
+  if (!scenes[name]) throw new Error('no scene ' + name);
+  scene = name;
+  scenes[name]();
+  for (const b of bar.querySelectorAll('button[data-scene]')) b.classList.toggle('on', b.dataset.scene === name);
+  render();
+}
+
+// ---- simulation ---------------------------------------------------------
+function step(ms) {
+  const dt = ms / 1000;
+  simT += ms;
+  tick(dt);
+  trackB();
+  applyKnock();
+  for (const f of fighters) f.update(dt);
+  render();
+}
+
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const g = ctx.createLinearGradient(0, 0, 0, 720);
+  g.addColorStop(0, '#120a2e'); g.addColorStop(0.75, '#0b0820'); g.addColorStop(1, '#170b2a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 1280, 720);
+  ctx.save();
+  ctx.translate(640, 360); ctx.scale(camera.zoom, camera.zoom); ctx.translate(-camera.x + camera.shakeX, -camera.y + camera.shakeY);
+  // Floor and any walls as glowing neon lines.
+  ctx.lineWidth = 2; ctx.strokeStyle = '#ffb43a'; ctx.shadowColor = '#ffb43a'; ctx.shadowBlur = 12;
+  if (stage) {
+    const S = stage;
+    ctx.beginPath(); ctx.moveTo(0, S.U + 1); ctx.lineTo(S.open[0], S.U + 1); ctx.moveTo(S.open[1], S.U + 1); ctx.lineTo(1280, S.U + 1); ctx.moveTo(0, S.D + 1); ctx.lineTo(1280, S.D + 1); ctx.stroke();
+    ctx.strokeStyle = '#34e7ff'; ctx.shadowColor = '#34e7ff';
+    ctx.beginPath(); ctx.moveTo(S.steps[0].x0, S.U); for (const t of S.steps) { ctx.lineTo(t.x0, t.y); ctx.lineTo(t.x1, t.y); } ctx.lineTo(S.steps[S.steps.length - 1].x1, S.D); ctx.stroke();
+    ctx.strokeStyle = '#ff3fd2'; ctx.shadowColor = '#ff3fd2';
+    ctx.beginPath(); ctx.moveTo(S.rail.x0, S.U - S.rail.h); ctx.lineTo(S.rail.x1, S.U - S.rail.h);
+    for (let x = S.rail.x0; x <= S.rail.x1 + 0.1; x += 56) { ctx.moveTo(x, S.U - S.rail.h); ctx.lineTo(x, S.U); }
+    ctx.stroke();
+  } else { ctx.beginPath(); ctx.moveTo(0, GROUND + 1); ctx.lineTo(1280, GROUND + 1); ctx.stroke(); }
+  if (B.walls) { ctx.strokeStyle = '#ff3fd2'; ctx.shadowColor = '#ff3fd2'; ctx.beginPath(); ctx.moveTo(B.walls[1], GROUND); ctx.lineTo(B.walls[1], GROUND - 260); ctx.stroke(); }
+  for (const f of fighters) if (f !== B || showB) { ctx.shadowColor = f.color; ctx.shadowBlur = 16; f.draw(ctx); }
+  ctx.restore();
+  info.textContent = `${scene}  ·  ${(simT / 1000).toFixed(2)}s  ·  A ${A.current.move}  ·  B ${B.current.move}`;
+}
+
+// ---- interactive --------------------------------------------------------
+for (const name of Object.keys(scenes)) {
+  const b = document.createElement('button');
+  b.textContent = name; b.dataset.scene = name;
+  b.onclick = () => setScene(name);
+  bar.appendChild(b);
+}
+const sideBtn = document.createElement('button');
+sideBtn.className = 'side on'; sideBtn.textContent = 'keys -> A';
+sideBtn.onclick = () => { selected = selected === A ? B : A; sideBtn.textContent = 'keys -> ' + (selected === A ? 'A' : 'B'); };
+bar.appendChild(sideBtn);
+const KEYS = {
+  KeyJ: 'jab', KeyK: 'cross', KeyL: 'roundhouse', Semicolon: 'sweep', Space: 'jump', KeyB: 'block',
+  KeyH: 'hitLight', KeyG: 'hitHeavy', KeyN: 'knockdown', KeyU: 'getup', KeyO: 'ko', KeyI: 'idle',
+};
+const held = new Set();
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  held.add(e.code);
+  if (KEYS[e.code]) { e.preventDefault(); freeTick(); selected.play(KEYS[e.code]); }
+});
+window.addEventListener('keyup', e => { held.delete(e.code); if (e.code === 'KeyB' && selected.current.move === 'block') selected.play('idle'); });
+// Arrow keys move the selected fighter under a free-play tick (shift to run).
+function freeTick() {
+  if (scene === 'free') return;
+  scene = 'free';
+  for (const b of bar.querySelectorAll('button[data-scene]')) b.classList.remove('on');
+  tick = dt => {
+    for (const f of fighters) {
+      if (f !== selected) { if (f.current.done) f.play('idle'); continue; }
+      const dir = held.has('ArrowRight') ? 1 : held.has('ArrowLeft') ? -1 : 0;
+      const busy = !MOVE_DATA[f.current.move].loop && !f.current.done;
+      if (busy) continue;
+      if (dir) {
+        f.facing = dir;
+        const run = held.has('ShiftLeft') || held.has('ShiftRight');
+        f.play(run ? 'run' : 'walk');
+        f.x = Math.max(60, Math.min(1220, f.x + MOVE_DATA[f.current.move].speed * dt * dir));
+      } else if (f.current.move === 'walk' || f.current.move === 'run' || f.current.done) f.play('idle');
+      f.events.length = 0;
+    }
+    for (const f of fighters) f.events.length = 0;
+  };
+}
+window.addEventListener('keydown', e => { if (e.code.startsWith('Arrow') || e.code.startsWith('Shift')) { e.preventDefault(); freeTick(); } });
+
+let last = performance.now();
+function frame(now) {
+  if (!manual) step(Math.min(50, now - last));
+  last = now;
+  requestAnimationFrame(frame);
+}
+
+window.__gauntlet = {
+  scenes: Object.keys(scenes),
+  setScene(name) { manual = true; document.body.classList.add('capture'); setScene(name); },
+  step(ms) { manual = true; step(ms); },
+  ready: true,
+};
+
+setScene('idle');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
