@@ -77,7 +77,11 @@ const ONLINE = new Set(['onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnect
  * @property {() => boolean} padUI
  * @property {(kind?: string) => void} [click]            a menu click (src/audio/'s public actions.click)
  * @property {() => boolean} [netBusy]                    online.js's own panel (leave confirm, messages) is up: it owns the keys and the pad
+ * @property {(pool: string|null) => void} [music]       pin the music pool (src/audio/'s setMusicPool): 'menu', 'fight', 'horde', 'calm', or null to follow the sim
  */
+
+// the music pool for each screen: menus get the title track, a match gets its mode's pool
+const MENU_MUSIC = new Set(['attract', 'highScores', 'modeSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -110,7 +114,15 @@ export function createFlow(ctx) {
     history.push(`${prev}>${next}`); if (history.length > 300) history.shift();
     classes();
     enter(next, prev);
+    music();
     return true;
+  }
+  function music() {
+    if (!ctx.music) return;
+    const pool = state === 'off' ? null
+      : MENU_MUSIC.has(state) ? 'menu'
+      : mode === 'horde' ? 'horde' : mode === 'training' ? 'calm' : 'fight';
+    try { ctx.music(pool); } catch (e) { /* audio off */ }
   }
   function classes() {
     const c = document.documentElement.classList;

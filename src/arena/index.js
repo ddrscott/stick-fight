@@ -309,7 +309,23 @@ export function createArena(name = 'building') {
       // bodies lie inside the floor's fight band (on the lower floor, left of the stair)
       const band = floor.fightBand || { x0: floor.x0 + 70, x1: floor.x1 - 70 };
       const margin = floor.fightBand ? 40 : 0;
-      const x = Math.max(band.x0 + margin, Math.min(band.x1 - margin, typeof snap.x === 'number' ? snap.x : (band.x0 + band.x1) / 2));
+      let x = Math.max(band.x0 + margin, Math.min(band.x1 - margin, typeof snap.x === 'number' ? snap.x : (band.x0 + band.x1) / 2));
+      const m = measure(snap.joints);
+      // Nothing rests over the stairwell's opening (the fighters' walking line runs across it, the
+      // floor doesn't): a body that would lie over the hole slides off to the nearer solid edge
+      // (the settle tween carries it there), or the other edge when the nearer one is out of band.
+      const sw = arena.stairwell;
+      if (sw && Math.abs(floor.y - sw.y) < 1) {
+        let a = Infinity, b = -Infinity;
+        for (const v of [0, 1]) { const p = lyingPose(x, floor.y, dir, m, v); for (const k in p) { a = Math.min(a, p[k].x); b = Math.max(b, p[k].x); } }
+        a -= 12; b += 12;   // the head's and limbs' thickness
+        if (b > sw.x0 && a < sw.x1) {
+          const left = x - (b - sw.x0), right = x + (sw.x1 - a);
+          const okL = left >= band.x0 + margin, okR = right <= band.x1 - margin;
+          if (okL && (!okR || x - left <= right - x)) x = left;
+          else if (okR) x = right;
+        }
+      }
       let top = floor.y, under = 0;
       for (const b of arena.bodies) {
         if (b.floor === floor && Math.abs(b.x - x) < BODY_REACH) { top = Math.min(top, b.y - BODY_LIFT); under++; }
@@ -317,7 +333,6 @@ export function createArena(name = 'building') {
       const y = Math.max(floor.y - BODY_LIFT * MAX_PILE, top);
       const idx = arena.bodies.length;
       const variant = ((idx * 7 + under * 3) % 5) / 4;
-      const m = measure(snap.joints);
       const to = lyingPose(x, y, dir, m, variant);
       const from = hasAllJoints(snap.joints) && !collinear(snap.joints) ? copyJoints(snap.joints) : copyJoints(to);
       const recent = arena.bodies.slice(-4).map((b) => b.color);

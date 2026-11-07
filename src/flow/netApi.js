@@ -81,6 +81,7 @@ const STATUS_TEXT = {
 const ERROR_TEXT = {
   'no-room': 'NO ROOM WITH THAT CODE', full: 'THAT ROOM IS FULL', 'bad-code': 'CODES ARE 4 LETTERS', unreachable: "CAN'T REACH THE ROOM SERVER",
   lost: 'CONNECTION LOST', version: 'YOUR GAMES DIFFER: RELOAD BOTH', closed: 'THE ROOM CLOSED',
+  busy: 'SERVER BUSY: TRY AGAIN SHORTLY', flood: 'TOO MUCH TRAFFIC: ROOM CLOSED',   // worker rate limits
 };
 export function adaptOnline(online) {
   const handlers = {};

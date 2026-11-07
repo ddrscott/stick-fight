@@ -197,7 +197,9 @@ function injectStyle() {
   }
   html.touch-ui #stage { touch-action: none; }
   html.pad-ui .tc-stickzone, html.pad-ui .tc-cluster { display: none; }
-  .tc-leave { --c: var(--pink); display: none; } html.online .tc-leave { display: flex; }   /* online play (src/net/) */
+  /* LEAVE only in an online match (src/net/online.js sets html.online). The selector outranks the
+     .tc-btn and .tc-mini rules below, which set display: flex and would otherwise show it everywhere. */
+  .tc-leave { --c: var(--pink); } html:not(.online) .tc-root .tc-leave { display: none; }
   .tc-root {
     --btn: clamp(58px, 18vmin, 74px); --gap: 10px;
     --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff;

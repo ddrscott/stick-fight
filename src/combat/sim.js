@@ -9,6 +9,7 @@ import { EMPTY_INPUT } from './input.js';
 import { createAI } from './ai.js';
 import { mulberry32 } from './rng.js';
 import * as dm from './dmath.js';   // bit-identical hypot on every engine (online play)
+import { saveSim, loadSim } from './snapshot.js';
 
 let WALK = 180, RUN = 380, CROUCH_WALK = 70;           // replaced by the rig's own stride speeds (MOVE_DATA) so planted feet don't skate
 const JUMP_VY = 500, GRAVITY = 2000;
@@ -65,7 +66,10 @@ const missingAnim = new Set();
 function warnOnce(key, msg) { if (!missingAnim.has(key)) { missingAnim.add(key); console.info('[combat] ' + msg); } }
 const GOON_COLORS = ['#E85D00', '#3fa7ff', '#8cff5a', '#ff4fa3', '#ffd84f', '#c08bff', '#ff6a3d', '#5ee8d8'];
 
-export function createCombat({ fighters, arena, input, onEvent = () => {}, makeRig = null, moves = [], moveData = null }) {
+export function createCombat({ fighters, arena, input, onEvent: emitEvent = () => {}, makeRig = null, moves = [], moveData = null }) {
+  // sim.eventFilter(ev) -> false holds an event back (online rollback re-simulates frames that
+  // already showed their effects; see src/net/rollback.js)
+  const onEvent = (ev) => { if (!sim.eventFilter || sim.eventFilter(ev)) emitEvent(ev); };
   HAS_HITBODY = moves.includes('hitBody'); HAS_HITBACK = moves.includes('hitBack'); MOVE_DATA_ = moveData;
   HAS_HITSTUN = moves.includes('hitStun'); HAS_HITLOW = moves.includes('hitLow'); HAS_THROWN = moves.includes('thrown'); HAS_VAULT = moves.includes('vault');
   // the striking limb comes from the rig: each move names its joint, and the button table is
@@ -1159,7 +1163,10 @@ export function createCombat({ fighters, arena, input, onEvent = () => {}, makeR
   }
   function landThrow(def) {
     const att = sim.units[def.grabbedBy];
-    def.grabbedBy = -1; def.state = 'idle'; att.hitstop = 0;
+    def.grabbedBy = -1; def.state = 'idle';
+    // the thrower was hit out of it mid-grab (horde: a second goon): the victim just drops
+    if (!att || att.state !== 'attack' || !FRAME_DATA[att.move]) return;
+    att.hitstop = 0;
     applyHit(att, def, { x: (att.x + def.x) / 2, y: def.y - 90 }, { move: att.move });
   }
   sim.breakThrow = breakThrow;
@@ -1579,6 +1586,10 @@ export function createCombat({ fighters, arena, input, onEvent = () => {}, makeR
     return n;
   };
   sim.tick = tick;
+  sim.eventFilter = null;
+  // online rollback: the whole state that feeds the next tick (src/combat/snapshot.js)
+  sim.saveState = (into) => saveSim(sim, arena, into);
+  sim.loadState = (s) => loadSim(sim, arena, s);
   sim.penetration = penetration;
   sim.separate = separate;
   sim.FRAME_DATA = FRAME_DATA;

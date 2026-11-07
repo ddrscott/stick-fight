@@ -289,6 +289,21 @@ const params = new URLSearchParams(location.search);
 const urlSeed = params.has('seed') ? (+params.get('seed') >>> 0) : null;
 const seedOf = (opts, dflt) => (opts && opts.seed != null ? +opts.seed >>> 0 : urlSeed != null ? urlSeed : dflt);
 
+// ---- mirror ------------------------------------------------------------------------------
+// The online guest plays P2 (the right spawn) but gets the classic own-side view: the world drawn
+// mirrored left-right, so his fighter starts on the left. ?mirror=1 forces it on any scene. Only the
+// view flips, never the sim: the GL canvas gets a CSS scaleX(-1) (every layer, light, the floor
+// reflection and the shake flip together), the HUD maps world x through camera.mirror and keeps its
+// text and bars readable, input.mirror flips raw left/right at capture, and the audio pan follows.
+const urlMirror = params.get('mirror') === '1';
+function syncMirror() {
+  const on = urlMirror || (online.active && online.role === 'guest');
+  if (on === camera.mirror) return;
+  camera.mirror = on; input.mirror = on;
+  glCanvas.style.transform = on ? 'scaleX(-1)' : '';
+  try { gameAudio.setMirror(on); } catch (e) { /* audio off */ }
+}
+
 const scenes = {
   play(o) { sim.setHuman(0); sim.setAI(1, 0.6); sim.resetMatch({ seed: seedOf(o, 1) }); },
   idle(o) { sim.setController(0, 'none'); sim.setController(1, 'none'); sim.resetMatch({ seed: seedOf(o, 1), skipIntro: true }); },
@@ -386,10 +401,12 @@ const scenes = {
 function setScene(name, opts) {
   if (!scenes[name]) name = 'play';
   sceneName = name;
+  syncMirror();
   attract = name === 'attract'; attractKO = false; idleMs = 0; lastPhase = '';
   document.documentElement.classList.toggle('attract', attract && !(flow && flow.on));   // index.html hides the touch controls (the flow has its own classes)
   applyLook(name === 'arcade' && opts && opts.stage ? opts.stage : null);
   try { gameAudio.attach(attract ? null : sim); } catch (e) { /* audio: no whiff or pool watching during the demo */ }
+  try { if (!(flow && flow.on)) gameAudio.setMusicPool(attract ? 'menu' : null); } catch (e) { /* audio: with the flow off, the demo plays the menu pool and scenes follow the sim */ }
   farDrawnW = 0; bodiesDrawn = true; // redraw the static layers once
   shakeRng = mulberry32(7);
   shake.trauma = 0; shake.kickX = shake.kickY = 0; shake.zoomPunch = 0;
@@ -528,6 +545,7 @@ function drawBlockSpark(s, ctx) {
 // resizes its layers for a quality tier, or on a scene change), and an empty body layer stays empty.
 let farDrawnW = 0, bodiesDrawn = true;
 function render() {
+  syncMirror();   // the guest's view flips on when his match starts and off when it ends, however it ends
   const ctxs = {};
   const haveBodies = !arena.bodiesInBackground && arena.bodies && arena.bodies.length > 0;
   if (fx.skip) { fx.skip.far = false; fx.skip.bodies = !haveBodies && !bodiesDrawn; }
@@ -662,6 +680,7 @@ flow = createFlow({
   sceneName: () => sceneName,
   touchUI, padUI,
   click: (kind) => { try { gameAudio.actions && gameAudio.actions.click(kind); } catch (e) { /* audio off */ } },   // audio: menu clicks through the public API
+  music: (pool) => gameAudio.setMusicPool(pool),   // audio: the flow pins the music pool per screen
   netBusy: () => !!online.busy,
 });
 window.__flow = flow;

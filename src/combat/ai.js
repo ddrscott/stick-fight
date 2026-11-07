@@ -51,6 +51,10 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   let seenAttackId = -1, lastAttackStep = -9999, lastStale = -9999, myRun = 0, lastHitTakenId = -1;
   let plannedLaunch = -1, blockedClasses = new Set(), stringPick = null, lastPunish = -1;
   const mixLog = []; let lastStep = 0;
+  // anti-air reads: the chance to read a jump-in at takeoff (0 at difficulty 0.3 and below), the
+  // jump last looked at and the one being answered
+  const aaReadChance = () => (show ? 0.85 : Math.max(0, Math.min(0.8, (difficulty - 0.3) * 1.1 + (aerial ? 0.15 : 0))));
+  let aaSeen = -1, aaFor = -1;
   // where and when a launched body lands (y down, vy positive down)
   const landTime = (o, floorY) => (-o.vy + Math.sqrt(Math.max(0, o.vy * o.vy + 2 * GRAV * Math.max(0, floorY - o.y)))) / GRAV;
   const landX = (o, floorY) => o.x + o.vx * landTime(o, floorY);
@@ -104,6 +108,23 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     { ...move(0, 2), pressFn: (m, o) => (o.crouch ? 'd4' : pick(['3', '3', '4', '2'])) },
     move(0, (m) => landed(m)),
     press(finish === 'jab' ? '1' : finish === 'sweep' ? 'd4' : '1'),
+  ];
+
+  // the anti-air for a jump-in I've read: hold my ground until he comes into the uppercut's reach
+  // about when it would go live, then press it (a jab instead if he is already close with a strike
+  // out). Nothing if he lands or gets knocked out of the air first, and a jump that will land short
+  // is let land (an uppercut into the air in front of him is a whiff to punish).
+  const AA_T = 0.12;   // the uppercut is live about 120ms after the press (its startup after the sim's pre-roll, live 45ms early)
+  const aaWindow = (m, o) => {
+    if (o.grounded || o.rag) return true;
+    if (Math.abs(o.x - m.x) < reach('jab') + 10) return true;
+    const short = o.state === 'jump' && Math.abs(landX(o, m.y) - m.x) > reach('uppercut') + 60;
+    return !short && Math.abs(o.x + o.vx * AA_T - m.x) < reach('uppercut') + 30;
+  };
+  const antiAir = () => [
+    move(0, aaWindow),
+    { ...press('d2'), ok: true, onlyIf: (m, o) => !o.grounded && !o.rag && Math.abs(o.x - m.x) < 220,
+      pressFn: (m, o) => (o.state === 'attack' && o.vy > 120 && Math.abs(o.x - m.x) < reach('jab') + 12 ? '1' : 'd2') },
   ];
 
   function footsies(toward) {
@@ -353,7 +374,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       else if (opp.state === 'knockdown' && opp.juggle && (opp.airHits || 0) < 4) { queue = [press('1')]; act = null; }
     }
     // reflex: block or counter a visible startup, once per opponent attack
-    if (opp.state === 'attack' && opp.phase === 'startup' && opp.attackId !== lastReactedTo && dist < reach(opp.move) + (show ? 90 : 30)) {
+    // (an air attack from a jump-in I've read is left to the anti-air below)
+    const readingJump = aaFor === opp.jumpAt && !opp.grounded && FRAME_DATA[opp.move] && FRAME_DATA[opp.move].air;
+    if (opp.state === 'attack' && opp.phase === 'startup' && opp.attackId !== lastReactedTo && !readingJump && dist < reach(opp.move) + (show ? 90 : 30)) {
       lastReactedTo = opp.attackId;
       // read the height: duck a high (and rise into a launcher), down-back a low, stand guard a mid;
       // a misread guesses, so mixups work on the AI too
@@ -381,8 +404,16 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         act = null;
       }
     }
-    // reflex: he jumped at me: uppercut him on the way in (once per jump)
+    // reflex: he jumped at me. A CPU that reads it (the better it is the more often; never at the
+    // bottom of the ladder, so INTERN still gets jumped on) drops its plan, stands its ground and
+    // meets him: the uppercut as he comes into its reach (a counter hit that launches), or a jab if
+    // he is already on top of it with a strike out. Decided once per jump, at takeoff.
     const oppAir = !opp.grounded && (opp.state === 'jump' || (opp.state === 'attack' && FRAME_DATA[opp.move] && FRAME_DATA[opp.move].air));
+    if (oppAir && !opp.rag && opp.jumpAt !== aaSeen && Math.sign(opp.vx || -toward) === -toward && dist < 380 && /^(idle|walk|block|crouch|run)$/.test(me.state)) {
+      aaSeen = opp.jumpAt;
+      if (chance(aaReadChance())) { aaFor = opp.jumpAt; me.aaJump = opp.jumpAt; queue = antiAir(); act = null; }
+    }
+    // the old reflex: an uppercut on the way in now and then (once per jump)
     if (oppAir && opp.vy > (show ? -260 : -120) && dist < (show ? 140 : 125) && Math.sign(opp.vx || -toward) === -toward && me.aaJump !== opp.jumpAt && /^(idle|walk|block|crouch)$/.test(me.state)) {
       me.aaJump = opp.jumpAt;
       if (chance(show ? 0.7 : 0.15 + 0.65 * difficulty)) { queue = [{ ...press('d2'), ok: true }]; act = null; }
@@ -422,7 +453,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
 
     const done = !act || (typeof act.until === 'function' ? act.until(me, opp) : act.until <= 0);
     if (done) {
-      if (queue.length) act = queue.shift();
+      if (queue.length) { act = queue.shift(); if (act.onlyIf && !act.onlyIf(me, opp)) act = null; }
       // no re-deciding during my own attack (each new plan would overwrite the buffered press);
       // over a downed body it is allowed, for the meaty cancel out of the stomp
       else if (step >= nextThink && (me.state !== 'attack' || DOWN_STATES.has(opp.state))) {

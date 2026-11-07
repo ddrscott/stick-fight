@@ -15,14 +15,20 @@
 // Once both players are linked (peer to peer, or the relay after RTC_TIMEOUT_MS), the host
 // picks a seed and sends {t:'start'}; both call startMatch({ seed, localIndex, lockstep }),
 // which main.js turns into the 'online' scene: unit 0 is the host, unit 1 the guest, each
-// unit's controller reads the lockstep's input for the frame. Rematches follow on their own:
+// unit's controller reads the netcode's input for the frame. (The key is still `lockstep` for
+// main.js; the netcode is rollback now, src/net/rollback.js.) Rematches follow on their own:
 // the sim reseeds from the match seed after the WINS card, the same way on both machines.
+//
+// Testing: ?netsim=LATENCY,JITTER,LOSS delays everything this side sends by LATENCY ms (one way),
+// give or take up to JITTER ms, and drops LOSS percent of game packets (control messages ride the
+// reliable socket and are only delayed). Set it on both pages: ?netsim=30,5,2 on each is about
+// 60 ms of round trip with 2% loss. ?relay=1 forces the relay.
 
 import { createLink, createRoom } from './link.js';
-import { createLockstep } from './lockstep.js';
+import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
 
-export const NET_VERSION = 1;   // bump when the sim changes in a way that would desync old builds
+export const NET_VERSION = 2;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
 
@@ -85,8 +91,8 @@ export function createOnline(game) {
 
   function begin(seed) {
     const localIndex = role === 'host' ? 0 : 1;
-    lockstep = createLockstep({
-      sim: game.sim, localIndex, link,
+    lockstep = createRollback({
+      sim: game.sim, localIndex, link: netsimLink(link, params.get('netsim')),
       sampleLocal: (f) => (localSource ? localSource(f) : game.input.snapshot()),
       onDesync: (d) => { emit('desync', d); readout.render(); },
     });
@@ -125,7 +131,7 @@ export function createOnline(game) {
     async host() {
       net.leave();
       role = 'host'; setState('creating');
-      try { code = await createRoom(); } catch (e) { setState('error', 'unreachable'); throw e; }
+      try { code = await createRoom(); } catch (e) { setState('error', (e && e.reason) || 'unreachable'); throw e; }
       wire(createLink({ code, role: 'host', forceRelay: forceRelay() }));
       setState('waiting');
       return { code, url: shareUrl(code), link };
@@ -166,7 +172,8 @@ export function createOnline(game) {
     get role() { return role; },
     get code() { return code; },
     get link() { return link; },
-    get lockstep() { return lockstep; },
+    get lockstep() { return lockstep; },   // the netcode (rollback); the old name stays for callers
+    get netcode() { return lockstep; },
     shareUrl,
     stats() {
       const s = lockstep ? lockstep.stats() : null;
@@ -182,6 +189,22 @@ export function createOnline(game) {
   const lobby = createLobby(net, game);
   /** @type {any} */ (window).__net = net;
   return net;
+}
+
+// ---- ?netsim=LATENCY,JITTER,LOSS: a bad network on purpose (tests) -----------------------------
+// Wraps the link the netcode sends through. Packets and control messages go out LATENCY ms late
+// (one way), give or take JITTER ms (so packets can arrive out of order, as they do over the
+// unordered DataChannel); LOSS percent of packets never go out. Without the option, the link as is.
+function netsimLink(link, spec) {
+  if (!spec) return link;
+  const [lat = 0, jit = 0, loss = 0] = String(spec).split(',').map((v) => Math.max(0, +v || 0));
+  if (!lat && !jit && !loss) return link;
+  console.info(`[net] netsim: +${lat} ms one way, ±${jit} ms jitter, ${loss}% packet loss`);
+  const later = (fn) => setTimeout(fn, Math.max(0, lat + (Math.random() * 2 - 1) * jit));
+  return {
+    sendPacket(buf) { if (Math.random() * 100 < loss) return; later(() => link.sendPacket(buf)); },
+    sendControl(msg) { later(() => link.sendControl(msg)); },
+  };
 }
 
 // ---- the connection readout: bottom-left corner during a match --------------------------------
@@ -203,7 +226,8 @@ function createReadout(net, stage) {
       if (!mode || !ping) return;
       mode.textContent = s.mode === 'p2p' ? 'P2P' : s.mode === 'relay' ? 'RELAY' : '...';
       el.classList.toggle('nf-relay', s.mode === 'relay');
-      ping.textContent = `${Math.round(s.rtt || 0)} MS · DELAY ${s.delay || 0}`;
+      // the round trip, how many frames the last correction re-ran, and the input delay
+      ping.textContent = `${Math.round(s.rtt || 0)} MS · RB ${s.lastDepth || 0} · DELAY ${s.delay || 0}`;
       desync.hidden = !s.desync;
       wait.hidden = !(s.stalledMs > 300);
     },
@@ -223,7 +247,7 @@ function createLobby(net, game) {
     creating: 'OPENING A ROOM…', waiting: 'WAITING FOR A RIVAL…', joining: 'FINDING THE ROOM…', linking: 'CONNECTING…',
     'host-gone': 'THE HOST LEFT THE ROOM',
   };
-  const ERRORS = { 'no-room': 'NO ROOM WITH THAT CODE', full: 'THAT ROOM IS FULL', 'bad-code': 'CODES ARE 4 LETTERS', unreachable: 'CAN\'T REACH THE ROOM SERVER', lost: 'CONNECTION LOST', version: 'YOUR GAMES DIFFER: RELOAD BOTH', closed: 'THE ROOM CLOSED' };
+  const ERRORS = { 'no-room': 'NO ROOM WITH THAT CODE', full: 'THAT ROOM IS FULL', 'bad-code': 'CODES ARE 4 LETTERS', unreachable: 'CAN\'T REACH THE ROOM SERVER', lost: 'CONNECTION LOST', version: 'YOUR GAMES DIFFER: RELOAD BOTH', closed: 'THE ROOM CLOSED', busy: 'SERVER BUSY: TRY AGAIN SHORTLY', flood: 'TOO MUCH TRAFFIC: ROOM CLOSED' };
 
   function html() {
     const s = net.state;
@@ -409,6 +433,7 @@ function injectStyle() {
     font: 500 clamp(12px, 1.6vw, 18px)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; color: #b9f9ff;
     text-shadow: 0 0 6px #2ef2ff, 0 0 2px #000; display: flex; gap: 0.6em; align-items: baseline; white-space: nowrap; }
   .nf-readout[hidden] { display: none; }
+  html.online .sf-hint { display: none; }   /* the "press any key for sound" hint sits under the readout */
   .nf-readout.nf-relay { color: #ffe0a8; text-shadow: 0 0 6px #ffb02e, 0 0 2px #000; }
   .nf-readout b { font-weight: 600; }
   .nf-desync { color: #ffc2f3; text-shadow: 0 0 8px #ff2bd6, 0 0 2px #000; }

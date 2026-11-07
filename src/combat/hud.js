@@ -40,8 +40,10 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.closePath();
   }
 
-  function bar(u, side, sim, dt) {
-    const i = side, color = SIDE[side];
+  // who: the player (0 = P1) the bar belongs to, for its color, name, pips and drain state; side: the
+  // screen side it's drawn on (0 = left). They differ only in a mirrored view, where P2 is on the left.
+  function bar(u, who, side, sim, dt) {
+    const i = who, color = SIDE[who];
     const max = sim.startHealth || 100;
     if (u.health < seen[i]) tick[i] = 0.35;
     seen[i] = u.health;
@@ -87,11 +89,11 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     // name and pips
     const ly = sy + ST_H + 12;
     const diff = u.kind === 'ai' && u.controller && u.controller.getDifficulty ? u.controller.getDifficulty() : sim.difficulty;
-    const label = names && names[side] ? names[side] : u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && side === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? 'PLAYER 1' : u.kind === 'script' ? 'TRAINER' : 'DUMMY';
+    const label = names && names[who] ? names[who] : u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && who === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? 'PLAYER 1' : u.kind === 'script' ? 'TRAINER' : 'DUMMY';
     neonText(label, side === 0 ? x : x + BAR_W, ly, 22, color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.7, core: false });
     if (sim.horde) {
       const H = sim.horde, wv = H.wave || { downed: 0, size: 0 };
-      neonText(side === 0 ? `FLOOR ${H.floorsCleared + 1}   ${H.count} DOWN` : `WAVE ${wv.downed}/${wv.size}`, side === 0 ? x + BAR_W : x, ly, 20, NEON.amber, { font: LABEL, align: side === 0 ? 'right' : 'left', weight: 600, glow: 0.7 });
+      neonText(who === 0 ? `FLOOR ${H.floorsCleared + 1}   ${H.count} DOWN` : `WAVE ${wv.downed}/${wv.size}`, side === 0 ? x + BAR_W : x, ly, 20, NEON.amber, { font: LABEL, align: side === 0 ? 'right' : 'left', weight: 600, glow: 0.7 });
     } else {
       for (let k = 0; k < 2; k++) {
         const px = side === 0 ? x + BAR_W - 8 - k * 20 : x + 8 + k * 20, py = ly;
@@ -126,8 +128,10 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const k in u.rig.joints) { const p = u.rig.joints[k]; x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
       const pad = 22;
-      const sx = (wx) => (wx - camera.x - camera.shakeX) * z + width / 2, sy = (wy) => (wy - camera.y - camera.shakeY) * z + height / 2;
-      out.push({ x0: sx(x0) - pad, x1: sx(x1) + pad, y0: sy(y0) - pad, y1: sy(y1) + pad });
+      const m = camera.mirror ? -1 : 1;   // a mirrored view: world x runs right to left on screen
+      const sx = (wx) => m * (wx - camera.x - camera.shakeX) * z + width / 2, sy = (wy) => (wy - camera.y - camera.shakeY) * z + height / 2;
+      const ax = sx(x0), bx = sx(x1);
+      out.push({ x0: Math.min(ax, bx) - pad, x1: Math.max(ax, bx) + pad, y0: sy(y0) - pad, y1: sy(y1) + pad });
     }
     return out;
   }
@@ -224,9 +228,11 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const g = ctx.createLinearGradient(0, 0, 0, STRIP_H + 18);
     g.addColorStop(0, 'rgba(10,2,24,0.62)'); g.addColorStop(0.75, 'rgba(10,2,24,0.3)'); g.addColorStop(1, 'rgba(10,2,24,0)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, width, STRIP_H + 18);
-    bar(sim.units[0], 0, sim, dt); bar(sim.focus || sim.units[1], 1, sim, dt);
+    // a mirrored view (camera.mirror: the online guest) swaps the bars, so P2's is on the left like his fighter
+    const flip = camera.mirror ? 1 : 0;
+    bar(sim.units[0], 0, flip, sim, dt); bar(sim.focus || sim.units[1], 1, 1 - flip, sim, dt);
     timer(sim);
-    if (flow && flow.score != null) score(flow);
+    if (flow && flow.score != null) score(flow, flip);
 
     const boxes = fighterBoxes(sim, camera), taken = [];
     if (sim.banner !== lastBanner) { lastBanner = sim.banner; bannerAge = 0; } else bannerAge += dt;
@@ -248,7 +254,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     for (const it of items) {
       const pop = 1 + Math.max(0, 0.3 - it.age * 2);
       const w = measure(it.text, it.size) * pop + 16, h = it.size * 1.15;
-      const side = it.by === 1 || it.by > 1 ? 1 : it.by === 0 ? 0 : 2;
+      let side = it.by === 1 || it.by > 1 ? 1 : it.by === 0 ? 0 : 2;
+      if (flip && side < 2) side = 1 - side;   // mirrored: on the attacker's side of the screen
       const xs = [44 + w / 2, width - 44 - w / 2, width / 2];
       const order = side === 2 ? [2, 0, 1] : [side, 1 - side, 2];
       let spot = null;
@@ -294,11 +301,13 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   }
 
   // the run's score, in the strip between P1's name and his round pips, with the last bonus beside it
-  function score(flow) {
-    const y = BAR_Y + BAR_H + 6 + ST_H + 12, x = 44 + 118;
+  // (side 1: P1's bar is on the right in a mirrored view, so the score goes there, read inward from its edge)
+  function score(flow, side = 0) {
+    const y = BAR_Y + BAR_H + 6 + ST_H + 12, x = side ? width - 44 - 118 : 44 + 118;
     const txt = String(Math.max(0, Math.floor(flow.score))).padStart(7, '0');
-    const w = neonText(txt, x, y, 22, NEON.amber, { font: LABEL, align: 'left', weight: 600, glow: 0.7 });
-    if (flow.bonus) neonText(flow.bonus, x + w + 10, y, 18, NEON.white, { font: LABEL, align: 'left', weight: 600, glow: 0.6, core: false });
+    const align = side ? 'right' : 'left', dir = side ? -1 : 1;
+    const w = neonText(txt, x, y, 22, NEON.amber, { font: LABEL, align, weight: 600, glow: 0.7 });
+    if (flow.bonus) neonText(flow.bonus, x + dir * (w + 10), y, 18, NEON.white, { font: LABEL, align, weight: 600, glow: 0.6, core: false });
   }
 
   // the move list, two lines at the bottom; it fades out wherever a fighter is under it
@@ -321,14 +330,15 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   function drawDebug(sim, camera, scene) {
     const z = camera.zoom;
     ctx.save();
-    ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (width / 2 - (camera.x + camera.shakeX) * z), dpr * (height / 2 - (camera.y + camera.shakeY) * z));
+    const m = camera.mirror ? -1 : 1;   // mirrored view: the boxes flip with the world, the labels don't
+    ctx.setTransform(m * dpr * z, 0, 0, dpr * z, dpr * (width / 2 - m * (camera.x + camera.shakeX) * z), dpr * (height / 2 - (camera.y + camera.shakeY) * z));
     for (const u of sim.units) {
       if (u.hidden) continue;
       const { hits, hurt } = sim.debugBoxes(u);
       drawBoxes(ctx, hits, hurt);
       ctx.font = `500 15px ${LABEL}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = NEON.white;
       const txt = `${u.state}${u.move ? ' ' + u.move : ''}${u.phase ? ' ' + u.phase : ''}${u.hitstop ? ' hs' + u.hitstop : ''}${u.stun ? ' st' + u.stun : ''}${u.buffer ? ' [' + u.buffer + ']' : ''} ${Math.round(u.stamina)}`;
-      ctx.fillText(txt, u.x, u.y - 150);
+      ctx.save(); ctx.translate(u.x, u.y - 150); ctx.scale(m, 1); ctx.fillText(txt, 0, 0); ctx.restore();
       ctx.fillStyle = NEON.pink; ctx.fillRect(u.x - 1, u.y - 3, 2, 6);
     }
     ctx.restore();

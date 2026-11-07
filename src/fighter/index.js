@@ -215,7 +215,7 @@ const MOVE_DEFS = {
     K({ hx: 6, torso: 4, head: -2, ll: [10, 5], rl: [-15, -20], la: [165, 175], ra: [150, 170], air: 28 }, 110, 'out'),
     K({ hx: 6, torso: 10, head: -4, ll: [70, -50], rl: [55, -60], la: [120, 150], ra: [100, 140], air: 66 }, 140, 'sine'),
     K({ hx: 6, torso: 6, head: -4, ll: [70, -50], rl: [55, -60], la: [120, 150], ra: [100, 140], air: 76 }, 120, 'in'),
-    K({ hx: 6, torso: 14, head: -6, ll: [24, 4], rl: [-10, -16], la: [110, 120], ra: [90, 100], air: 34 }, 60, 'in'),
+    K({ hx: 6, torso: 14, head: -6, ll: [24, 4], rl: [-10, -16], la: [110, 120], ra: [90, 100], air: 34 }, 60, 'linear'),
     K({ hx: 2, torso: 34, head: -8, ll: [52, -44], rl: [-4, -64], la: [60, 40], ra: [50, 30] }, 80, 'out', 'land'),
     K({ hx: 0, torso: 10, head: -3, ll: [26, 8], rl: [-22, -16], la: [60, 140], ra: [36, 158] }, 160, 'back', 'recover'),
     K({}, 0, 'sine'),
@@ -707,17 +707,20 @@ Object.assign(MOVE_DEFS, {
 });
 // ---- air attacks (v3b): they ride the jump's arc. The body keeps the jump's hip height over time
 // (the move's own keys animate limbs and torso only), so striking mid-jump never breaks the arc.
+// Their blends are long and linear (blendEase) with a short key before contact, the same time to
+// contact as before: the sim shows an attack's first frame 50ms in, and an 'out' blend had all
+// but finished by then, so the homing lunge arrived in one frame.
 const TUCK = { ll: [64, -54], rl: [50, -64] };
 Object.assign(MOVE_DEFS, {
-  jumpJab: { blend: 40, limb: 'lHand', air: true, keys: [
-    K({ hx: 2, ...TUCK, torso: 8, bend: 2, head: -2, tw: 4, la: [60, 120], ra: [40, 130] }, 40, 'in'),
+  jumpJab: { blend: 60, blendEase: 'linear', limb: 'lHand', air: true, keys: [
+    K({ hx: 2, ...TUCK, torso: 8, bend: 2, head: -2, tw: 4, la: [60, 120], ra: [40, 130] }, 20, 'linear'),
     K({ hx: 6, ...TUCK, torso: 16, bend: 4, head: -6, tw: -10, la: [92, 92], ra: [40, 140] }, 40, 'out', 'active'),
     K({ hx: 6, ...TUCK, torso: 17, bend: 4, head: -6, tw: -11, la: [93, 92], ra: [40, 140] }, 40, 'inOut'),
     K({ hx: 4, ...TUCK, torso: 12, bend: 2, head: -4, tw: -4, la: [70, 120], ra: [50, 130] }, 100, 'inOut', 'recover'),
     K({ hx: 2, ...TUCK, torso: 8, head: -4, la: [80, 130], ra: [60, 120] }, 0, 'sine'),
   ] },
-  jumpCross: { blend: 40, limb: 'rHand', air: true, keys: [
-    K({ hx: 0, ...TUCK, torso: -4, bend: 2, head: 4, tw: -14, la: [40, 150], ra: [20, 170] }, 60, 'in'),
+  jumpCross: { blend: 60, blendEase: 'linear', limb: 'rHand', air: true, keys: [
+    K({ hx: 0, ...TUCK, torso: -4, bend: 2, head: 4, tw: -14, la: [40, 150], ra: [20, 170] }, 40, 'linear'),
     K({ hx: 6, ...TUCK, torso: 14, bend: 4, head: -4, tw: 2, la: [30, 150], ra: [70, 92] }, 40, 'linear'),
     K({ hx: 10, ...TUCK, torso: 28, bend: 6, head: -12, tw: 16, la: [20, 150], ra: [96, 95] }, 40, 'out', 'active'),
     K({ hx: 10, ...TUCK, torso: 29, bend: 6, head: -12, tw: 17, la: [20, 150], ra: [97, 96] }, 40, 'inOut'),
@@ -726,16 +729,16 @@ Object.assign(MOVE_DEFS, {
   ] },
   // 3: flying side kick: the lead leg shoots out dead straight, the rear knee tucks under, the torso
   // leans back away from it, arms flung back for balance. Long reach.
-  flyingKick: { blend: 40, limb: 'lFoot', air: true, keys: [
-    K({ hx: 0, ll: [110, -20], rl: [60, -70], torso: 4, bend: 2, head: 4, la: [60, 140], ra: [30, 150] }, 60, 'in'),
+  flyingKick: { blend: 70, blendEase: 'linear', limb: 'lFoot', air: true, keys: [
+    K({ hx: 0, ll: [110, -20], rl: [60, -70], torso: 4, bend: 2, head: 4, la: [60, 140], ra: [30, 150] }, 30, 'linear'),
     K({ hx: 8, ll: [94, 90], rl: [40, -96], torso: -22, bend: -6, head: 16, la: [-40, 0], ra: [-60, -20] }, 40, 'out', 'active'),
     K({ hx: 9, ll: [95, 92], rl: [40, -98], torso: -24, bend: -6, head: 16, la: [-42, -2], ra: [-62, -22] }, 80, 'inOut'),
     K({ hx: 6, ll: [100, 10], rl: [50, -80], torso: -8, bend: -2, head: 8, la: [20, 80], ra: [10, 70] }, 100, 'inOut', 'recover'),
     K({ hx: 2, ...TUCK, torso: 6, head: -2, la: [80, 130], ra: [60, 120] }, 0, 'sine'),
   ] },
   // 4: air roundhouse: the rear leg whips round at chest height, the body tipping back with it.
-  airRoundhouse: { blend: 40, limb: 'rFoot', air: true, keys: [
-    K({ hx: 0, ll: [60, -60], rl: [40, -80], torso: 12, bend: 4, head: 4, tw: -12, la: [60, 140], ra: [20, 130] }, 60, 'in'),
+  airRoundhouse: { blend: 60, blendEase: 'linear', limb: 'rFoot', air: true, keys: [
+    K({ hx: 0, ll: [60, -60], rl: [40, -80], torso: 12, bend: 4, head: 4, tw: -12, la: [60, 140], ra: [20, 130] }, 40, 'linear'),
     K({ hx: 4, ll: [50, -70], rl: [90, 30], torso: -12, bend: -4, head: 12, tw: 4, la: [90, 140], ra: [-60, -40] }, 40, 'linear'),
     K({ hx: 8, ll: [44, -76], rl: [102, 100], torso: -30, bend: -8, head: 18, tw: 16, la: [100, 156], ra: [-86, -76] }, 40, 'out', 'active'),
     K({ hx: 8, ll: [44, -76], rl: [104, 100], torso: -32, bend: -8, head: 18, tw: 18, la: [100, 158], ra: [-88, -78] }, 60, 'inOut'),
@@ -744,15 +747,15 @@ Object.assign(MOVE_DEFS, {
   ] },
   // down+4 in the air: the body tips forward and stomps down-forward with a straight rear leg,
   // dropping out of the jump fast (airRate speeds the rest of the arc).
-  diveKick: { blend: 60, limb: 'rFoot', air: true, airRate: 2.4, keys: [
-    K({ hx: 2, ll: [70, -40], rl: [80, -40], torso: 14, bend: 4, head: 0, la: [40, 120], ra: [20, 110] }, 60, 'in'),
+  diveKick: { blend: 90, blendEase: 'linear', limb: 'rFoot', air: true, airRate: 2.4, keys: [
+    K({ hx: 4, ll: [70, -46], rl: [64, -12], torso: 24, bend: 6, head: -4, la: [10, 80], ra: [-10, 70] }, 30, 'linear'),
     K({ hx: 10, ll: [70, -60], rl: [38, 34], torso: 30, bend: 8, head: -8, la: [-30, 0], ra: [-50, -10] }, 40, 'out', 'active'),
     K({ hx: 14, ll: [72, -62], rl: [38, 34], torso: 32, bend: 8, head: -8, la: [-32, -2], ra: [-52, -12] }, 160, 'linear'),
     K({ hx: 16, ll: [72, -62], rl: [40, 36], torso: 32, bend: 8, head: -8, la: [-32, -2], ra: [-52, -12] }, 80, 'linear', 'recover'),
     K({ hx: 16, ll: [72, -62], rl: [40, 36], torso: 30, bend: 8, head: -8, la: [-30, 0], ra: [-50, -10] }, 0, 'sine'),
   ] },
   // Landing lag after an air attack: a deep absorb, then guard.
-  airLand: { blend: 30, keys: [
+  airLand: { blend: 100, blendEase: 'sine', keys: [
     K({ ...F(0, HIP - 14, LF, RF), torso: 22, bend: 6, head: -10, la: [40, 100], ra: [24, 100] }, 60, 'out', 'land'),
     K({ ...F(0, HIP - 10, LF, RF), torso: 16, bend: 4, head: -8, la: [44, 120], ra: [26, 130] }, 80, 'inOut'),
     K({ ...F(0, HIP - 3, LF, RF), torso: 7, head: -4, la: [54, 148], ra: [28, 164] }, 80, 'out', 'recover'),
@@ -926,7 +929,10 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
         track = { keys: jk, t: jk[0].d + jk[1].d, landAt: jk.slice(0, la).reduce((s2, kk) => s2 + kk.d, 0) };
       }
     }
-    const hipAt = t => { const J = solve({ ...samplePose(track.keys, t), hipLock: null }); return (f.y - J.hip.y) / f.scale; };
+    // where the hip is now, px above the root; a dive (airRate > 1) drops out of the jump from
+    // there and never climbs the rest of the arc
+    const hipNow = m && m.air ? (f.y - solve(f.pose).hip.y) / f.scale : 0;
+    const hipAt = t => { const J = solve({ ...samplePose(track.keys, t), hipLock: null }), h = (f.y - J.hip.y) / f.scale; return (m.airRate || 1) > 1 ? Math.min(h, hipNow) : h; };
     // target {x, y} (world): aim the tip at a point, e.g. an airborne body's point-sim position.
     // Two passes: retarget, measure the real tip on the contact pose, correct.
     if (m && opt && opt.target && m.adapt && m.limb) {
@@ -959,6 +965,18 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     // unchanged), so the next move starts from the new spot instead of snapping back.
     commitShift();
     if (f.pose.spin) f.pose = { ...f.pose, spin: ((f.pose.spin % 360) + 360) % 360 };
+    // Leaving an air attack for anything on the ground (the sim's landing, a hit-confirmed idle):
+    // lower the hip from the arc instead of dropping it in one frame. An air move starts its own.
+    if (m.air) landEase = null;
+    else if (move && move.air && lastHipLock != null && f.pose.hipLock != null) landEase = { from: lastHipLock, t: 0, dur: (move.airRate || 1) > 1 ? 220 : 160 };
+    // a strike thrown while the hip is still coming down (a jump-in's landing jab) finishes the
+    // descent by its contact key, so it lands where it would have from a standing start
+    if (landEase && m.limb && !m.air) {
+      const ai = m.keys.findIndex(k => k.ev === 'active');
+      const toActive = m.blend + m.keys.slice(0, Math.max(0, ai)).reduce((s2, kk) => s2 + kk.d, 0);
+      const u = Math.min(1, landEase.t / landEase.dur);
+      landEase = { from: landEase.from * (1 - u), t: 0, dur: Math.max(1, Math.min(landEase.dur - landEase.t, toActive)) };
+    }
     move = m; airTrack = track;
     // Blend from wherever the body is now into the first keyframe.
     // A loop closes back onto its first keyframe, so append a copy as the terminal key.
@@ -966,7 +984,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const start = clonePose(f.pose);
     if (vel) for (const c of ['torso', 'bend', 'head', 'tw']) start[c] += clamp(vel[c] * 0.05, -18, 18);
     if (vel) for (const c of ['la', 'ra']) start[c] = [start[c][0] + clamp(vel[c][0] * 0.05, -20, 20), start[c][1] + clamp(vel[c][1] * 0.05, -20, 20)];
-    keys = [{ p: start, d: m.blend, ease: 'out', ev: null }, ...m.keys];
+    if (m.air) start.hipLock = lastHipLock = hipNow;   // the hip height the air move eases onto the arc from (update)
+    keys = [{ p: start, d: m.blend, ease: m.blendEase || 'out', ev: null }, ...m.keys];
     limbHot = !!m.limb;
     if (m.loop) keys.push({ ...m.keys[0], d: 0, ev: null });
     ki = 0; kt = 0; shifted = false; dropped = false;
@@ -1024,14 +1043,32 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     if (landEase) {
       landEase.t += dt * 1000;
       const u = Math.min(1, landEase.t / landEase.dur);
-      if (u >= 1 || move !== MOVE_DEFS.airLand) landEase = null;
-      else f.pose = { ...f.pose, hipLock: landEase.from * (1 - u) };   // the floor clamp catches the feet
+      if (u >= 1) landEase = null;
+      // from the arc's height down to where the pose stands on its own, never below it (a pose
+      // that stands taller, a jump's air, wins)
+      else { const nat = (f.y - solve(f.pose).hip.y) / f.scale; f.pose = { ...f.pose, hipLock: nat + Math.max(0, landEase.from - nat) * (1 - u) }; }
     }
     if (move.air && airTrack) {
       airTrack.t += dt * 1000 * (move.airRate || 1);
       if (airTrack.t >= airTrack.landAt) { const h0 = lastHipLock != null ? lastHipLock : HIP, fast = (move.airRate || 1) > 1; airTrack = null; play('airLand'); landEase = { from: h0, t: 0, dur: fast ? 220 : 160 }; update(0); return; }   // airLand fires 'land'
       const J0 = solve({ ...samplePose(airTrack.keys, airTrack.t), hipLock: null });
-      f.pose = { ...f.pose, hipLock: (f.y - J0.hip.y) / f.scale }; lastHipLock = f.pose.hipLock;
+      let h = (f.y - J0.hip.y) / f.scale;
+      // Ease onto the arc: from the hip height the move started at (its blend key holds it) to the
+      // arc's, linearly over the startup, so the first frame (the sim shows it 50ms in) doesn't
+      // jump there. A dive never climbs: it drops out of the jump from where it was.
+      const h0 = keys[0].p.hipLock;
+      if (h0 != null) {
+        if ((move.airRate || 1) > 1) h = Math.min(h, h0);
+        const ai = keys.findIndex(kk => kk.ev === 'active');
+        let el = kt, ramp = 0;
+        for (let i = 0; i < ki; i++) el += keys[i].d;
+        for (let i = 0; i < ai; i++) ramp += keys[i].d;
+        if (ramp > 0 && el < ramp) h = h0 + (h - h0) * (el / ramp);
+        // the dive races the rest of the arc (airRate): its hip comes down at most 600px/s
+        // relative to the root, which is falling too; airLand's ease takes it from there
+        if ((move.airRate || 1) > 1 && lastHipLock != null) h = Math.max(h, lastHipLock - 600 * dt);
+      }
+      f.pose = { ...f.pose, hipLock: h }; lastHipLock = h;
     }
     const total = keys.reduce((s, kk) => s + kk.d, 0);
     const elapsed = keys.slice(0, ki).reduce((s, kk) => s + kk.d, 0) + kt;
@@ -1118,7 +1155,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       rag = { pts: {}, len: [], t: 0, rest: 0, splat: 0, bounceNext: false, landed: false, wall };
       for (const k in J) rag.pts[k] = { x: J[k].x, y: J[k].y, px: J[k].x, py: J[k].y, r: k === 'head' ? RIG.headR * f.scale : RIG.limbW / 2 * f.scale };
       rag.len = BONES.map(([a, b]) => dm.hypot(J[a].x - J[b].x, J[a].y - J[b].y));
-      f.airborne = true; reactL = null;
+      f.airborne = true; reactL = null; landEase = null;
       f.current = { move: 'airborne', t: 0, frame: 0, done: false };
     }
     rag.wall = wall; rag.rest = 0; rag.landed = false;
@@ -1365,6 +1402,72 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     }
     ctx.restore();
   }
+
+  // ---- save / restore (online rollback) ---------------------------------------------------
+  // getState(into?) captures everything that decides the rig's next update: the move and its key
+  // list, the clock inside it, the pose and its velocity, the reaction layer, the springs, the
+  // point simulation, the crossfade, the jump arc and the fall surfaces. setState(s) puts it back.
+  // Objects the rig mutates in place (springs, rag points, the clocks in reactL / airTrack /
+  // landEase, current, the joints map) are copied both ways, so a state can be restored any
+  // number of times; poses, key objects and move defs are never mutated, so they're shared.
+  // `into` is reused (its nested objects too), so a ring of saved states makes no garbage.
+  const copyMap = (src, dst) => { if (!src) return null; dst = dst || {}; for (const k in src) dst[k] = src[k]; return dst; };
+  const copySpring = (s, d) => { d = d || {}; d.x = s.x; d.y = s.y; d.vx = s.vx; d.vy = s.vy; return d; };
+  function copyRag(r, d) {
+    if (!r) return null;
+    d = d || { pts: {} };
+    const dp = d.pts || (d.pts = {});
+    for (const k in r.pts) { const q = r.pts[k], o = dp[k] || (dp[k] = {}); o.x = q.x; o.y = q.y; o.px = q.px; o.py = q.py; o.r = q.r; }
+    for (const k in dp) if (!(k in r.pts)) delete dp[k];
+    d.len = r.len; d.t = r.t; d.rest = r.rest; d.splat = r.splat; d.bounceNext = r.bounceNext; d.landed = r.landed; d.wall = r.wall;
+    d.wallDone = r.wallDone; d.wallSide = r.wallSide; d.surf = r.surf; d.stall = r.stall;
+    d.treadT = r.treadT ? { ...r.treadT } : undefined;   // only while tumbling down the stairs
+    return d;
+  }
+  function getState(into) {
+    const s = into || {};
+    s.x = f.x; s.y = f.y; s.facing = f.facing; s.airborne = f.airborne; s.walls = f.walls; s.treads = f.treads; s.floorY = f.floorY;
+    s.pose = f.pose;
+    s.joints = copyMap(f.joints, s.joints);
+    s.events = f.events.length ? f.events.slice() : null;
+    const c = s.current || (s.current = {});
+    c.move = f.current.move; c.t = f.current.t; c.frame = f.current.frame; c.done = f.current.done;
+    s.move = move; s.ki = ki; s.kt = kt; s.shifted = shifted; s.dropped = dropped;
+    s.keys = s.keys || []; s.keys.length = keys.length; for (let i = 0; i < keys.length; i++) s.keys[i] = keys[i];
+    s.prevJoints = prevJoints; s.strikeTimer = strikeTimer; s.strikeDir = strikeDir;
+    s.vel = vel; s.lastBase = lastBase;
+    s.reactL = reactL ? Object.assign(s.reactL || {}, reactL) : null;
+    s.springs = s.springs || {};
+    for (const k in s.springs) if (!springs[k]) delete s.springs[k];
+    for (const k in springs) s.springs[k] = copySpring(springs[k], s.springs[k]);
+    s.rag = copyRag(rag, s.rag && s.rag !== rag ? s.rag : null);
+    s.fadeFrom = fadeFrom; s.fadeT = fadeT; s.limbHot = limbHot;
+    s.airTrack = airTrack ? Object.assign(s.airTrack || {}, airTrack) : null;
+    s.landEase = landEase ? Object.assign(s.landEase || {}, landEase) : null;
+    s.lastHipLock = lastHipLock;
+    return s;
+  }
+  function setState(s) {
+    f.x = s.x; f.y = s.y; f.facing = s.facing; f.airborne = s.airborne; f.walls = s.walls; f.treads = s.treads; f.floorY = s.floorY;
+    f.pose = s.pose;
+    f.joints = copyMap(s.joints, {});
+    f.events.length = 0; if (s.events) for (const e of s.events) f.events.push(e);
+    f.current = { move: s.current.move, t: s.current.t, frame: s.current.frame, done: s.current.done };
+    move = s.move; ki = s.ki; kt = s.kt; shifted = s.shifted; dropped = s.dropped;
+    keys = s.keys.slice();
+    prevJoints = s.prevJoints; strikeTimer = s.strikeTimer; strikeDir = s.strikeDir;
+    vel = s.vel; lastBase = s.lastBase;
+    reactL = s.reactL ? { ...s.reactL } : null;
+    for (const k in springs) if (!s.springs[k]) delete springs[k];
+    for (const k in s.springs) springs[k] = copySpring(s.springs[k], null);
+    rag = copyRag(s.rag, null);
+    fadeFrom = s.fadeFrom; fadeT = s.fadeT; limbHot = s.limbHot;
+    airTrack = s.airTrack ? { ...s.airTrack } : null;
+    landEase = s.landEase ? { ...s.landEase } : null;
+    lastHipLock = s.lastHipLock;
+  }
+  f.getState = getState;
+  f.setState = setState;
 
   play('idle');
   update(0);

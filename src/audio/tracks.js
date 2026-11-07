@@ -20,7 +20,8 @@
 // the whole piece. music.js plays a track's form twice, then the next in its pool.
 //
 // Pools: `fight` for a normal match, `horde` for horde mode, `calm` for training (a dummy
-// that doesn't fight back). A track can sit in more than one ("fight horde"). In horde mode
+// that doesn't fight back), `menu` for the title, the menus, the attract demo, the high
+// score tables, game over and the ending (the arcade flow picks it, see index.js). A track can sit in more than one ("fight horde"). In horde mode
 // each cleared floor moves to the next track in the pool. N walks the whole list.
 
 // The theme, in scale degrees: a call that punches twice, an answer that reaches higher,
@@ -200,6 +201,31 @@ export const TRACKS = [
   s("white").lpf(2500).hpf(500).attack(4).release(4).gain(.06).slow(4),
   s("brown").lpf(160).attack(2).release(2).gain(.1).slow(4)
 ).postgain(1.5)`,
+  }),
+  track({
+    name: 'Insert Coin',
+    mood: 'title: a cabinet in the lobby, square-wave arpeggios and the theme on a pulse lead',
+    bpm: 116,
+    pool: 'menu',
+    form: [['in', 4], ['a', 8], ['b', 16], ['drop', 4], ['c', 16]],
+    body: (on) => `stack(
+  s("sbd ~ ~ ~ ~ ~ sbd ~ sbd ~ ~ ~ ~ ~ ~ ~").decay(.25).penv(20).gain(.85).mask(${on('a b c')}),
+  s("white").struct("~ x ~ x").decay(.08).sustain(0).bpf(2600).bpq(1.2).crush(5).gain(.3).mask(${on('a b c')}),
+  s("white*8").decay(.03).sustain(0).hpf(9000).crush(6).gain("[.12 .06]*4").mask(${on('in a b c')}),
+  n(${per(ROOTS, 2)}).scale("B1:minor").s("triangle").struct("x ~ x x ~ x x ~")
+    .decay(.18).sustain(.2).release(.05).gain(.55).mask(${on('a b c')}),
+  n("0 2 4 7 9 7 4 2".fast(2).add(${per(ROOTS, 2)})).scale("B4:minor").s("square")
+    .decay(.06).sustain(0).lpf(3600).crush(8).gain(.1).pan(sine.range(.3, .7).slow(2)).orbit(2).mask(${on('in a b c')}),
+  n(${per(CHORDS, 2)}).scale("B3:minor").s("square").struct("x ~ ~ x ~ ~ x ~")
+    .decay(.12).sustain(0).lpf(2200).gain(.1).room(.3).orbit(2).mask(${on('b c')}),
+  n(${per(CHORDS, 2)}).scale("B2:minor").s("sawtooth").attack(.8).release(1.6).lpf(900)
+    .gain(.12).room(.7).roomsize(6).orbit(2).mask(${on('in drop')}),
+  n(${per(THEME, 2)}).scale("B4:minor").s("square")
+    .attack(.005).decay(.15).sustain(.4).release(.1).lpf(3200).vib(5).vibmod(.12)
+    .delay(.25).delaytime(.3879).delayfeedback(.3).gain(.15).room(.3).orbit(2).mask(${on('b c')}),
+  n(${per(THEME, 2)}).scale("B5:minor").s("sine").fm(2).fmh(2.01).decay(.4).sustain(0)
+    .delay(.4).delaytime(.3879).delayfeedback(.45).room(.6).gain(.16).orbit(2).mask(${on('drop')})
+).postgain(0.78)`,
   }),
 ];
 

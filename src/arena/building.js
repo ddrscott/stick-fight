@@ -257,6 +257,12 @@ function line(ctx, x0, y0, x1, y1, stroke, lw) {
 
 function rgba(hue, a) { return `rgba(${CSS[hue]},${a})`; }
 function clipRect(ctx, r) { ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip(); }
+// sign lettering: in a mirrored view (cam.mirror, the online guest) the whole frame is flipped on
+// screen, so the letters are flipped back in place around their center and still read
+function signText(ctx, cam, text, x, y) {
+  if (!(cam && cam.mirror)) { ctx.fillText(text, x, y); return; }
+  ctx.save(); ctx.translate(x, y); ctx.scale(-1, 1); ctx.fillText(text, 0, 0); ctx.restore();
+}
 
 // Where the far layer has been moved to by the caller, relative to the room, for this
 // camera: the emissive pass draws the towers' lights at this offset so they stay on the towers.
@@ -941,7 +947,7 @@ export function drawBuildingEmissive(ctx, cam, lights) {
     neonRect(ctx, EXIT.x + 1, EXIT.y + 1, EXIT.w - 2, EXIT.h - 2, 'exit', a, 10);
     ctx.fillStyle = `rgba(225,255,235,${a})`;
     ctx.font = 'bold 13px Helvetica, Arial, sans-serif';
-    ctx.fillText('EXIT', EXIT.x + EXIT.w / 2, EXIT.y + EXIT.h / 2 + 1);
+    signText(ctx, cam, 'EXIT', EXIT.x + EXIT.w / 2, EXIT.y + EXIT.h / 2 + 1);
   }
 
   // elevator: only the floor indicators glow; the cab is a grey mass
@@ -951,7 +957,7 @@ export function drawBuildingEmissive(ctx, cam, lights) {
     ctx.fillRect(ind.x + 1, ind.y + 1, ind.w - 2, ind.h - 2);
     ctx.fillStyle = `rgba(170,250,255,${Math.min(1, a * 2.2)})`;
     ctx.font = 'bold 15px Helvetica, Arial, sans-serif';
-    ctx.fillText(ind.label, ind.x + 18, ind.y + ind.h / 2 + 1);
+    signText(ctx, cam, ind.label, ind.x + 18, ind.y + ind.h / 2 + 1);
     ctx.beginPath();
     ctx.moveTo(ind.x + 30, ind.y + 7); ctx.lineTo(ind.x + 38, ind.y + 7); ctx.lineTo(ind.x + 34, ind.y + 15); ctx.closePath();
     ctx.fill();
@@ -1012,7 +1018,8 @@ export function drawBuildingEmissive(ctx, cam, lights) {
     neonRect(ctx, LOW_EXIT.x + 1, LOW_EXIT.y + 1, LOW_EXIT.w - 2, LOW_EXIT.h - 2, 'exit', a, 10);
     ctx.fillStyle = `rgba(225,255,235,${a})`;
     ctx.font = 'bold 12px Helvetica, Arial, sans-serif';
-    ctx.fillText('EXIT →', LOW_EXIT.x + LOW_EXIT.w / 2, LOW_EXIT.y + LOW_EXIT.h / 2 + 1);
+    // the arrow points at the door, which a mirrored view puts on the other side
+    signText(ctx, cam, cam && cam.mirror ? '← EXIT' : 'EXIT →', LOW_EXIT.x + LOW_EXIT.w / 2, LOW_EXIT.y + LOW_EXIT.h / 2 + 1);
   }
   {
     const r = DOOR_R, a = k('doorR');

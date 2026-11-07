@@ -3,6 +3,9 @@
 //
 //   gameAudio.attach(sim)   once, after the sim exists
 //   gameAudio.event(ev)     from main.js's onEvent, for every fighter and sim event
+//   gameAudio.setMirror(on) the view is mirrored left-right (the online guest), so pan flips
+//   gameAudio.setMusicPool(pool)   the arcade flow pins the pool per screen ('menu' on the
+//                           title and menus); null hands it back to the watcher's guess
 //
 // Everything else is here: the event-to-sound table, the stereo pan from the fighter's
 // screen x, the whiff and pool watchers (a light requestAnimationFrame loop), the unlock
@@ -127,9 +130,10 @@ function createGameAudio() {
   const ui = createSoundUI({ settings, music, actions, isUnlocked: () => unlocked });
 
   // ---- events to sounds ---------------------------------------------------------------------
+  let panSign = 1;   // -1 while the view is mirrored (setMirror), so a sound comes from where its fighter is on screen
   const pan = (x) => {
     if (typeof x !== 'number') return 0;
-    const sx = (x - camera.x) * camera.zoom;
+    const sx = (x - camera.x) * camera.zoom * panSign;
     return Math.max(-1, Math.min(1, sx / (W / 2))) * 0.75;
   };
   const unitX = (id) => { const u = sim && sim.units[id]; return u ? u.x : camera.x; };
@@ -223,9 +227,17 @@ function createGameAudio() {
   // ---- watchers: whiffs, and which pool the music should be in --------------------------------
   const seenWhiff = new Map();
   let poolAt = 0;
+  // the arcade flow names the pool outright (setMusicPool); null means infer it from the sim
+  let poolOverride = null;
+  const inferPool = () => (sim.horde ? 'horde' : (sim.units[1] && sim.units[1].kind === 'none') ? 'calm' : 'fight');
   const monitor = { on: false, sfxPeak: 0, musicPeak: 0, frames: 0 };
   function watch(now) {
     requestAnimationFrame(watch);
+    if (now - poolAt > 250) {
+      poolAt = now;
+      const pool = poolOverride || (sim ? inferPool() : null);
+      if (pool) music.setPool(pool);
+    }
     if (!sim) return;
     if (settings.sound && unlocked) {
       for (const u of sim.units) {
@@ -234,11 +246,6 @@ function createGameAudio() {
         seenWhiff.set(u.id, u.attackId);
         sfx.whiff({ pan: pan(u.x) });
       }
-    }
-    if (now - poolAt > 250) {
-      poolAt = now;
-      const pool = sim.horde ? 'horde' : (sim.units[1] && sim.units[1].kind === 'none') ? 'calm' : 'fight';
-      music.setPool(pool);
     }
     if (monitor.on) {
       monitor.frames++;
@@ -252,6 +259,16 @@ function createGameAudio() {
     sfx, music, settings, actions, monitor,
     attach(s) { sim = s; },
     event,
+    // the screen shows the world mirrored left-right (the online guest's view): pan follows it
+    setMirror(on) { panSign = on ? -1 : 1; },
+    get mirrored() { return panSign < 0; },
+    // 'menu' | 'fight' | 'horde' | 'calm' pins the music pool; null goes back to following the sim
+    setMusicPool(pool) {
+      poolOverride = pool || null;
+      const p = poolOverride || (sim ? inferPool() : null);
+      if (p) music.setPool(p);
+    },
+    get musicPool() { return music.state.pool; },
     // tests (and a page with autoplay allowed) can start sound without a gesture
     unlock() { gesture(); },
     get unlocked() { return unlocked; },
@@ -260,7 +277,7 @@ function createGameAudio() {
   return api;
 }
 
-const noop = { attach() {}, event() {} };
+const noop = { attach() {}, event() {}, setMusicPool() {}, setMirror() {} };
 let made = noop;
 try { made = createGameAudio(); } catch (e) { console.warn('[audio] off:', e.message); }
 export const gameAudio = made;

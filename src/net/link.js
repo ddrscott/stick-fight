@@ -1,18 +1,34 @@
 // The connection between two players. The room's WebSocket (worker/index.ts, one Durable
 // Object per room) carries signaling and the match's control messages; game packets go over a
 // WebRTC DataChannel (unordered, no retransmits) when the two browsers can reach each other,
-// and through the same WebSocket otherwise (the relay). Public STUN only, no TURN: two phones
-// behind carrier NAT usually can't open a direct path, so the relay is the expected fallback.
+// and through the same WebSocket otherwise (the relay). The ICE servers come from the Worker's
+// /api/ice: STUN plus short-lived Cloudflare TURN credentials, so two phones behind carrier NAT can
+// still get a DataChannel (through a TURN server). If that fetch fails it's public STUN only, and
+// if no path opens within RTC_TIMEOUT_MS the room's WebSocket relay takes over as before.
+// ?ice=relay in the page URL allows TURN candidates only (a test switch for the TURN path).
 //
 //   const link = createLink({ code, role, forceRelay })
 //   link.on('status' | 'peer' | 'control' | 'packet' | 'closed', fn)
 //   link.sendControl(obj)   reliable JSON through the room
 //   link.sendPacket(buf)    the DataChannel when it's open, else the room
 //   link.mode               'connecting' | 'p2p' | 'relay'
+//   link.candidate          once p2p: the local ICE candidate type in use, 'host' | 'srflx' | 'relay'
 //   link.close()
 
 const ICE_SERVERS = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 export const RTC_TIMEOUT_MS = 5000;
+const ICE_FETCH_MS = 2500;
+
+/** The ICE servers to use: the Worker's (with TURN when it has a key), else public STUN. */
+export async function fetchIceServers() {
+  try {
+    const res = await fetch(apiUrl('ice'), { signal: AbortSignal.timeout(ICE_FETCH_MS) });
+    if (!res.ok) throw new Error(`ice ${res.status}`);
+    const body = await res.json();
+    if (Array.isArray(body.iceServers) && body.iceServers.length) return body.iceServers;
+  } catch (e) { console.warn('[net] ice servers: STUN only', e); }
+  return ICE_SERVERS;
+}
 
 /** The API base: relative to the page, so it works at /stick-fight/ and on the dev server. */
 export function apiUrl(path, ws = false) {
@@ -22,10 +38,14 @@ export function apiUrl(path, ws = false) {
   return u;
 }
 
-/** Ask the server for a new room. Resolves to its code. */
+/** Ask the server for a new room. Resolves to its code; a failure carries .reason ('busy' on a 429). */
 export async function createRoom() {
   const res = await fetch(apiUrl('rooms'), { method: 'POST' });
-  if (!res.ok) throw new Error(`room server said ${res.status}`);
+  if (!res.ok) {
+    const err = /** @type {Error & { reason?: string }} */ (new Error(`room server said ${res.status}`));
+    err.reason = res.status === 429 ? 'busy' : 'unreachable';
+    throw err;
+  }
   const body = await res.json();
   return String(body.code);
 }
@@ -45,11 +65,16 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   /** @type {RTCDataChannel | null} */ let dc = null;
   let peerPresent = false, closed = false, rtcTimer = 0, rtcGaveUp = forceRelay;
   /** @type {RTCIceCandidateInit[]} */ let pendingIce = [];
+  // fetched now, while the room opens, so it's usually in hand by the time the peer arrives
+  const iceReady = forceRelay ? Promise.resolve(ICE_SERVERS) : fetchIceServers();
+  const relayOnly = new URLSearchParams(location.search).get('ice') === 'relay';
 
   const link = {
     role, code,
     /** @type {'connecting' | 'p2p' | 'relay'} */
     mode: 'connecting',
+    /** @type {'' | 'host' | 'srflx' | 'prflx' | 'relay'} */
+    candidate: '',
     /** set once the transport is settled (p2p open, or the relay chosen) */
     ready: false,
     error: '',
@@ -90,13 +115,30 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   function wireChannel(ch) {
     dc = ch;
     ch.binaryType = 'arraybuffer';
-    ch.onopen = () => { clearTimeout(rtcTimer); setMode('p2p'); };
+    ch.onopen = () => { clearTimeout(rtcTimer); setMode('p2p'); noteCandidate(); };
     ch.onclose = () => { if (!closed && link.mode === 'p2p') setMode('relay'); };
     ch.onmessage = (e) => { if (e.data instanceof ArrayBuffer) emit('packet', e.data); };
   }
-  function makePc() {
+  /** Which kind of path the DataChannel took: a TURN relay, a NAT mapping, or the local network. */
+  async function noteCandidate() {
+    try {
+      const stats = await pc?.getStats();
+      if (!stats) return;
+      /** @type {any} */ let pair = null;
+      stats.forEach((s) => { if (s.type === 'transport' && s.selectedCandidatePairId) pair = stats.get(s.selectedCandidatePairId); });
+      if (!pair) stats.forEach((s) => { if (s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded') pair = s; });
+      const local = pair && stats.get(pair.localCandidateId);
+      if (local) { link.candidate = local.candidateType; emit('status', link); }
+    } catch { /* stats are a nicety */ }
+  }
+  /** A fresh RTCPeerConnection once the ICE servers are in, or null if the link moved on meanwhile. */
+  async function makePc() {
+    const iceServers = await iceReady;
+    if (closed || rtcGaveUp || !peerPresent) return null;
+    const keep = pendingIce;   // candidates that came in while the ICE servers were loading
     teardownRtc();
-    pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    pendingIce = keep;
+    pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: relayOnly ? 'relay' : 'all' });
     pc.onicecandidate = (e) => { if (e.candidate) link.sendControl({ t: 'ice', c: e.candidate.toJSON() }); };
     pc.onconnectionstatechange = () => {
       if (pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed') && link.mode !== 'relay') giveUpRtc();
@@ -109,7 +151,8 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   async function startRtc() {
     // the host offers; the guest answers whatever offer comes
     if (rtcGaveUp || role !== 'host' || typeof RTCPeerConnection === 'undefined') { if (rtcGaveUp || typeof RTCPeerConnection === 'undefined') giveUpRtc(); return; }
-    const p = makePc();
+    const p = await makePc();
+    if (!p) return;
     wireChannel(p.createDataChannel('game', { ordered: false, maxRetransmits: 0 }));
     try {
       await p.setLocalDescription(await p.createOffer());
@@ -120,7 +163,8 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     if (rtcGaveUp || typeof RTCPeerConnection === 'undefined') { link.sendControl({ t: 'relay' }); return; }
     try {
       if (msg.sdp.type === 'offer') {
-        const p = makePc();
+        const p = await makePc();
+        if (!p) return;
         await p.setRemoteDescription(msg.sdp);
         await p.setLocalDescription(await p.createAnswer());
         link.sendControl({ t: 'rtc', sdp: p.localDescription });
