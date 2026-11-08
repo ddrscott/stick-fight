@@ -28,7 +28,7 @@ import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
 
-export const NET_VERSION = 3;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay)
+export const NET_VERSION = 4;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
 

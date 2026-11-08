@@ -22,6 +22,7 @@ const STUMBLE_FRICTION = 0.95;      // hitstun slide; victim keeps stumbling unt
 const CHASE_FRICTION = 0.975;       // the attacker's ride after a launch: he follows the body across the room
 const MOVE_STATES = new Set(['idle', 'walk', 'run']);
 const FACE_STATES = new Set(['idle', 'walk', 'run', 'block', 'crouch']);
+const NOT_SOLID_BODY = new Set(['knockdown', 'down', 'ko', 'roll', 'getup']);
 const GUARD_STATES = new Set(['idle', 'walk', 'block', 'blockstun', 'crouch']);   // holding back here guards
 const JUGGLE_MAX = 4, JUGGLE_POP = 220, JUGGLE_G = 0.3;   // airborne hits; each one adds 30% gravity, so juggles end on their own
 const SPLAT_STEPS = 48, BREAK_STEPS = 36, RISE_STEPS = 24, DASH_STEPS = 14, COUNTER_DMG = 1.35, COUNTER_STUN = 1.5;
@@ -37,7 +38,7 @@ const PREROLL = 0.05;               // an attack's first rendered frame is alrea
 const HIT_SEP = 40;                 // a stumbling victim and his attacker may close to 40px (64 otherwise)
 const SOLID = new Set(['idle', 'walk', 'run', 'block', 'blockstun', 'attack', 'hitstun', 'getup']);   // a rising body pushes the man standing on it to range
 const LYING = new Set(['knockdown', 'ko', 'down', 'getup', 'roll']);
-const LIE_PAD = 90;
+const LIE_PAD = 90, LIE_SLIDE = 300;   // px/s a resting body slides off a wall it lies too close to
 let HAS_VAULT = false, HAS_THROWN = false, HAS_HITBODY = false, HAS_HITBACK = false, HAS_HITSTUN = false, HAS_HITLOW = false, MOVE_DATA_ = null;
 // four buttons, one per limb from the fighter's own point of view (lead = left, orthodox)
 const BUTTON_LIMB = { lp: 'lHand', rp: 'rHand', lk: 'lFoot', rk: 'rFoot' };
@@ -133,6 +134,10 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     warnOnce('stairwell', 'no arena.stairwell yet, using a fallback opening at x 700..880');
     return { x0: 700, x1: 880, y: fl[0].y, rail: { x0: 700, x1: 880, h: 46 }, toFloor: 1 };
   }
+  // where a body is: a lying or tumbling body's root can sit at its feet or be re-based when it settles,
+  // so sides and facing go by its hip
+  const bodyX = (u) => ((u.rag || NOT_SOLID_BODY.has(u.state)) && u.rig && u.rig.joints && u.rig.joints.hip ? u.rig.joints.hip.x : u.x);
+  const bandOf = (u) => { const b = floorInfo(u && u.floor != null ? u.floor : simFloor()).band; return b && b.x1 > b.x0 ? b : bounds; };
   function refreshBounds() {
     const b = floorInfo(simFloor()).band;
     bounds.x0 = b.x0; bounds.x1 = b.x1;
@@ -186,7 +191,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       x: rig.x, y: rig.y, vx: 0, vy: 0, grounded: true, facing: rig.facing || (i === 0 ? 1 : -1),
       state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,
       hitstop: 0, flash: 0, stun: 0, downTimer: 0, buffer: null, bufferAge: 0,
-      health: 100, hidden: false, controller: null, kind: 'none',
+      health: 100, hidden: false, controller: null, kind: 'none', home: 0, prevX: 0, prevBX: 0,
       last: EMPTY_INPUT, tapDir: 0, tapTimer: 0, running: false, koDone: false, prevJoints: null,
       stamina: STAMINA.max, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
@@ -230,7 +235,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.state = 'idle'; u.move = null; u.phase = null; u.hitstop = 0; u.flash = 0; u.stun = 0; u.buffer = null;
     u.health = (sim.horde && i >= 1) ? sim.horde.goonHealth : sim.startHealth; u.hidden = false; u.koDone = false; u.running = false; u.hitConfirmed = false;
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
-    u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
+u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0;
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
     if (typeof u.rig.reset === 'function') { u.rig.x = u.x; u.rig.y = u.y; u.rig.facing = u.facing; u.rig.reset(); }
@@ -509,7 +514,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     // turn to face the opponent as the attack starts: a chain of buffered attacks never
     // passes through an idle tick, and after a chase the two can have swapped sides
     const opp = oppOf(u);
-    if (u.grounded && opp && Math.abs(opp.x - u.x) > 4) u.facing = opp.x > u.x ? 1 : -1;
+    if (u.grounded && opp) { const ox = bodyX(opp); if (Math.abs(ox - u.x) > 4) u.facing = ox > u.x ? 1 : -1; }
     const fd0 = FRAME_DATA[move];
     u.state = 'attack'; u.move = move; u.phase = 'startup'; u.hitConfirmed = false; u.attackId++; u.launchCancelAt = 0; u.otgConfirm = false;
     u.attackStart = sim.stepCount; u.crouch = !!fd0.tc;
@@ -665,7 +670,8 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     if (u.followDown && (MOVE_STATES.has(u.state) || u.state === 'block' || u.state === 'crouch' || u.state === 'landing' || (u.state === 'attack' && u.phase === 'recovery'))) {
       startVault(u, u.followDown); u.followDown = null;
     }
-    if (FACE_STATES.has(u.state) && u.grounded && Math.abs(opp.x - u.x) > 4) u.facing = opp.x > u.x ? 1 : -1;
+    // standing right over a body on the floor he keeps his facing (its hip drifts as it lies there); he turns once it's clearly behind him
+    { const ox = bodyX(opp), turnAt = NOT_SOLID_BODY.has(opp.state) || opp.rag ? 30 : 4; if (FACE_STATES.has(u.state) && u.grounded && Math.abs(ox - u.x) > turnAt) u.facing = ox > u.x ? 1 : -1; }
     switch (u.state) {
       case 'idle': case 'walk': case 'run': {
         if (u.faint > 0 && u.grounded) {
@@ -1003,7 +1009,9 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.4 });
   }
   function startRoll(u, dx) {
-    u.state = 'roll'; u.rolled = true; u.rollLeft = ROLL_STEPS; u.vx = dx * ROLL_SPEED; u.facing = -dx;
+    // a roll faces the opponent whichever way it goes (facing against the roll turned a forward roll's back to him)
+    const o = oppOf(u), ox = o ? bodyX(o) : u.x - dx;
+    u.state = 'roll'; u.rolled = true; u.rollLeft = ROLL_STEPS; u.vx = dx * ROLL_SPEED; u.facing = Math.sign(ox - bodyX(u)) || -dx;
     u.rig.play('knockdown'); rigUpd(u, 0.5);
   }
   function feetPlanted(u) {
@@ -1011,6 +1019,9 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     return j.lFoot.y >= y - 7 && j.rFoot.y >= y - 7;
   }
   function physics(u) {
+    // walls of the floor this body is on: after a floor break the attacker is still upstairs (and may
+    // stand past the stairwell) until he vaults, so the lower floor's band must not pull him across
+    const bounds = bandOf(u);
     const wasAir = !u.grounded;
     // a reeling body doesn't slide on planted feet: the root holds and the rig's reaction carries
     // the body (its shift moves the root when the reaction ends)
@@ -1034,8 +1045,10 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       if (u.x < bounds.x0) { u.x = Math.min(bounds.x0, u.x + 260 * DT); return; }
       u.easeBand = false;
     }
-    if (u.x < bounds.x0 + pad) { u.x = bounds.x0 + pad; wallHit(u); }
-    else if (u.x > bounds.x1 - pad) { u.x = bounds.x1 - pad; wallHit(u); }
+    // a body that came to rest closer to the wall than a lying body's length slides off it, never jumps
+    const slide = LYING.has(u.state) && u.grounded && u.vx === 0 ? LIE_SLIDE * DT : Infinity;
+    if (u.x < bounds.x0 + pad) { u.x = Math.max(bounds.x0, Math.min(bounds.x0 + pad, u.x + slide)); wallHit(u); }
+    else if (u.x > bounds.x1 - pad) { u.x = Math.min(bounds.x1, Math.max(bounds.x1 - pad, u.x - slide)); wallHit(u); }
     // floors
     const fy = floorUnder(u);
     if (!u.grounded) {
@@ -1123,7 +1136,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.rig.events.length = 0;
     if (u.rag && !u.rig.airborne) {
       // the body came to rest in the rig's knockdown pose: back on the sim's root
-      u.rag = false; u.x = Math.max(bounds.x0, Math.min(bounds.x1, u.rig.x)); u.y = u.ragFloor; u.grounded = true; u.vx = 0; u.vy = 0; u.gScale = 1;
+      const bb = bandOf(u); u.rag = false; u.x = Math.max(bb.x0, Math.min(bb.x1, u.rig.x)); u.y = u.ragFloor; u.grounded = true; u.vx = 0; u.vy = 0; u.gScale = 1;
       u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.falling = false;
       if (u.state === 'ko') u.koDone = true;
       else if (u.state === 'knockdown' || u.state === 'splat') { u.state = 'down'; u.downTimer = SQUASH_STEPS; u.touchStep = sim.stepCount; u.otgHit = false; u.rolled = false; }
@@ -1204,9 +1217,17 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     onEvent({ type: 'grab', x: (att.x + def.x) / 2, y: def.y - 90, dir: att.facing, move: att.move, attacker: att, defender: def });
     if (pre) breakThrow(def);
   }
+  // which way a hit sends the defender: away from the attacker. Going by the attacker's facing sent a
+  // body hit while the two overlapped, or just after a cross-up, into or past him (sides swapped) and
+  // turned it to face away; facing only decides when they're right on top of each other.
+  function awayDir(att, def) {
+    // a juggle: the attacker steps in under the body, so only a body well past him flips it
+    const d = bodyX(def) - att.x, tol = def.rag || !def.grounded ? 40 : 6;
+    return Math.abs(d) > tol ? Math.sign(d) : att.facing;
+  }
   function breakThrow(def) {
     const att = sim.units[def.grabbedBy];
-    const dir = att.facing;
+    const dir = awayDir(att, def);
     def.state = 'blockstun'; def.stun = f60(14); def.vx = dir * 300; def.hitstop = 0; def.grabbedBy = -1;
     att.state = 'blockstun'; att.stun = f60(14); att.vx = -dir * 300; att.hitstop = 0; att.move = null; att.phase = null;
     safePlay(def.rig, ANIM.throwTech); safePlay(att.rig, ANIM.throwTech);
@@ -1236,7 +1257,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   }
   function applyHit(att, def, pt, { move = att.move, trade = false } = {}) {
     const fd = FRAME_DATA[move];
-    const dir = att.facing;
+    const dir = awayDir(att, def);
     att.hitConfirmed = true;
     // a counter: hit during his startup, or an uppercut meeting a jump-in (the anti-air)
     const antiAir = !trade && (move === 'uppercut' || move === 'risingUppercut') && !def.grounded && !def.rag &&
@@ -1471,12 +1492,60 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     for (const [p, q, r] of A) for (const [s2, t, r2] of B) worst = Math.max(worst, r + r2 - segSeg(p, q, s2, t));
     return worst;
   }
+  // A lying (or rolling) body isn't solid to a standing one, who may stand over it, but neither one
+  // may come out the far side: crossing over a downed opponent swapped the fighters' sides (and
+  // which way the one getting up faced) at odd moments. Jumps, launches and vaults still cross.
+  const OVER = 14, OVER_AIR = 40;   // how far past a lying (or juggled) body a standing one may stand
+  function keepSides(a, b) {
+    const lying = (u) => NOT_SOLID.has(u.state) || u.rag;
+    const onFoot = (u) => u.grounded && !u.rag && !u.falling && u.state !== 'vault' && u.state !== 'jump';
+    if (lying(a) === lying(b)) return;
+    const stand = lying(a) ? b : a, down = stand === a ? b : a;
+    if (!onFoot(stand) || down.falling || oppOf(stand) !== down || !stand.home) return;
+    const home = stand.home;   // his side of her, from the last moment they both stood
+    const over = down.rag || !down.grounded ? OVER_AIR : OVER;   // under a juggled body he may step farther in
+    const bx = bodyX(down);
+    // how far he has come out the far side of the body
+    const past = home > 0 ? bx - stand.x : stand.x - bx;
+    if (past <= over) return;
+    const movedStand = Math.abs(bodyX(stand) - (stand.prevBX != null ? stand.prevBX : bodyX(stand)));
+    const movedDown = Math.abs(bx - (down.prevBX != null ? down.prevBX : bx));
+    if (movedStand >= movedDown || !onFoot(down) || movedDown >= 40) {
+      // walking, running or lunging through a body on the floor or in the air: he stops over it
+      if (movedStand > 0 || !onFoot(down)) {
+        const bb = bandOf(stand); stand.x = Math.max(bb.x0, Math.min(bb.x1, bx - home * over)); syncRig(stand);
+      }
+    } else {
+      // a body rolling or sliding along the floor stops under him instead of coming out the other side
+      const bb = bandOf(down); down.x = Math.max(bb.x0, Math.min(bb.x1, down.x + (stand.x + home * over - bx))); syncRig(down);
+    }
+  }
+  // A body on the floor stands back up at its root, which can be at its feet a body-length from its
+  // hip: someone standing over its legs got stood up through, and came out on the wrong side. So a
+  // standing body may reach only OVER px onto a lying one from its own side, and one the lying body
+  // came to rest under is eased off it (KEEP_OFF px a step), not snapped.
+  const KEEP_OFF = 5;
+  function keepOff(a, b) {
+    const lyingDown = (u) => (u.state === 'down' || u.state === 'roll' || (u.state === 'knockdown' && u.grounded)) && !u.rag;
+    const onFoot = (u) => u.grounded && !u.rag && !u.falling && u.state !== 'vault' && u.state !== 'jump' && !NOT_SOLID.has(u.state);
+    const down = lyingDown(a) ? a : lyingDown(b) ? b : null, stand = down === a ? b : a;
+    if (!down || !onFoot(stand) || !(down.rig && down.rig.joints && down.rig.joints.hip)) return;
+    const hip = down.rig.joints.hip.x, lo = Math.min(hip, down.x), hi = Math.max(hip, down.x);
+    const side = Math.sign((stand.prevBX != null ? stand.prevBX : stand.x) - (down.prevBX != null ? down.prevBX : hip)) || Math.sign(stand.x - hip) || 1;
+    const edge = side > 0 ? hi - OVER : lo + OVER;
+    const inside = side > 0 ? edge - stand.x : stand.x - edge;
+    if (inside <= 0) return;
+    const bb = bandOf(stand);
+    stand.x = Math.max(bb.x0, Math.min(bb.x1, stand.x + side * Math.min(inside, KEEP_OFF)));
+    syncRig(stand);
+  }
   function separatePair(a, b) {
     if ((a.floor || 0) !== (b.floor || 0) || a.falling || b.falling || a.state === 'vault' || b.state === 'vault') return;
     // an air strike's contact freeze: the jumper hangs over him for the hitstop, then they part
     const airFreeze = (u) => !u.grounded && u.hitstop > 0 && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air;
     if (airFreeze(a) || airFreeze(b)) return;
-    if (a.hidden || b.hidden || NOT_SOLID.has(a.state) || NOT_SOLID.has(b.state)) return;
+    if (a.hidden || b.hidden) return;
+    if (NOT_SOLID.has(a.state) || NOT_SOLID.has(b.state)) { keepSides(a, b); keepOff(a, b); return; }
     // a body rising from the floor is solid only for the last quarter of its getup
     if ((a.state === 'getup' && a.rig.current.t < 0.75) || (b.state === 'getup' && b.rig.current.t < 0.75)) return;
     for (let iter = 0; iter < 8; iter++) {   // two torsos leaning into each other cross in an X: it takes a few pushes
@@ -1589,6 +1658,13 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     arena.update && arena.update(DT);
     refreshBounds();
     sim.hitstopActive = Math.max(...sim.units.map(u => u.hitstop));
+    for (const u of sim.units) {
+      u.prevX = u.x; u.prevBX = bodyX(u);
+      // which side of the opponent he is on, remembered from the last moment both stood: separate()
+      // doesn't let him walk out the far side of her body while she is down or in the air
+      const o = oppOf(u);
+      if (o && !o.hidden && u.grounded && o.grounded && !u.rag && !o.rag && !NOT_SOLID.has(u.state) && !NOT_SOLID.has(o.state) && u.state !== 'getup' && o.state !== 'getup' && Math.abs(u.x - o.x) > 8) u.home = Math.sign(u.x - o.x);
+    }
     for (const u of sim.units) {
       const opp = oppOf(u);
       if (u.hidden || !opp) continue;
