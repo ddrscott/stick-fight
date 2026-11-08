@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Neon Stick Fight</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="theme-color" content="#07020f">
+<!-- iPhone/iPad: launched from the home screen it runs full screen, under a see-through status bar -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Stick Fight">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Teko:wght@500;600&display=swap">
@@ -32,6 +41,7 @@
   <canvas id="hud"></canvas>
   <a id="credits" href="https://github.com/ddrscott/stick-fight#license-and-credits" target="_blank" rel="noopener">SOURCE &amp; CREDITS</a>
 </div>
+<script type="module" src="./src/install.js"></script>
 <script type="module" src="./src/main.js"></script>
 <script type="module" src="./src/touch.js"></script>
 </body>

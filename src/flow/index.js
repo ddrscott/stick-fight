@@ -45,9 +45,10 @@ import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
   off: ['attract', 'onlineJoin', 'charSelect'],
-  attract: ['modeSelect', 'highScores', 'controls'],
+  attract: ['modeSelect', 'highScores', 'controls', 'install'],
   highScores: ['attract', 'modeSelect'],
   controls: ['attract', 'modeSelect'],
+  install: ['attract', 'modeSelect'],
   modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect'],
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'onlineMenu', 'onlineJoin', 'attract'],
   stageIntro: ['fighting', 'modeSelect'],
@@ -68,7 +69,7 @@ const TRANSITIONS = {
   onlineEnd: ['onlineMenu', 'onlineHost', 'onlineConnecting', 'modeSelect', 'attract'],
 };
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
-const DEMO = new Set(['attract', 'controls', 'modeSelect', 'charSelect', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
+const DEMO = new Set(['attract', 'controls', 'install', 'modeSelect', 'charSelect', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
 // the sim steps in these (plus onlineFighting, unless the net module steps it)
 const STEPS = new Set([...DEMO, 'fighting', 'roundEnd', 'result']);
 // the HUD draws in these; everything else is a menu over a dimmed scene, HUD off
@@ -93,7 +94,7 @@ const ONLINE = new Set(['onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnect
  */
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
-const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
+const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'install', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -166,6 +167,7 @@ export function createFlow(ctx) {
       case 'attract': mode = null; if (ctx.sceneName() !== 'attract') demo(); return screenTitle();
       case 'highScores': demo(); return screenScores();
       case 'controls': ensureDemo(); return screenControls();
+      case 'install': ensureDemo(); return screenInstall();
       case 'modeSelect': mode = null; ensureDemo(); return screenModes();
       case 'charSelect': ensureDemo(); return screenSelect();
       case 'stageIntro': return screenStage();
@@ -210,7 +212,7 @@ export function createFlow(ctx) {
     if (DEMO.has(state)) {
       // the demo's KO card holds a beat longer
       if (sim.phase === 'ko' && !demoKO) { demoKO = true; sim.phaseTimer = 1.6; }
-      if (idle > IDLE_MS && (state === 'controls' || state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || state === 'onlineEnd')) go('attract');
+      if (idle > IDLE_MS && (state === 'controls' || state === 'install' || state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || state === 'onlineEnd')) go('attract');
     }
     if (state === 'charSelect' && selCtl) selCtl.tick(dt);
     switch (state) {
@@ -411,11 +413,18 @@ export function createFlow(ctx) {
       const scores = button('HIGH SCORES', openScores, 'fl-mini');
       const how = button('CONTROLS', () => go('controls'), 'fl-mini fl-violet');
       row.append(scores.el, how.el);
+      // INSTALL: the browser's own prompt, or on iPhone/iPad Safari the Add to Home Screen how-to
+      const inst = (typeof window !== 'undefined' && window.__install) || null;
+      let instBtn = null;
+      if (inst && inst.kind) {
+        instBtn = button('INSTALL', () => { if (inst.kind === 'prompt') inst.prompt().then(() => { if (state === 'attract') screenTitle(); }); else go('install'); }, 'fl-mini fl-amber');
+        row.appendChild(instBtn.el);
+      }
       group.append(b.el, row);
       root.appendChild(group);
       startBtn = group;
       group.style.left = '50%'; group.style.top = '39%';
-      return { items: [b, scores, how], legend: [MOVE, SELECT, ['start', 'START']] };
+      return { items: instBtn ? [b, scores, how, instBtn] : [b, scores, how], legend: [MOVE, SELECT, ['start', 'START']] };
     }, { veil: false });
   }
   function screenScores(focus = 0) {
@@ -438,6 +447,21 @@ export function createFlow(ctx) {
       }));
       btnRow(root, items, '17cqw');
       return { items, focus, back: () => go('attract'), legend: [MOVE, SELECT, ['back', 'TITLE']] };
+    });
+  }
+  // iPhone/iPad Safari has no install prompt and no Fullscreen API: Add to Home Screen is the way
+  function screenInstall() {
+    ui.show('fl-install', (root) => {
+      root.append(el('h1', 'fl-h2', 'PLAY FULL SCREEN'));
+      const steps = el('div', 'fl-steps');
+      const share = '<svg viewBox="0 0 20 20" width="1em" height="1em" aria-hidden="true" style="vertical-align:-0.12em"><path d="M10 2v11M6 6l4-4 4 4M4 10v7h12v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      for (const [n, html] of [['1', `TAP SHARE ${share} IN SAFARI'S TOOLBAR`], ['2', 'CHOOSE <b>ADD TO HOME SCREEN</b>'], ['3', 'OPEN STICK FIGHT FROM YOUR HOME SCREEN AND TURN THE PHONE SIDEWAYS']]) {
+        const p = el('p', 'fl-step'); p.innerHTML = `<i>${n}</i><span>${html}</span>`; steps.appendChild(p);
+      }
+      root.appendChild(steps);
+      root.appendChild(el('div', 'fl-small', 'IT RUNS FULL SCREEN, WITHOUT SAFARI\'S BARS, AND WORKS OFFLINE'));
+      const items = btnRow(root, [button('BACK', () => go('attract'), 'fl-pink'), button('MAIN MENU', () => go('modeSelect'), 'fl-violet')]);
+      return { items, back: () => go('attract') };
     });
   }
   function screenControls() {

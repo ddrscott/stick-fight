@@ -66,7 +66,7 @@ function init() {
   const zone = root.querySelector('.tc-stickzone');
   const fsBtn = root.querySelector('[data-role="fullscreen"]');
   const de = document.documentElement;
-  if (!(de.requestFullscreen || de.webkitRequestFullscreen)) fsBtn.remove();   // iPhone Safari has neither
+  if (!(de.requestFullscreen || de.webkitRequestFullscreen) || de.classList.contains('standalone')) fsBtn.remove();   // iPhone Safari has neither; an installed app is already full screen
   try { if (sessionStorage.getItem('tc-rotate-dismissed')) root.classList.add('tc-no-rotate'); } catch {}
 
   // ---- touch tracking -------------------------------------------------------------------------

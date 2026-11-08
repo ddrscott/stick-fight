@@ -46,6 +46,14 @@ The places that hard-code the `stick-fight` path are `wrangler.jsonc` (routes, `
 
 Serving the game publicly ships the vendored Strudel bundle, which is AGPL-3.0, so the game is AGPL-3.0 too (see License and credits).
 
+## Install as an app
+
+The game is installable (`public/manifest.webmanifest`, icons in `public/icons/`, made by rendering a neon fighter on a canvas): it opens full screen in landscape with its own icon.
+- **Android and desktop Chrome or Edge:** an INSTALL button appears on the title when the browser offers to install, and runs the browser's own prompt (`src/install.js` keeps the `beforeinstallprompt` event).
+- **iPhone and iPad Safari:** Safari has no install prompt and no Fullscreen API, so a home-screen app is the only way to full screen. INSTALL opens a short how-to (Share, then Add to Home Screen). The `apple-mobile-web-app-*` tags make the home-screen app run full screen under a see-through status bar; the touch layer already pads for the safe areas.
+- **Installed:** `<html>` gets `.standalone`, and INSTALL and the touch fullscreen button go away.
+- **Service worker** (`public/sw.js`, registered on https only and never on `?scene=` test pages): hashed `assets/*` files are cache-first, everything else network-first with the cache as the fallback, so a deploy shows up on the next launch and the installed game plays offline. The room API and other origins are left to the network. Bump `CACHE` in `sw.js` if the cached core list changes.
+
 ## Arcade flow
 
 Plain `index.html` runs like a cabinet. Everything around a fight is one state machine in `src/flow/index.js`; every move between screens goes through one `go()` that refuses any move not in its transition table, so a double press can't skip a screen.
