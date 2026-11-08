@@ -14,14 +14,57 @@
  * @property {number} floor         0 the main floor (with the stairwell), 1 the lower floor
  * @property {number} seed
  * @property {boolean} [boss]
+ * @property {string} [char]       the character id this stage fights (src/characters/); TEMP stands in until it's registered
  */
 
 /** @type {Stage[]} */
 export const LADDER = [
-  { n: 1, name: 'INTERN', tagline: 'UNPAID, AND SWINGING LIKE IT', difficulty: 0.2, style: null, color: '#ffb02e', preset: 'night-rain', floor: 0, seed: 11 },
-  { n: 2, name: 'HELPDESK', tagline: 'HAVE YOU TRIED BLOCKING?', difficulty: 0.4, style: 'turtle', color: '#2ef2ff', preset: 'night', floor: 0, seed: 23 },
-  { n: 3, name: 'COURIER', tagline: 'DELIVERS IN THIRTY SECONDS OR LESS', difficulty: 0.55, style: 'rushdown', color: '#ff2bd6', preset: 'neon', floor: 0, seed: 37 },
-  { n: 4, name: 'SECURITY', tagline: 'WILL ESCORT YOU OUT. THROUGH THE RAILING', difficulty: 0.7, style: 'grappler', color: '#5dff8a', preset: 'night-rain', floor: 0, seed: 41 },
-  { n: 5, name: 'JANITOR', tagline: 'WORKS THE LOWER FLOOR. MOPS WITH JUMP-INS', difficulty: 0.85, style: 'aerial', color: '#a66bff', preset: 'night', floor: 1, seed: 53 },
-  { n: 6, name: 'THE MANAGER', tagline: 'YOUR PERFORMANCE REVIEW IS NOW', difficulty: 1.0, style: 'showcase', color: '#ff3b3b', preset: 'neon-rain', floor: 0, seed: 67, boss: true },
+  { n: 1, char: 'intern', name: 'INTERN', tagline: 'UNPAID, AND SWINGING LIKE IT', difficulty: 0.2, style: null, color: '#ffb02e', preset: 'night-rain', floor: 0, seed: 11 },
+  { n: 2, char: 'helpdesk', name: 'HELPDESK', tagline: 'HAVE YOU TRIED BLOCKING?', difficulty: 0.4, style: 'turtle', color: '#2ef2ff', preset: 'night', floor: 0, seed: 23 },
+  { n: 3, char: 'courier', name: 'COURIER', tagline: 'DELIVERS IN THIRTY SECONDS OR LESS', difficulty: 0.55, style: 'rushdown', color: '#ff2bd6', preset: 'neon', floor: 0, seed: 37 },
+  { n: 4, char: 'security', name: 'SECURITY', tagline: 'WILL ESCORT YOU OUT. THROUGH THE RAILING', difficulty: 0.7, style: 'grappler', color: '#5dff8a', preset: 'night-rain', floor: 0, seed: 41 },
+  { n: 5, char: 'janitor', name: 'JANITOR', tagline: 'WORKS THE LOWER FLOOR. MOPS WITH JUMP-INS', difficulty: 0.85, style: 'aerial', color: '#a66bff', preset: 'night', floor: 1, seed: 53 },
+  { n: 6, char: 'manager', name: 'THE MANAGER', tagline: 'YOUR PERFORMANCE REVIEW IS NOW', difficulty: 1.0, style: 'showcase', color: '#ff3b3b', preset: 'neon-rain', floor: 0, seed: 67, boss: true },
 ];
+
+// The roster's two characters that aren't on the default ladder step in for the player's own pick (you
+// don't fight yourself), in this order; their names, lines and colors for when they aren't built yet.
+export const EXTRAS = [
+  { char: 'accountant', name: 'ACCOUNTANT', tagline: 'READ THE FINE PRINT. THEN THE OVERHEAD', color: '#ffe066', style: 'turtle' },
+  { char: 'windowWasher', name: 'WINDOW WASHER', tagline: 'THIRTY FLOORS UP AND NO HARNESS', color: '#7ad7ff', style: 'aerial' },
+];
+// THE MANAGER is the boss; a player who picked him fights this one at the top instead
+export const SUB_BOSS = { char: 'security', name: 'HEAD OF SECURITY', tagline: 'NOBODY GETS PAST THE FRONT DESK', color: '#5dff8a', style: 'grappler' };
+
+/**
+ * The ladder for a run: the six stages with the player's own character swapped out where possible.
+ * Each stage keeps its slot (number, difficulty, look, floor, seed); a stage whose character is
+ * registered takes that character's name, line and neon, and one that isn't fights a TEMP (char 'temp')
+ * under the stage's own name and color, so the ladder works before every character is built.
+ * @param {string} playerId
+ * @param {(id: string) => any} getChar   the registry's getCharacter
+ * @returns {Stage[]}
+ */
+export function buildLadder(playerId, getChar) {
+  const extras = EXTRAS.filter((e) => e.char !== playerId);
+  const out = LADDER.map((st) => {
+    let look = st;
+    if (st.boss && st.char === playerId) look = { ...SUB_BOSS, sub: true };
+    else if (st.char === playerId && extras.length) look = extras.shift();
+    const c = getChar(look.char);
+    const reg = !!c && c.id === look.char;
+    // the boss's own title stays (THE MANAGER, HEAD OF SECURITY); a built character's name otherwise
+    const name = reg && !look.boss && !look.sub ? c.name : look.name;
+    return { ...st, char: reg ? look.char : 'temp', wants: look.char, name, tagline: (reg && look === st ? c.tagline : look.tagline) || st.tagline,
+      color: reg ? c.color : look.color, style: look.style !== undefined ? look.style : st.style };
+  });
+  // the boss swap freed SECURITY's own stage: an extra fights there instead
+  if (out[out.length - 1].wants === SUB_BOSS.char) {
+    const i = out.findIndex((st, k) => k < out.length - 1 && st.wants === SUB_BOSS.char);
+    if (i >= 0 && extras.length) {
+      const e = extras.shift(), c = getChar(e.char), reg = !!c && c.id === e.char;
+      out[i] = { ...out[i], char: reg ? e.char : 'temp', wants: e.char, name: reg ? c.name : e.name, tagline: reg ? c.tagline : e.tagline, color: reg ? c.color : e.color, style: e.style };
+    }
+  }
+  return out;
+}

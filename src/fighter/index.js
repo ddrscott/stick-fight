@@ -822,7 +822,7 @@ export const MOVES = Object.keys(MOVE_DEFS);
 const halfMs = m => m.keys.reduce((s, k) => s + k.d, 0) / 2;
 // Extra per-move data the combat module may want: loop, speed (px/s for walk/run),
 // limb (the joint that carries the hitbox), duration (ms, excluding blend-in).
-export const MOVE_DATA = Object.fromEntries(MOVES.map(n => {
+function moveDataOf(n) {
   const m = MOVE_DEFS[n];
   const d = { loop: !!m.loop, speed: m.speed || 0, shift: m.shift || 0, limb: m.limb || null, blend: m.blend || 0, duration: m.keys.reduce((s, k) => s + k.d, 0) };
   if (m.limb) {
@@ -831,7 +831,7 @@ export const MOVE_DATA = Object.fromEntries(MOVES.map(n => {
     d.height = m.height || 'mid';
     d.effect = m.effect || null;   // 'launch' | 'knockdown' | 'splat' | null
     d.air = !!m.air;               // plays on top of the jump arc
-    d.overhead = !!m.air || n === 'overhead';   // hits crouchers, must be guarded standing
+    d.overhead = !!m.air || n === 'overhead' || !!m.overhead;   // hits crouchers, must be guarded standing
     // Cancel window, ms from the first key (after the blend): from the 'recover' key until the
     // last 80ms, another strike may start and blends out of the recovery pose directly.
     const ri = m.keys.findIndex(k => k.ev === 'recover');
@@ -845,8 +845,9 @@ export const MOVE_DATA = Object.fromEntries(MOVES.map(n => {
   // Cyclic moves: stride is the ground covered per step (px), cadence is steps per second, so
   // speed = stride * cadence exactly and a planted foot never skates at that speed.
   if (m.loop && m.speed) { d.stride = m.speed * halfMs(m) / 1000; d.cadence = 1000 / halfMs(m); }
-  return [n, d];
-}));
+  return d;
+}
+export const MOVE_DATA = Object.fromEntries(MOVES.map(n => [n, moveDataOf(n)]));
 
 const LIMBS = ['la', 'ra', 'll', 'rl'];
 const SCALARS = ['hx', 'torso', 'bend', 'head', 'tw', 'air', 'spin'];
@@ -877,13 +878,20 @@ function samplePose(keys, t) {
 const arcKeys = ks => (ks.some(k => k.arcEase) ? ks.map(k => (k.arcEase ? { ...k, ease: k.arcEase } : k)) : ks);
 const JUMP_ARC = arcKeys(MOVE_DEFS.jump.keys);
 // The head's offset from the hip in a pose (pose units, x forward, y up), the way solve() builds it.
-function headRel(p) {
-  const a1 = p.torso * DEG, a2 = (p.torso + p.bend) * DEG, a3 = (p.torso + p.bend + p.head) * DEG, hl = RIG.neck + RIG.headR;
-  return { x: dm.sin(a1) * RIG.lowerTorso + dm.sin(a2) * RIG.upperTorso + dm.sin(a3) * hl,
-    y: dm.cos(a1) * RIG.lowerTorso + dm.cos(a2) * RIG.upperTorso + dm.cos(a3) * hl };
+// R: the fighter's segment lengths (a character's body, src/characters/), lean: its extra torso pitch.
+function headRel(p, R = RIG, lean = 0) {
+  const t0 = lean ? p.torso + lean : p.torso;
+  const a1 = t0 * DEG, a2 = (t0 + p.bend) * DEG, a3 = (t0 + p.bend + p.head) * DEG, hl = R.neck + R.headR;
+  return { x: dm.sin(a1) * R.lowerTorso + dm.sin(a2) * R.upperTorso + dm.sin(a3) * hl,
+    y: dm.cos(a1) * R.lowerTorso + dm.cos(a2) * R.upperTorso + dm.cos(a3) * hl };
 }
 
-export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scale = 1 } = {}) {
+// body (a character's proportions, src/characters/): { scale, headR, upperArm, lowerArm, upperLeg, lowerLeg,
+// lowerTorso, upperTorso, limbW, limbTip, torsoW, hipW, lean (deg of extra forward pitch), stance (deg the
+// legs spread apart) } plus accessory: (ctx, joints, info) => void, drawn over the head in the body's light.
+// Missing fields keep the baseline rig's, so TEMP (no body) draws and moves exactly as before.
+export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scale = 1, body = null } = {}) {
+  let R = RIG, lean = 0, stance = 0, accessory = null;
   const f = {
     color, x, y, facing, scale,
     radius: RIG.headR * scale,
@@ -899,6 +907,24 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     play, update, draw, react, launch, wallSplat, groundBounce, reset,
   };
   f._solve = p => solve(p);
+  // A character's body: proportions, scale, lean, stance and accessory (null: the baseline rig). The sim
+  // sizes hitboxes and the drawn silhouette from f.scale and f.shape (1 at the baseline).
+  function setBody(b, opt = {}) {
+    const bb = b || {};
+    R = { ...RIG };
+    for (const k in RIG) if (typeof bb[k] === 'number') R[k] = bb[k];
+    lean = bb.lean || 0; stance = bb.stance || 0; accessory = typeof bb.accessory === 'function' ? bb.accessory : null;
+    f.scale = typeof bb.scale === 'number' ? bb.scale : (opt.scale || 1);
+    f.radius = R.headR * f.scale;
+    f.body = b || null; f.accent = opt.accent || null;
+    // drawn widths relative to the baseline, for the sim's contact and hit radii
+    f.shape = { limb: f.scale * R.limbW / RIG.limbW, tip: f.scale * R.limbTip / RIG.limbTip, torso: f.scale * R.torsoW / RIG.torsoW };
+    // how much ground one walk or run cycle covers relative to the baseline (scale and leg length)
+    f.stride = f.scale * (R.upperLeg + R.lowerLeg) / (RIG.upperLeg + RIG.lowerLeg);
+    f.joints = {};
+    if (move) { f.joints = solve(f.pose); }
+  }
+  f.setBody = setBody;
 
   let move = null;       // MOVE_DEFS entry
   let keys = [];         // keyframes incl. the blend-in from the previous pose
@@ -967,7 +993,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
         // its capsule at the target's height (a diagonal shin can arrive before the foot tip)
         let front = -Infinity;
         for (let i = 0; i <= 10; i++) {
-          const u = i / 10, x = lerp(mid.x, tip.x, u), y = lerp(mid.y, tip.y, u), r = lerp(RIG.limbW, RIG.limbTip, u) / 2 * f.scale;
+          const u = i / 10, x = lerp(mid.x, tip.x, u), y = lerp(mid.y, tip.y, u), r = lerp(R.limbW, R.limbTip, u) / 2 * f.scale;
           if (Math.abs(y - opt.target.y) <= r + 8 * f.scale || i === 10) front = Math.max(front, (x - f.x) * f.facing + r);
         }
         e += ((opt.target.x - f.x) * f.facing - front) / f.scale;
@@ -983,7 +1009,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     // (the blend's first key is carried forward by momentum, so it isn't). Kept on the move def,
     // which getState() already carries.
     if (m && m.air) {
-      const r = headRel(f.pose);
+      const r = headRel(f.pose, R, lean);
       m = { ...m, shownAt: (opt && opt.shownAt) || 0, liveMs: (opt && opt.liveMs) || 0, headFrom: { x: f.pose.hx + r.x, y: r.y } };
     }
     if (m && opt && opt.chain) {
@@ -1085,7 +1111,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       const shown = move.shownAt || 0;
       if (el < live && live > shown) {
         vis = clamp((el - shown) / (live - shown), 0, 1);
-        const a = move.headFrom, pL = samplePose(keys, live), rL = headRel(pL), rt = headRel(base);
+        const a = move.headFrom, pL = samplePose(keys, live), rL = headRel(pL, R, lean), rt = headRel(base, R, lean);
         base = { ...base, hx: a.x + (pL.hx + rL.x - a.x) * vis - rt.x };
         liftY = a.y + (rL.y - a.y) * vis - rt.y;
       }
@@ -1178,7 +1204,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     for (const k in SPRING) {
       const t = j[k], [w, cap] = SPRING[k];
       let s2 = springs[k] || (springs[k] = { x: t.x, y: t.y, vx: 0, vy: 0 });
-      const pinned = (limbHot && move && move.limb === k) || ((k === 'lFoot' || k === 'rFoot') && t.y > f.y - RIG.limbW);
+      const pinned = (limbHot && move && move.limb === k) || ((k === 'lFoot' || k === 'rFoot') && t.y > f.y - R.limbW);
       if (pinned) { springs[k] = { x: t.x, y: t.y, vx: 0, vy: 0 }; continue; }
       const n = Math.max(1, Math.ceil(dt / 0.01)), h = dt / n;
       for (let i = 0; i < n; i++) {
@@ -1188,7 +1214,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       const ox = clamp(s2.x - t.x, -cap, cap), oy = clamp(s2.y - t.y, -cap, cap);
       s2.x = t.x + ox; s2.y = t.y + oy;
       // never push a sprung joint through the floor (but a body below f.y, mid-drop, is left alone)
-      j[k] = { x: t.x + ox, y: Math.min(t.y + oy, Math.max(t.y, f.y - (k === 'head' ? RIG.headR : RIG.limbW / 2))) };
+      j[k] = { x: t.x + ox, y: Math.min(t.y + oy, Math.max(t.y, f.y - (k === 'head' ? R.headR : R.limbW / 2))) };
     }
     return j;
   }
@@ -1207,7 +1233,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const J = f.joints, wv = -f.facing * vx * f.scale, om = -f.facing * spin * DEG, hip = J.hip;
     if (!rag) {
       rag = { pts: {}, len: [], t: 0, rest: 0, splat: 0, bounceNext: false, landed: false, wall };
-      for (const k in J) rag.pts[k] = { x: J[k].x, y: J[k].y, px: J[k].x, py: J[k].y, r: k === 'head' ? RIG.headR * f.scale : RIG.limbW / 2 * f.scale };
+      for (const k in J) rag.pts[k] = { x: J[k].x, y: J[k].y, px: J[k].x, py: J[k].y, r: k === 'head' ? R.headR * f.scale : R.limbW / 2 * f.scale };
       rag.len = BONES.map(([a, b]) => dm.hypot(J[a].x - J[b].x, J[a].y - J[b].y));
       f.airborne = true; reactL = null; landEase = null;
       f.current = { move: 'airborne', t: 0, frame: 0, done: false };
@@ -1357,13 +1383,14 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
 
   // Forward kinematics in body space, then mirror, scale, ground snap, world offset.
   function solve(p) {
-    const s = f.scale, R = RIG;
+    const s = f.scale;
     const seg = (from, ang, len) => ({ x: from.x + dm.sin(ang * DEG) * len, y: from.y + dm.cos(ang * DEG) * len });
     const hip = { x: p.hx, y: -R.hipH };
-    const chest = { x: hip.x + dm.sin(p.torso * DEG) * R.lowerTorso, y: hip.y - dm.cos(p.torso * DEG) * R.lowerTorso };
-    const ua = (p.torso + p.bend) * DEG;
+    const t0 = lean ? p.torso + lean : p.torso;   // a character's lean (0 at the baseline: no add, the bits stay the same)
+    const chest = { x: hip.x + dm.sin(t0 * DEG) * R.lowerTorso, y: hip.y - dm.cos(t0 * DEG) * R.lowerTorso };
+    const ua = (t0 + p.bend) * DEG;
     const neck = { x: chest.x + dm.sin(ua) * R.upperTorso, y: chest.y - dm.cos(ua) * R.upperTorso };
-    const ha = (p.torso + p.bend + p.head) * DEG;
+    const ha = (t0 + p.bend + p.head) * DEG;
     const head = { x: neck.x + dm.sin(ha) * (R.neck + R.headR), y: neck.y - dm.cos(ha) * (R.neck + R.headR) };
     // Shoulders sit just below the neck on the chest segment; twist pushes them apart.
     const sh = { x: lerp(neck.x, chest.x, 0.2), y: lerp(neck.y, chest.y, 0.2) };
@@ -1371,8 +1398,9 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const rShoulder = { x: sh.x + p.tw * 0.5, y: sh.y };
     const lElbow = seg(lShoulder, p.la[0], R.upperArm), lHand = seg(lElbow, p.la[1], R.lowerArm);
     const rElbow = seg(rShoulder, p.ra[0], R.upperArm), rHand = seg(rElbow, p.ra[1], R.lowerArm);
-    const lKnee = seg(hip, p.ll[0], R.upperLeg), lFoot = seg(lKnee, p.ll[1], R.lowerLeg);
-    const rKnee = seg(hip, p.rl[0], R.upperLeg), rFoot = seg(rKnee, p.rl[1], R.lowerLeg);
+    // stance: the legs spread by that many degrees each (0 at the baseline)
+    const lKnee = seg(hip, stance ? p.ll[0] + stance : p.ll[0], R.upperLeg), lFoot = seg(lKnee, stance ? p.ll[1] + stance * 0.5 : p.ll[1], R.lowerLeg);
+    const rKnee = seg(hip, stance ? p.rl[0] - stance : p.rl[0], R.upperLeg), rFoot = seg(rKnee, stance ? p.rl[1] - stance * 0.5 : p.rl[1], R.lowerLeg);
     const j = { head, neck, chest, hip, lShoulder, rShoulder, lElbow, rElbow, lHand, rHand, lKnee, rKnee, lFoot, rFoot };
     if (p.spin) {
       const c = dm.cos(p.spin * DEG), dz = Math.abs(dm.sin(p.spin * DEG)) * 12;
@@ -1396,7 +1424,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
   function draw(ctx) {
     const j = f.joints;
     if (!j.head) f.joints = solve(f.pose);
-    const J = f.joints, s = f.scale, R = RIG;
+    const J = f.joints, s = f.scale;
     ctx.save();
     ctx.fillStyle = f.color;
     ctx.strokeStyle = f.color;
@@ -1412,6 +1440,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     ctx.beginPath();
     ctx.arc(J.head.x, J.head.y, R.headR * s, 0, Math.PI * 2);
     ctx.fill();
+    // a character's accessory (a cap, a hard hat, a headset): a few strokes on the head, lit like the body
+    if (accessory) { ctx.save(); try { accessory(ctx, J, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s }); } catch (e) { /* a bad accessory never breaks the frame */ } ctx.restore(); }
     limb(ctx, J.hip, J.rKnee, J.rFoot, w, tip);
     limb(ctx, J.rShoulder, J.rElbow, J.rHand, w, tip);
     if (f.speedLines && strikeTimer > 0 && strikeDir && move && move.limb) {
@@ -1523,6 +1553,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
   f.getState = getState;
   f.setState = setState;
 
+  setBody(body, { scale });
   play('idle');
   update(0);
   return f;
@@ -1530,14 +1561,38 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
 
 // Strike reach: how far in front of the root (f.x) the limb tip is on the 'active' frame, at
 // scale 1. Combat spaces fighters so this lands on the defender's surface.
-{
-  const probe = createFighter({ x: 0, y: 0, facing: 1 });
-  for (const n of MOVES) {
-    const m = MOVE_DEFS[n], k = m.limb && m.keys.find(kk => kk.ev === 'active');
-    if (k) {
-      const tip = probe._solve(m.air ? { ...k.p, hipLock: HIP } : k.p)[m.limb];
-      MOVE_DATA[n].reach = Math.round((tip.x + RIG.limbTip / 2) * 10) / 10;
-      MOVE_DATA[n].reachY = Math.round(-tip.y);   // px above the floor
-    }
+let probe = null;
+function probeReach(n) {
+  probe = probe || createFighter({ x: 0, y: 0, facing: 1 });
+  const m = MOVE_DEFS[n], k = m.limb && m.keys.find(kk => kk.ev === 'active');
+  if (k) {
+    const tip = probe._solve(m.air ? { ...k.p, hipLock: HIP } : k.p)[m.limb];
+    MOVE_DATA[n].reach = Math.round((tip.x + RIG.limbTip / 2) * 10) / 10;
+    MOVE_DATA[n].reachY = Math.round(-tip.y);   // px above the floor
   }
 }
+for (const n of MOVES) probeReach(n);
+
+// ---- characters (src/characters/) -------------------------------------------------------------
+// addMoves({ name: def }) merges a character's own clips into the move set: def is a MOVE_DEFS entry
+// (blend, limb, keys of K(pose, ms, ease, ev), optional shift, air, chainFrom, height, effect). Names
+// are global, so a character prefixes nothing but must not reuse a shared name. Every rig can play
+// every clip; the sim lets only the owner press it.
+export function addMoves(defs) {
+  for (const [n, m] of Object.entries(defs)) {
+    if (!m || !Array.isArray(m.keys) || !m.keys.length) throw new Error(`move '${n}': no keys`);
+    if (m.limb && !m.adapt) m.adapt = m.air ? 'air' : m.limb.endsWith('Hand') ? 'pinned' : 'kick';
+    MOVE_DEFS[n] = m;
+    if (!MOVES.includes(n)) MOVES.push(n);
+    MOVE_DATA[n] = moveDataOf(n);
+    probeReach(n);
+  }
+}
+
+// The keyframe kit for character files: build poses the way this file does.
+//   K(pose, ms, ease, ev)   a keyframe; pose fields over STANCE; ev 'active' | 'recover' | 'footstep' | 'land'
+//   F(hx, H, lfx, rfx, lift, rlift)   both legs by IK: hip offset hx, hip height H, feet x (body space)
+//   L(hx, H, fx)            one pinned leg by IK; leg(dx, dy) the raw two-bone solve
+//   crouchP / CH            the crouch pose and its hip height; LF, RF, HIP the guard's feet and hip
+//   base(name)              a shared clip (read only), deepKeys(def) a copy of its keys to tweak
+export const RIG_KIT = { K, F, L, leg, P, mirror, STANCE, LF, RF, HIP, TALL, CH, crouchP, TUCK, deepKeys, adapted, base: n => MOVE_DEFS[n], EASES: Object.keys(EASE) };

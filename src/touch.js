@@ -2,10 +2,10 @@
 // dispatched on window, which is where combat/input.js listens, so the game never knows
 // the difference. Does nothing on a device without a touch screen.
 //
-//   left thumb   floating stick: left/right move (away from the opponent guards), past RUN_PX adds
+//   left thumb   floating stick: left/right move (away from the opponent walks back and guards a strike that's coming), past RUN_PX adds
 //                Shift, up = jump, down = crouch, down-away = crouching guard
 //   right thumb  Tekken diamond of round arcade buttons, one per limb: 1 LP (U)  2 RP (I) /
-//                3 LK (J)  4 RK (K), plus GUARD (B), which means hold back. Stick + button gives
+//                3 LK (J)  4 RK (K), plus GUARD (B), which means hold back (it walks back and guards what's coming). Stick + button gives
 //                the directional and crouch moves; two buttons together (1+3, 2+4) throw.
 //   top corner   HORDE (G), SOUND (the src/audio/ui.js settings panel) and fullscreen; in an online
 //                match HORDE gives way to LEAVE (Escape)

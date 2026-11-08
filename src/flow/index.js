@@ -9,6 +9,7 @@
 //                   Start/A starts. A tap anywhere else only wakes the sound
 //   highScores      the top-5 table between demo bouts (and after a game)
 //   modeSelect      ARCADE, VERSUS ONLINE, HORDE, TRAINING
+//   charSelect      pick a fighter (select.js) for the mode picked; training then picks the dummy
 //   stageIntro      the stage card (sim held), then fighting
 //   fighting        a round on; roundEnd while the sim shows KO/TIME; back to fighting next round
 //   result          the match is over: YOU WIN / YOU LOSE holds while the winner walks
@@ -26,7 +27,9 @@
 // score is offered to the table (entered as it stands after 30 more seconds), and the cabinet is
 // back on the demo with the score kept. A paused game stays paused.
 
-import { LADDER } from './ladder.js';
+import { LADDER, buildLadder } from './ladder.js';
+import { openSelect } from './select.js';
+import { roster, getCharacter, characterOr, TEMP_ID } from '../characters/index.js';
 import * as S from './scores.js';
 import { createMenuInput } from './menuInput.js';
 import { createUI, el, button } from './ui.js';
@@ -34,10 +37,11 @@ import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
-  off: ['attract', 'onlineJoin'],
+  off: ['attract', 'onlineJoin', 'charSelect'],
   attract: ['modeSelect', 'highScores'],
   highScores: ['attract', 'modeSelect'],
-  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu'],
+  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect'],
+  charSelect: ['modeSelect', 'stageIntro', 'fighting', 'onlineMenu', 'onlineJoin', 'attract'],
   stageIntro: ['fighting'],
   fighting: ['roundEnd', 'result', 'paused', 'attract'],
   roundEnd: ['fighting', 'result', 'paused'],
@@ -48,7 +52,7 @@ const TRANSITIONS = {
   enterInitials: ['highScores'],
   ending: ['enterInitials', 'highScores'],
   paused: ['fighting', 'roundEnd', 'stageIntro', 'attract'],
-  onlineMenu: ['modeSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract'],
+  onlineMenu: ['modeSelect', 'charSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract'],
   onlineHost: ['onlineMenu', 'onlineFighting', 'onlineEnd'],
   onlineJoin: ['onlineMenu', 'onlineConnecting', 'attract'],
   onlineConnecting: ['onlineJoin', 'onlineFighting', 'onlineEnd'],
@@ -56,7 +60,7 @@ const TRANSITIONS = {
   onlineEnd: ['onlineMenu', 'attract'],
 };
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
-const DEMO = new Set(['attract', 'modeSelect', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
+const DEMO = new Set(['attract', 'modeSelect', 'charSelect', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
 // the sim steps in these (plus onlineFighting, unless the net module steps it)
 const STEPS = new Set([...DEMO, 'fighting', 'roundEnd', 'result']);
 // the HUD draws in these; everything else is a menu over a dimmed scene, HUD off
@@ -81,7 +85,7 @@ const ONLINE = new Set(['onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnect
  */
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
-const MENU_MUSIC = new Set(['attract', 'highScores', 'modeSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
+const MENU_MUSIC = new Set(['attract', 'highScores', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -100,6 +104,11 @@ export function createFlow(ctx) {
   let endMsg = '', joinCode = '', netSession = 0;
   let netOff = [];
   const hp = new WeakMap ();
+  // the character select: which mode it's for, whether it's picking the player or (training) the dummy,
+  // the picks (kept between runs, so the cursor starts on your last fighter), and the live screen
+  const sel = { mode: null, step: 'player', player: TEMP_ID, dummy: TEMP_ID, join: false };
+  let selCtl = null;
+  const ladder = () => run.ladder || LADDER;
   const history = [];
   const ui = createUI((k) => { if (ctx.click) ctx.click(k); });
   ui.pauseBtn.addEventListener('click', () => { if (state === 'fighting' || state === 'roundEnd') pause(); });
@@ -135,6 +144,7 @@ export function createFlow(ctx) {
   function leave(prev, next) {
     if (ONLINE.has(prev) && !ONLINE.has(next)) netReset();
     if (prev === 'onlineFighting') netReset();   // a finished or abandoned match hangs up (leave() is a no-op if it already did)
+    if (prev === 'charSelect') selCtl = null;
   }
   function enter(s, prev) {
     switch (s) {
@@ -142,6 +152,7 @@ export function createFlow(ctx) {
       case 'attract': mode = null; if (ctx.sceneName() !== 'attract') demo(); return screenTitle();
       case 'highScores': demo(); return screenScores();
       case 'modeSelect': mode = null; ensureDemo(); return screenModes();
+      case 'charSelect': ensureDemo(); return screenSelect();
       case 'stageIntro': return screenStage();
       case 'fighting':
         if (prev === 'stageIntro' || prev === 'paused' || prev === 'modeSelect') ctx.input.swallowHeld();   // the press that got us here doesn't throw a punch
@@ -186,8 +197,9 @@ export function createFlow(ctx) {
     if (DEMO.has(state)) {
       // the demo's KO card holds a beat longer
       if (sim.phase === 'ko' && !demoKO) { demoKO = true; sim.phaseTimer = 1.6; }
-      if (idle > IDLE_MS && (state === 'modeSelect' || state === 'onlineMenu' || state === 'onlineJoin' || state === 'onlineEnd')) go('attract');
+      if (idle > IDLE_MS && (state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || state === 'onlineEnd')) go('attract');
     }
+    if (state === 'charSelect' && selCtl) selCtl.tick(dt);
     switch (state) {
       case 'highScores': if (t > 7) go('attract'); break;
       case 'stageIntro': if (t > 3.4) go('fighting'); break;
@@ -263,7 +275,7 @@ export function createFlow(ctx) {
       entry = { mode: 'horde', score: run.score, note: `${run.floors} FLOOR${run.floors === 1 ? '' : 'S'}` };
       go('gameOver');
     } else if (resultWin) {
-      const st = LADDER[run.stage];
+      const st = ladder()[run.stage];
       clearBonus = S.POINTS.stageClear * st.n;
       add(clearBonus);
       go('stageClear');
@@ -271,7 +283,7 @@ export function createFlow(ctx) {
   }
   function nextStage() {
     if (state !== 'stageClear') return;   // a second press in the same frame must not skip a stage
-    if (run.stage >= LADDER.length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR' }; go('ending'); return; }
+    if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR' }; go('ending'); return; }
     run.stage++;
     go('stageIntro');
   }
@@ -286,9 +298,34 @@ export function createFlow(ctx) {
   }
   function resume() { if (state === 'paused') go(resumeTo); }
   function quitToTitle() { if (mode === 'online') netReset(); mode = null; go('attract'); }
-  function startArcade() { newRun('arcade'); go('stageIntro'); }
-  function startHorde() { newRun('horde'); ctx.scene('horde'); go('fighting'); }
-  function startTraining() { newRun('training'); ctx.scene('dummy'); go('fighting'); }
+  function startArcade() { newRun('arcade'); run.ladder = buildLadder(sel.player, getCharacter); go('stageIntro'); }
+  function startHorde() { newRun('horde'); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }
+  function startTraining() { newRun('training'); ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }
+  // ---- character select --------------------------------------------------------------------------------
+  function toSelect(m) { sel.mode = m; sel.step = 'player'; sel.join = false; go('charSelect'); }
+  function screenSelect() {
+    const dummy = sel.step === 'dummy';
+    const sub = { arcade: `ARCADE  ·  ${LADDER.length} STAGES UP THE BUILDING`, online: 'VERSUS ONLINE  ·  YOUR RIVAL PICKS TOO', horde: 'HORDE  ·  FLOOR BY FLOOR', training: 'TRAINING  ·  STEP 1 OF 2' }[sel.mode] || '';
+    selCtl = openSelect(ui, { title: dummy ? 'PICK YOUR DUMMY' : 'SELECT FIGHTER', sub: dummy ? 'TRAINING  ·  STEP 2 OF 2  ·  WHO TAKES THE HITS' : sub,
+      roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack });
+  }
+  function pickChar(id) {
+    if (state !== 'charSelect' || t < 0.15) return;
+    if (sel.step === 'dummy') { sel.dummy = id; startTraining(); return; }
+    sel.player = id;
+    if (sel.mode === 'arcade') startArcade();
+    else if (sel.mode === 'horde') startHorde();
+    else if (sel.mode === 'training') { sel.step = 'dummy'; t = 0; screenSelect(); }
+    else if (sel.mode === 'online') {
+      try { const n = getNet(); if (n.setCharacter) n.setCharacter(id); } catch { /* stub */ }
+      go(sel.join ? 'onlineJoin' : 'onlineMenu');
+    }
+  }
+  function selBack() {
+    if (state !== 'charSelect') return;
+    if (sel.step === 'dummy') { sel.step = 'player'; screenSelect(); }
+    else go(sel.join ? 'attract' : 'modeSelect');
+  }
   function pressStart() { if (state === 'attract' || (state === 'highScores' && !hs.postGame)) go('modeSelect'); else if (state === 'highScores') go('attract'); }
 
   // ---- input ------------------------------------------------------------------------------------------
@@ -371,10 +408,10 @@ export function createFlow(ctx) {
       const list = el('div', 'fl-list');
       const mk = (label, sub, act, cls = '') => { const b = button(label, act, cls); b.el.appendChild(el('small', '', sub)); list.appendChild(b.el); return b; };
       const items = [
-        mk('ARCADE', `${LADDER.length} STAGES UP THE BUILDING`, startArcade, 'fl-pink'),
-        mk('VERSUS ONLINE', 'PLAY A FRIEND', () => go('onlineMenu')),
-        mk('HORDE', 'FLOOR BY FLOOR, AS MANY AS YOU CAN', startHorde, 'fl-amber'),
-        mk('TRAINING', 'A DUMMY THAT NEVER HITS BACK', startTraining, 'fl-violet'),
+        mk('ARCADE', `${LADDER.length} STAGES UP THE BUILDING`, () => toSelect('arcade'), 'fl-pink'),
+        mk('VERSUS ONLINE', 'PLAY A FRIEND', () => toSelect('online')),
+        mk('HORDE', 'FLOOR BY FLOOR, AS MANY AS YOU CAN', () => toSelect('horde'), 'fl-amber'),
+        mk('TRAINING', 'A DUMMY THAT NEVER HITS BACK', () => toSelect('training'), 'fl-violet'),
       ];
       root.appendChild(list);
       root.appendChild(el('div', 'fl-small', ctx.touchUI() ? 'TAP A MODE' : 'ENTER TO PICK   ESC BACK'));
@@ -383,7 +420,7 @@ export function createFlow(ctx) {
   }
   function pips(root, st) {
     const p = el('div', 'fl-pips');
-    LADDER.forEach((s, i) => {
+    ladder().forEach((s, i) => {
       const k = el('i', i < run.stage ? 'fl-done' : i === run.stage ? 'fl-now' : '', s.boss ? 'BOSS' : String(s.n));
       if (s.boss) k.classList.add('fl-boss');
       if (i === run.stage) k.style.setProperty('--c', st.color);
@@ -392,15 +429,17 @@ export function createFlow(ctx) {
     root.appendChild(p);
   }
   function screenStage() {
-    const st = LADDER[run.stage];
+    const st = ladder()[run.stage];
     run.stageStart = run.score;
     for (const u of sim.units) hp.delete(u);
-    ctx.scene('arcade', { stage: st });
+    ctx.scene('arcade', { stage: st, chars: [sel.player, st.char || TEMP_ID] });
     ui.show('fl-stage', (root) => {
-      root.append(el('div', 'fl-label', st.boss ? 'FINAL STAGE' : `STAGE ${st.n} OF ${LADDER.length}`));
+      root.append(el('div', 'fl-label', st.boss ? 'FINAL STAGE' : `STAGE ${st.n} OF ${ladder().length}`));
       const vs = el('div', 'fl-vs');
       const name = el('b', '', st.name); name.style.color = '#fff'; name.style.textShadow = `0 0 0.8cqw ${st.color}, 0 0 2cqw ${st.color}`;
-      vs.append(el('b', 'fl-you', 'YOU'), el('b', 'fl-x', 'VS'), name);
+      const me = characterOr(sel.player), you = el('b', 'fl-you', me.name);
+      you.style.textShadow = `0 0 0.8cqw ${me.color}, 0 0 2cqw ${me.color}`;
+      vs.append(you, el('b', 'fl-x', 'VS'), name);
       root.append(el('h1', 'fl-h1', `STAGE ${st.n}`), vs, el('div', 'fl-label', st.tagline));
       pips(root, st);
       if (run.continues) root.appendChild(el('div', 'fl-small', `CONTINUES ${run.continues}`));
@@ -417,14 +456,14 @@ export function createFlow(ctx) {
     ui.clear();
   }
   function screenClear() {
-    const st = LADDER[run.stage];
+    const st = ladder()[run.stage];
     ui.show('fl-clear', (root) => {
       root.append(el('h1', 'fl-h1', st.boss ? 'BOSS DOWN' : 'STAGE CLEAR'), el('div', 'fl-label', `${st.name} IS DONE`));
       const tl = el('div', 'fl-tally');
       tl.append(el('span', '', `STAGE ${st.n} BONUS`), el('span', '', S.fmt(clearBonus)), el('span', '', 'SCORE'), el('span', '', S.fmt(run.score)));
       root.appendChild(tl);
-      const last = run.stage >= LADDER.length - 1;
-      root.appendChild(el('div', 'fl-label', last ? 'THE BUILDING IS YOURS' : `NEXT  ${LADDER[run.stage + 1].name}`));
+      const last = run.stage >= ladder().length - 1;
+      root.appendChild(el('div', 'fl-label', last ? 'THE BUILDING IS YOURS' : `NEXT  ${ladder()[run.stage + 1].name}`));
       const b = button(last ? 'CONTINUE' : 'NEXT STAGE', () => { if (t > 0.5) nextStage(); }, 'fl-amber');
       root.appendChild(b.el);
       return { items: [b] };
@@ -436,7 +475,7 @@ export function createFlow(ctx) {
       root.append(el('h1', 'fl-h1', 'CONTINUE?'));
       countEl = el('div', 'fl-count', '10');
       root.appendChild(countEl);
-      root.appendChild(el('div', 'fl-label', `RETRY STAGE ${LADDER[run.stage].n}  ·  ${LADDER[run.stage].name}`));
+      root.appendChild(el('div', 'fl-label', `RETRY STAGE ${ladder()[run.stage].n}  ·  ${ladder()[run.stage].name}`));
       const row = el('div', 'fl-row');
       const yes = button('YES', () => { if (t < 0.4 || state !== 'continue') return; run.score = run.stageStart; run.continues++; go('stageIntro'); }, 'fl-pink');
       const no = button('NO', () => { if (t < 0.4) return; go('gameOver'); });
@@ -447,12 +486,12 @@ export function createFlow(ctx) {
   }
   function tickContinue() { if (countEl) { const n = String(Math.max(0, Math.ceil(10 - t - 0.0001))); if (countEl.textContent !== n) countEl.textContent = n; } }
   function screenGameOver() {
-    if (mode === 'arcade') entry = { mode: 'arcade', score: run.score, note: `STAGE ${LADDER[run.stage].n}` };
+    if (mode === 'arcade') entry = { mode: 'arcade', score: run.score, note: `STAGE ${ladder()[run.stage].n}` };
     ui.show('fl-gameover', (root) => {
       root.append(el('h1', 'fl-h1', 'GAME OVER'));
       const tl = el('div', 'fl-tally');
       if (mode === 'horde') tl.append(el('span', '', 'FLOORS CLEARED'), el('span', '', String(run.floors)), el('span', '', 'GOONS DOWN'), el('span', '', String(run.goons)));
-      else tl.append(el('span', '', 'REACHED'), el('span', '', `STAGE ${LADDER[run.stage].n}`));
+      else tl.append(el('span', '', 'REACHED'), el('span', '', `STAGE ${ladder()[run.stage].n}`));
       tl.append(el('span', '', 'FINAL SCORE'), el('span', '', S.fmt(run.score)));
       root.appendChild(tl);
       const b = button('CONTINUE', () => { if (t > 0.8) afterGame(); }, 'fl-amber');
@@ -509,14 +548,15 @@ export function createFlow(ctx) {
   }
   function screenEnding() {
     ui.show('fl-ending', (root) => {
-      root.append(el('h1', 'fl-h1', 'CHAMPION'), el('div', 'fl-label', `THE MANAGER IS DOWN. FINAL SCORE ${S.fmt(run.score)}`));
+      const boss = ladder()[ladder().length - 1];
+      root.append(el('h1', 'fl-h1', 'CHAMPION'), el('div', 'fl-label', `${boss.name} IS DOWN. FINAL SCORE ${S.fmt(run.score)}`));
       const roll = el('div', 'fl-roll'), inner = el('div');
       const lines = [
         ['NEON STICK FIGHT', 'A GAME BY SCOTT PIERCE'],
         ['ANIMATION BAR', 'XIAO XIAO, BY ZHU ZHIQIANG'],
         ['MUSIC ENGINE', 'STRUDEL, BY THE STRUDEL CONTRIBUTORS'],
         ['FONTS', 'BUNGEE BY DAVID JONATHAN ROSS · TEKO BY THE INDIAN TYPE FOUNDRY'],
-        ['YOUR OPPONENTS', LADDER.map(s => s.name).join(' · ')],
+        ['YOUR OPPONENTS', ladder().map(s => s.name).join(' · ')],
         ['CONTINUES USED', String(run.continues)],
         ['SOURCE', 'GITHUB.COM/DDRSCOTT/STICK-FIGHT · AGPL-3.0'],
         ['THANK YOU FOR PLAYING', 'NOW GO HOME. IT IS 3 AM'],
@@ -531,13 +571,13 @@ export function createFlow(ctx) {
   function screenPause() {
     ui.show('fl-pause', (root) => {
       root.append(el('h1', 'fl-h2', 'PAUSED'));
-      if (mode === 'arcade') root.appendChild(el('div', 'fl-label', `STAGE ${LADDER[run.stage].n}  ·  ${LADDER[run.stage].name}  ·  ${S.fmt(run.score)}`));
+      if (mode === 'arcade') root.appendChild(el('div', 'fl-label', `STAGE ${ladder()[run.stage].n}  ·  ${ladder()[run.stage].name}  ·  ${S.fmt(run.score)}`));
       if (mode === 'online') root.appendChild(el('div', 'fl-label', 'THE MATCH KEEPS RUNNING'));
       const list = el('div', 'fl-list');
       const items = [button('RESUME', resume, 'fl-pink')];
       if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
-      if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); ctx.scene('horde'); go('fighting'); }));
-      if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy'); go('fighting'); }));
+      if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }));
+      if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }));
       if (mode === 'online') items.push(button('LEAVE MATCH', () => { endMsg = 'YOU LEFT THE MATCH'; go('onlineEnd'); }, 'fl-violet'));
       else items.push(button('QUIT TO TITLE', quitToTitle, 'fl-violet'));
       items.forEach(i => list.appendChild(i.el));
@@ -579,11 +619,11 @@ export function createFlow(ctx) {
       const items = [
         button('HOST A GAME', () => { if (!getNet().available) { endMsg = 'ONLINE PLAY IS NOT READY YET'; go('onlineEnd'); } else go('onlineHost'); }, 'fl-pink'),
         button('JOIN A GAME', () => { joinCode = ''; go('onlineJoin'); }),
-        button('BACK', () => go('modeSelect'), 'fl-violet'),
+        button('BACK', () => go('charSelect'), 'fl-violet'),
       ];
       items.forEach(i => list.appendChild(i.el));
       root.appendChild(list);
-      return { items, back: () => go('modeSelect') };
+      return { items, back: () => go('charSelect') };
     });
   }
   function screenHost() {
@@ -692,14 +732,15 @@ export function createFlow(ctx) {
   function hud() {
     if (state === 'off') return null;
     const scored = mode === 'arcade' || mode === 'horde';
-    const st = LADDER[run.stage];
+    const st = ladder()[run.stage];
     const pad = ctx.padUI(), touch = ctx.touchUI();
     return {
       bare: !HUD_ON.has(state),
       card: state === 'attract',
       score: scored ? run.score : null,
       bonus: bonus.t > 0 ? bonus.text : '',
-      names: mode === 'arcade' ? ['PLAYER 1', st.name] : null,
+      names: mode === 'arcade' ? ['PLAYER 1', st.boss ? 'BOSS' : `STAGE ${st.n}`] : null,
+      charNames: mode === 'arcade' ? [null, st.name] : null,   // the stage's name (a TEMP stands in for a character that isn't built yet)
       hint: touch ? '' : state === 'onlineFighting' ? (pad ? 'SELECT  LEAVE' : 'F1  MOVES     ESC  LEAVE') : pad ? 'START  PAUSE' : 'F1  MOVES     P  PAUSE',
     };
   }
@@ -721,7 +762,7 @@ export function createFlow(ctx) {
   }
   function start(opts = {}) {
     const code = cleanCode(opts.room);
-    if (code) { demo(); joinCode = code; go('onlineJoin'); }
+    if (code) { demo(); joinCode = code; sel.mode = 'online'; sel.step = 'player'; sel.join = true; go('charSelect'); }   // pick a fighter, then JOIN with the code filled in
     else go('attract');
   }
 
@@ -742,7 +783,7 @@ export function createFlow(ctx) {
     get on() { return state !== 'off'; },
     /** the sim's demo audio gate: the demo runs behind these states */
     get demo() { return DEMO.has(state) || state === 'highScores'; },
-    debug: { history, run, go, debugKO, setNet, getNet, LADDER, get mode() { return mode; }, get t() { return t; }, scores: S },
+    debug: { history, run, sel, go, debugKO, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S },
   };
 }
 

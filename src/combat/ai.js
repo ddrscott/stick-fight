@@ -70,6 +70,41 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // a button press by token ('1'..'4', 'd' prefix = down): strings go through the sim's table
   const press = (tok, extra) => ({ dx: 0, run: false, block: false, attack: null, jump: false, until: 2, press: tok, ...(extra || {}) });
   let pickedString = null;
+  // the string table of the character this CPU plays (src/characters/), the shared one for TEMP
+  const strs = (me) => (me.char && me.char.strings) || undefined;
+  // A character's specials (its definition's ai.specials): { move, min, max, chance, when, run, cooldown }.
+  // In range [min, max] (px between roots) and when `when` holds (a function (me, opp, sim, dist), or one
+  // of 'standing' 'crouching' 'guarding' 'attacking' 'whiff' 'wall' 'far'), it's pressed with that chance;
+  // a little short of range it walks (or runs, run: true) in first. cooldown: frames before it's tried
+  // again. TEMP has none, so its CPU is unchanged (no extra rng calls).
+  const coolUntil = {};
+  const WHEN = {
+    standing: (m, o) => o.grounded && !o.crouch && !DOWN_STATES.has(o.state),
+    crouching: (m, o) => !!o.crouch,
+    guarding: (m, o) => o.state === 'block' || o.state === 'blockstun' || (!!o.backHeld && o.grounded),
+    attacking: (m, o) => o.state === 'attack' && o.phase === 'startup',
+    whiff: (m, o) => o.state === 'attack' && o.phase === 'recovery' && !o.hitConfirmed,
+    wall: (m, o, sim) => Math.min(o.x - sim.bounds.x0, sim.bounds.x1 - o.x) < 220 && Math.sign(o.x - m.x) === Math.sign((o.x - sim.bounds.x0 < sim.bounds.x1 - o.x ? sim.bounds.x0 : sim.bounds.x1) - o.x),
+    far: (m, o) => Math.abs(o.x - m.x) > 160,
+  };
+  function special(me, opp, sim, dist, toward) {
+    const list = me.char && me.char.ai && me.char.ai.specials;
+    if (!list || !list.length || me.faint > 0) return null;
+    for (const sp of list) {
+      if ((coolUntil[sp.move] || 0) > sim.stepCount) continue;
+      const fd = FRAME_DATA[sp.move];
+      if (!fd || me.stamina - fd.cost <= 6) continue;
+      const min = sp.min || 0, max = sp.max || 120, lead = sp.lead != null ? sp.lead : 90;
+      if (dist < min || dist > max + lead) continue;
+      const w = typeof sp.when === 'function' ? sp.when : sp.when ? WHEN[sp.when] : null;
+      if (w && !w(me, opp, sim, dist)) continue;
+      if (!chance((sp.chance != null ? sp.chance : 0.3) * (0.5 + 0.5 * difficulty))) continue;
+      coolUntil[sp.move] = sim.stepCount + (sp.cooldown || 90);
+      const go = { ...attack(sp.move), ok: true };
+      return dist <= max ? [go] : [move(toward, closer(max - 6), !!sp.run), go];
+    }
+    return null;
+  }
   // the stairwell (v3): a live opening on this floor, and where it is relative to the two of us
   function well(me, sim) {
     const sw = sim.stairwell;
@@ -84,7 +119,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // which string to run from here: enders when there is stamina for them, a wall ender near a wall
   function chooseString(me, opp, sim, blocked) {
     if (!me.seq) return null;
-    const m = matchStrings(me.seq).filter(st => st.keys.length > me.seq.length);
+    const m = matchStrings(me.seq, strs(me)).filter(st => st.keys.length > me.seq.length);
     if (!m.length) return null;
     const wallNear = (opp.x - sim.bounds.x0 < 230 && opp.x < me.x) || (sim.bounds.x1 - opp.x < 230 && opp.x > me.x);
     const score = (st) => {
@@ -107,7 +142,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const tok = a.press;
     if (!tok) return 22;   // a press picked on the spot (pressFn): about a kick
     let m = PLAIN[tok];
-    if (me.seq && me.state === 'attack') { const st = matchStrings([...me.seq, tok]); if (st.length) m = st[0].moves[me.seq.length]; }
+    if (me.seq && me.state === 'attack') { const st = matchStrings([...me.seq, tok], strs(me)); if (st.length) m = st[0].moves[me.seq.length]; }
     return (FRAME_DATA[m] && FRAME_DATA[m].cost) || 20;
   }
   const landed = (me) => me.grounded && me.state !== 'jump' && me.state !== 'landing';
@@ -232,6 +267,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       return [move(toward, closer(r('cross') - 8), true), attack(chance(0.6) ? 'cross' : 'jab')];
     }
     if (blockedStreak >= 2 && dist < r('cross') + 40) return mixup(dist, toward, opp);
+    { const sp = special(me, opp, sim, dist, toward); if (sp) return sp; }   // the character's own moves
     // jump-ins: a dive kick on a croucher, and now and then from jump range (the anti-air game)
     const free = !DOWN_STATES.has(opp.state) && opp.state !== 'attack' && !HIT_STATES.has(opp.state) && me.stamina > 45;   // the jump, the air attack and a string after it
     if (free && opp.crouch && dist > 100 && dist < 240 && chance(0.6)) return jumpIn(toward, 'jab');
@@ -274,7 +310,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (k < 0.7) return [move(toward, 2), blockFor(2), move(0, 3)]; // feint
       return [move(0, 4 + irnd(4))];
     }
-    const losing = !rush && me.health < 0.3 * sim.startHealth && me.health < opp.health;
+    const losing = !rush && me.health < 0.3 * (sim.horde ? sim.startHealth : me.maxHealth || sim.startHealth) && me.health < opp.health;
     if (grap && dist < 95 && !opp.crouch && me.stamina > 30 && chance(0.4)) return [move(toward, closer(78)), attack('throw')];
     if (losing && dist < 170 && !cornered && !wellBehindMe(well(me, sim), me, opp) && chance(0.4)) return [move(-toward, 10, chance(0.3))];
     if (dist > (show ? 230 : turtle ? 140 : 175)) return approach(me, opp, dist, toward);
@@ -378,7 +414,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // continue whichever string this hit can belong to (the strings above), picked once per string
       // continue the string this hit belongs to (the sim's string table) with the next button;
       // length grows with difficulty, and a low meter stops it
-      const st = (me.seq && pickedString && matchStrings(me.seq).includes(pickedString)) ? pickedString : chooseString(me, opp, sim, false);
+      const st = (me.seq && pickedString && matchStrings(me.seq, strs(me)).includes(pickedString)) ? pickedString : chooseString(me, opp, sim, false);
       pickedString = st;
       const n = me.seq ? me.seq.length : 1;
       if (st && n < st.keys.length && n < 1 + Math.round(3 * difficulty) + (FRAME_DATA[st.moves[st.moves.length - 1]].ender ? 1 : 0) && me.stamina > (FRAME_DATA[st.moves[n]].cost || 9) + 8 && chance(0.55 + 0.45 * difficulty)) { queue = [press(st.keys[n])]; act = null; }

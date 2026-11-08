@@ -1,0 +1,93 @@
+// The character registry. A character file (src/characters/<id>.js) default-exports a definition;
+// index.js registers each one. Registering merges the character's own moves into the shared tables
+// (the rig's MOVE_DEFS, the sim's FRAME_DATA), builds its string table, and fills in defaults, so the
+// rig, the sim, the AI, the HUD and the select screen read everything from the definition. See the
+// README's Characters section for the file format and every hook.
+
+import { addMoves, RIG } from '../fighter/index.js';
+import { addFrameData, FRAME_DATA } from '../combat/frameData.js';
+import { buildStrings } from '../combat/strings.js';
+
+// the select screen's order (registered ones only); TEMP, the baseline, comes first
+export const ROSTER_ORDER = ['temp', 'intern', 'helpdesk', 'courier', 'security', 'janitor', 'manager', 'accountant', 'windowWasher'];
+export const TEMP_ID = 'temp';
+const STAT_DEFAULTS = { health: 100, walk: 1, backWalk: 1, run: 1, jump: 1, dash: 1, weight: 1, stamina: 1, regen: 1, damage: 1 };
+const MOTIONS = new Set(['', 'f', 'b', 'd', 'df', 'db', 'ff', 'run', 'rise', 'air', 'airDown']);
+const BUTTONS = new Set(['1', '2', '3', '4', '1+3', '2+4']);
+const REG = new Map();
+
+/** @param {any} def */
+export function registerCharacter(def) {
+  if (!def || !def.id) throw new Error('a character needs an id');
+  if (REG.has(def.id)) return REG.get(def.id);
+  const id = def.id;
+  const c = { ...def };
+  c.name = c.name || id.toUpperCase();
+  c.tagline = c.tagline || '';
+  c.color = c.color || '#f0f0f0';
+  c.altColor = c.altColor || c.accent || '#E85D00';
+  c.accent = c.accent || c.color;
+  c.stats = { ...STAT_DEFAULTS, ...(def.stats || {}) };
+  // knockback taken: a heavy body flies less far (x by 1/weight, y by 1/sqrt(weight)); exactly 1 at weight 1
+  c.kbX = 1 / c.stats.weight; c.kbY = 1 / Math.sqrt(c.stats.weight);
+  c.body = def.body || null;
+  c.mechanics = { airJumps: 0, wallJump: false, ...(def.mechanics || {}) };
+  c.ai = { style: null, range: null, specials: [], ...(def.ai || {}) };
+  // own moves: { name: { rig, frame } }. A frame-only entry (no rig) plays another clip through frame.anims.
+  const rigs = {}, frames = {};
+  for (const [n, m] of Object.entries(def.moves || {})) {
+    if (FRAME_DATA[n] && FRAME_DATA[n].owner !== id) throw new Error(`${id}: move '${n}' is already taken`);
+    if (m.rig) {
+      const h = m.frame && m.frame.height;
+      rigs[n] = { ...m.rig, height: m.rig.height || (h === 'overhead' ? 'mid' : h) || 'mid', overhead: m.rig.overhead || h === 'overhead' };
+    }
+    if (m.frame) frames[n] = m.frame;
+  }
+  addMoves(rigs);
+  addFrameData(frames, id);
+  c.ownMoves = Object.keys(frames);
+  // command inputs: { button: '1'..'4' | '1+3' | '2+4', motion: '' | f | b | d | df | db | ff | run | rise | air | airDown, move }
+  c.commands = (def.commands || []).map((k) => {
+    const cmd = { motion: '', ...k, button: String(k.button) };
+    if (!BUTTONS.has(cmd.button)) console.warn(`[characters] ${id}: command button '${cmd.button}' isn't one of 1 2 3 4 1+3 2+4`);
+    if (!MOTIONS.has(cmd.motion)) console.warn(`[characters] ${id}: command motion '${cmd.motion}' isn't known`);
+    if (!FRAME_DATA[cmd.move]) console.warn(`[characters] ${id}: command move '${cmd.move}' has no frame data`);
+    return cmd;
+  });
+  // the most specific motion first: a dash before a plain forward, down-forward before down
+  const rank = { ff: 0, run: 0, rise: 1, df: 1, db: 1, airDown: 1, f: 2, b: 2, d: 2, air: 2, '': 3 };
+  c.commands.sort((a, b) => rank[a.motion] - rank[b.motion]);
+  const st = buildStrings(def.strings || {});
+  c.strings = st.list;
+  for (const p of st.problems) console.warn(`[characters] ${id}: ${p}`);
+  for (const s of c.strings) for (const m of s.moves) if (!FRAME_DATA[m]) console.warn(`[characters] ${id}: string ${s.name} names '${m}', which has no frame data`);
+  // the select screen's list: the unique moves, then the unique strings (the definition may give its own)
+  c.moveList = def.moveList || [];
+  // how much farther one stride carries this body than the baseline's, so a walk or run cycle plays at
+  // the rate that keeps planted feet planted at the character's own speed
+  const b = c.body || {};
+  c.stride = (b.scale || 1) * ((b.upperLeg || RIG.upperLeg) + (b.lowerLeg || RIG.lowerLeg)) / (RIG.upperLeg + RIG.lowerLeg);
+  REG.set(id, c);
+  return c;
+}
+
+export function getCharacter(id) { return REG.get(id) || null; }
+/** the character, or TEMP when it isn't registered (yet) */
+export function characterOr(id) { return REG.get(id) || REG.get(TEMP_ID); }
+export function temp() { return REG.get(TEMP_ID); }
+/** registered characters in select-screen order */
+export function roster() {
+  const out = ROSTER_ORDER.map((id) => REG.get(id)).filter(Boolean);
+  for (const c of REG.values()) if (!out.includes(c)) out.push(c);
+  return out;
+}
+/** may this character press this move? shared moves: everyone; own moves: the owner only */
+export function canUse(c, move) {
+  const fd = FRAME_DATA[move];
+  return !!fd && (!fd.owner || (!!c && fd.owner === c.id));
+}
+/** a fighter's neon: TEMP keeps the old white (P1) and orange (P2); a mirror match gives P2 the alt color */
+export function colorFor(c, slot, other) {
+  if (!c || c.id === TEMP_ID) return slot === 0 ? '#f0f0f0' : '#E85D00';
+  return slot === 1 && other && other.id === c.id ? c.altColor : c.color;
+}

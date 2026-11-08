@@ -18,7 +18,7 @@ export function buildHitboxes(rig, move, facing) {
     chain = fwd(chains[0][1]) >= fwd(chains[1][1]) ? chains[0] : chains[1];
   }
   const mid = j[chain[0]], end = j[chain[1]];
-  const r = fd.limb === 'hand' ? HAND_R : FOOT_R;
+  const r = (fd.limb === 'hand' ? HAND_R : FOOT_R) * (rig.shape ? rig.shape.limb : 1);   // a character's thicker limbs hit wider
   // the whole striking segment, fist/foot first: at point-blank range the fist is past
   // the opponent's torso and it is the forearm or shin that lands
   const out = [{ x: end.x, y: end.y, r }];
@@ -31,14 +31,15 @@ export function buildHitboxes(rig, move, facing) {
 export function buildHurtboxes(rig) {
   const j = rig.joints;
   if (!j || !j.hip) return { circles: [], capsules: [] };
+  const sh = rig.shape, t = sh ? 9 * sh.torso : 9, l = sh ? 6 * sh.limb : 6, a = sh ? 5 * sh.limb : 5;   // a character's body is wider or narrower
   return {
     circles: [{ x: j.head.x, y: j.head.y, r: (rig.radius || 11) + 3 }],
     capsules: [
-      [j.neck, j.hip, 9],
-      [j.hip, j.lKnee, 6], [j.lKnee, j.lFoot, 6],
-      [j.hip, j.rKnee, 6], [j.rKnee, j.rFoot, 6],
-      [j.lShoulder, j.lElbow, 5], [j.lElbow, j.lHand, 5],
-      [j.rShoulder, j.rElbow, 5], [j.rElbow, j.rHand, 5],
+      [j.neck, j.hip, t],
+      [j.hip, j.lKnee, l], [j.lKnee, j.lFoot, l],
+      [j.hip, j.rKnee, l], [j.rKnee, j.rFoot, l],
+      [j.lShoulder, j.lElbow, a], [j.lElbow, j.lHand, a],
+      [j.rShoulder, j.rElbow, a], [j.rElbow, j.rHand, a],
     ],
   };
 }

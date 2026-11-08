@@ -35,6 +35,7 @@
  * @property {() => void} startMatch                                both connected: start the match (online.js already has)
  * @property {(ms: number) => void} [step]                          optional: steps the online match in place of the local sim
  * @property {() => void} leave                                     close the room / match and hand the sim back
+ * @property {(id: string) => void} [setCharacter]                  this side's fighter, picked on the select screen before HOST or JOIN
  * @property {<K extends keyof NetEvents>(ev: K, fn: (e: NetEvents[K]) => void) => () => void} on   subscribe; returns an unsubscribe
  */
 
@@ -101,6 +102,7 @@ export function adaptOnline(online) {
     join: (code) => online.join(code).then(() => undefined),
     startMatch() { /* online.js already started it when it fired 'connected' */ },
     leave: () => online.leave(),
+    setCharacter: (id) => online.setCharacter(id),
     on(ev, fn) {
       const list = (handlers[ev] = handlers[ev] || []);
       list.push(fn);

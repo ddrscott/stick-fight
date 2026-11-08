@@ -17,6 +17,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   const ghost = [100, 100], seen = [100, 100], tick = [0, 0];
   let lastBanner = '', bannerAge = 0, clock = 0;
   let names = null;          // the flow's fighter names (the arcade ladder), else the labels below
+  let charNames = null;
+  const labelW = [0, 0];     // how wide each side's name label drew, so the score starts after it      // the flow's character names per slot (an arcade stage's name), else each unit's character
   let layout = {};           // what draw() returns: where the title's prompt sits (src/flow/ puts its START button there)
 
   // neon text: a dark outline for contrast, a colored glow stroke, then a hot white-tinted core
@@ -44,7 +46,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   // screen side it's drawn on (0 = left). They differ only in a mirrored view, where P2 is on the left.
   function bar(u, who, side, sim, dt) {
     const i = who, color = SIDE[who];
-    const max = sim.startHealth || 100;
+    const max = u.maxHealth || sim.startHealth || 100;   // a character's own health (src/characters/)
     if (u.health < seen[i]) tick[i] = 0.35;
     seen[i] = u.health;
     tick[i] = Math.max(0, tick[i] - dt);
@@ -74,7 +76,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
 
     // stamina: a thin amber bar under the health bar. Under 35 (two jabs from fainting) it turns
     // pink and flashes, and its track pulses; fainted, it dims to a violet refill and a FAINT tag flickers
-    const sy = y + BAR_H + 6, st = Math.max(0, Math.min(1, (u.stamina == null ? 100 : u.stamina) / 100));
+    const sy = y + BAR_H + 6, st = Math.max(0, Math.min(1, (u.stamina == null ? 100 : u.stamina) / (u.staminaMax || 100)));
     const faint = u.faint > 0, low = !faint && st < 0.35, blink = Math.floor(clock * 7) % 2 === 0;
     para(x + (side === 0 ? 30 : 0), sy, BAR_W - 30, ST_H, side);
     ctx.fillStyle = low && blink ? 'rgba(255,43,214,0.28)' : 'rgba(14,4,30,0.7)'; ctx.fill();
@@ -94,8 +96,16 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     // name and pips
     const ly = sy + ST_H + 12;
     const diff = u.kind === 'ai' && u.controller && u.controller.getDifficulty ? u.controller.getDifficulty() : sim.difficulty;
-    const label = names && names[who] ? names[who] : u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && who === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? 'PLAYER 1' : u.kind === 'script' ? 'TRAINER' : 'DUMMY';
-    neonText(label, side === 0 ? x : x + BAR_W, ly, 22, color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.7, core: false });
+    const role = names && names[who] ? names[who] : u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && who === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? 'PLAYER 1' : u.kind === 'script' ? 'TRAINER' : 'DUMMY';
+    // the character's name leads, in the fighter's own neon, then who's playing it (a goon is just a goon)
+    const cn = (charNames && charNames[who]) || (u.char && u.char.name) || '';
+    const cname = cn && !(sim.horde && who === 1) && role !== cn ? cn : '';
+    if (cname) {
+      const cw = measure(cname, 22, LABEL, 600) + 10;
+      neonText(cname, side === 0 ? x : x + BAR_W, ly, 22, u.color || color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.8, core: true });
+      neonText(role, side === 0 ? x + cw : x + BAR_W - cw, ly + 1, 17, color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 500, glow: 0.5, core: false });
+      labelW[side] = cw + measure(role, 17, LABEL, 500);
+    } else labelW[side] = measure(role, 22, LABEL, 600), neonText(role, side === 0 ? x : x + BAR_W, ly, 22, color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.7, core: false });
     if (sim.horde) {
       const H = sim.horde, wv = H.wave || { downed: 0, size: 0 };
       neonText(who === 0 ? `FLOOR ${H.floorsCleared + 1}   ${H.count} DOWN` : `WAVE ${wv.downed}/${wv.size}`, side === 0 ? x + BAR_W : x, ly, 20, NEON.amber, { font: LABEL, align: side === 0 ? 'right' : 'left', weight: 600, glow: 0.7 });
@@ -226,6 +236,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     clock += dt;
     layout = {};
     names = flow && flow.names ? flow.names : null;
+    charNames = flow && flow.charNames ? flow.charNames : null;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
     if (flow && flow.bare) return layout;
@@ -252,7 +263,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     for (const c of (sim.callouts || []).slice().reverse()) {
       const color = KIND_COLOR[c.kind] || (c.by === 0 ? NEON.cyan : c.by === 1 || c.by > 1 ? NEON.pink : NEON.white);
       const age = c.max - c.t;
-      items.push({ text: c.kind === 'counter' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
+      items.push({ text: c.kind === 'counter' && c.text === 'COUNTER' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
     }
     const rows = [STRIP_H + 22, STRIP_H + 56, STRIP_H + 90, STRIP_H + 124];
     let row = [0, 0, 0];
@@ -308,7 +319,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   // the run's score, in the strip between P1's name and his round pips, with the last bonus beside it
   // (side 1: P1's bar is on the right in a mirrored view, so the score goes there, read inward from its edge)
   function score(flow, side = 0) {
-    const y = BAR_Y + BAR_H + 6 + ST_H + 12, x = side ? width - 44 - 118 : 44 + 118;
+    const off = Math.max(118, (labelW[side] || 0) + 16), y = BAR_Y + BAR_H + 6 + ST_H + 12, x = side ? width - 44 - off : 44 + off;
     const txt = String(Math.max(0, Math.floor(flow.score))).padStart(7, '0');
     const align = side ? 'right' : 'left', dir = side ? -1 : 1;
     const w = neonText(txt, x, y, 22, NEON.amber, { font: LABEL, align, weight: 600, glow: 0.7 });
@@ -324,8 +335,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     g.addColorStop(0, 'rgba(10,2,24,0)'); g.addColorStop(0.4, 'rgba(10,2,24,0.6)'); g.addColorStop(1, 'rgba(10,2,24,0.75)');
     ctx.fillStyle = g; ctx.fillRect(0, y0 - 10, width, h + 10);
     const line1 = padUI
-      ? 'X Y A B = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   STICK MOVES, HOLD BACK OR L1 TO GUARD   DOWN CROUCH, DOWN-BACK GUARDS LOWS   UP JUMP   R1 THROW   R2 RUN'
-      : 'U I J K = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   A D MOVE, HOLD BACK TO GUARD   S CROUCH (DOWN-FORWARD CREEPS, DOWN-BACK GUARDS LOWS)   W JUMP   SHIFT RUN';
+      ? 'X Y A B = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   STICK MOVES, BACK OR L1 WALKS BACK AND GUARDS A STRIKE THAT\'S COMING   DOWN CROUCH, DOWN-BACK GUARDS LOWS   UP JUMP   R1 THROW   R2 RUN'
+      : 'U I J K = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   A D MOVE, HOLD BACK TO STEP BACK (IT GUARDS A STRIKE THAT\'S COMING)   S CROUCH (DOWN-FORWARD CREEPS, DOWN-BACK GUARDS LOWS)   W JUMP   SHIFT RUN';
     const line2 = 'AIR 1 2 3 4, d+4 DIVE   d1 d1 d3 LOW RUSH   1124 FLASH ROUNDHOUSE   1234 NEON TORNADO   214 SPIN HEEL   334 CRESCENT   d3 d3 4 GROUND RUSH   d2 1 2 4 SKY SPIKE   f,f+2 COMET   1+3 / 2+4 THROW';
     neonText(line1, width / 2, y0 + 12, 17, NEON.cyan, { font: LABEL, weight: 500, glow: 0.4, core: false });
     neonText(line2, width / 2, y0 + 31, 17, NEON.pink, { font: LABEL, weight: 500, glow: 0.4, core: false });

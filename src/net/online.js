@@ -13,7 +13,9 @@
 //   net.active                  a match is running (main.js steps it through net.advance)
 //
 // Once both players are linked (peer to peer, or the relay after RTC_TIMEOUT_MS), the host
-// picks a seed and sends {t:'start'}; both call startMatch({ seed, localIndex, lockstep }),
+// picks a seed and sends {t:'start', seed, chars}; both call startMatch({ seed, localIndex, lockstep, chars }),
+// chars being [host's character, guest's character] (each side's pick rides its {t:'ready'} message;
+// net.setCharacter(id) sets this side's, TEMP if it never picks),
 // which main.js turns into the 'online' scene: unit 0 is the host, unit 1 the guest, each
 // unit's controller reads the netcode's input for the frame. (The key is still `lockstep` for
 // main.js; the netcode is rollback now, src/net/rollback.js.) Rematches follow on their own:
@@ -28,7 +30,7 @@ import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
 
-export const NET_VERSION = 4;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker)
+export const NET_VERSION = 5;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
 
@@ -43,6 +45,7 @@ export function createOnline(game) {
   /** @type {any} */ let link = null;
   /** @type {any} */ let lockstep = null;
   let localReady = false, remoteReady = false, state = 'idle', detail = '', code = '', role = '';
+  let localChar = 'temp', remoteChar = 'temp';   // the fighters each side picked (src/characters/)
   /** @type {null | ((frame: number) => any)} */ let localSource = null;
   const params = new URLSearchParams(location.search);
   const forceRelay = () => params.get('relay') === '1' || net.forceRelay || (() => { try { return !!JSON.parse(localStorage.getItem(STORE) || '{}').relay; } catch { return false; } })();
@@ -65,14 +68,15 @@ export function createOnline(game) {
     });
     l.on('status', () => {
       lobby.render();
-      if (l.ready && !localReady && !lockstep) { localReady = true; l.sendControl({ t: 'ready', v: NET_VERSION }); maybeStart(); }
+      if (l.ready && !localReady && !lockstep) { localReady = true; l.sendControl({ t: 'ready', v: NET_VERSION, char: localChar }); maybeStart(); }
     });
     l.on('control', (msg) => {
       if (lockstep && lockstep.onControl(msg)) return;
       if (msg.t === 'ready') {
         if (msg.v !== NET_VERSION) { setState('error', 'version'); l.close(); return; }
+        remoteChar = typeof msg.char === 'string' ? msg.char : 'temp';
         remoteReady = true; maybeStart();
-      } else if (msg.t === 'start' && role === 'guest' && !lockstep) begin(msg.seed >>> 0);
+      } else if (msg.t === 'start' && role === 'guest' && !lockstep) begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar]);
     });
     l.on('packet', (buf) => { if (lockstep) lockstep.onPacket(buf); });
     l.on('closed', (reason) => {
@@ -85,11 +89,12 @@ export function createOnline(game) {
   function maybeStart() {
     if (role !== 'host' || !localReady || !remoteReady || lockstep) return;
     const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-    link.sendControl({ t: 'start', seed });
-    begin(seed);
+    const chars = [localChar, remoteChar];   // the host is P1
+    link.sendControl({ t: 'start', seed, chars });
+    begin(seed, chars);
   }
 
-  function begin(seed) {
+  function begin(seed, chars = ['temp', 'temp']) {
     const localIndex = role === 'host' ? 0 : 1;
     lockstep = createRollback({
       sim: game.sim, localIndex, link: netsimLink(link, params.get('netsim')),
@@ -101,8 +106,8 @@ export function createOnline(game) {
     try { game.input.swallowHeld(); } catch { /* old input */ }
     document.documentElement.classList.add('online');
     emit('connected', { mode: link.mode, role, code });
-    game.startMatch({ seed, localIndex, lockstep });
-    emit('start', { seed, localIndex });
+    game.startMatch({ seed, localIndex, lockstep, chars });
+    emit('start', { seed, localIndex, chars });
     readout.show(true);
   }
 
@@ -126,6 +131,9 @@ export function createOnline(game) {
 
   const net = {
     forceRelay: false,
+    /** this side's fighter (a character id); sent with ready, so pick before hosting or joining */
+    setCharacter(id) { localChar = String(id || 'temp'); },
+    get character() { return localChar; },
     on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); return net; },
     /** a new room as host: resolves once the room's socket is open */
     async host() {

@@ -23,7 +23,26 @@ export const MOVE_TOKEN = { jab: '1', cross: '2', lkick: '3', roundhouse: '4', l
 
 const tokMatch = (want, got, i) => want === got || (i > 0 && got === 'd' + want);
 
-// strings whose keys start with `seq`
-export function matchStrings(seq) {
-  return STRINGS.filter(s => s.keys.length >= seq.length && seq.every((t, i) => tokMatch(s.keys[i], t, i)));
+// strings whose keys start with `seq`; `list` is a character's own table (src/characters/), the
+// shared one by default
+export function matchStrings(seq, list = STRINGS) {
+  return list.filter(s => s.keys.length >= seq.length && seq.every((t, i) => tokMatch(s.keys[i], t, i)));
+}
+
+// A character's string table: the shared strings it keeps (all, minus `drop` by name) plus its own
+// (`add`, each { name, keys, moves }). Returns the list and any prefix conflicts: two strings that
+// share a prefix must agree on its moves, or the next press would be ambiguous.
+export function buildStrings({ drop = [], add = [] } = {}) {
+  const list = [...STRINGS.filter(s => !drop.includes(s.name)), ...add];
+  const problems = [];
+  for (const a of list) for (const b of list) {
+    if (a === b) continue;
+    const n = Math.min(a.keys.length, b.keys.length);
+    for (let i = 0; i < n; i++) {
+      if (!(tokMatch(a.keys[i], b.keys[i], i) || tokMatch(b.keys[i], a.keys[i], i))) break;
+      if (a.moves[i] !== b.moves[i]) { problems.push(`${a.name} and ${b.name} disagree at press ${i + 1}`); break; }
+    }
+    if (a.keys.length === b.keys.length && a.keys.every((t, i) => tokMatch(t, b.keys[i], i) || tokMatch(b.keys[i], t, i)) && a.name < b.name) problems.push(`${a.name} and ${b.name} have the same input`);
+  }
+  return { list, problems };
 }

@@ -10,6 +10,7 @@ import { createAI } from './ai.js';
 import { mulberry32 } from './rng.js';
 import * as dm from './dmath.js';   // bit-identical hypot on every engine (online play)
 import { saveSim, loadSim } from './snapshot.js';
+import { characterOr, canUse, colorFor, TEMP_ID } from '../characters/registry.js';   // per-character stats, moves, strings (src/characters/)
 
 let WALK = 180, RUN = 380, CROUCH_WALK = 70;           // replaced by the rig's own stride speeds (MOVE_DATA) so planted feet don't skate
 const JUMP_VY = 500, GRAVITY = 2000;
@@ -46,9 +47,31 @@ const BUTTON_MOVES = { lp: ['jab', 'lowJab', 'bodyBlow'], rp: ['cross', 'uppercu
 const BTN_NUM = { lp: '1', rp: '2', lk: '3', rk: '4' };
 // one button with the stick: down = crouch attacks, released-down = rising attacks, forward and
 // back variants, a dash into 2 = comet cross
+// A character's command inputs (src/characters/) come first: { button, motion, move }, the most specific
+// motion first (the registry sorts them). A plain press with no command is the shared move.
+function commandMove(btn, inp, u, step, air) {
+  const cmds = u.char && u.char.commands;
+  if (!cmds || !cmds.length) return null;
+  const b = btn === 'throw13' ? '1+3' : btn === 'throw24' ? '2+4' : BTN_NUM[btn];
+  const facing = u.facing, fwd = inp.dx * facing > 0, back = inp.dx * facing < 0, down = !!inp.down;
+  const rising = !down && u.crouchEnd != null && step - u.crouchEnd <= RISE_STEPS;
+  const dash = fwd && (u.state === 'run' || step - (u.lastRunStep || -999) <= DASH_STEPS);
+  for (const c of cmds) {
+    if (c.button !== b) continue;
+    const m = c.motion;
+    const ok = air ? (m === 'air' || (m === 'airDown' && down))
+      : m === '' ? !fwd && !back && !down : m === 'f' ? fwd && !down : m === 'b' ? back && !down : m === 'd' ? down && !fwd && !back
+      : m === 'df' ? down && fwd : m === 'db' ? down && back : m === 'ff' ? dash && !down : m === 'run' ? u.state === 'run' && !down : m === 'rise' ? rising : false;
+    if (ok && canUse(u.char, c.move)) return c.move;
+  }
+  return null;
+}
 function resolveButton(btn, inp, u, step) {
+  const air = u.state === 'jump' || (!u.grounded && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air);
+  const cmd = commandMove(btn, inp, u, step, air);
+  if (cmd) return cmd;
   // in the air: one air attack per jump (down+4 is the dive kick)
-  if (u.state === 'jump' || (!u.grounded && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air)) {
+  if (air) {
     if (btn === 'lp') return 'jumpJab';
     if (btn === 'rp') return 'jumpCross';
     if (btn === 'lk') return 'flyingKick';
@@ -147,28 +170,34 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   refreshBounds();
   // Reach per move: measured from the rig (max forward hitbox extent while active), plus
   // the defender's half-width. FRAME_DATA.reach is only the fallback before calibration.
+  // Each character measures its own (a longer or bigger body reaches farther): TEMP's are keyed by the
+  // move's name, another character's by 'id:move'.
   const reachSeen = {};
+  const reachKey = (u, m) => (u && u.char && u.char.id !== TEMP_ID ? u.char.id + ':' + m : m);
   const reach = (m) => (FRAME_DATA[m] ? (reachSeen[m] ? reachSeen[m] + 12 : FRAME_DATA[m].reach) : 90);
-  function calibrate(rig) {
-    const x = rig.x, y = rig.y, fc = rig.facing;
+  const reachOf = (u, m) => { const k = reachKey(u, m); return FRAME_DATA[m] ? (reachSeen[k] ? reachSeen[k] + 12 : FRAME_DATA[m].reach * ((u && u.rig && u.rig.scale) || 1)) : 90; };
+  function calibrate(rig, ch = null) {
+    const x = rig.x, y = rig.y, fc = rig.facing, pre = ch && ch.id !== TEMP_ID ? ch.id + ':' : '';
     for (const m of ATTACKS) {
+      if (ch && !canUse(ch, m)) continue;
       rig.play(FRAME_DATA[m].anim || m);
       let active = false, n = 0;
       while (!rig.current.done && n++ < 1200) {
         rig.update(DT);
         for (const ev of rig.events) { if (ev.type === 'active') active = true; if (ev.type === 'recover') active = false; }
         rig.events.length = 0;
-        if (active) for (const h of buildHitboxes(rig, m, fc)) reachSeen[m] = Math.max(reachSeen[m] || 0, (h.x - rig.x) * fc + h.r);
+        if (active) for (const h of buildHitboxes(rig, m, fc)) reachSeen[pre + m] = Math.max(reachSeen[pre + m] || 0, (h.x - rig.x) * fc + h.r);
       }
     }
     rig.x = x; rig.y = y; rig.facing = fc; rig.play('idle'); rig.update(0); rig.events.length = 0;
   }
   calibrate(fighters[0]);
   const reachCalibrated = { ...reachSeen };   // reachSeen grows from real hits; a fresh match starts from this
+  const calibrated = new Set([TEMP_ID]);
 
   const sim = {
     units: [], bounds, get floors() { return floorsNow(); }, phase: 'intro', phaseTimer: 0, stepCount: 0, round: 1, timer: ROUND_TIME,
-    wins: [0, 0], winner: -1, banner: '', bannerT: 0, difficulty: 0.6, rng: mulberry32(1), reach, reachSeen,
+    wins: [0, 0], winner: -1, banner: '', bannerT: 0, difficulty: 0.6, rng: mulberry32(1), reach, reachOf, reachSeen,
     accumulator: 0, hitstopActive: 0, koSlow: 0, finisher: false, startHealth: 100, introTime: INTRO_TIME, seed: 1, horde: null, card: null,
     callouts: [], log: [],
     floor: 0, floorBroken: false, floorInfo, get stairwell() { return stairwellNow(); },
@@ -186,14 +215,16 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   sim.callout = callout;
 
   function makeUnit(rig, i) {
+    const ch = rig.charDef || characterOr(TEMP_ID);
     return {
+      char: ch, maxHealth: 100, staminaMax: STAMINA.max * ch.stats.stamina, armorLeft: 0, hitN: 0, airJumpsUsed: 0, wallJumps: 0,
       id: i, name: 'P' + (i + 1), rig, color: rig.color || (i === 0 ? '#f0f0f0' : '#E85D00'),
       x: rig.x, y: rig.y, vx: 0, vy: 0, grounded: true, facing: rig.facing || (i === 0 ? 1 : -1),
       state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,
       hitstop: 0, flash: 0, stun: 0, downTimer: 0, buffer: null, bufferAge: 0,
       health: 100, hidden: false, controller: null, kind: 'none', home: 0, prevX: 0, prevBX: 0,
       last: EMPTY_INPUT, tapDir: 0, tapTimer: 0, running: false, koDone: false, prevJoints: null,
-      stamina: STAMINA.max, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
+      stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
     };
@@ -219,7 +250,9 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   sim.setHuman = (i) => sim.setController(i, 'human', () => input.snapshot());
   // opts.style: 'showcase' is the attract mode's expert flavor (ai.js); the default CPU leaves it unset
   sim.setAI = (i, difficulty = sim.difficulty, opts = {}) => {
-    const ai = createAI({ rng: sim.rng, difficulty, reach, style: opts.style });
+    // the style a scene asks for, else the character's own (TEMP has none: the normal scrapper)
+    const style = opts.style !== undefined ? opts.style : (sim.units[i] && sim.units[i].char.ai.style) || undefined;
+    const ai = createAI({ rng: sim.rng, difficulty, reach: (m) => reachOf(sim.units[i], m), style });
     sim.setController(i, 'ai', ai);
     return ai;
   };
@@ -228,15 +261,42 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     for (const u of sim.units) if (u.kind === 'ai' && u.controller.setDifficulty) u.controller.setDifficulty(sim.difficulty);
   };
 
+  // ---- characters (src/characters/) -------------------------------------------------------
+  // setCharacter(i, id): the fighter in slot i becomes that character (TEMP when it isn't registered):
+  // its rig takes the body, the unit its stats, moves and strings, and its color unless one is given.
+  // Call it between matches (a scene does, before resetMatch); a character's reach is measured the
+  // first time it appears.
+  sim.setCharacter = (i, id, { color = null } = {}) => {
+    const u = sim.units[i];
+    if (!u) return null;
+    const ch = characterOr(id);
+    u.char = ch; u.rig.charDef = ch;
+    if (typeof u.rig.setBody === 'function' && u.rig.body !== ch.body) u.rig.setBody(ch.body, { accent: ch.accent });
+    else if (u.rig) u.rig.accent = ch.accent;
+    u.staminaMax = STAMINA.max * ch.stats.stamina;
+    const other = sim.units[1 - i];
+    u.color = color || colorFor(ch, i, other && other.char); u.rig.color = u.color;
+    if (!calibrated.has(ch.id)) {
+      calibrated.add(ch.id);
+      calibrate(u.rig, ch);
+      for (const k in reachSeen) if (k.startsWith(ch.id + ':')) reachCalibrated[k] = reachSeen[k];
+      u.rig.play('idle'); u.rig.update(0); u.rig.events.length = 0;
+    }
+    return ch;
+  };
+  sim.setCharacters = (ids, colors = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null }));
+
   // ---- rounds ----------------------------------------------------------------------
   function spawn(u, i) {
     const s = arena.spawns && arena.spawns[Math.min(i, 1)] ? arena.spawns[Math.min(i, 1)] : { x: 480 + i * 320, y: lowestY(), facing: i === 0 ? 1 : -1 };
     u.x = s.x; u.y = s.y; u.facing = s.facing; u.vx = 0; u.vy = 0; u.grounded = true;
     u.state = 'idle'; u.move = null; u.phase = null; u.hitstop = 0; u.flash = 0; u.stun = 0; u.buffer = null;
-    u.health = (sim.horde && i >= 1) ? sim.horde.goonHealth : sim.startHealth; u.hidden = false; u.koDone = false; u.running = false; u.hitConfirmed = false;
+    // a character's health is its stat out of 100 times the match's starting health (100, the ko scene's 24)
+    u.maxHealth = (sim.horde && i >= 1) ? sim.horde.goonHealth : u.char.stats.health === 100 ? sim.startHealth : Math.round(sim.startHealth * u.char.stats.health / 100);
+    u.health = u.maxHealth; u.hidden = false; u.koDone = false; u.running = false; u.hitConfirmed = false;
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
-u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
-    u.comboDmg = 0; u.selfChain = 0;
+u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
+    u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
     if (typeof u.rig.reset === 'function') { u.rig.x = u.x; u.rig.y = u.y; u.rig.facing = u.facing; u.rig.reset(); }
     else if ((u.rig.airborne || u.ragUsed) && makeRig) { const r = makeRig(u.color); r.color = u.color; u.rig = r; }
@@ -308,7 +368,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     g.floor = H.floor; g.y = info.y; g.grounded = true;
     g.x = Math.max(info.band.x0 + 20, Math.min(info.band.x1 - 20, door.x));
     g.facing = p.x >= g.x ? 1 : -1; g.vx = g.facing * WALK; syncRig(g); safePlay(g.rig, 'walk'); rigUpd(g, 0);
-    g.health = H.goonHealth; g.hitstop = 0; g.flash = 0; g.hidden = false;
+    g.health = H.goonHealth; g.maxHealth = H.goonHealth; g.hitstop = 0; g.flash = 0; g.hidden = false;
     if (g.kind === 'ai' || H.goonsAI) sim.setAI(g.id, H.goonDifficulty);
     H.wave.spawned++;
     onEvent({ type: 'goon', count: H.count, color: g.color, unit: g, floor: H.floor, door: j });
@@ -331,7 +391,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     const H = sim.horde, p = sim.units[0];
     if (!H.wave) H.wave = { size: 5 + Math.min(3, H.floorsCleared), spawned: 1, downed: 0 };   // a goon downed before any wave began
     H.wave.downed++;
-    p.health = Math.min(sim.startHealth, p.health + H.heal);
+    p.health = Math.min(p.maxHealth || sim.startHealth, p.health + H.heal);
     sim.winner = -1; sim.timer = ROUND_TIME;
     if (H.wave.downed >= H.wave.size) { g.hidden = true; floorClear(); return; }
     if (H.wave.spawned < H.wave.size) freshGoon(g); else g.hidden = true;
@@ -502,8 +562,9 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     }
     const guarding = u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld);
     if (u.state === 'attack' || u.state === 'run') return;
-    if (guarding) u.stamina = Math.min(STAMINA.max, u.stamina + STAMINA.regenBlock * DT);
-    else if (sim.stepCount >= u.regenAt) u.stamina = Math.min(STAMINA.max, u.stamina + STAMINA.regen * DT);
+    const smax = u.staminaMax || STAMINA.max, rk = u.char ? u.char.stats.regen : 1;
+    if (guarding) u.stamina = Math.min(smax, u.stamina + STAMINA.regenBlock * rk * DT);
+    else if (sim.stepCount >= u.regenAt) u.stamina = Math.min(smax, u.stamina + STAMINA.regen * rk * DT);
   }
   // where the wall is behind a body pushed in direction dir
   const wallGap = (u, dir) => (dir > 0 ? bounds.x1 - u.x : u.x - bounds.x0);
@@ -519,7 +580,8 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     u.state = 'attack'; u.move = move; u.phase = 'startup'; u.hitConfirmed = false; u.attackId++; u.launchCancelAt = 0; u.otgConfirm = false;
     u.attackStart = sim.stepCount; u.crouch = !!fd0.tc;
     // throws whiff on a croucher (crouch beats throws, mids beat crouch)
-    u.grabOK = !!fd0.throw && opp && Math.abs(opp.x - u.x) <= FRAME_DATA.throw.range && !opp.crouch;
+    u.grabOK = !!fd0.throw && opp && Math.abs(opp.x - u.x) <= (fd0.range || FRAME_DATA.throw.range) && !opp.crouch;
+    u.armorLeft = fd0.armor ? (fd0.armor.hits || 1) : 0; u.hitN = 0;   // character hooks: armor, multi-hit
     // the string this press belongs to (a named move from the AI starts one from its token)
     u.seq = u.bufferKeys || (MOVE_TOKEN[move] ? [MOVE_TOKEN[move]] : null);
     u.seqName = u.bufferName || '';
@@ -535,14 +597,20 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     const carry = u.followThrough;          // a cancel keeps the momentum of the hit it came from
     u.followThrough = false; u.chase = false;
     if (u.grounded && !carry) u.vx = 0;
+    // a travelling move (a slide, a charge): the body glides from `at` ms into the clip (the pre-roll is
+    // already 50ms in) for `ms`, at vx times the character's dash stat
+    if (fd0.travel && u.grounded) {
+      const tv = fd0.travel, from = sim.stepCount + Math.max(0, Math.round(((tv.at || 0) - PREROLL * 1000) * 0.12));
+      u.glide = { vx: u.facing * tv.vx * u.char.stats.dash, from, until: from + Math.round((tv.ms || 200) * 0.12) };
+    }
     // a string keeps its shape: a cancelled strike steps in during its startup when the
     // reeling victim is outside its reach (the cross connects long, the roundhouse is short)
     if (isCancel && opp && (opp.state === 'hitstun' || (opp.state === 'knockdown' && inAir(opp) && opp.comboBy === u.id))) {
       // an airborne body keeps drifting: aim at where it will be when the strike lands
       const md = MOVE_DATA_ && MOVE_DATA_[FRAME_DATA[move].anim];
       const lead = opp.state === 'knockdown' ? opp.vx * ((md && md.activeAt) || 150) / 1000 : 0;
-      const gap = Math.abs(opp.x + lead - u.x) - (reach(move) - (opp.state === 'knockdown' ? 44 : 34));   // his reaction leans away; solid bodies stop the step at contact
-      if (gap > 0) u.glide = { vx: u.facing * Math.min(RUN * 1.6, gap / 0.18 + (opp.state === 'knockdown' ? 0 : Math.abs(opp.vx) * 0.6)), until: sim.stepCount + 22 };
+      const gap = Math.abs(opp.x + lead - u.x) - (reachOf(u, move) - (opp.state === 'knockdown' ? 44 : 34));   // his reaction leans away; solid bodies stop the step at contact
+      if (gap > 0 && !fd0.travel) u.glide = { vx: u.facing * Math.min(RUN * 1.6, gap / 0.18 + (opp.state === 'knockdown' ? 0 : Math.abs(opp.vx) * 0.6)), until: sim.stepCount + 22 };
     }
     // an air hit (a juggle, or a body splatted on the wall) aims its tip at the body's chest where
     // it will be at contact; the rig retargets the strike to reach it
@@ -603,11 +671,13 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     // `block` mean the same. Down is crouch; down-back is the crouching guard.
     const back = inp.dx * u.facing < 0 || !!inp.block;
     u.backHeld = back; u.downHeld = !!inp.down;
-    const e = { dx: inp.dx, dxPress: inp.dx && inp.dx !== prev.dx ? inp.dx : 0, run: inp.run, block: back, down: !!inp.down, jump: inp.jump && !prev.jump, attack: null, keys: null, name: '' };
+    // the GUARD button (B, touch GUARD, the AI's `block`) means hold back: it walks back too
+    const e = { dx: inp.dx || (inp.block && !inp.down ? -u.facing : 0), dxPress: inp.dx && inp.dx !== prev.dx ? inp.dx : 0, run: inp.run, block: back, down: !!inp.down, jump: inp.jump && !prev.jump, attack: null, keys: null, name: '' };
     const press = (b) => inp[b] && !prev[b];
-    if (((press('lp') || press('lk')) && inp.lp && inp.lk) || ((press('rp') || press('rk')) && inp.rp && inp.rk)) e.attack = 'throw';   // 1+3 or 2+4
+    const t13 = (press('lp') || press('lk')) && inp.lp && inp.lk, t24 = (press('rp') || press('rk')) && inp.rp && inp.rk;
+    if (t13 || t24) e.attack = (u.grounded && commandMove(t13 ? 'throw13' : 'throw24', inp, u, sim.stepCount, false)) || 'throw';   // 1+3 or 2+4 (a character's command grab first)
     else for (const b of ['lp', 'rp', 'lk', 'rk']) if (press(b)) { Object.assign(e, resolvePress(u, b, inp)); break; }
-    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m]) { e.attack = m; break; }   // the AI names moves directly
+    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && (!FRAME_DATA[m].owner || canUse(u.char, m))) { e.attack = m; break; }   // the AI names moves directly (its own character's)
     // double-tap run
     if (inp.dx && inp.dx !== prev.dx) {
       if (u.tapTimer > 0 && u.tapDir === inp.dx && !inp.touch) u.running = true;
@@ -633,7 +703,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     const tok = (inp.down ? 'd' : '') + BTN_NUM[b];
     if (u.state === 'jump' || !u.grounded) return { attack: resolveButton(b, inp, u, sim.stepCount), keys: null, name: '' };
     if (seqLive(u)) {
-      const cand = [...u.seq, tok], m = matchStrings(cand);
+      const cand = [...u.seq, tok], m = matchStrings(cand, u.char.strings);
       if (m.length) {
         const s0 = m.find(s => s.keys.length === cand.length) || m[0];
         const move = s0.moves[cand.length - 1];
@@ -677,7 +747,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
         if (u.faint > 0 && u.grounded) {
           // fainted: no attack, guard, crouch, jump or run; a slow stagger in the held direction
           tryAttack(u); u.running = false;
-          if (e.dx) { u.vx = e.dx * WALK * STAMINA.faintWalk; u.followThrough = false; }
+          if (e.dx) { u.vx = e.dx * WALK * u.char.stats.walk * STAMINA.faintWalk; u.followThrough = false; }
           else if (u.followThrough) { u.vx *= STUMBLE_FRICTION; if (Math.abs(u.vx) < 60) { u.vx = 0; u.followThrough = false; u.chase = false; } }
           else u.vx = Math.abs(u.vx) > 20 ? u.vx * 0.85 : 0;
           setState(u, 'idle');
@@ -685,11 +755,13 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
         }
         if (tryAttack(u)) break;
         if (e.down) { u.vx = 0; u.followThrough = false; setState(u, 'crouch', e.block ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; break; }
-        // holding back walks back, and stands in guard when something is coming
-        if (e.block && (threat(u, opp) || !e.dx)) { u.vx = 0; setState(u, 'block'); break; }
+        // holding back walks back; the guard snaps on only when a strike that can reach him is coming
+        // (a hit that lands while he holds back is blocked anyway: canGuard in applyHit)
+        if (e.block && threat(u, opp)) { u.vx = 0; setState(u, 'block'); break; }
         if (e.jump) {
-          u.vy = -JUMP_VY; u.vx = e.dx * ((e.run || u.running) && u.stamina > 0 ? RUN * 0.8 : WALK * 1.15); u.grounded = false;
-          u.jumpVx = u.vx; u.jumpAt = sim.stepCount; u.airUsed = 0; u.airWhiffEarly = false;
+          const cs = u.char.stats;
+          u.vy = -JUMP_VY * cs.jump; u.vx = e.dx * ((e.run || u.running) && u.stamina > 0 ? RUN * cs.run * 0.8 : WALK * cs.walk * 1.15); u.grounded = false;
+          u.jumpVx = u.vx; u.jumpAt = sim.stepCount; u.airUsed = 0; u.airWhiffEarly = false; u.airJumpsUsed = 0; u.wallJumps = 0;
           spend(u, STAMINA.jump);
           setState(u, 'jump'); onEvent({ type: 'dust', x: u.x, y: u.y, dir: u.facing }); break;
         }
@@ -697,7 +769,8 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
           // running drains the bar down to 1 but never faints; then he walks
           const run = (e.run || u.running) && u.stamina > 1 && e.dx === u.facing;
           if (run) { u.lastRunStep = sim.stepCount; u.stamina = Math.max(1, u.stamina - STAMINA.run * DT); u.regenAt = sim.stepCount + Math.round(STAMINA.delay * 120); }
-          u.vx = e.dx * (run ? RUN : WALK);
+          // walking back goes at the character's back-walk speed (backWalk, 1 = the forward walk)
+          u.vx = e.dx * (run ? RUN * u.char.stats.run : WALK * u.char.stats.walk * (e.block ? u.char.stats.backWalk : 1));
           setState(u, run ? 'run' : 'walk');
         } else {
           // a stumble or a follow-through runs out, no snap stop
@@ -712,7 +785,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
         if (u.faint > 0) { setState(u, 'idle'); break; }
         if (tryAttack(u)) break;
         if (e.down) { setState(u, 'crouch', e.block ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; break; }
-        if (!e.block || (e.dx && !threat(u, opp) && sim.stepCount - (u.blockedAt || -99) > 20)) setState(u, 'idle');
+        if (!e.block || !threat(u, opp)) setState(u, 'idle');   // the threat is gone: back to walking back
         break;
       case 'crouch': {
         u.vx = 0; u.crouch = true;
@@ -721,7 +794,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
         if (!e.down) { u.crouchEnd = sim.stepCount; setState(u, 'idle'); break; }
         // crouch-walk forward (down-back is the crouching guard)
         const creep = e.dx && e.dx === u.facing && !e.block;
-        if (creep) u.vx = u.facing * CROUCH_WALK;
+        if (creep) u.vx = u.facing * CROUCH_WALK * u.char.stats.walk;
         const want = e.block ? ANIM.crouchBlock : creep && ANIM.crouchWalk ? ANIM.crouchWalk : ANIM.crouch;
         if (u.rig.current.move !== want) safePlay(u.rig, want);
         break;
@@ -741,8 +814,9 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
         break;
       case 'jump': {
         // a little steering in the air (the jump's direction is set at takeoff)
-        const cap = Math.max(Math.abs(u.jumpVx || 0), WALK * 0.6) + 40;
+        const cap = Math.max(Math.abs(u.jumpVx || 0), WALK * u.char.stats.walk * 0.6) + 40;
         if (e.dx) u.vx = Math.max(-cap, Math.min(cap, u.vx + e.dx * 520 * DT));
+        if (e.jump && !(u.faint > 0) && airJump(u, e)) break;
         if (u.buffer && FRAME_DATA[u.buffer] && FRAME_DATA[u.buffer].air && (u.airUsed || 0) === 0 && !(u.faint > 0)) startAttack(u, u.buffer);
         break;
       }
@@ -988,11 +1062,41 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
   }
   sim.startVault = startVault;
 
+  // A character's extra jumps (mechanics.airJumps: a double jump) and wall jump (mechanics.wallJump: a
+  // fresh jump press next to a wall kicks off it, away from the wall). Each refreshes the air attack.
+  function airJump(u, e) {
+    const mech = u.char.mechanics, cs = u.char.stats, b = bandOf(u);
+    const wallSide = u.x - b.x0 < 34 ? -1 : b.x1 - u.x < 34 ? 1 : 0;
+    if (mech.wallJump && wallSide && (u.wallJumps || 0) < 2) {
+      u.wallJumps = (u.wallJumps || 0) + 1;
+      u.vx = -wallSide * RUN * cs.run * 0.8; u.vy = -JUMP_VY * cs.jump * 0.95; u.facing = -wallSide; u.jumpVx = u.vx;
+    } else if ((u.airJumpsUsed || 0) < (mech.airJumps || 0)) {
+      u.airJumpsUsed = (u.airJumpsUsed || 0) + 1;
+      u.vy = -JUMP_VY * cs.jump * 0.88; if (e.dx) { u.vx = e.dx * WALK * cs.walk * 1.15; u.jumpVx = u.vx; }
+    } else return false;
+    u.airUsed = 0; u.airWhiffEarly = false;
+    spend(u, STAMINA.jump);
+    safePlay(u.rig, u.char.mechanics.airJumpClip || 'jump');
+    onEvent({ type: 'dust', x: u.x, y: u.y, dir: u.facing });
+    note({ type: 'airJump', att: u.id, wall: !!wallSide && !!mech.wallJump });
+    return true;
+  }
   // something is coming: the opponent's strike is winding up or out, or he is in the air nearby
   function threat(u, o) {
     if (!o) return false;
     const d = Math.abs(o.x - u.x);
-    return (o.state === 'attack' && o.phase !== 'recovery' && d < 320) || (o.state === 'jump' && d < 260) || sim.stepCount - (u.blockedAt || -99) < 20;
+    if (sim.stepCount - (u.blockedAt || -99) < 20) return true;   // just blocked: hold it a beat (a string's next hit)
+    if (o.state === 'attack' && o.phase !== 'recovery' && FRAME_DATA[o.move]) {
+      const fd = FRAME_DATA[o.move];
+      // a throw beats guard, and a low goes under a standing one (down-back is the answer): neither is a threat to hold back for
+      if (fd.throw || fd.height === 'low') return false;
+      // it can land in the next few frames: in its reach (plus a slide or a charge's travel, plus a margin)
+      // and live within 220ms
+      const travel = fd.travel ? fd.travel.vx * u.char.stats.dash * (fd.travel.ms || 200) / 1000 : 0;
+      return d < reachOf(o, o.move) + travel + (o.glide ? 60 : 0) + 40 && msToActive(o) < 220;
+    }
+    // a jump-in closing on him: its air attack is an overhead, a standing guard stops it
+    return o.state === 'jump' && d < 190 && (Math.sign(o.vx) === Math.sign(u.x - o.x) || d < 90);
   }
   // Landing out of an air attack: a jump-in that connected goes straight into the ground string
   // (the buffered press starts on the landing frame); a whiff, or a swing cut off by the floor,
@@ -1026,7 +1130,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     // a reeling body doesn't slide on planted feet: the root holds and the rig's reaction carries
     // the body (its shift moves the root when the reaction ends)
     if (u.grounded && (u.state === 'hitstun' || u.state === 'blockstun')) u.vx = 0;
-    if (u.glide) { if (sim.stepCount < u.glide.until && u.grounded) u.vx = u.glide.vx; else { u.glide = null; if (u.grounded) u.vx *= 0.3; } }
+    if (u.glide) { if (sim.stepCount < u.glide.until && u.grounded) { if (!(u.glide.from > sim.stepCount)) u.vx = u.glide.vx; } else { u.glide = null; if (u.grounded) u.vx *= 0.3; } }
     if (u.rag) {
       const j = u.rig.joints, nx = Math.max(bounds.x0, Math.min(bounds.x1, j.hip.x));
       u.vx = (nx - u.x) / DT; u.x = nx;
@@ -1099,7 +1203,12 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
 
   function drainRig(u) {
     for (const ev of u.rig.events) {
-      if (ev.type === 'active' && u.state === 'attack') u.phase = 'active';
+      if (ev.type === 'active' && u.state === 'attack') {
+        u.phase = 'active';
+        // a multi-hit (frame data hits: n): each later 'active' key may connect again
+        const mfd = FRAME_DATA[u.move];
+        if (mfd && mfd.hits > 1 && u.hitConfirmed && (u.hitN || 0) < mfd.hits) u.hitConfirmed = false;
+      }
       else if (ev.type === 'recover' && u.state === 'attack') u.phase = 'recovery';
       else if (ev.type === 'footstep' && u.grounded) onEvent({ type: 'footstep', x: u.x, y: u.y, dir: u.facing });
       else if (ev.type === 'land' && u.rag) {
@@ -1192,26 +1301,33 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     }
     const floored = def.state === 'down';
     if (floored && (!OTG_MOVES.has(att.move) || def.otgHit)) return null;   // one ground hit per knockdown, low moves only
+    // a character's hop or flying knee: lows pass under it from the press until its recovery
+    if (fd.height === 'low' && def.state === 'attack' && def.phase !== 'recovery' && FRAME_DATA[def.move] && FRAME_DATA[def.move].lowInvuln) return null;
     // a high passes over a croucher (logged once per strike for measurement)
     if (fd.height === 'high' && isLow(def)) {
       if (att.duckLogged !== att.attackId) { att.duckLogged = att.attackId; note({ type: 'duck', move: att.move, att: att.id, def: def.id }); }
       return null;
     }
     const hits = buildHitboxes(att.rig, att.move, att.facing);
-    for (const h of hits) reachSeen[att.move] = Math.max(reachSeen[att.move] || 0, (h.x - att.x) * att.facing + h.r);
+    const rk = reachKey(att, att.move);
+    for (const h of hits) reachSeen[rk] = Math.max(reachSeen[rk] || 0, (h.x - att.x) * att.facing + h.r);
     const pt = testHit(hits, buildHurtboxes(def.rig));
     return pt ? { pt } : null;
   }
   // Throws: the grab holds both for a break window; 1+3 or 2+4 from the victim breaks it.
   function grab(att, def) {
     att.hitConfirmed = true;
-    def.x = att.x + att.facing * 70; syncRig(def); rigUpd(def, 0);
+    const gfd = FRAME_DATA[att.move] || FRAME_DATA.throw;
+    def.x = att.x + att.facing * 70 * (att.rig.scale || 1); syncRig(def); rigUpd(def, 0);
     // near a wall behind him it becomes the wall slam
     if (wallGap(def, att.facing) < 190 && att.move === 'throw') { att.move = 'wallSlam'; att.seqName = 'WALL SLAM'; }
-    const pre = def.buffer === 'throw' && def.bufferAge < 8 && !(def.faint > 0);   // pressed just before the grab
-    def.state = 'grabbed'; def.grabbedBy = att.id; def.grabT = BREAK_STEPS; def.phase = null; def.move = null; def.crouch = false;
+    // a character's command grab (frame data grab: true) can hold for its own time and refuse the break
+    def.grabNoBreak = !!gfd.noBreak;
+    const pre = def.buffer === 'throw' && def.bufferAge < 8 && !(def.faint > 0) && !def.grabNoBreak;   // pressed just before the grab
+    const hold = gfd.hold ? f60(gfd.hold) : BREAK_STEPS;
+    def.state = 'grabbed'; def.grabbedBy = att.id; def.grabT = hold; def.phase = null; def.move = null; def.crouch = false;
     def.vx = 0; att.vx = 0; att.glide = null;
-    att.hitstop = BREAK_STEPS + 2; def.hitstop = 0;
+    att.hitstop = hold + 2; def.hitstop = 0;
     safePlay(def.rig, 'hitStun' in (MOVE_DATA_ || {}) ? 'hitStun' : 'hitLight');
     note({ type: 'grab', att: att.id, def: def.id, move: att.move });
     onEvent({ type: 'grab', x: (att.x + def.x) / 2, y: def.y - 90, dir: att.facing, move: att.move, attacker: att, defender: def });
@@ -1255,10 +1371,38 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     if (def.faint > 0 && (def.faintDmg += dmg) >= STAMINA.faintDmgCap) endFaint(def);
     return dmg;
   }
+  // Character hooks on the defender's side (src/characters/). Armor: the hit lands but he keeps going,
+  // taking armor.dmg of its damage (half by default). Parry: a counter stance catches the strike, the
+  // striker reels and the stance turns into its reversal move, which hits him the ordinary way.
+  function absorb(att, def, pt, fd, dfd, dir, move) {
+    def.armorLeft--;
+    const share = dfd.armor && dfd.armor.dmg != null ? dfd.armor.dmg : 0.5;
+    const dmg = Math.max(1, Math.round(fd.damage * att.char.stats.damage * share));
+    def.health = Math.max(0, def.health - dmg); def.flash = FLASH_STEPS;
+    att.hitstop = def.hitstop = f60(6); att.vx = -dir * 200; att.glide = null;
+    callout('ARMOR', def.id, 'counter');
+    note({ type: 'armor', att: att.id, def: def.id, move, dmg });
+    onEvent({ type: 'hit', x: pt.x - dir * 10, y: pt.y, dir, strength: 0.5, move, limb: fd.limb, flashR: 24, ko: def.health <= 0, knockdown: false, armor: true, attacker: att, defender: def });
+    if (def.health <= 0) koDefender(att, def, fd, dir);
+    else { syncRig(def); seatStrike(att, def, dir); }
+  }
+  function parry(att, def, pt, dfd) {
+    const P = dfd.parry, dir = awayDir(def, att), caught = att.move;
+    att.state = 'hitstun'; att.stun = f60(P.stun || 40); att.phase = null; att.move = null; att.buffer = null; att.bufferKeys = null; att.seq = null; att.queued = null;
+    att.glide = null; att.vx = 0; att.comboBy = -1; att.crouch = false; att.followThrough = false;
+    safePlay(att.rig, HAS_HITSTUN ? 'hitStun' : 'hitLight'); syncRig(att); rigUpd(att, 0.008); att.rig.events.length = 0;
+    att.hitstop = def.hitstop = f60(8); def.flash = 2;
+    callout(P.callout || 'PARRY', def.id, 'counter');
+    note({ type: 'parry', att: def.id, def: att.id, move: caught });
+    onEvent({ type: 'block', x: pt.x, y: pt.y, dir: -dir, strength: 1, move: caught, parry: true, attacker: att, defender: def });
+    if (P.reversal && FRAME_DATA[P.reversal]) { def.buffer = null; def.bufferKeys = null; startAttack(def, P.reversal); }
+  }
   function applyHit(att, def, pt, { move = att.move, trade = false } = {}) {
     const fd = FRAME_DATA[move];
     const dir = awayDir(att, def);
     att.hitConfirmed = true;
+    att.hitN = (att.hitN || 0) + 1;
+    if (fd.travel) att.glide = null;   // a slide or a charge stops at the body
     // a counter: hit during his startup, or an uppercut meeting a jump-in (the anti-air)
     const antiAir = !trade && (move === 'uppercut' || move === 'risingUppercut') && !def.grounded && !def.rag &&
       (def.state === 'jump' || (def.state === 'attack' && FRAME_DATA[def.move] && FRAME_DATA[def.move].air));
@@ -1281,7 +1425,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
       sim.combo = { count: def.combo, by: att.id, on: def.id };
       // the juggle's own scaling, or the combo's if that is lower by now
       const scale = Math.min(Math.max(0.4, 0.6 - 0.05 * def.airHits), comboScale(COMBO_DMG, def.combo));
-      const dmg = comboDamage(def, fd.damage * scale);
+      const dmg = comboDamage(def, fd.damage * att.char.stats.damage * scale);
       const ko = def.health - dmg <= 0;
       def.health = Math.max(0, def.health - dmg);
       def.airHits++; def.gScale = 1 + JUGGLE_G * def.airHits; def.flash = FLASH_STEPS;
@@ -1301,12 +1445,12 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
         else { def.vy = 760; def.vx = dir * 60; }
       } else {
         // the pop shrinks with every airborne hit (the juggle's gravity scaling)
-        let pop = JUGGLE_POP / (1 + JUGGLE_G * (def.airHits - 1));
+        let pop = JUGGLE_POP / (1 + JUGGLE_G * (def.airHits - 1)) * def.char.kbY;
         // the spike is slow: the hit before it (Sky Spike's 2) floats the body up to meet it
         if (att.buffer === 'skySpike' || (att.queued && att.queued.attack === 'skySpike')) pop = 420;
         let vx = dir * 40;
         if (fd.splat) def.splatPending = true;
-        if (fd.ender && fd.kb.x > 400) vx = dir * fd.kb.x * 0.7;
+        if (fd.ender && fd.kb.x > 400) vx = dir * fd.kb.x * 0.7 * def.char.kbX;
         if (fd.ender) { callout(att.seqName || fd.callout || move.toUpperCase(), att.id, 'ender'); def.breakOK = !sim.horde; }
         // the rig adds an impulse to the body's current velocity: aim for the pop, not past it
         if (def.rag) startRag(def, vx - def.vx, -pop - def.vy, { wall: wallMode(def), spin: 160 });
@@ -1321,6 +1465,9 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.6, move, limb: fd.limb, flashR: 30, ko, knockdown: true, attacker: att, defender: def });
       return;
     }
+    const dfd = def.state === 'attack' && def.move && FRAME_DATA[def.move];
+    if (dfd && dfd.parry && def.phase !== 'recovery' && !fd.throw && !fd.air && !(def.faint > 0) && (dfd.parry.heights || ['high', 'mid']).includes(fd.height)) { parry(att, def, pt, dfd); return; }
+    if (dfd && dfd.armor && def.armorLeft > 0 && def.phase !== 'recovery' && !fd.throw) { absorb(att, def, pt, fd, dfd, dir, move); return; }
     // guards (Tekken): standing guard (holding back) stops high and mid; a croucher holding back
     // stops low; mids hit a croucher, lows hit a standing guard; throws are unblockable
     const canGuard = !(def.faint > 0) && (def.grounded && def.backHeld && GUARD_STATES.has(def.state) || def.state === 'blockstun');   // fainted: no guard
@@ -1349,7 +1496,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     def.combo = chained ? def.combo + 1 : 1; def.comboBy = att.id; def.lastHitAt = sim.stepCount;
     if (!chained) def.comboDmg = 0;
     sim.combo = { count: def.combo, by: att.id, on: def.id };
-    def.health = Math.max(0, def.health - comboDamage(def, fd.damage * comboScale(COMBO_DMG, def.combo) * (counter ? COUNTER_DMG : 1)));
+    def.health = Math.max(0, def.health - comboDamage(def, fd.damage * att.char.stats.damage * comboScale(COMBO_DMG, def.combo) * (counter ? COUNTER_DMG : 1)));
     def.flash = FLASH_STEPS; def.phase = null; def.move = null;
     def.wasLow = isLow(def);
     def.facing = -dir; def.crouch = false;
@@ -1366,8 +1513,10 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     const swB = stairwellNow(), railGap = swB ? Math.max(0, swB.x0 - def.x, def.x - swB.x1) : Infinity;
     def.breakOK = !sim.horde && (!!fd.ender || !!fd.throw || ((!!fd.juggle || fd.kb.x >= 400) && railGap <= 60));
     if (move === 'spinKick' && wallGap(def, dir) < 230) { def.wallBounce = true; callout('WALL SPIN', att.id, 'ender'); }
-    def.vx = fd.knockdown ? dir * fd.kb.x : 0;   // standing hits: no slide (see physics)
-    if (fd.kb.y) { def.vy = -fd.kb.y; def.grounded = false; }
+    else if (fd.wallBounce && wallGap(def, dir) < 230) def.wallBounce = true;   // a character move's wall bounce
+    // knockback by the defender's weight (src/characters/; exactly 1 for TEMP)
+    def.vx = fd.knockdown ? dir * fd.kb.x * def.char.kbX : 0;   // standing hits: no slide (see physics)
+    if (fd.kb.y) { def.vy = -fd.kb.y * def.char.kbY; def.grounded = false; }
     if (fd.knockdown) { att.vx = dir * (fd.kb.x + 100); att.followThrough = true; att.chase = true; }   // ride the launch: be on the body when it lands
     else { att.vx = 0; att.followThrough = false; }   // the seat sets contact spacing; no slide in
     if (ko && sim.horde && def.id >= 1) {
@@ -1411,7 +1560,7 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
       // a juggle launch or a body headed for the wall gets no glide (the attacker follows up)
       if (fd.juggle || def.splatPending || def.wallBounce) { att.vx = 0; att.followThrough = false; att.chase = false; att.glide = fd.juggle ? null : { vx: dir * Math.min(RUN, fd.kb.x * 0.6), until: sim.stepCount + att.hitstop + 30 }; }
       else {
-        const T = 2 * fd.kb.y / GRAVITY, landX = def.x + def.vx * T;
+        const T = 2 * (fd.kb.y * def.char.kbY) / GRAVITY, landX = def.x + def.vx * T;
         const vx = Math.max(-RUN * 2, Math.min(RUN * 2, (landX - att.x) / T));
         att.glide = { vx, until: sim.stepCount + att.hitstop + Math.round(T * 120) };
       }
@@ -1419,7 +1568,8 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     } else {
       // the reaction is picked by the move: jab snaps the head, cross arches the back, lows fold
       let react = 'hitLight';
-      if ((def.combo >= 2 || move === 'jab' || move === 'cross') && HAS_HITSTUN) react = 'hitStun';
+      if (fd.react && MOVE_DATA_ && MOVE_DATA_[fd.react]) react = fd.react;   // a character move names its own reaction
+      else if ((def.combo >= 2 || move === 'jab' || move === 'cross') && HAS_HITSTUN) react = 'hitStun';
       else if (move === 'lungeCross') react = HAS_HITBACK ? 'hitBack' : 'hitHeavy';
       else if (fd.low && HAS_HITLOW) react = 'hitLow';
       else if (fd.low || move === 'lkick' || move === 'bodyBlow' || move === 'uptown') react = HAS_HITBODY ? 'hitBody' : 'hitLight';
@@ -1568,9 +1718,9 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
   // tapering to 9 at the tip, the torso 15, the head at its radius.
   const TIP_HALF = 4.5;
   function drawnShapes(u) {
-    const j = u.rig.joints;
-    return [[j.neck, j.hip, 7.5], [j.hip, j.lKnee, 6], [j.lKnee, j.lFoot, 5], [j.hip, j.rKnee, 6], [j.rKnee, j.rFoot, 5],
-      [j.lShoulder, j.lElbow, 6], [j.lElbow, j.lHand, 5], [j.rShoulder, j.rElbow, 6], [j.rElbow, j.rHand, 5], [j.head, j.head, u.rig.radius || 15]];
+    const j = u.rig.joints, sh = u.rig.shape, t = sh ? 7.5 * sh.torso : 7.5, a = sh ? 6 * sh.limb : 6, b = sh ? 5 * sh.limb : 5;   // a character's body draws wider or narrower
+    return [[j.neck, j.hip, t], [j.hip, j.lKnee, a], [j.lKnee, j.lFoot, b], [j.hip, j.rKnee, a], [j.rKnee, j.rFoot, b],
+      [j.lShoulder, j.lElbow, a], [j.lElbow, j.lHand, b], [j.rShoulder, j.rElbow, a], [j.rElbow, j.rHand, b], [j.head, j.head, u.rig.radius || 15]];
   }
   // gap between the striking tip's drawn edge and the defender's drawn silhouette (negative = inside)
   function tipGap(att, def) {
@@ -1580,7 +1730,8 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     const past = (tip.x - def.rig.joints.hip.x) * att.facing;
     if (past > 0) return -(past + 8);
     let gap = Infinity;
-    for (const [p, q, r] of drawnShapes(def)) gap = Math.min(gap, segDistPt(tip, p, q) - r - TIP_HALF);
+    const th = att.rig.shape ? TIP_HALF * att.rig.shape.tip : TIP_HALF;
+    for (const [p, q, r] of drawnShapes(def)) gap = Math.min(gap, segDistPt(tip, p, q) - r - th);
     return gap;
   }
   sim.tipGap = tipGap;
@@ -1594,7 +1745,8 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
     const j = att.rig.joints, lim = FRAME_DATA[att.move].joint, par = SEG_PARENT[lim];
     if (!lim || !par || !j[lim]) return tipGap(att, def);
     let gap = Infinity;
-    for (const [p, q, r] of drawnShapes(def)) gap = Math.min(gap, segSeg(j[par], j[lim], p, q) - r - TIP_HALF);
+    const th = att.rig.shape ? TIP_HALF * att.rig.shape.tip : TIP_HALF;
+    for (const [p, q, r] of drawnShapes(def)) gap = Math.min(gap, segSeg(j[par], j[lim], p, q) - r - th);
     return gap;
   }
   sim.segGap = segGap;
@@ -1625,7 +1777,9 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
       case 'fight':
         sim.timer = Math.max(0, sim.timer - DT);
         if (sim.timer <= 0) {
-          const w = a.health === b.health ? -1 : (a.health > b.health ? 0 : 1);
+          // characters with different health compare what's left of each bar
+          const same = !!sim.horde || (a.maxHealth || 100) === (b.maxHealth || 100), ha = same ? a.health : a.health / a.maxHealth, hb = same ? b.health : b.health / b.maxHealth;
+          const w = ha === hb ? -1 : (ha > hb ? 0 : 1);
           sim.winner = w; sim.banner = 'TIME'; sim.phase = 'ko'; sim.phaseTimer = KO_HOLD;
         }
         break;
@@ -1679,14 +1833,14 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
         // behind that one instead of replacing it (a fast hand gets the whole string)
         let queued = false;
         if (u.buffer && u.bufferKeys && u.bufferKeys.length > 1 && e.keys && u.state === 'attack') {
-          const cand = [...u.bufferKeys, e.keys[e.keys.length - 1]], m = matchStrings(cand);
+          const cand = [...u.bufferKeys, e.keys[e.keys.length - 1]], m = matchStrings(cand, u.char.strings);
           if (m.length) { const s0 = m.find(x => x.keys.length === cand.length) || m[0]; u.queued = { attack: s0.moves[cand.length - 1], keys: cand, name: s0.name, at: sim.stepCount }; queued = true; }
         }
         if (!queued) { u.buffer = e.attack; u.bufferAge = 0; u.bufferKeys = e.keys; u.bufferName = e.name; u.queued = null; }
       }
       if (u.flash > 0) u.flash--;
       if (u.state === 'grabbed') {
-        if (e.attack === 'throw' && !(u.faint > 0)) breakThrow(u);
+        if ((e.attack === 'throw' || (e.attack && FRAME_DATA[e.attack].throw)) && !(u.faint > 0) && !u.grabNoBreak) breakThrow(u);
         else if (--u.grabT <= 0) landThrow(u);
         u.buffer = null;
         continue;
@@ -1702,7 +1856,10 @@ u.home = 0;     u.stamina = STAMINA.max; u.faint = 0; u.faintDmg = 0; u.faintAt 
       if (sim.phase === 'fight') regen(u);
       physics(u);
       syncRig(u);
-      const rate = u.state === 'getup' ? GETUP_SPEED : 1;
+      // a walk or run cycle plays at the rate that keeps planted feet planted at the character's speed
+      // (exactly 1 for TEMP); the getup at its own speed
+      const rate = u.state === 'getup' ? GETUP_SPEED : u.state === 'walk' ? u.char.stats.walk * (u.backHeld ? u.char.stats.backWalk : 1) / u.char.stride
+        : u.state === 'run' ? u.char.stats.run / u.char.stride : u.state === 'crouch' && u.vx ? u.char.stats.walk / u.char.stride : 1;
       rigUpd(u, DT * rate);
       drainRig(u);
       floorStep(u);

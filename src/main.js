@@ -13,6 +13,7 @@ import { gameAudio } from './audio/index.js';   // audio: all sound logic lives 
 import { createOnline } from './net/online.js';   // online play: rooms, lockstep, readout (src/net/)
 import { createFlow } from './flow/index.js';     // the arcade flow: title, menus, ladder, continue, scores (src/flow/)
 import { setNet, adaptOnline } from './flow/netApi.js';
+import { roster, getCharacter, TEMP_ID } from './characters/index.js';   // registers every character before the sim is made
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
@@ -122,11 +123,11 @@ function onEvent(ev) {
       break;
     case 'round':
       if (look.floor) startOnFloor(look.floor);   // an arcade stage fought downstairs: every round starts there
-      arena.liveColors = [P1_COLOR, sim.units[1].color || P2_COLOR];
+      arena.liveColors = [sim.units[0].color || P1_COLOR, sim.units[1].color || P2_COLOR];
       syncArenaToFx();
       break;
     case 'goon':
-      arena.liveColors = [P1_COLOR, ...sim.units.slice(1).map(u => u.color)];
+      arena.liveColors = [sim.units[0].color || P1_COLOR, ...sim.units.slice(1).map(u => u.color)];
       if (ev.unit) fx.dust({ x: ev.unit.x, y: ev.unit.y, dir: ev.unit.facing });
       break;
   }
@@ -277,6 +278,32 @@ const PHASES = {
     { name: 'jab stuffs a late air attack', at: () => [560, 690], p2: (me, o, t) => (t >= 10 && t < 13 ? { jump: true, dx: me.x > o.x ? -1 : 1 } : t >= 62 && t < 65 ? { lk: true } : {}), p1: [],
       react: (me, o, t) => (t < 0 ? B('lp') : !o.grounded && o.vy > 160 && Math.abs(o.x - me.x) < 96 ? B('lp') : null), dur: 200 },
   ],
+  // characters (src/characters/): each unique move landing as designed, the character as P1 against a TEMP
+  courier: [
+    { name: 'EXPRESS SLIDE f,f+3 under a standing guard (low, knockdown)', at: () => [430, 650], p2: { back: true }, dash: 30, p1: [[30, (me) => ({ lk: true, dx: me.facing })]], dur: 170 },
+    { name: 'EXPRESS SLIDE ducks a jab (tc) and trips him', at: () => [430, 650], dash: 30, p1: [[30, (me) => ({ lk: true, dx: me.facing })]], p2: (me, o, t) => (t >= 40 && t < 43 ? { lp: true } : {}), dur: 170 },
+    { name: 'DROP-OFF KNEE f,f+4 launches, jabs juggle', at: () => [420, 650], dash: 30, p1: [[30, (me) => ({ rk: true, dx: me.facing })], [76, B('lp')], [96, B('lp')], [116, B('lp')]], dur: 230 },
+    { name: 'DROP-OFF KNEE hops his low kick (counter)', at: () => [420, 650], dash: 30, p1: [[30, (me) => ({ rk: true, dx: me.facing })]], p2: (me, o, t) => (t >= 34 && t < 37 ? { lk: true, down: true } : {}), dur: 200 },
+    { name: 'SAME DAY 1,1,3 (ender: the slide)', p1: [[10, B('lp')], [26, B('lp')], [42, B('lk')]], dur: 200 },
+  ],
+  security: [
+    { name: 'ESCORT f+1+3 into the wall (splat)', at: () => [W1() - 240, W1() - 130], p1: [[10, (me) => ({ lp: true, lk: true, dx: me.facing })]], dur: 220 },
+    { name: "ESCORT can't be broken", at: () => [400, 490], p1: [[10, (me) => ({ lp: true, lk: true, dx: me.facing })]], p2: (me, o, t) => (me.state === 'grabbed' && t % 6 < 3 ? { lp: true, lk: true } : {}), dur: 200 },
+    { name: 'ESCORT whiffs on a croucher', at: () => [560, 650], p2: { down: true }, p1: [[10, (me) => ({ lp: true, lk: true, dx: me.facing })]], dur: 160 },
+    { name: 'SHOULDER CHECK b+2 armors his jab and knocks him down', at: () => [540, 650], p1: [[10, (me) => ({ rp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 5 && t < 8 ? { lp: true } : {}), dur: 200 },
+    { name: 'SHOULDER CHECK near the wall (wall bounce)', at: () => [W1() - 220, W1() - 120], p1: [[10, (me) => ({ rp: true, dx: -me.facing })], [92, B('lp')]], dur: 220 },
+    { name: 'LOCKDOWN 1,2,1 (overhead ender)', p1: [[10, B('lp')], [26, B('rp')], [46, B('lp')]], dur: 220 },
+  ],
+  // holding back walks back; the guard snaps on only for a strike that can reach (Tekken)
+  guard: [
+    { name: 'hold back, nothing coming: walks back', at: () => [400, 620], p2: { back: true }, p1: [], dur: 140 },
+    { name: 'GUARD button, nothing coming: walks back too', at: () => [400, 620], p2: { block: true }, p1: [], dur: 140 },
+    { name: 'cross (high) at a back-holder: guard snaps on in startup, blocked', at: () => [560, 650], p2: { back: true }, p1: [[4, B('rp')]], dur: 120 },
+    { name: 'snap kick (mid) at a back-holder: blocked', at: () => [560, 650], p2: { back: true }, p1: [[4, B('lk')]], dur: 120 },
+    { name: 'low kick at a standing back-holder: hits', at: () => [560, 650], p2: { back: true }, p1: [[4, D('lk')]], dur: 120 },
+    { name: 'low kick at down-back: blocked', at: () => [560, 650], p2: { back: true, down: true }, p1: [[4, D('lk')]], dur: 120 },
+    { name: 'throw at a back-holder: the throw wins', at: () => [560, 640], p2: { back: true }, p1: [[4, { lp: true, lk: true }]], dur: 150 },
+  ],
   throws: [
     { name: 'throw lands', at: () => [560, 632], p1: [[10, { lp: true, lk: true }]], dur: 150 },
     { name: 'throw broken', at: () => [560, 632], p1: [[10, { lp: true, lk: true }]], p2: (me, o, t) => (me.state === 'grabbed' && t % 6 < 3 ? { lp: true, lk: true } : {}), dur: 150 },
@@ -385,6 +412,9 @@ const scenes = {
   'floor-break-test'(o) { timeline(PHASES.floorBreak, o); },
   'jump-in-test'(o) { timeline(PHASES.jumpIn, o); },
   'anti-air-test'(o) { timeline(PHASES.antiAir, o); },
+  'courier-test'(o) { timeline(PHASES.courier, o); },
+  'guard-test'(o) { timeline(PHASES.guard, o); },
+  'security-test'(o) { timeline(PHASES.security, o); },
   // an online match (src/net/online.js): each unit's controller reads the lockstep's input for the frame
   online(o) {
     if (!o.lockstep) { scenes.play(o); return; }
@@ -399,9 +429,24 @@ const scenes = {
   },
 };
 
+// Characters (src/characters/): a scene fights the pair in opts.chars ([P1, P2] ids), else ?p1= and ?p2=
+// on the URL, else TEMP vs TEMP (so every test scene is the baseline unless asked otherwise). The flow
+// passes the player's pick; the attract demo draws a random pair from the roster.
+const urlChars = [params.get('p1'), params.get('p2')];
+const SCENE_CHARS = { 'courier-test': ['courier', TEMP_ID], 'security-test': ['security', TEMP_ID] };
+function pickChars(name, opts) {
+  if (opts && opts.chars) return opts.chars;
+  if (SCENE_CHARS[name] && !urlChars[0]) return SCENE_CHARS[name];
+  if (name === 'attract') {
+    const r = roster(), a = r[(Math.random() * r.length) | 0], b = r[(Math.random() * r.length) | 0];
+    return [a.id, b.id];
+  }
+  return [urlChars[0] || TEMP_ID, urlChars[1] || TEMP_ID];
+}
 function setScene(name, opts) {
   if (!scenes[name]) name = 'play';
   sceneName = name;
+  sim.setCharacters(pickChars(name, opts));
   syncMirror();
   attract = name === 'attract'; attractKO = false; idleMs = 0; lastPhase = '';
   document.documentElement.classList.toggle('attract', attract && !(flow && flow.on));   // index.html hides the touch controls (the flow has its own classes)
@@ -703,8 +748,10 @@ function applyLook(l) {
     try { fx.preset(look.preset); } catch (e) { console.warn('[glue] fx.preset:', e.message); }
     if (/-rain$/.test(look.preset) && arena.rainRegion && typeof fx.weather === 'function') fx.weather('rain', { rate: 160, wind: -0.3, region: arena.rainRegion });
   }
+  // an arcade stage's opponent wears the stage's neon (its character's, or the stage's own for a TEMP
+  // standing in for a character that isn't built yet); other scenes keep the characters' colors
   const u = sim.units[1];
-  if (u && u.rig) { u.rig.color = look.color || P2_COLOR; u.color = u.rig.color; }
+  if (l && u && u.rig) { u.rig.color = look.color || P2_COLOR; u.color = u.rig.color; }
 }
 // a fight that starts on another floor (the lower one has no way down, so no floor break)
 function startOnFloor(f) {
@@ -755,7 +802,7 @@ window.__gauntlet = {
   step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
   ready: false,   // true once fonts are in and the first frame has rendered
 };
-window.__game = { drawState, sim, camera, fx, arena, fighters, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; } };
+window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; } };
 // no load race for captures: fonts first, then one real rendered frame, then ready
 // the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
 // loads on its own); offline, the system fallbacks are used after a short wait

@@ -103,6 +103,36 @@ export const COMBO_SOFTCAP = 30, COMBO_OVERCAP = 0.25;
 export const comboScale = (table, n) => table[Math.max(0, Math.min(table.length - 1, n - 1))];
 
 export const ATTACKS = Object.keys(FRAME_DATA);
+
+// ---- characters (src/characters/) ---------------------------------------------------------------
+// addFrameData({ name: entry }) merges a character's own moves into the table, filling what the
+// entry leaves out the way the shared moves are filled: height ('high' | 'mid' | 'low' | 'overhead' |
+// 'throw'; an overhead is a mid that's flagged as one), low, cost (an ender 30, a kick 22, else 19),
+// cancels, kb, reach, flashR. `owner` (the character id) keeps it to that character. The generic hooks
+// a character move can carry (sim.js reads them):
+//   travel: { vx, at, ms }       the body slides vx px/s (x the character's dash stat) from `at` ms in, for `ms`
+//   armor: { hits, dmg }         absorbs that many hits from the press until recovery, taking dmg x damage
+//   parry: { heights, reversal, stun, callout }   a counter stance: a strike of one of those heights that
+//                                lands in startup or active is caught, the striker reels for `stun` frames
+//                                and the stance turns into the `reversal` move
+//   grab: true + throw: true     a command grab: range px at the press, hold frames, noBreak (can't be broken)
+//   hits: n                      a multi-hit: each 'active' key in the clip may connect again, up to n
+//   lowInvuln: true              lows pass under it (a hop, a flying knee) from the press until recovery
+//   wallBounce: true             near a wall the body bounces off it into a juggle (like Wall Spin)
+//   groundBounce, splat, juggle, ender, callout, tc   as on the shared moves
+export function addFrameData(entries, owner = null) {
+  for (const [m, e] of Object.entries(entries)) {
+    const fd = { limb: 'hand', damage: 8, kb: { x: 0, y: 0 }, hitstun: 24, blockstun: 10, hitstop: 6, knockdown: false, cancels: [], reach: 80, flashR: 30, ...e };
+    if (fd.height === 'overhead') { fd.overhead = true; fd.height = 'mid'; }
+    fd.height = fd.height || (fd.throw ? 'throw' : 'mid');
+    fd.low = fd.height === 'low';
+    if (fd.cost == null) fd.cost = fd.ender ? 30 : fd.limb === 'foot' ? 22 : 19;
+    if (owner && !fd.owner) fd.owner = owner;
+    if (fd.ender && !fd.callout) fd.callout = m.replace(/([A-Z])/g, ' $1').toUpperCase();
+    FRAME_DATA[m] = fd;
+    if (!ATTACKS.includes(m)) ATTACKS.push(m);
+  }
+}
 export const STEP_HZ = 120;
 export const DT = 1 / STEP_HZ;
 export const f60 = (frames) => Math.round(frames * STEP_HZ / 60);
