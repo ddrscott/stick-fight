@@ -3,6 +3,7 @@
 import { camera } from './camera.js';
 import { createFighter, MOVES, MOVE_DATA } from './fighter/index.js';
 import { createFX } from './fx/index.js';
+import { createStatusFX } from './fx/status.js';   // state read off the bodies: stun halo, guard shimmer, dizzy stars, breath
 import { createArena, drawJoints } from './arena/index.js';
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
@@ -35,6 +36,7 @@ const fighters = [
 ];
 const input = createInput(window);
 const hud = createHUD(hudCanvas, { width: W, height: H, dpr });
+const statusFX = createStatusFX();
 
 // ---- integration wiring ------------------------------------------------------------------
 // The glue owns camera shake (hitstop has to hold the frame dead still), so the FX's own
@@ -79,6 +81,7 @@ let flow = null;                       // the arcade flow (see ---- arcade flow)
 function light(x, y, radius, color, intensity, ttl) { lights.push({ x, y, radius, color, intensity, ttl, max: ttl }); }
 function onEvent(ev) {
   if (!attract) gameAudio.event(ev);   // audio: every event also goes to the sound router (src/audio/index.js); the attract demo is silent
+  hud.event(ev); statusFX.event(ev);   // counter, armor, parry and accident flashes on the overhead tracks and the bodies
   switch (ev.type) {
     case 'hit':
       // the FX burst is small and sits on the striking limb; the camera does nothing until
@@ -430,14 +433,14 @@ const urlSeed = params.has('seed') ? (+params.get('seed') >>> 0) : null;
 const seedOf = (opts, dflt) => (opts && opts.seed != null ? +opts.seed >>> 0 : urlSeed != null ? urlSeed : dflt);
 
 // ---- mirror ------------------------------------------------------------------------------
-// The online guest plays P2 (the right spawn) but gets the classic own-side view: the world drawn
-// mirrored left-right, so his fighter starts on the left. ?mirror=1 forces it on any scene. Only the
+// A debug view only: ?mirror=1 draws any scene mirrored left-right. It never turns on by itself;
+// online, both screens show the host as P1 on the left and the guest as P2 on the right. Only the
 // view flips, never the sim: the GL canvas gets a CSS scaleX(-1) (every layer, light, the floor
 // reflection and the shake flip together), the HUD maps world x through camera.mirror and keeps its
 // text and bars readable, input.mirror flips raw left/right at capture, and the audio pan follows.
 const urlMirror = params.get('mirror') === '1';
 function syncMirror() {
-  const on = urlMirror || (online.active && online.role === 'guest');
+  const on = urlMirror;
   if (on === camera.mirror) return;
   camera.mirror = on; input.mirror = on;
   glCanvas.style.transform = on ? 'scaleX(-1)' : '';
@@ -576,7 +579,7 @@ function setScene(name, opts) {
   farDrawnW = 0; bodiesDrawn = true; // redraw the static layers once
   shakeRng = mulberry32(7);
   shake.trauma = 0; shake.kickX = shake.kickY = 0; shake.zoomPunch = 0;
-  lights.length = 0; blockSparks.length = 0; paused = false;
+  lights.length = 0; blockSparks.length = 0; paused = false; statusFX.reset();
   camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camera.shakeX = camera.shakeY = 0;
   // botches on or off (the pause menu's switch, ?botch=0); online, the host's setting from the start message
   sim.botchOn = name === 'online' && opts && opts.lockstep ? opts.botch !== false : botchEnabled();
@@ -712,6 +715,8 @@ function drawBlockSpark(s, ctx) {
 // redrawn and the FX is told to skip their upload: the far skyline is static (redrawn when the FX
 // resizes its layers for a quality tier, or on a scene change), and an empty body layer stays empty.
 let farDrawnW = 0, bodiesDrawn = true;
+const drawnOff = new Map(), NO_OFF = { x: 0, y: 0 };   // this frame's draw-smoothing offsets, for the status effects
+const drawOffsetNow = (u) => drawnOff.get(u) || NO_OFF;
 function render() {
   syncMirror();   // the guest's view flips on when his match starts and off when it ends, however it ends
   const ctxs = {};
@@ -740,11 +745,11 @@ function render() {
   const order = [...sim.units].sort((p, q) => (p.state === 'attack') - (q.state === 'attack') || q.id - p.id);
   for (const u of order) {
     if (u.hidden) continue;
-    const off = drawOffset(u);
+    const off = drawOffset(u); drawnOff.set(u, off);
     ctxs.figures.save(); ctxs.figures.translate(off.x, off.y);
     u.rig.draw(ctxs.figures);
     if (u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld)) drawGuard(u, ctxs.figures);
-    if (u.flash > 0) drawFlash(u, ctxs.figures);
+    if (u.flash > 0) drawFlash(u, ctxs.figures, '#fff', statusFX.counterOn(u) ? 0.65 : 0.3);   // a counter hit flashes harder
     // a knocked-down body reads as down: 30% darker while it is on the floor
     else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);
     ctxs.figures.restore();
@@ -755,8 +760,10 @@ function render() {
     if (typeof drawJoints === 'function') drawJoints(ctxs.figures, j, r.color, 5, r.radius);
   }
   for (const s of blockSparks) drawBlockSpark(s, ctxs.emissive);
+  // status effects go on the emissive layer, which the compositor hides over the fighters (owner req 5)
+  const statusLights = statusFX.draw(ctxs.emissive, sim, { dt: lastFrameMs / 1000, tier: fx.tier || 3, offset: drawOffsetNow });
   if (arena.drawForeground) arena.drawForeground(ctxs.foreground || ctxs.figures);
-  fx.lights = [...(arena.lights || []), ...lights.map(l => ({ x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity * (l.ttl / l.max) }))];
+  fx.lights = [...(arena.lights || []), ...lights.map(l => ({ x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity * (l.ttl / l.max) })), ...statusLights];
   fx.render(camera);
   const fl = flow && flow.on ? flow.hud() : null;   // flow: score, names, no HUD under a menu, the title card only on the title
   if (toast) { toast.t -= lastFrameMs / 1000; if (toast.t <= 0) toast = null; }

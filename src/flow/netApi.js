@@ -13,6 +13,10 @@
 //   net.step exists (online.js has none: main.js steps it through online.advance)
 //   'peer-left' ends the match on our side too; 'desync' doesn't (online.js shows it in its readout)
 //   net.leave() at any point (CANCEL, BACK, QUIT) closes the room and hands the sim back
+//   between matches (the room session; see online.js): 'match-over' fires when a match ends on both
+//   machines (the flow shows its post-match screen), 'session' whenever anything between matches
+//   changes (the rival's choice or pick, a countdown, the tally); view() is the same picture on
+//   demand, and postChoose / postBack / postPoke / postFocus / pick / startNow are the buttons
 
 /**
  * The events the flow listens for.
@@ -22,6 +26,8 @@
  *   'peer-left': { reason?: string },
  *   desync: { frame: number },
  *   error: { message: string },
+ *   'match-over': any,
+ *   session: any,
  * }} NetEvents
  */
 /**
@@ -30,12 +36,20 @@
  * @property {boolean} available   false: the menus show "online play isn't ready" instead of trying
  * @property {number} CODE_LEN      room codes: CODE_LEN characters from ALPHABET (no 0/O, 1/I/L)
  * @property {string} ALPHABET
- * @property {() => Promise<{ code: string, link: string }>} host   open a room; resolves with its code and a ?room=CODE link
- * @property {(code: string) => Promise<void>} join                 join a friend's room
+ * @property {(opts?: { code?: string, pickFirst?: boolean, crew?: boolean }) => Promise<{ code: string, link: string }>} host   open a room (or host one a crew claimed: opts.code); resolves with its code and a ?room=CODE link
+ * @property {(code: string, opts?: { pickFirst?: boolean, crew?: boolean }) => Promise<void>} join   join a friend's room (pickFirst: a crew match, which opens on the pick screen)
+ * @property {(name: string) => void} [setName]                    this player's display name, shown to the rival
  * @property {() => void} startMatch                                both connected: start the match (online.js already has)
  * @property {(ms: number) => void} [step]                          optional: steps the online match in place of the local sim
  * @property {() => void} leave                                     close the room / match and hand the sim back
  * @property {(id: string) => void} [setCharacter]                  this side's fighter, picked on the select screen before HOST or JOIN
+ * @property {() => any} [view]                                     between matches: the session as this side sees it (online.js view())
+ * @property {(c: 'rematch' | 'chars') => void} [postChoose]       a post-match button: the guest's is a request, the host's decides
+ * @property {() => void} [postBack]                                back on the post-match screen: guest asks to wait, host stops the countdown
+ * @property {() => void} [postPoke]                                any other press there: stops the auto rematch
+ * @property {(c: string) => void} [postFocus]                      where this side's cursor is
+ * @property {(id: string, ready: boolean) => void} [pick]          the pick screen: this side's card and whether it's locked in
+ * @property {() => void} [startNow]                                the host's START on the pick screen
  * @property {<K extends keyof NetEvents>(ev: K, fn: (e: NetEvents[K]) => void) => () => void} on   subscribe; returns an unsubscribe
  */
 
@@ -95,14 +109,24 @@ export function adaptOnline(online) {
   online.on('connected', (e) => emit('connected', { role: e && e.role, code: e && e.code }));
   online.on('peer-left', () => emit('peer-left', {}));
   online.on('desync', (d) => emit('desync', { frame: d && d.frame }));
+  online.on('match-over', (v) => emit('match-over', v));
+  online.on('session', (v) => emit('session', v));
   return {
     available: true,
     CODE_LEN, ALPHABET: CODE_ALPHABET,
-    host: () => online.host().then((r) => ({ code: r.code, link: r.url || roomLink(r.code) })),
-    join: (code) => online.join(code).then(() => undefined),
+    host: (opts) => online.host(opts).then((r) => ({ code: r.code, link: r.url || roomLink(r.code) })),
+    join: (code, opts) => online.join(code, opts).then(() => undefined),
+    setName: (name) => online.setName(name),
     startMatch() { /* online.js already started it when it fired 'connected' */ },
     leave: () => online.leave(),
     setCharacter: (id) => online.setCharacter(id),
+    view: () => online.view(),
+    postChoose: (c) => online.postChoose(c),
+    postBack: () => online.postBack(),
+    postPoke: () => online.postPoke(),
+    postFocus: (c) => online.postFocus(c),
+    pick: (id, ready) => online.pick(id, ready),
+    startNow: () => online.startNow(),
     on(ev, fn) {
       const list = (handlers[ev] = handlers[ev] || []);
       list.push(fn);

@@ -1,43 +1,41 @@
-// The Worker behind https://askscottpierce.com/stick-fight/api/*: online rooms (see README,
-// "Multiplayer"). Everything else under /stick-fight is the static game, served by the assets
-// binding before this script runs (wrangler.jsonc: run_worker_first covers only the API). A
-// request that reaches the script outside the API is a 404.
+// The Worker behind https://askscottpierce.com/stick-fight/api/*: online rooms, crew rooms and
+// profiles (see README, "Multiplayer"). Everything else under /stick-fight is the static game,
+// served by the assets binding before this script runs (wrangler.jsonc: run_worker_first covers
+// only the API). A request that reaches the script outside the API is a 404.
 //
-//   POST /stick-fight/api/rooms              -> { code }   a new room, four characters
+//   POST /stick-fight/api/rooms              -> { code }   a new quick room, four characters
 //   GET  /stick-fight/api/rooms/<code>/ws    -> WebSocket   ?role=host|guest
 //   GET  /stick-fight/api/ice                -> { iceServers, ttl, turn }   for RTCPeerConnection
+//   POST /stick-fight/api/crews              -> { slug }   a new crew room ({ name }), worker/crew.ts
+//   GET  /stick-fight/api/crews/<slug>/ws    -> WebSocket   the crew lobby
+//   POST /stick-fight/api/auth/start, auth/verify, auth/logout; GET and PUT /stick-fight/api/me
+//                                            profiles and email sign-in, worker/auth.ts
 //
 // /ice hands out Cloudflare TURN credentials (Realtime TURN, the key in the TURN_KEY_ID and
 // TURN_KEY_API_TOKEN secrets) so two phones behind carrier NAT can still go peer to peer through
 // a relay server instead of falling back to the room's WebSocket. Without the secrets (local dev
 // with no .dev.vars) it answers with public STUN only.
 //
-// Abuse limits (README, "Multiplayer"): room creation and WebSocket joins are rate limited per IP
-// with the Workers rate limiting bindings (wrangler.jsonc), and over the limit the answer says
-// "busy" (a 429 for rooms, a {"t":"sys","ev":"error","reason":"busy"} notice for sockets). Inside
-// a room each socket gets a size cap and a message-rate bucket.
+// Abuse limits (README, "Multiplayer"): room and crew creation, WebSocket joins and profile calls
+// are rate limited per IP with the Workers rate limiting bindings (wrangler.jsonc), and over the
+// limit the answer says "busy" (a 429, or a {"t":"sys","ev":"error","reason":"busy"} notice for
+// sockets). Inside a room each socket gets a size cap and a message-rate bucket.
 //
-// One Durable Object per room. It holds the two sockets and passes every message from one
+// One Durable Object per quick room. It holds the two sockets and passes every message from one
 // player to the other, untouched: the WebRTC offer, answer and ICE candidates while the
 // players set up their peer-to-peer link, then the match's control messages, and the input
 // packets themselves when the peer-to-peer link can't be made (the relay fallback). The only
 // messages it writes itself are {"t":"sys",...} notices: welcome, peer joined or left, and
-// errors. No accounts, no cookies, nothing stored but the time the room expires.
+// errors. Nothing stored but the time the room expires. A crew room opens one of these for each
+// match it starts.
 import { DurableObject } from "cloudflare:workers";
+import { type Env, API, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName } from "./env";
+import { Crew, SLUG_RE } from "./crew";
+import { handleAuth } from "./auth";
 
-export interface Env {
-  ROOMS: DurableObjectNamespace<Room>;
-  ROOM_LIMIT?: RateLimit;   // room creations per IP (wrangler.jsonc ratelimits)
-  JOIN_LIMIT?: RateLimit;   // WebSocket joins per IP
-  TURN_KEY_ID?: string;     // secrets; absent in local dev unless .dev.vars has them
-  TURN_KEY_API_TOKEN?: string;
-}
+export { Crew };
+export type { Env };
 
-const API = "/stick-fight/api/";
-// No 0/O or 1/I/L: the code gets read out loud and typed on a phone.
-const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-const CODE_LEN = 4;
-const CODE_RE = new RegExp(`^[${ALPHABET}]{${CODE_LEN}}$`);
 // A room nobody has joined yet (the host is still sharing the code) lives this long; once players
 // have been in it and everyone has left, it's cleared after ROOM_EMPTY_MS (long enough to reload).
 const ROOM_IDLE_MS = 30 * 60 * 1000;
@@ -51,33 +49,18 @@ const MSG_RATE = 240;        // messages per second, sustained
 const MSG_BURST = 480;       // bucket size
 const MSG_STRIKES = 1000;    // dropped messages before the socket is closed
 
-const BUSY = "Too many tries from your network. Try again shortly.";
 const STUN = ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"];
 const ICE_TTL_S = 3600;               // TURN credentials last an hour
 const ICE_CACHE_MS = 10 * 60 * 1000;  // one set per isolate for 10 minutes, so each lasts 50+ more
 
-const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } });
-const notFound = () => new Response("Not found", { status: 404, headers: { "content-type": "text/plain" } });
-
-/** Who to rate limit: the client IP, with IPv6 cut to its /64 (one household or phone). */
-function clientKey(req: Request): string {
-  const ip = req.headers.get("CF-Connecting-IP") || "local";
-  return ip.includes(":") ? ip.split(":").slice(0, 4).join(":") + "::/64" : ip;
-}
-async function allowed(limit: RateLimit | undefined, req: Request): Promise<boolean> {
-  if (!limit) return true;
-  try { return (await limit.limit({ key: clientKey(req) })).success; } catch { return true; }   // fail open
-}
-
-/** A socket that only says why it was refused, so the page can show it (a failed handshake can't). */
-function refusedSocket(reason: string): Response {
-  const pair = new WebSocketPair();
-  const [client, server] = [pair[0], pair[1]];
-  server.accept();
-  server.send(JSON.stringify({ t: "sys", ev: "error", reason }));
-  server.close(4029, reason);
-  return new Response(null, { status: 101, webSocket: client });
+// Crew slugs: the crew's name in lower case with dashes, then five random characters (no 0/o,
+// 1/i/l), e.g. tuesday-crew-7k2qm. The name makes the link readable; the suffix makes it unguessable
+// enough for a friends' room (28 million per name, behind the join limit).
+const SLUG_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+function newSlug(name: string): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24).replace(/-+$/, "") || "crew";
+  const bytes = crypto.getRandomValues(new Uint8Array(5));
+  return `${base}-${[...bytes].map((b) => SLUG_ALPHABET[b % SLUG_ALPHABET.length]).join("")}`;
 }
 
 type IceServer = { urls: string | string[]; username?: string; credential?: string };
@@ -115,13 +98,6 @@ async function iceServers(env: Env): Promise<Response> {
   return json({ iceServers: [{ urls: STUN }], ttl: 0, turn: false });
 }
 
-function newCode(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LEN));
-  let s = "";
-  for (const b of bytes) s += ALPHABET[b % ALPHABET.length];
-  return s;
-}
-
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -131,12 +107,8 @@ export default {
     if (parts.length === 1 && parts[0] === "rooms") {
       if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
       if (!(await allowed(env.ROOM_LIMIT, req))) return json({ error: "busy", message: BUSY }, 429, { "retry-after": "60" });
-      // a fresh code; on the rare collision with a live room, draw again
-      for (let i = 0; i < 8; i++) {
-        const code = newCode();
-        if (await env.ROOMS.get(env.ROOMS.idFromName(code)).claim()) return json({ code });
-      }
-      return json({ error: "no free room code, try again" }, 503);
+      const code = await claimRoom(env);
+      return code ? json({ code }) : json({ error: "no free room code, try again" }, 503);
     }
 
     if (parts.length === 3 && parts[0] === "rooms" && parts[2] === "ws") {
@@ -151,6 +123,36 @@ export default {
       if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
       return iceServers(env);
     }
+
+    if (parts.length === 1 && parts[0] === "crews") {
+      if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+      if (!(req.headers.get("content-type") || "").includes("application/json")) return json({ error: "expected JSON" }, 415);
+      if (!(await allowed(env.CREW_LIMIT, req))) return json({ error: "busy", message: BUSY }, 429, { "retry-after": "60" });
+      const body = await req.json<{ name?: unknown }>().catch(() => ({} as { name?: unknown }));
+      const name = cleanName(body.name, 3, 20);
+      if (!name) return json({ error: "bad-name" }, 400);
+      for (let i = 0; i < 6; i++) {
+        const slug = newSlug(name);
+        if (await env.CREWS.get(env.CREWS.idFromName(slug)).create(slug, name)) return json({ slug, name });
+      }
+      return json({ error: "try again" }, 503);
+    }
+
+    if (parts.length === 3 && parts[0] === "crews" && parts[2] === "ws") {
+      const slug = parts[1].toLowerCase();
+      if (!SLUG_RE.test(slug) || slug.length > 40) return json({ error: "bad crew" }, 400);
+      if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return json({ error: "expected a WebSocket" }, 426);
+      if (!(await allowed(env.JOIN_LIMIT, req))) return refusedSocket("busy");
+      return env.CREWS.get(env.CREWS.idFromName(slug)).fetch(req);
+    }
+
+    // test hook, only with DEV_HOOKS=1 (.dev.vars): expire a crew room now, as 90 idle days would
+    if (env.DEV_HOOKS === "1" && parts.length === 3 && parts[0] === "crews" && parts[2] === "dev-expire" && req.method === "POST") {
+      return json({ wiped: await env.CREWS.get(env.CREWS.idFromName(parts[1].toLowerCase())).devExpire() });
+    }
+
+    const auth = await handleAuth(req, env, parts);
+    if (auth) return auth;
 
     return notFound();
   },

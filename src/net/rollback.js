@@ -53,11 +53,11 @@ function eventSig(ev) {
  * @param {{
  *   sim: any, localIndex: number, link: { sendPacket(b: ArrayBuffer): void, sendControl(o: object): void },
  *   sampleLocal: (frame: number) => any, now?: () => number, delay?: number, adaptDelay?: boolean,
- *   maxRollback?: number,
+ *   maxRollback?: number, match?: number,
  *   onDesync?: (info: { frame: number, local: string, remote: string, diff?: string[] }) => void,
  * }} o
  */
-export function createRollback({ sim, localIndex, link, sampleLocal, now = () => performance.now(), delay = LOCAL_DELAY, adaptDelay = true, maxRollback = MAX_ROLLBACK, onDesync }) {
+export function createRollback({ sim, localIndex, link, sampleLocal, now = () => performance.now(), delay = LOCAL_DELAY, adaptDelay = true, maxRollback = MAX_ROLLBACK, match = 0, onDesync }) {
   const remoteIndex = 1 - localIndex;
   const maxRb = Math.max(1, Math.min(MAX_ROLLBACK, maxRollback | 0));
   const hist = [ring(), ring()];              // per player: frame -> input code (real inputs only)
@@ -83,6 +83,10 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
   /** @type {null | { frame: number, local: string, remote: string, diff?: string[] }} */
   let desync = null;
   let hashChecks = 0;
+  // the frame on which the sim first showed the match result (phase 'match'), or -1: online.js ends
+  // the match a fixed number of frames after it, once that frame is confirmed on both sides
+  let matchAt = -1;
+  const tag = match & 255;   // this match's number on every input packet and hash (stale ones are dropped)
   // measurements
   const rb = { count: 0, frames: 0, maxDepth: 0, ms: 0, maxMs: 0, lastDepth: 0, saves: 0, saveMs: 0, predictedFrames: 0, eventsHeld: 0, eventsLate: 0, advMs: 0, advMax: 0, advN: 0 };
 
@@ -131,8 +135,10 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     if (f > maxSimulated || slot.frame !== f || !slot.fired) { slot.frame = f; slot.fired = new Map(); gate.replay = false; }
     else gate.replay = true;
     gate.map = slot.fired; gate.seen.clear();
+    if (matchAt >= f) matchAt = -1;   // re-running the frame it was found on (or before): find it again
     sim.eventFilter = eventGate;
     try { sim.tick(); } finally { sim.eventFilter = null; }
+    if (matchAt < 0 && sim.phase === 'match') matchAt = f;
     if (f > maxSimulated) maxSimulated = f;
     if ((f + 1) % HASH_EVERY === 0) {
       hashes.set(f, hashSim(sim));
@@ -164,7 +170,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     const top = confirmedTop();
     while (nextHash <= top) {
       const h = hashes.get(nextHash);
-      if (h != null) { link.sendControl({ t: 'hash', f: nextHash, h }); check(nextHash); }
+      if (h != null) { link.sendControl({ t: 'hash', f: nextHash, h, m: tag }); check(nextHash); }
       nextHash += HASH_EVERY;
     }
   }
@@ -177,7 +183,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     desync = { frame: f, local: a, remote: b };
     console.warn(`[net] DESYNC at frame ${f}: local ${a}, remote ${b}`);
     const d = dumps.get(f);
-    if (d) link.sendControl({ t: 'dump', f, dump: d });
+    if (d) link.sendControl({ t: 'dump', f, dump: d, m: tag });
     if (onDesync) onDesync(desync);
   }
 
@@ -193,7 +199,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     const last = Math.min(localTop, first + MAX_INPUTS_PER_PACKET - 1);
     const codes = [];
     for (let f = first; f <= last; f++) codes.push(get(localIndex, f));
-    link.sendPacket(inputPacket(first, codes, remoteTop < 0 ? NO_FRAME : remoteTop, frame));
+    link.sendPacket(inputPacket(first, codes, remoteTop < 0 ? NO_FRAME : remoteTop, frame, tag));
     lastSend = t;
   }
 
@@ -266,7 +272,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
         rttSamples++;
         return;
       }
-      if (p.type !== PKT_INPUT || !p.codes) return;
+      if (p.type !== PKT_INPUT || !p.codes || p.match !== tag) return;   // a late packet from another match
       for (let i = 0; i < p.codes.length; i++) {
         const f = /** @type {number} */ (p.first) + i, code = p.codes[i];
         if (f <= remoteTop || f > remoteTop + HISTORY - 1 || has(remoteIndex, f)) continue;
@@ -284,6 +290,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     },
     /** control messages that belong to the netcode: state hashes and desync dumps */
     onControl(msg) {
+      if ((msg.t === 'hash' || msg.t === 'dump') && (msg.m | 0) !== tag) return true;   // from another match: not ours to check
       if (msg.t === 'hash') { remoteHashes.set(msg.f, msg.h); check(msg.f); if (remoteHashes.size > 256) remoteHashes.delete(remoteHashes.keys().next().value); return true; }
       if (msg.t === 'dump') {
         const mine = dumps.get(msg.f);
@@ -307,6 +314,14 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
         eventsHeld: rb.eventsHeld, eventsLate: rb.eventsLate, advanceAvgMs: rb.advN ? rb.advMs / rb.advN : 0, advanceMaxMs: rb.advMax,
       };
     },
+    /** after the match is over: keep sending our inputs and acks (no simulating), so the other side
+     *  can confirm its last frames too even if our final packets were lost */
+    keepalive() { sendInputs(false); },
+    /** the frame the match result first showed on, or -1 */
+    get matchAt() { return matchAt; },
+    get confirmed() { return confirmedTop(); },
+    get ackedByRemote() { return ackedByRemote; },
+    get match() { return tag; },
     /** the hash of a confirmed frame, if this side has it (tests) */
     confirmedHash(f) { return f <= confirmedTop() ? hashes.get(f) || null : null; },
     get lost() { return now() - lastPacket > LOST_MS; },

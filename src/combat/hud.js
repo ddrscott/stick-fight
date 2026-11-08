@@ -3,7 +3,13 @@
 // each, round pips and a ringed timer. Banners, the hit counter and the callouts (enders, counters,
 // trick shots) are laid out against the fighters' screen boxes so they never cover a fighter
 // (owner requirement 5): each picks the first free slot, and falls back into the top strip.
+// Under each bar: the character's name and a small player marker, then a line that cycles through its
+// special moves (hint). Over each fighter's head: the overhead status track (tracks). See README, HUD.
 import { drawBoxes } from './hitboxes.js';
+import { FRAME_DATA } from './frameData.js';
+import { ACCIDENTS } from './botch.js';
+import { discovered } from '../flow/techniques.js';   // read only: which happy accidents this browser has found
+import { canUse } from '../characters/registry.js';
 
 export const NEON = { pink: '#ff2bd6', cyan: '#2ef2ff', amber: '#ffb02e', violet: '#a66bff', white: '#fff4fd', ink: '#0a0414' };
 const DISPLAY = "'Bungee', 'Arial Black', Impact, system-ui, sans-serif";
@@ -94,19 +100,23 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (faint && Math.floor(clock * 8) % 2 === 0) neonText('FAINT', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 13, NEON.pink, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.6 });
     else if (low && blink) neonText('LOW', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 13, NEON.pink, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.6 });
 
-    // name and pips
+    // name and a small player marker (YOU / RIVAL online, P1 / P2, CPU 7, TRAINER), then pips; the
+    // line under it cycles through the character's special moves (hint below)
     const ly = sy + ST_H + 12;
     const diff = u.kind === 'ai' && u.controller && u.controller.getDifficulty ? u.controller.getDifficulty() : sim.difficulty;
-    const role = names && names[who] ? names[who] : u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && who === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? 'PLAYER 1' : u.kind === 'script' ? 'TRAINER' : 'DUMMY';
+    const named = names && names[who] ? (names[who] === 'PLAYER 1' ? 'P1' : names[who]) : '';
+    const role = named || (u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && who === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? `P${who + 1}` : u.kind === 'script' ? 'TRAINER' : 'DUMMY');
     // the character's name leads, in the fighter's own neon, then who's playing it (a goon is just a goon)
     const cn = (charNames && charNames[who]) || (u.char && u.char.name) || '';
     const cname = cn && !(sim.horde && who === 1) && role !== cn ? cn : '';
+    const al = side === 0 ? 'left' : 'right';
     if (cname) {
-      const cw = measure(cname, 22, LABEL, 600) + 10;
-      neonText(cname, side === 0 ? x : x + BAR_W, ly, 22, u.color || color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.8, core: true });
-      neonText(role, side === 0 ? x + cw : x + BAR_W - cw, ly + 1, 17, color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 500, glow: 0.5, core: false });
-      labelW[side] = cw + measure(role, 17, LABEL, 500);
-    } else labelW[side] = measure(role, 22, LABEL, 600), neonText(role, side === 0 ? x : x + BAR_W, ly, 22, color, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.7, core: false });
+      const cw = measure(cname, 20, LABEL, 600) + 8;
+      neonText(cname, side === 0 ? x : x + BAR_W, ly, 20, u.color || color, { font: LABEL, align: al, weight: 600, glow: 0.8, core: true });
+      neonText(role, side === 0 ? x + cw : x + BAR_W - cw, ly + 1, 15, color, { font: LABEL, align: al, weight: 500, glow: 0.5, core: false });
+      labelW[side] = cw + measure(role, 15, LABEL, 500);
+      hint(u, who, side, x, ly + 19);
+    } else labelW[side] = measure(role, 20, LABEL, 600), neonText(role, side === 0 ? x : x + BAR_W, ly, 20, color, { font: LABEL, align: al, weight: 600, glow: 0.7, core: false });
     if (sim.horde) {
       const H = sim.horde, wv = H.wave || { downed: 0, size: 0 };
       neonText(who === 0 ? `FLOOR ${H.floorsCleared + 1}   ${H.count} DOWN` : `WAVE ${wv.downed}/${wv.size}`, side === 0 ? x + BAR_W : x, ly, 20, NEON.amber, { font: LABEL, align: side === 0 ? 'right' : 'left', weight: 600, glow: 0.7 });
@@ -120,6 +130,196 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
         ctx.lineWidth = 2; ctx.strokeStyle = won ? '#fff1c9' : color; ctx.globalAlpha = won ? 1 : 0.7; ctx.stroke(); ctx.restore();
       }
     }
+  }
+
+  // ---- special-move hints: the line under each bar cycles through the character's unique moves and
+  // strings (its moveList, src/characters/), plus the happy accidents this browser has found that the
+  // character can do (never the hidden ones). Arrows are the move list's own: → is forward, toward the
+  // opponent, from the fighter's point of view. Both bars show theirs, so it teaches the matchup.
+  const HINT_SLOT = 3.6, HINT_FADE = 0.25;
+  const hintCache = new Map();   // char id -> { at, list }
+  const glyphs = (s) => String(s).replace(/\bf\+/g, '→').replace(/\bb\+/g, '←').replace(/\bd\+/g, '↓').replace(/([←→↓↑]) (?=\d)/g, '$1');
+  function hintList(ch) {
+    if (!ch) return [];
+    const c = hintCache.get(ch.id);
+    if (c && clock - c.at < 2) return c.list;
+    const list = (ch.moveList || []).map(m => ({ input: glyphs(m.input), name: m.name, note: m.note || '' }));
+    let found = [];
+    try { found = discovered(); } catch (e) { /* storage off */ }
+    for (const a of ACCIDENTS) {
+      if (!found.includes(a.id) || !canUse(ch, a.move)) continue;
+      const from = { lungeCross: 'f+2', lowKick: 'd+3', uppercut: 'd+2', sweep: 'd+4', lkick: '3', roundhouse: '4', cross: '2' }[a.from[0]] || '?';
+      list.push({ input: glyphs(`${from} › ${a.tok === 'T' ? 'THROW' : a.tok}`), name: a.name, note: 'happy accident', accident: true });
+    }
+    hintCache.set(ch.id, { at: clock, list });
+    return list;
+  }
+  function hint(u, who, side, x, y) {
+    const list = hintList(u.char);
+    if (!list.length) return;
+    const t = clock + who * 1.8, n = Math.floor(t / HINT_SLOT), ph = t - n * HINT_SLOT, m = list[n % list.length];
+    const a = Math.min(1, ph / HINT_FADE, (HINT_SLOT - ph) / HINT_FADE);
+    const cls = typeof document !== 'undefined' ? document.documentElement.classList : null;
+    const phone = !!cls && cls.contains('touch-ui');   // a phone: bigger, and just the input and the name
+    const fs = phone ? 20 : 17;
+    const segs = [{ text: m.input, size: fs, color: NEON.amber, glow: 0.7, core: true }, { text: m.name, size: fs, color: m.accident ? KIND_COLOR.accident : SIDE[who], glow: 0.5, core: false }];
+    if (!phone && m.note) segs.push({ text: m.note, size: 14, color: NEON.violet, glow: 0.3, core: false });
+    const gap = 8, ws = segs.map(s => measure(s.text, s.size, LABEL, 500));
+    const total = ws.reduce((p, q) => p + q, 0) + gap * (segs.length - 1);
+    let cx = side === 0 ? x : x + BAR_W - total;
+    ctx.save(); ctx.globalAlpha = Math.max(0, a);
+    segs.forEach((s, k) => { neonText(s.text, cx, y + (s.size < fs ? 1 : 0), s.size, s.color, { font: LABEL, align: 'left', weight: 500, glow: s.glow, core: s.core }); cx += ws[k] + gap; });
+    ctx.restore();
+  }
+
+  // ---- the overhead status track: a compact readout over each fighter's head, so the state of the
+  // fight reads where the eyes already are. Only what's active shows: STUN / GUARD with a draining
+  // bar, FAINT, DOWN / GET UP, BOTCH, ARMOR, PARRY, COUNTER, OPEN (a whiffed strike's recovery: punish
+  // it), air-jump pips, and a thin stamina bar that shows once stamina is spent and flashes when low.
+  // It sits above the head, steps sideways off the other fighter, clamps on screen and fades when it
+  // has nowhere clear to go (owner requirement 5). It only reads the sim.
+  const trk = new WeakMap();   // unit -> { x, y, a, stunMax, lastStun, stamShow, counter, flashT }
+  const tstate = (u) => { let s = trk.get(u); if (!s) { s = { x: null, y: null, a: 0, stunMax: 1, lastStun: 0, stamShow: 0, counter: 0, armor: 0, parry: 0 }; trk.set(u, s); } return s; };
+  function event(ev) {
+    if (ev.type === 'hit' && ev.defender) { if (ev.counter) tstate(ev.defender).counter = 0.5; if (ev.armor) tstate(ev.defender).armor = 0.4; }
+    if (ev.type === 'block' && ev.parry && ev.defender) tstate(ev.defender).parry = 0.5;
+  }
+  function statusOf(u, s) {
+    const fd = u.state === 'attack' && u.move ? FRAME_DATA[u.move] : null;
+    const stunK = Math.max(0, Math.min(1, u.stun / s.stunMax));
+    if (s.counter > 0) return { text: 'COUNTER', color: NEON.white, glow: NEON.amber, bar: u.state === 'hitstun' ? stunK : null, barColor: '#ff2b4a', pop: s.counter };
+    if (s.armor > 0) return { text: 'ARMOR', color: NEON.amber, pop: s.armor };
+    if (s.parry > 0) return { text: 'PARRY', color: NEON.cyan, pop: s.parry };
+    if (u.faint > 0) return { text: 'FAINT', color: NEON.pink, bar: Math.min(1, u.faint / (1.5 * 120)), barColor: NEON.violet, dizzy: true };
+    if (u.state === 'hitstun') return { text: 'STUN', color: '#ff3d6e', bar: stunK, barColor: '#ff2b4a' };
+    if (u.state === 'blockstun') return { text: 'GUARD', color: NEON.cyan, bar: stunK, barColor: NEON.cyan };
+    if (u.state === 'block' || (u.state === 'crouch' && u.backHeld)) return { text: u.crouch ? 'LOW GUARD' : 'GUARD', color: NEON.cyan, dim: true };
+    if (u.state === 'knockdown' || u.state === 'splat' || u.state === 'down' || u.state === 'roll') return { text: u.botchKind === 'air' ? 'TANGLED' : 'DOWN', color: NEON.violet };
+    if (u.state === 'getup') return { text: 'GET UP', color: NEON.violet, bar: Math.min(1, (u.rig && u.rig.current && u.rig.current.t) || 0), barColor: NEON.violet, fill: true };
+    if (u.state === 'botch') return { text: 'BOTCH', color: '#ff6a3d' };
+    if (fd && fd.armor && u.armorLeft > 0 && u.phase !== 'recovery') return { text: 'ARMOR', color: NEON.amber };
+    if (fd && fd.parry && u.phase !== 'recovery') return { text: 'PARRY', color: NEON.cyan };
+    if (fd && u.phase === 'recovery' && !u.hitConfirmed && !fd.air) return { text: 'OPEN', color: NEON.amber, dim: true };
+    return null;
+  }
+  function tracks(sim, camera, dt, taken) {
+    const z = camera.zoom, m = camera.mirror ? -1 : 1;
+    const sx = (wx) => m * (wx - camera.x - camera.shakeX) * z + width / 2, sy = (wy) => (wy - camera.y - camera.shakeY) * z + height / 2;
+    const cls = typeof document !== 'undefined' ? document.documentElement.classList : null;
+    const big = !!cls && cls.contains('touch-ui') ? 1.2 : 1;
+    // the hero and the one he's on (a horde's other goons stay quiet)
+    const who = [sim.units[0], sim.focus || sim.units[1]].filter((u, i, a) => u && a.indexOf(u) === i && !u.hidden && u.state !== 'ko' && u.rig && u.rig.joints && u.rig.joints.head);
+    const boxOf = (u) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const k in u.rig.joints) { const p = u.rig.joints[k]; x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+      const r = (u.rig.radius || 11), ax = sx(x0 - r), bx = sx(x1 + r);
+      return { x0: Math.min(ax, bx) - 6, x1: Math.max(ax, bx) + 6, y0: sy(y0 - r) - 6, y1: sy(y1) + 6 };
+    };
+    const boxes = who.map(boxOf);
+    who.forEach((u, i) => {
+      const s = tstate(u);
+      s.counter = Math.max(0, s.counter - dt); s.armor = Math.max(0, s.armor - dt); s.parry = Math.max(0, s.parry - dt);
+      if (u.stun > s.lastStun) s.stunMax = Math.max(1, u.stun);
+      s.lastStun = u.stun;
+      const st = statusOf(u, s);
+      const stam = Math.max(0, Math.min(1, (u.stamina == null ? 100 : u.stamina) / (u.staminaMax || 100)));
+      const low = stam < 0.35 && !(u.faint > 0);
+      // the stamina bar shows once some is spent, and lingers a beat after it refills
+      s.stamShow = stam < 0.97 || u.faint > 0 ? 1.2 : Math.max(0, s.stamShow - dt);
+      const mech = u.char && u.char.mechanics;
+      const pips = mech && mech.airJumps > 0 && !u.grounded ? { left: Math.max(0, mech.airJumps - (u.airJumpsUsed || 0)), max: mech.airJumps } : null;
+      if (!st && !s.stamShow && !pips) { s.a = 0; s.x = null; return; }
+      const fs = Math.round(17 * big), tw = st ? measure(st.text, fs, DISPLAY) : 0;
+      const bw = Math.round(54 * big), w = Math.max(tw, bw) + 10;
+      const h = (st ? fs + 2 : 0) + (st && st.bar != null ? 7 : 0) + (s.stamShow ? 6 : 0) + (pips ? 10 : 0) + 4;
+      const me = boxes[i], other = boxes.filter((_, k) => k !== i);
+      const hx = sx(u.rig.joints.head.x), headTop = me.y0 - (u.faint > 0 ? 14 * z : 0);   // fainted: clear of the stars circling the head
+      const clampX = (x) => Math.max(w / 2 + 10, Math.min(width - w / 2 - 10, x));
+      const yTop = STRIP_H + 34 + h / 2;   // never up in the bars or the hint line
+      const away = other.length ? Math.sign(hx - (other[0].x0 + other[0].x1) / 2) || 1 : 1;
+      const cands = [
+        [clampX(hx), headTop - 8 - h / 2],
+        [clampX(hx + away * (w / 2 + 16)), headTop - 8 - h / 2],
+        [clampX(me.x1 + w / 2 + 6), headTop + h / 2 + 4],   // beside the head, on the far side when it's up against the top
+        [clampX(me.x0 - w / 2 - 6), headTop + h / 2 + 4],
+      ].map(([cx, cy]) => [cx, Math.max(yTop, cy)]);
+      let pick = null;
+      for (const [cx, cy] of cands) {
+        const r = { x0: cx - w / 2, x1: cx + w / 2, y0: cy - h / 2, y1: cy + h / 2 };
+        if (!overlaps(r, boxes) && !overlaps(r, taken)) { pick = [cx, cy]; break; }
+      }
+      const want = pick ? 1 : 0.22;
+      if (!pick) pick = cands[0];
+      // ease the position (the head bobs) and the alpha; a fresh track appears in place
+      if (s.x == null) { s.x = pick[0]; s.y = pick[1]; s.a = want; }
+      const k = 1 - Math.exp(-dt * 18);
+      s.x += (pick[0] - s.x) * k; s.y += (pick[1] - s.y) * k;
+      s.a += (want - s.a) * (1 - Math.exp(-dt * (want < s.a ? 22 : 10)));
+      taken.push({ x0: s.x - w / 2, x1: s.x + w / 2, y0: s.y - h / 2, y1: s.y + h / 2 });
+
+      ctx.save(); ctx.globalAlpha = s.a;
+      let y = s.y - h / 2 + 2;
+      if (st) {
+        const blink = st.dim ? 0.8 : 1;
+        const pop = st.pop ? 1 + Math.max(0, st.pop - 0.3) * 1.2 : 1;
+        ctx.save(); ctx.globalAlpha *= blink; ctx.translate(s.x, y + fs / 2); ctx.scale(pop, pop);
+        neonText(st.text, 0, 1, fs, st.glow || st.color, { glow: 0.8, core: true });
+        ctx.restore();
+        if (st.dizzy) {
+          // two small stars chase round the word
+          for (let n = 0; n < 2; n++) {
+            const ang = clock * 6 + n * Math.PI;
+            sparkle(s.x + Math.cos(ang) * (tw / 2 + 8), y + fs / 2 + Math.sin(ang) * 6, 4.5 * big, NEON.amber);
+          }
+        }
+        y += fs + 2;
+        if (st.bar != null) {
+          const bx = s.x - bw / 2;
+          ctx.fillStyle = 'rgba(14,4,30,0.8)'; ctx.fillRect(bx - 1, y - 1, bw + 2, 6);
+          ctx.save(); ctx.shadowColor = st.barColor; ctx.shadowBlur = 8; ctx.fillStyle = st.barColor;
+          ctx.fillRect(st.fill ? bx : s.x - bw / 2 * st.bar, y, bw * st.bar, 4);   // stun drains to the middle; a getup fills
+          ctx.restore();
+          y += 7;
+        }
+      }
+      if (s.stamShow) {
+        const blink = Math.floor(clock * 7) % 2 === 0, bx = s.x - bw / 2;
+        ctx.save(); ctx.globalAlpha *= u.faint > 0 ? 0.6 : low ? 1 : Math.min(1, s.stamShow) * 0.75;
+        ctx.fillStyle = low && blink ? 'rgba(255,43,214,0.35)' : 'rgba(14,4,30,0.75)'; ctx.fillRect(bx - 1, y - 1, bw + 2, 4);
+        const c = u.faint > 0 ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
+        ctx.shadowColor = c; ctx.shadowBlur = low ? 8 : 4; ctx.fillStyle = c; ctx.fillRect(bx, y, bw * stam, 2);
+        ctx.restore();
+        y += 6;
+      }
+      if (pips) {
+        for (let n = 0; n < pips.max; n++) {
+          const px = s.x + (n - (pips.max - 1) / 2) * 12, py = y + 4, on = n < pips.left;
+          ctx.save(); ctx.translate(px, py); ctx.rotate(Math.PI / 4);
+          ctx.shadowColor = NEON.cyan; ctx.shadowBlur = on ? 8 : 0; ctx.lineWidth = 1.5; ctx.strokeStyle = NEON.cyan; ctx.globalAlpha *= on ? 1 : 0.4;
+          if (on) { ctx.fillStyle = NEON.cyan; ctx.fillRect(-3, -3, 6, 6); } else ctx.strokeRect(-3, -3, 6, 6);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    });
+  }
+  function sparkle(x, y, s, color) {
+    ctx.save(); ctx.translate(x, y); ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 6;
+    ctx.beginPath();
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, rr = k % 2 ? s * 0.3 : s; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+
+  // the online win/loss tally, small under ROUND: flow.tally is { you, rival, draw, ... } from the local
+  // player's side (src/flow/), so it reads YOU 3–2 RIVAL on both screens. It fades over a fighter.
+  function tally(t, boxes, taken) {
+    if (!t || typeof t !== 'object' || t.you == null) return;
+    const text = `YOU ${t.you}\u2013${t.rival ?? 0} RIVAL${t.draw ? `  (${t.draw} DRAW${t.draw > 1 ? 'S' : ''})` : ''}`;
+    const y = 34 + 26 + 25, w = measure(text, 16, LABEL, 600) + 12, r = { x0: width / 2 - w / 2, x1: width / 2 + w / 2, y0: y - 10, y1: y + 10 };
+    ctx.save(); ctx.globalAlpha = overlaps(r, boxes) ? 0.18 : 0.95;
+    neonText(text, width / 2, y, 16, NEON.amber, { font: LABEL, weight: 600, glow: 0.5, core: false });
+    ctx.restore();
+    taken.push(r);
   }
 
   function timer(sim) {
@@ -243,9 +443,9 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.clearRect(0, 0, width, height);
     if (flow && flow.bare) return layout;
     // a soft violet fade behind the strip so the bars read over the bright sign row
-    const g = ctx.createLinearGradient(0, 0, 0, STRIP_H + 18);
-    g.addColorStop(0, 'rgba(10,2,24,0.62)'); g.addColorStop(0.75, 'rgba(10,2,24,0.3)'); g.addColorStop(1, 'rgba(10,2,24,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, width, STRIP_H + 18);
+    const g = ctx.createLinearGradient(0, 0, 0, STRIP_H + 30);   // down past the move-hint line under the bars
+    g.addColorStop(0, 'rgba(10,2,24,0.62)'); g.addColorStop(0.7, 'rgba(10,2,24,0.32)'); g.addColorStop(1, 'rgba(10,2,24,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, width, STRIP_H + 30);
     // a mirrored view (camera.mirror: the online guest) swaps the bars, so P2's is on the left like his fighter
     const flip = camera.mirror ? 1 : 0;
     bar(sim.units[0], 0, flip, sim, dt); bar(sim.focus || sim.units[1], 1, 1 - flip, sim, dt);
@@ -253,9 +453,11 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (flow && flow.score != null) score(flow, flip);
 
     const boxes = fighterBoxes(sim, camera), taken = [];
+    if (flow && flow.tally) tally(flow.tally, boxes, taken);
     if (sim.banner !== lastBanner) { lastBanner = sim.banner; bannerAge = 0; } else bannerAge += dt;
     if (sim.banner) banner(sim.banner, bannerAge, boxes, taken);
     if (attract) attractCard(attract, boxes, taken, dt);   // before the callouts, so they step around it
+    tracks(sim, camera, dt, taken);   // the overhead status tracks; the callouts step around them too
 
     // hit counter and callouts: stacked on the attacker's side under the strip, else the other side,
     // else the middle; never over a fighter
@@ -267,7 +469,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       const age = c.max - c.t;
       items.push({ text: c.kind === 'counter' && c.text === 'COUNTER' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' || c.kind === 'accident' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
     }
-    const rows = [STRIP_H + 22, STRIP_H + 56, STRIP_H + 90, STRIP_H + 124];
+    const rows = [STRIP_H + 32, STRIP_H + 66, STRIP_H + 100, STRIP_H + 134];   // under the move-hint line
     let row = [0, 0, 0];
     for (const it of items) {
       const pop = 1 + Math.max(0, 0.3 - it.age * 2);
@@ -372,7 +574,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.fillText(`${scene}  seed ${sim.seed}  step ${sim.stepCount}  ${sim.phase}${sim.phaseName ? '  ' + sim.phaseName : ''}`, 44, height - 22);
   }
 
-  return { draw };
+  return { draw, event };
 }
 
 function mix(a, b, t) {

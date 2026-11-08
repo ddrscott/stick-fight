@@ -116,7 +116,7 @@ export function createInput(target = window) {
       const throwBtn = b(5);
       s.lp = s.lp || b(2) || throwBtn; s.rp = s.rp || b(3); s.lk = s.lk || b(0) || throwBtn; s.rk = s.rk || b(1);
     }
-    // a mirrored view (the online guest, ?mirror=1): right on the screen is left in the world. Flipped
+    // a mirrored view (the ?mirror=1 debug view; online never mirrors): right on the screen is left in the world. Flipped
     // here, at capture, so the sim and the lockstep only ever see world directions and both machines
     // record the same input. Keyboard, pad and the touch stick (synthetic keys) all come through here.
     if (api.mirror && s.dx) s.dx = -s.dx;

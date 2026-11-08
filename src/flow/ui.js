@@ -101,12 +101,18 @@ export function createUI(onSound) {
   function move(dir) {
     if (!items.length) return;
     if (focus < 0) { setFocus(0, true); return; }
-    const c = (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+    const c = (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, top: r.top, bottom: r.bottom }; };
     const a = c(items[focus].el);
+    // left and right stay in the row when the row has somewhere to go (two columns over a row of
+    // buttons: left from the right column goes across, not down to the row under it)
+    const sameRow = (b) => Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.3 * Math.min(a.bottom - a.top, b.bottom - b.top);
+    const horiz = dir === 'left' || dir === 'right';
+    const rowOnly = horiz && items.some((it, k) => { if (k === focus || off(k)) return false; const b = c(it.el); return sameRow(b) && (dir === 'left' ? b.x < a.x - 2 : b.x > a.x + 2); });
     let best = -1, bd = Infinity;
     items.forEach((it, k) => {
       if (k === focus || off(k)) return;
       const b = c(it.el), dx = b.x - a.x, dy = b.y - a.y;
+      if (rowOnly && !sameRow(b)) return;
       const main = dir === 'up' ? -dy : dir === 'down' ? dy : dir === 'left' ? -dx : dx;
       const cross = dir === 'up' || dir === 'down' ? Math.abs(dx) : Math.abs(dy);
       if (main <= 2) return;
@@ -294,6 +300,100 @@ function injectStyle() {
   .fl-tech p.fl-got b { color: #fff; text-shadow: 0 0 0.5cqw var(--c); }
   .fl-tech small { font-size: 1.4cqw; letter-spacing: 0.08em; color: rgba(214,190,255,0.7); }
   .fl-selfoot .fl-btn { min-width: 22cqw; }
+
+  /* online, between matches: the post-match screen and the pick screen's rival status */
+  .fl-card { position: relative; }
+  .fl-card .fl-tag { position: absolute; top: 0.5cqh; right: 0.4cqw; font: normal 400 1.2cqw/1 'Bungee', sans-serif; padding: 0.35cqw 0.5cqw 0.2cqw; color: var(--deep); background: var(--amber); box-shadow: 0 0 0.8cqw var(--amber); letter-spacing: 0.04em; }
+  .fl-card.fl-rival { border-style: dashed; }
+  .fl-card.fl-rivalready .fl-tag { background: #c8ff3a; box-shadow: 0 0 0.8cqw #c8ff3a; }
+  /* the online pick screen has a status line more than the plain select: the cards and sheet give up the room */
+  .fl-netpick { gap: 1.1cqh; padding-top: 2.4cqh; }
+  .fl-netpick .fl-grid { grid-auto-rows: 18.4cqh; }
+  .fl-netpick .fl-card { height: 18.4cqh; }
+  .fl-netpick .fl-detail { height: 57.2cqh; }
+  .fl-post .fl-btn { white-space: nowrap; }
+  .fl-selstatus { display: flex; gap: 3cqw; font-size: 2.3cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1; min-height: 2.4cqw; }
+  .fl-selstatus b { font-weight: 600; color: var(--amber); text-shadow: 0 0 0.5cqw var(--amber); }
+  .fl-selstatus b.fl-ok { color: #c8ff3a; text-shadow: 0 0 0.5cqw rgba(200,255,58,0.7); }
+  .fl-post { gap: 1.3cqh; }
+  .fl-set { display: flex; align-items: baseline; gap: 2.4cqw; font-family: 'Bungee', 'Arial Black', sans-serif; line-height: 1; }
+  .fl-set .fl-sn { font-size: 8cqw; color: #fff; text-shadow: 0 0 0.6cqw var(--c), 0 0 1.8cqw var(--c); }
+  .fl-set .fl-sl { font-size: 2.2cqw; color: var(--c); text-shadow: 0 0 0.6cqw var(--c); letter-spacing: 0.06em; }
+  .fl-set .fl-dash { font-size: 5cqw; color: rgba(230,214,255,0.6); }
+  .fl-set .fl-me { --c: var(--pink); } .fl-set .fl-them { --c: var(--cyan); }
+  .fl-cd { font-family: 'Bungee', sans-serif; font-size: 3.2cqw; color: #fff0cf; text-shadow: 0 0 0.6cqw var(--amber), 0 0 1.6cqw var(--amber); min-height: 3.4cqw; }
+  .fl-cd small { display: block; text-align: center; font: 600 1.8cqw/1.2 'Teko', sans-serif; letter-spacing: 0.12em; color: rgba(230,214,255,0.8); text-shadow: none; }
+  .fl-post > .fl-row:not(.fl-cdrow) .fl-btn { width: 32cqw; min-width: 0; }   /* a true 2x2 grid, so left and right never drift to the other row */
+  .fl-cdrow { min-height: max(36px, 6cqh); gap: 2.4cqw; }
+  .fl-cdrow .fl-btn.fl-dis { visibility: hidden; }
+  .fl-rivalline { font-size: 2.4cqw; font-weight: 600; letter-spacing: 0.14em; color: rgba(230,214,255,0.9); min-height: 2.5cqw; }
+  .fl-rivalline b { font-weight: 600; color: var(--amber); text-shadow: 0 0 0.5cqw var(--amber); }
+  .fl-post .fl-btn small { min-height: 1.7cqw; }
+  .fl-post .fl-btn.fl-want small { color: var(--amber); opacity: 1; animation: fl-blink 0.9s steps(1) infinite; }
+  .fl-post .fl-btn.fl-focus.fl-want small { color: var(--deep); }
+
+  /* typing screens (a name, a crew name or link, an email, a code): the field over the on-screen keyboard */
+  .fl-text { gap: 1.2cqh; }
+  .fl-text .fl-h2 { font-size: 3.6cqw; }
+  .fl-field { min-width: 44cqw; max-width: 86cqw; min-height: 6.2cqw; padding: 0.5cqw 1.6cqw 0; border: 2px solid var(--pink); background: rgba(14,4,30,0.7);
+    box-shadow: 0 0 1.2cqw color-mix(in srgb, var(--pink) 50%, transparent); font: 400 4cqw/5.6cqw 'Bungee', 'Arial Black', sans-serif; color: #fff;
+    text-shadow: 0 0 0.8cqw var(--pink); text-align: center; white-space: pre; overflow: hidden; letter-spacing: 0.04em; }
+  .fl-field.fl-lower { font: 600 3.8cqw/5.8cqw 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.04em; }
+  .fl-caret { display: inline-block; width: 0.5cqw; height: 4cqw; margin-left: 0.3cqw; vertical-align: -0.5cqw; background: var(--amber); box-shadow: 0 0 0.8cqw var(--amber); animation: fl-blink 1s steps(1) infinite; }
+  .fl-temsg { min-height: 2.2cqw; max-width: 80cqw; }
+  .fl-warn { color: #ffc2f3 !important; text-shadow: 0 0 0.6cqw var(--pink); }
+  .fl-text .fl-key { width: 5cqw; height: 5cqw; font-size: 2.7cqw; }
+  .fl-text .fl-key.fl-wide { width: 9cqw; font-size: 2cqw; }
+  .fl-text .fl-kb { gap: 0.5cqw; }
+  .fl-text .fl-kbrow { gap: 0.5cqw; }
+
+  /* the online menu: crew rooms beside quick match, the profile row under them */
+  .fl-online { gap: 1.2cqh; }
+  .fl-onlinecols { align-items: flex-start; gap: 3cqw; }
+  .fl-ocol { width: 30cqw; gap: 1.1cqh; }
+  .fl-ocol .fl-btn { min-width: 0; width: 100%; }
+  .fl-colhead { font: 400 1.7cqw/1 'Bungee', sans-serif; letter-spacing: 0.08em; color: var(--amber); text-shadow: 0 0 0.6cqw var(--amber); text-align: center; margin-bottom: 0.2cqh; }
+  .fl-orow { gap: 1.4cqw; margin-top: 0.6cqh; }
+  .fl-orow .fl-btn { min-width: 14cqw; }
+
+  /* the profile */
+  .fl-pname { font-size: 6cqw; }
+  .fl-pemail { text-transform: none; letter-spacing: 0.08em; }
+  .fl-profile .fl-small { max-width: 70cqw; }
+
+  /* the crew lobby: standings on the left, PLAY and the link on the right */
+  .fl-crew { gap: 1cqh; }
+  .fl-crew .fl-h2 { font-size: 3.6cqw; }
+  .fl-crew .fl-link { font-size: 1.8cqw; }
+  .fl-crewbody { align-items: flex-start; gap: 2.4cqw; margin-top: 0.6cqh; }
+  .fl-crewleft { width: 58cqw; display: flex; flex-direction: column; gap: 1.4cqh; }
+  .fl-crewright { width: 26cqw; }
+  .fl-standings { display: grid; grid-template-columns: 2.2cqw 1fr 3.4cqw 3.4cqw 3.4cqw 6cqw 11cqw; column-gap: 0.8cqw; row-gap: 0.5cqh; align-items: baseline;
+    padding: 1cqw 1.2cqw; border: 2px solid rgba(46,242,255,0.5); background: rgba(14,4,30,0.66); font-size: 2.3cqw; font-weight: 600; letter-spacing: 0.08em; line-height: 1.05; }
+  .fl-standings span { color: #e9dcff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fl-standings .fl-sth { font: 400 1.2cqw/1 'Bungee', sans-serif; color: rgba(214,190,255,0.7); letter-spacing: 0.06em; }
+  .fl-standings .fl-srank { color: var(--amber); text-shadow: 0 0 0.5cqw var(--amber); }
+  .fl-standings .fl-snum { text-align: right; font-variant-numeric: tabular-nums; }
+  .fl-standings .fl-svs { color: var(--cyan); }
+  .fl-standings .fl-sfav { color: #fff; text-shadow: 0 0 0.6cqw var(--fc, var(--violet)); font-size: 2cqw; }
+  .fl-standings .fl-me { color: #fff; text-shadow: 0 0 0.6cqw var(--pink); }
+  .fl-standings .fl-smore { grid-column: 1 / -1; font-size: 1.8cqw; color: rgba(214,190,255,0.7); text-align: center; }
+  .fl-sname { display: flex; align-items: baseline; gap: 0.6cqw; }
+  .fl-dot { display: inline-block; flex: none; width: 1cqw; height: 1cqw; border: 2px solid rgba(214,190,255,0.35); transform: translateY(-0.1cqw); }
+  .fl-dot.fl-on-here { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 0.6cqw var(--cyan); }
+  .fl-dot.fl-on-ready { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 0.6cqw var(--amber); }
+  .fl-dot.fl-on-match { background: var(--pink); border-color: var(--pink); box-shadow: 0 0 0.6cqw var(--pink); }
+  .fl-chip { font: normal 400 1cqw/1 'Bungee', sans-serif; padding: 0.3cqw 0.4cqw 0.15cqw; color: var(--deep); letter-spacing: 0.04em; }
+  .fl-chip.fl-on-ready { background: var(--amber); } .fl-chip.fl-on-match { background: var(--pink); }
+  .fl-recent { display: flex; flex-direction: column; gap: 0.4cqh; font-size: 1.8cqw; font-weight: 500; letter-spacing: 0.1em; color: rgba(214,190,255,0.75); min-height: 6cqh; }
+  .fl-crewbtns { gap: 1.2cqh; align-items: stretch; }
+  .fl-crewstatus { min-height: 5.4cqw; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0.6cqw 0.8cqw 0.3cqw; border: 2px solid rgba(255,176,46,0.5);
+    font-size: 2cqw; font-weight: 600; letter-spacing: 0.1em; line-height: 1.1; color: #fff0cf; text-shadow: 0 0 0.5cqw var(--amber); }
+  .fl-playbtn { min-width: 0; width: 100%; min-height: max(56px, 13cqh); }
+  .fl-playbtn .fl-pl { font: 400 4.4cqw/1 'Bungee', 'Arial Black', sans-serif; letter-spacing: 0.04em; }
+  .fl-crewpair { gap: 1cqw; }
+  .fl-crewpair .fl-btn { flex: 1; min-width: 0; }
+  .fl-crewfail .fl-h3 { max-width: 70cqw; }
   `;
   const s = document.createElement('style');
   s.id = 'flow-style';

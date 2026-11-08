@@ -3,7 +3,7 @@
 //
 //   gameAudio.attach(sim)   once, after the sim exists
 //   gameAudio.event(ev)     from main.js's onEvent, for every fighter and sim event
-//   gameAudio.setMirror(on) the view is mirrored left-right (the online guest), so pan flips
+//   gameAudio.setMirror(on) the view is mirrored left-right (the ?mirror=1 debug view), so pan flips
 //   gameAudio.setMusicPool(pool)   the arcade flow pins the pool per screen ('menu' on the
 //                           title and menus); null hands it back to the watcher's guess
 //
@@ -259,7 +259,7 @@ function createGameAudio() {
     sfx, music, settings, actions, monitor,
     attach(s) { sim = s; },
     event,
-    // the screen shows the world mirrored left-right (the online guest's view): pan follows it
+    // the screen shows the world mirrored left-right (the ?mirror=1 debug view): pan follows it
     setMirror(on) { panSign = on ? -1 : 1; },
     get mirrored() { return panSign < 0; },
     // 'menu' | 'fight' | 'horde' | 'calm' pins the music pool; null goes back to following the sim

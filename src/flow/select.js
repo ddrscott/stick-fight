@@ -46,7 +46,12 @@ function rigView(canvas, c, zoom) {
 /**
  * @param {any} ui            createUI's object
  * @param {{ title: string, sub: string, roster: any[], initial?: string, touch: boolean, pad: boolean,
- *           onPick: (id: string) => void, onBack: () => void, cls?: string }} o
+ *           onPick: (id: string) => void, onBack: () => void, cls?: string,
+ *           backLabel?: string, pickLabel?: string, status?: HTMLElement, extra?: any[],
+ *           onHover?: (id: string) => void, onBackKey?: () => void, legend?: any[] }} o
+ *   the online pick screen's extras: BACK's label (LEAVE ROOM), a status line under the subtitle,
+ *   more footer buttons (the host's START), the card under the cursor as it moves (onHover), and a
+ *   back key that does something other than the BACK button (un-ready, not leave)
  */
 export function openSelect(ui, o) {
   const views = [];
@@ -54,6 +59,7 @@ export function openSelect(ui, o) {
   let detail, nameEl, tagEl, statsEl, movesEl, bigCanvas;
   const roster = o.roster;
   const start = Math.max(0, roster.findIndex((c) => c.id === o.initial));
+  const cards = new Map();   // id -> the card's element (mark() tags the rival's)
 
   function paint(c) {
     if (!c || !detail) return;
@@ -69,6 +75,7 @@ export function openSelect(ui, o) {
 
   ui.show(`fl-select ${o.cls || ''}`, (root) => {
     root.append(el('h1', 'fl-h2', o.title), el('div', 'fl-label', o.sub));
+    if (o.status) root.appendChild(o.status);
     const row = el('div', 'fl-selrow');
     const grid = el('div', 'fl-grid');
     const items = [];
@@ -78,6 +85,7 @@ export function openSelect(ui, o) {
       const cv = document.createElement('canvas'); cv.width = 226; cv.height = 154;   // the card's shape, so the rig isn't stretched
       b.el.append(cv, el('b', c.name.length > 11 ? 'fl-long' : '', c.name));   // WINDOW WASHER doesn't fit at the card's size
       grid.appendChild(b.el);
+      cards.set(c.id, b.el);
       views.push(rigView(cv, c, 0.92));
       items.push({ ...b, focusFirst: true, char: c });
     });
@@ -90,19 +98,30 @@ export function openSelect(ui, o) {
     row.append(grid, detail);
     root.appendChild(row);
     const foot = el('div', 'fl-selfoot');
-    const pick = button('PICK', () => { const it = ui.items[ui.focus]; const c = it && it.char ? it.char : bigChar; if (c) o.onPick(c.id); }, 'fl-pink');
-    const back = button('BACK', o.onBack, 'fl-violet');
+    const pick = button(o.pickLabel || 'PICK', () => { const it = ui.items[ui.focus]; const c = it && it.char ? it.char : bigChar; if (c) o.onPick(c.id); }, 'fl-pink');
+    const back = button(o.backLabel || 'BACK', o.onBack, 'fl-violet');
     const tc = techniqueCount();   // the happy accidents found on this browser (src/flow/techniques.js)
     // the keys and buttons are in the footer legend (ui.js); touch gets the one thing it can't guess
-    foot.append(back.el, pick.el, el('div', 'fl-small fl-touchonly', 'TAP A FIGHTER, TAP AGAIN TO PICK'),
+    const extra = o.extra || [];
+    foot.append(back.el, pick.el, ...extra.map((x) => x.el), el('div', 'fl-small fl-touchonly', 'TAP A FIGHTER, TAP AGAIN TO PICK'),
       el('div', 'fl-small fl-found', `TECHNIQUES FOUND ${tc.found}/${tc.total}`));
     root.appendChild(foot);
-    items.push(back, pick);
-    return { items, focus: start, back: o.onBack, onFocus: (k, it) => { if (it && it.char) paint(it.char); }, legend: [['move'], ['confirm', 'PICK'], ['back', 'BACK']] };
+    items.push(back, pick, ...extra);
+    return { items, focus: start, back: o.onBackKey || o.onBack, onFocus: (k, it) => { if (it && it.char) { paint(it.char); if (o.onHover) o.onHover(it.char.id); } }, legend: o.legend || [['move'], ['confirm', 'PICK'], ['back', 'BACK']] };
   });
   paint(roster[start]);
 
+  let marked = '';
   return {
+    /** tag a card (the rival's, online): label '' clears it */
+    mark(id, label, cls = '') {
+      const key = `${id}|${label}|${cls}`;
+      if (key === marked) return;
+      marked = key;
+      for (const c of cards.values()) { c.classList.remove('fl-rival', 'fl-rivalready'); const t = c.querySelector('.fl-tag'); if (t) t.remove(); }
+      const c = id && label ? cards.get(id) : null;
+      if (c) { c.classList.add('fl-rival'); if (cls) c.classList.add(cls); c.appendChild(el('i', 'fl-tag', label)); }
+    },
     /** per frame: the cards breathe, the big rig throws one of its unique moves every few seconds */
     tick(dt) {
       for (const v of views) v.draw(dt);

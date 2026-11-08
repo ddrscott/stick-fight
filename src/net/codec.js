@@ -2,7 +2,9 @@
 // go over the WebRTC DataChannel (or through the room's WebSocket when relayed). Control
 // messages (start, hashes, bye) are JSON over the WebSocket, which is reliable and ordered.
 //
-// INPUT  u8 1 | u32 first frame | u8 count | u32 ack | u32 sender's frame | count x u16 input
+// INPUT  u8 1 | u32 first frame | u8 count | u32 ack | u32 sender's frame | u8 match | count x u16 input
+//        match = which match of the room session this is (the start message's n, mod 256), so a
+//        late packet from the match before can't land in the next one's input history.
 //        ack = the newest frame of ours the sender has without gaps (0xffffffff: none yet), so
 //        each packet repeats every input the other side hasn't confirmed: unordered, no
 //        retransmits, and a lost packet is covered by the next one.
@@ -41,12 +43,13 @@ export function decodeInput(v) {
  * @param {number[]} codes encoded inputs for frames first, first+1, ...
  * @param {number} ack newest remote frame held without gaps, or NO_FRAME
  * @param {number} frame the sender's current sim frame
+ * @param {number} [match] the match number in the room session (0-255)
  */
-export function inputPacket(first, codes, ack, frame) {
+export function inputPacket(first, codes, ack, frame, match = 0) {
   const n = Math.min(codes.length, MAX_INPUTS_PER_PACKET);
-  const buf = new ArrayBuffer(14 + 2 * n), dv = new DataView(buf);
-  dv.setUint8(0, PKT_INPUT); dv.setUint32(1, first); dv.setUint8(5, n); dv.setUint32(6, ack >>> 0); dv.setUint32(10, frame >>> 0);
-  for (let i = 0; i < n; i++) dv.setUint16(14 + 2 * i, codes[i]);
+  const buf = new ArrayBuffer(15 + 2 * n), dv = new DataView(buf);
+  dv.setUint8(0, PKT_INPUT); dv.setUint32(1, first); dv.setUint8(5, n); dv.setUint32(6, ack >>> 0); dv.setUint32(10, frame >>> 0); dv.setUint8(14, match & 255);
+  for (let i = 0; i < n; i++) dv.setUint16(15 + 2 * i, codes[i]);
   return buf;
 }
 /** @param {number} type PKT_PING or PKT_PONG @param {number} t */
@@ -59,12 +62,12 @@ export function clockPacket(type, t) {
 export function parsePacket(buf) {
   if (!(buf instanceof ArrayBuffer) || buf.byteLength < 1) return null;
   const dv = new DataView(buf), type = dv.getUint8(0);
-  if (type === PKT_INPUT && buf.byteLength >= 14) {
+  if (type === PKT_INPUT && buf.byteLength >= 15) {
     const n = dv.getUint8(5);
-    if (buf.byteLength < 14 + 2 * n) return null;
+    if (buf.byteLength < 15 + 2 * n) return null;
     const codes = [];
-    for (let i = 0; i < n; i++) codes.push(dv.getUint16(14 + 2 * i));
-    return { type, first: dv.getUint32(1), codes, ack: dv.getUint32(6), frame: dv.getUint32(10) };
+    for (let i = 0; i < n; i++) codes.push(dv.getUint16(15 + 2 * i));
+    return { type, first: dv.getUint32(1), codes, ack: dv.getUint32(6), frame: dv.getUint32(10), match: dv.getUint8(14) };
   }
   if ((type === PKT_PING || type === PKT_PONG) && buf.byteLength >= 9) return { type, t: dv.getFloat64(1) };
   return null;

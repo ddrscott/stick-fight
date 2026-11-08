@@ -22,6 +22,8 @@ export default defineConfig({
         target: 'http://127.0.0.1:8787',
         ws: true,
         rewrite: (p) => '/stick-fight' + p,
+        // the session cookie is scoped to /stick-fight (the domain is shared); here the page is at /
+        cookiePathRewrite: { '/stick-fight': '/' },
       },
     },
   },

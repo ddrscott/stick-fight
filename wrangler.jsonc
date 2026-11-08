@@ -1,9 +1,9 @@
 // The game at https://askscottpierce.com/stick-fight (see README, "Hosting" and "Multiplayer").
 // The routes hand /stick-fight and /stick-fight/* to this Worker. Static files come from the
 // assets binding, which lives under dist/stick-fight/ so the file path equals the URL path
-// (vite build fills it). Only /stick-fight/api/* runs the script first: online rooms, one
-// Durable Object each (worker/index.ts). Anything else the assets don't have reaches the
-// script and gets a 404.
+// (vite build fills it). Only /stick-fight/api/* runs the script first: quick rooms and crew
+// rooms (one Durable Object each), profiles and email sign-in (D1), see worker/index.ts.
+// Anything else the assets don't have reaches the script and gets a 404.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "stick-fight",
@@ -25,15 +25,30 @@
     "run_worker_first": ["/stick-fight/api/*"]
   },
   "durable_objects": {
-    // One per room, named by the room code (worker/index.ts)
-    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+    // ROOMS: one per quick room, named by its four-letter code (worker/index.ts).
+    // CREWS: one per crew room, named by its slug; keeps the crew's members and records in its
+    // own SQLite storage (worker/crew.ts)
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }, { "name": "CREWS", "class_name": "Crew" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["Crew"] }],
+  // Profiles kept by email (worker/auth.ts): accounts, sign-in codes (hashed), sessions (hashed),
+  // and the send and guess counters. Schema in migrations/; apply with
+  // `npx wrangler d1 migrations apply stick-fight-auth --remote` before the first deploy.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "stick-fight-auth", "database_id": "8a0ea2d9-9d74-466f-a6ff-5a0446d35653", "migrations_dir": "migrations" }
+  ],
+  // Sign-in codes go out from hey@askscottpierce.com (Email Sending is set up on the zone)
+  "send_email": [{ "name": "EMAIL" }],
+  "vars": { "EMAIL_FROM": "hey@askscottpierce.com" },
   // Abuse limits per client IP (worker/index.ts clientKey), counted per Cloudflare location.
   // Free on every plan; the period can only be 10 or 60 seconds. namespace_id must be unique on
   // the account (other projects use 1001-1003).
   "ratelimits": [
     { "name": "ROOM_LIMIT", "namespace_id": "7101", "simple": { "limit": 10, "period": 60 } },
-    { "name": "JOIN_LIMIT", "namespace_id": "7102", "simple": { "limit": 30, "period": 60 } }
+    { "name": "JOIN_LIMIT", "namespace_id": "7102", "simple": { "limit": 30, "period": 60 } },
+    // new crew rooms per IP
+    { "name": "CREW_LIMIT", "namespace_id": "7103", "simple": { "limit": 5, "period": 60 } },
+    // profile and sign-in calls per IP (the per-email and per-hour caps live in D1)
+    { "name": "AUTH_LIMIT", "namespace_id": "7104", "simple": { "limit": 20, "period": 60 } }
   ]
 }

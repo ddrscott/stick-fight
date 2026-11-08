@@ -19,8 +19,27 @@
 // net.setCharacter(id) sets this side's, TEMP if it never picks),
 // which main.js turns into the 'online' scene: unit 0 is the host, unit 1 the guest, each
 // unit's controller reads the netcode's input for the frame. (The key is still `lockstep` for
-// main.js; the netcode is rollback now, src/net/rollback.js.) Rematches follow on their own:
-// the sim reseeds from the match seed after the WINS card, the same way on both machines.
+// main.js; the netcode is rollback now, src/net/rollback.js.)
+//
+// Between matches (the room session). A match ends END_HOLD frames after the frame the sim first
+// shows the result, once that frame is confirmed on both sides, so both machines stop on the same
+// state and count the same result. The link stays up, and the session goes to 'post':
+//   - each side sends {t:'post', n, want, focus, poke?}: what it asked for (rematch, chars, wait)
+//     and where its cursor is; the guest's want is a request, the host's is the decision
+//   - the host runs the countdowns and tells the guest ({t:'cd', n, kind, ms}): 'auto' (5 s from
+//     the end of the match: a couch session keeps going; any press on either side stops it),
+//     'agree' (3 s: the host picked REMATCH and the guest wants it too or hasn't said; the guest's
+//     B or another choice stops it) and 'host' (3 s: the host overrode the guest's request; only the
+//     host can stop it). A second REMATCH press from the host starts at once
+//   - NEW CHARACTERS from the host is final at once ({t:'go', n}): both go to 'select', send
+//     {t:'pick', n, id, ready} as they browse and pick; once both are ready the host's 'agree'
+//     countdown runs (or START), and after GRACE_MS of a silent rival the host may start with the
+//     rival's current card
+//   - the host's {t:'start', seed, chars, botch, n, tally} starts the next match on both (n counts
+//     the room's matches and tags every input packet and hash, so nothing from one match lands
+//     in the next); {t:'result', n, tally} after each match, and the start's tally, keep the guest's
+//     tally equal to the host's (the host's is the one that counts if they ever differ)
+//   - {t:'alive'} every ALIVE_MS while between matches; SILENT_MS without a word is a lost link
 //
 // Testing: ?netsim=LATENCY,JITTER,LOSS delays everything this side sends by LATENCY ms (one way),
 // give or take up to JITTER ms, and drops LOSS percent of game packets (control messages ride the
@@ -32,9 +51,35 @@ import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
 import { legend, watchDevice } from '../flow/controls.js';
 
-export const NET_VERSION = 7;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message)
+export const NET_VERSION = 9;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
+const PID_KEY = 'stick-fight-pid', RIVALS_KEY = 'stick-fight-rivals';   // this browser's random id, and the all-time record per rival id
+const END_HOLD = 150;     // frames of the WINS card after the result shows (the sim's own hold, 216, would reset the match)
+const AUTO_MS = 5000, AGREE_MS = 3000, GRACE_MS = 20000, ALIVE_MS = 3000, SILENT_MS = 15000;
+const WANTS = new Set(['rematch', 'chars', 'wait']);
+
+/** this browser's id for the all-time record (random, kept in localStorage; '' when storage is off) */
+function myPid() {
+  try {
+    let id = localStorage.getItem(PID_KEY);
+    if (!id || !/^[a-z0-9]{8,16}$/.test(id)) { id = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => (b % 36).toString(36)).join('') + Date.now().toString(36).slice(-4); localStorage.setItem(PID_KEY, id); }
+    return id;
+  } catch { return ''; }
+}
+function readRivals() { try { const o = JSON.parse(localStorage.getItem(RIVALS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } }
+/** the all-time record against a rival id: { w, l, d } from this side */
+function rivalRecord(pid) { const r = pid ? readRivals()[pid] : null; return r ? { w: r.w | 0, l: r.l | 0, d: r.d | 0 } : null; }
+function addRivalResult(pid, res) {
+  if (!pid || !/^[a-z0-9]{8,16}$/.test(pid)) return;
+  try {
+    const all = readRivals(), r = all[pid] || { w: 0, l: 0, d: 0, t: 0 };
+    r[res] = (r[res] | 0) + 1; r.t = Date.now(); all[pid] = r;
+    const keep = Object.entries(all).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, 30);   // the 30 most recent rivals
+    localStorage.setItem(RIVALS_KEY, JSON.stringify(Object.fromEntries(keep)));
+  } catch { /* storage off */ }
+}
+const freshTally = () => ({ host: 0, guest: 0, draw: 0, rounds: [0, 0] });
 
 /**
  * @param {{ sim: any, input: any, startMatch: (o: { seed: number, localIndex: number, lockstep: any, chars?: string[], botch?: boolean }) => void,
@@ -48,6 +93,21 @@ export function createOnline(game) {
   /** @type {any} */ let lockstep = null;
   let localReady = false, remoteReady = false, state = 'idle', detail = '', code = '', role = '';
   let localChar = 'temp', remoteChar = 'temp';   // the fighters each side picked (src/characters/)
+  // the room session: the match number, the tally, and the between-matches choices (see the top)
+  const pid = myPid();
+  let n = 0, tally = freshTally(), rivalPid = '', last = /** @type {any} */ (null);
+  let mine = { want: /** @type {string|null} */ (null), focus: 'rematch', id: 'temp', ready: false };
+  let rival = { want: /** @type {string|null} */ (null), focus: '', id: 'temp', ready: false, at: 0 };
+  let cd = /** @type {null | { kind: string, until: number }} */ (null), autoOff = false;
+  let pendingResult = /** @type {any} */ (null), pendingGo = false;
+  /** @type {any} */ let drain = null;   // the finished match's netcode: keeps sending acks until the next start
+  let timer = 0, heardAt = 0, aliveAt = 0, autoHalt = false;
+  // the player's display name (rides the ready message; the only thing about a player the other sees),
+  // and the rival's. A crew match (src/net/crew.js opened the room) starts on the pick screen
+  // (pickFirst: the host's 'go' at match 0 instead of a start), and its all-time record is the
+  // crew's, kept on the server, so this browser's per-rival record stays out of it
+  let myName = '', rivalName = '', pickFirst = false, crewMode = false;
+  const now = () => performance.now();
   /** @type {null | ((frame: number) => any)} */ let localSource = null;
   const params = new URLSearchParams(location.search);
   const forceRelay = () => params.get('relay') === '1' || net.forceRelay || (() => { try { return !!JSON.parse(localStorage.getItem(STORE) || '{}').relay; } catch { return false; } })();
@@ -65,24 +125,34 @@ export function createOnline(game) {
     link = l;
     l.on('peer', (present) => {
       if (present) { localReady = false; remoteReady = false; setState('linking'); return; }
-      if (lockstep) finish('peer-left');
+      if (lockstep || between()) finish('peer-left');
       else if (state !== 'idle') setState(role === 'host' ? 'waiting' : 'host-gone');
     });
     l.on('status', () => {
       lobby.render();
-      if (l.ready && !localReady && !lockstep) { localReady = true; l.sendControl({ t: 'ready', v: NET_VERSION, char: localChar }); maybeStart(); }
+      if (l.ready && !localReady && !lockstep && !between()) { localReady = true; l.sendControl({ t: 'ready', v: NET_VERSION, char: localChar, pid, name: myName }); maybeStart(); }
     });
     l.on('control', (msg) => {
+      heardAt = now();
       if (lockstep && lockstep.onControl(msg)) return;
+      if (msg.t === 'hash' || msg.t === 'dump') return;   // the match before's, arriving late
       if (msg.t === 'ready') {
         if (msg.v !== NET_VERSION) { setState('error', 'version'); l.close(); return; }
         remoteChar = typeof msg.char === 'string' ? msg.char : 'temp';
+        rivalPid = typeof msg.pid === 'string' ? msg.pid.slice(0, 16) : '';
+        rivalName = typeof msg.name === 'string' ? msg.name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim().slice(0, 12) : '';
         remoteReady = true; maybeStart();
-      } else if (msg.t === 'start' && role === 'guest' && !lockstep) begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar], msg.botch !== false);
+      } else if (msg.t === 'start' && role === 'guest') {
+        const m = (msg.n | 0) || 1;
+        if (m <= n) return;   // a start we already played
+        if (lockstep) lockstep = null;   // still finishing the match before (a stall): the host has it confirmed, its tally counts
+        if (msg.tally) adoptTally(msg.tally);
+        begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar], msg.botch !== false, m);
+      } else onSession(msg);
     });
-    l.on('packet', (buf) => { if (lockstep) lockstep.onPacket(buf); });
+    l.on('packet', (buf) => { heardAt = now(); if (lockstep) lockstep.onPacket(buf); else if (drain) drain.onPacket(buf); });
     l.on('closed', (reason) => {
-      if (lockstep) finish(reason === 'closed' ? 'peer-left' : 'lost');
+      if (lockstep || between()) finish(reason === 'closed' ? 'peer-left' : 'lost');
       else if (state !== 'idle') setState('error', reason);
       link = null;
     });
@@ -90,17 +160,23 @@ export function createOnline(game) {
 
   function maybeStart() {
     if (role !== 'host' || !localReady || !remoteReady || lockstep) return;
+    if (pickFirst && n === 0) { if (!between()) toSelect(); return; }   // a crew match: both pick first
     const seed = crypto.getRandomValues(new Uint32Array(1))[0];
     const chars = [localChar, remoteChar];   // the host is P1
     const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;   // the host's rules for both
-    link.sendControl({ t: 'start', seed, chars, botch });
-    begin(seed, chars, botch);
+    link.sendControl({ t: 'start', seed, chars, botch, n: 1, tally });
+    begin(seed, chars, botch, 1);
   }
 
-  function begin(seed, chars = ['temp', 'temp'], botch = true) {
+  function begin(seed, chars = ['temp', 'temp'], botch = true, m = 1) {
     const localIndex = role === 'host' ? 0 : 1;
+    n = m; drain = null; stopTimer(); autoHalt = false;
+    localChar = chars[localIndex] || localChar; remoteChar = chars[1 - localIndex] || remoteChar;
+    mine = { want: null, focus: 'rematch', id: localChar, ready: false };
+    rival = { want: null, focus: '', id: remoteChar, ready: false, at: now() };
+    cd = null; autoOff = false; pendingGo = false;
     lockstep = createRollback({
-      sim: game.sim, localIndex, link: netsimLink(link, params.get('netsim')),
+      sim: game.sim, localIndex, link: netsimLink(link, params.get('netsim')), match: m,
       sampleLocal: (f) => (localSource ? localSource(f) : game.input.snapshot()),
       onDesync: (d) => { emit('desync', d); readout.render(); },
     });
@@ -110,18 +186,161 @@ export function createOnline(game) {
     document.documentElement.classList.add('online');
     emit('connected', { mode: link.mode, role, code });
     game.startMatch({ seed, localIndex, lockstep, chars, botch });
-    emit('start', { seed, localIndex, chars, botch });
+    emit('start', { seed, localIndex, chars, botch, n: m });
     readout.show(true);
   }
 
+  // ---- the room session: the end of a match, and between matches -------------------------------
+  const between = () => state === 'post' || state === 'select';
+  /** after each advance: the match is over once END_HOLD frames past the result are confirmed here
+   *  and the other side has our inputs up to there too (the drain keeps sending them after) */
+  function checkEnd() {
+    const ls = lockstep;
+    if (!ls) return;
+    const at = ls.matchAt;
+    if (at < 0) { if (autoHalt) { ls.haltAt = Infinity; autoHalt = false; } return; }   // a result a correction took back
+    const end = at + END_HOLD;
+    if (ls.haltAt > end) { ls.haltAt = end; autoHalt = true; }
+    if (ls.frame >= end && ls.confirmed >= end - 1) matchOver();
+  }
+  function matchOver() {
+    const sim = game.sim, ls = lockstep;
+    lockstep = null; drain = ls;
+    const wins = [sim.wins[0] | 0, sim.wins[1] | 0];
+    const winner = wins[0] > wins[1] ? 0 : wins[1] > wins[0] ? 1 : -1;
+    if (winner === 0) tally.host++; else if (winner === 1) tally.guest++; else tally.draw++;
+    tally.rounds[0] += wins[0]; tally.rounds[1] += wins[1];
+    const me = role === 'host' ? 0 : 1;
+    if (!crewMode) addRivalResult(rivalPid, winner < 0 ? 'd' : winner === me ? 'w' : 'l');   // a crew keeps its own, on the server
+    last = { n, winner, wins, chars: [(sim.units[0].char && sim.units[0].char.id) || '', (sim.units[1].char && sim.units[1].char.id) || ''], hash: hashSim(sim), frame: ls ? ls.frame : -1 };
+    document.documentElement.classList.remove('online');
+    readout.show(false);
+    mine.want = null; mine.focus = 'rematch';
+    setState('post');
+    startTimer();
+    if (role === 'host') {
+      link && link.sendControl({ t: 'result', n, tally, hash: last.hash, f: last.frame });
+      if (!autoOff) setCd('auto', AUTO_MS);
+    } else if (pendingResult) applyResult();
+    emit('match-over', view());
+    changed();
+    if (pendingGo) { pendingGo = false; toSelect(); }
+  }
+  function adoptTally(t) {
+    if (!t || typeof t !== 'object') return;
+    const next = { host: t.host | 0, guest: t.guest | 0, draw: t.draw | 0, rounds: [(t.rounds && t.rounds[0]) | 0, (t.rounds && t.rounds[1]) | 0] };
+    if (JSON.stringify(next) !== JSON.stringify(tally)) { if (n > 0 && (tally.host + tally.guest + tally.draw)) console.warn('[net] tally differs from the host\'s; using the host\'s', tally, next); tally = next; }
+  }
+  function applyResult() {
+    const r = pendingResult; pendingResult = null;
+    if (!r || r.n !== n) return;
+    if (last && r.hash && last.hash !== r.hash && r.f === last.frame) console.warn(`[net] final state differs from the host's at frame ${r.f}`);
+    adoptTally(r.tally);
+  }
+  function setCd(kind, ms) {
+    const until = now() + ms;
+    cd = cd && cd.until < until && kind === 'agree' && cd.kind === 'auto' ? { kind, until: cd.until } : { kind, until };
+    sendCd();
+  }
+  function cancelCd() { if (!cd) return; cd = null; sendCd(); }
+  function sendCd() { if (role === 'host' && link) link.sendControl({ t: 'cd', n, kind: cd ? cd.kind : null, ms: cd ? Math.max(0, Math.round(cd.until - now())) : 0 }); }
+  function sendPost(poke = false) { if (link) link.sendControl({ t: 'post', n, want: mine.want, focus: mine.focus, poke }); }
+  function sendPick() { if (link) link.sendControl({ t: 'pick', n, id: mine.id, ready: mine.ready }); }
+  /** the session messages from the other side (start and ready are handled above) */
+  function onSession(msg) {
+    if (msg.t === 'alive' || (msg.n | 0) !== n) return;   // another match's (late), or a heartbeat
+    if (msg.t === 'post') {
+      rival.want = WANTS.has(msg.want) ? msg.want : null;
+      rival.focus = typeof msg.focus === 'string' ? msg.focus : '';
+      if (role === 'host') hostSees(!!msg.poke);
+    } else if (msg.t === 'cd' && role === 'guest') {
+      cd = msg.kind ? { kind: String(msg.kind), until: now() + Math.max(0, +msg.ms || 0) } : null;
+    } else if (msg.t === 'go' && role === 'guest') {
+      if (lockstep) pendingGo = true; else if (state === 'post' || (pickFirst && n === 0 && !between())) toSelect();   // still finishing the match: right after it
+    } else if (msg.t === 'pick') {
+      rival.id = typeof msg.id === 'string' ? msg.id.slice(0, 32) : rival.id;
+      rival.ready = !!msg.ready; rival.at = now();
+      remoteChar = rival.id;
+      if (role === 'host') hostPicks();
+    } else if (msg.t === 'result' && role === 'guest') {
+      pendingResult = msg;
+      if (between()) applyResult();
+    }
+    changed();
+  }
+  /** the host's rules for the guest's post-match choices */
+  function hostSees(poke) {
+    if (poke || (rival.want && rival.want !== 'rematch')) autoOff = true;
+    if (!cd) return;
+    if (cd.kind === 'auto' && (poke || (rival.want && rival.want !== 'rematch'))) cancelCd();
+    else if (cd.kind === 'agree' && rival.want && rival.want !== 'rematch') { cancelCd(); mine.want = null; sendPost(); }
+  }
+  function hostPicks() {
+    if (state !== 'select') return;
+    if (mine.ready && rival.ready) { if (!cd) setCd('agree', AGREE_MS); }
+    else cancelCd();
+  }
+  function toSelect() {
+    if (lockstep) return;
+    cd = null;
+    mine.ready = false; mine.id = localChar;
+    rival.ready = false; rival.at = now();
+    setState('select');
+    if (!timer) startTimer();   // a crew match opens here, before any match: the heartbeat starts now
+    if (role === 'host' && link) link.sendControl({ t: 'go', n });
+    sendPick();
+    changed();
+  }
+  /** the host starts the next match: a new seed, the picks as they stand, the tally */
+  function startNext() {
+    if (role !== 'host' || !link || lockstep) return;
+    const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+    const chars = [localChar, remoteChar];
+    const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;
+    const m = n + 1;
+    link.sendControl({ t: 'start', seed, chars, botch, n: m, tally });
+    begin(seed, chars, botch, m);
+  }
+  function startTimer() {
+    stopTimer();
+    heardAt = now(); aliveAt = 0;
+    timer = window.setInterval(() => {
+      if (!between()) { stopTimer(); return; }
+      const t = now();
+      if (drain) drain.keepalive();
+      if (t - aliveAt > ALIVE_MS) { aliveAt = t; if (link) link.sendControl({ t: 'alive' }); }
+      if (t - heardAt > SILENT_MS) { finish('lost'); return; }
+      if (role === 'host' && cd && t >= cd.until) { cd = null; startNext(); }
+    }, 100);
+  }
+  function stopTimer() { if (timer) { clearInterval(timer); timer = 0; } }
+  const changed = () => emit('session', view());
+  const canStart = () => role === 'host' && state === 'select' && mine.ready && (rival.ready || now() - rival.at > GRACE_MS);
+  /** everything the menus show between matches, from this side's point of view */
+  function view() {
+    const me = role === 'host' ? 0 : 1;
+    const you = me === 0 ? tally.host : tally.guest, them = me === 0 ? tally.guest : tally.host;
+    return {
+      phase: state, role, n, me,
+      tally: { you, rival: them, draw: tally.draw, roundsYou: tally.rounds[me], roundsRival: tally.rounds[1 - me], games: tally.host + tally.guest + tally.draw },
+      raw: { ...tally, rounds: [...tally.rounds] },
+      last: last && { ...last, youWon: last.winner === me, draw: last.winner < 0 },
+      mine: { ...mine }, rival: { ...rival, silentMs: now() - rival.at },
+      cd: cd ? { kind: cd.kind, left: Math.max(0, cd.until - now()) } : null,
+      autoOff, canStart: canStart(), allTime: crewMode ? null : rivalRecord(rivalPid),
+      name: myName, rivalName, crew: crewMode,
+    };
+  }
+
   function finish(reason) {
-    const was = !!lockstep;
-    lockstep = null;
+    const was = !!lockstep || between();
+    lockstep = null; drain = null; stopTimer(); cd = null;
     if (link) { const l = link; link = null; l.close(); }
     document.documentElement.classList.remove('online');
     readout.show(false);
     clearRoomParam();
     if (reason === 'peer-left') emit('peer-left');
+    n = 0; tally = freshTally(); last = null; pendingResult = null;   // the room session is over
     setState('idle');
     if (was) { game.endMatch(reason); emit('end', reason); if (reason !== 'left') lobby.message(reason === 'lost' ? 'CONNECTION LOST' : 'YOUR RIVAL LEFT'); }
   }
@@ -138,18 +357,26 @@ export function createOnline(game) {
     setCharacter(id) { localChar = String(id || 'temp'); },
     get character() { return localChar; },
     on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); return net; },
-    /** a new room as host: resolves once the room's socket is open */
-    async host() {
+    /** this side's display name, sent with ready (the rival's comes back as view().rivalName) */
+    setName(s) { myName = String(s || '').slice(0, 12); },
+    /** a new room as host: resolves once the room's socket is open. opts.code hosts a room that's
+     *  already claimed (a crew opened it); opts.pickFirst opens on the pick screen; opts.crew keeps
+     *  this browser's per-rival record out of it */
+    async host(opts = {}) {
       net.leave();
+      n = 0; tally = freshTally(); last = null; rivalName = '';
+      pickFirst = !!opts.pickFirst; crewMode = !!opts.crew;
       role = 'host'; setState('creating');
-      try { code = await createRoom(); } catch (e) { setState('error', (e && e.reason) || 'unreachable'); throw e; }
+      try { code = opts.code && CODE_RE.test(opts.code) ? opts.code : await createRoom(); } catch (e) { setState('error', (e && e.reason) || 'unreachable'); throw e; }
       wire(createLink({ code, role: 'host', forceRelay: forceRelay() }));
       setState('waiting');
       return { code, url: shareUrl(code), link };
     },
     /** join a room by its code */
-    async join(c) {
+    async join(c, opts = {}) {
       net.leave();
+      n = 0; tally = freshTally(); last = null; rivalName = '';
+      pickFirst = !!opts.pickFirst; crewMode = !!opts.crew;
       c = String(c || '').trim().toUpperCase();
       if (!CODE_RE.test(c)) { setState('error', 'bad-code'); throw new Error('bad room code'); }
       role = 'guest'; code = c;
@@ -162,11 +389,58 @@ export function createOnline(game) {
     /** while a match runs, main.js steps the sim here (ms already scaled for slow motion) */
     advance(ms) {
       if (!lockstep) return 0;
-      const n = lockstep.advance(ms);
-      if (lockstep && lockstep.lost) finish('lost');
+      const k = lockstep.advance(ms);
+      if (lockstep && lockstep.lost) { finish('lost'); return k; }
+      checkEnd();
       readout.tick();
-      return n;
+      return k;
     },
+    // ---- between matches (the flow's post-match and pick screens) ----
+    /** everything the menus show between matches (also handed to 'session' and 'match-over') */
+    view,
+    /** the tally from this side: { you, rival, draw, roundsYou, roundsRival, games } (also for the fight HUD) */
+    get tally() { return view().tally; },
+    get match() { return n; },
+    /** a post-match button: 'rematch' or 'chars'. The guest's is a request; the host's decides */
+    postChoose(c) {
+      if (state !== 'post' || (c !== 'rematch' && c !== 'chars')) return;
+      mine.want = c; mine.focus = c;
+      if (role === 'guest') { sendPost(); changed(); return; }
+      autoOff = true;
+      if (c === 'chars') { toSelect(); return; }
+      if (cd && (cd.kind === 'host' || cd.kind === 'agree')) { cd = null; startNext(); return; }   // pressed again: go now
+      setCd(rival.want === 'chars' || rival.want === 'wait' ? 'host' : 'agree', AGREE_MS);
+      sendPost(); changed();
+    },
+    /** back on the post-match screen: the guest asks to wait (stops an 'auto' or 'agree' countdown);
+     *  the host stops whatever countdown is running */
+    postBack() {
+      if (state !== 'post') return;
+      autoOff = true;
+      if (role === 'guest') { mine.want = 'wait'; sendPost(true); changed(); return; }
+      mine.want = null; cancelCd(); sendPost(true); changed();
+    },
+    /** any other press on the post-match screen: stops the 'auto' countdown */
+    postPoke() {
+      if (state !== 'post' || autoOff) return;
+      autoOff = true;
+      if (role === 'guest') sendPost(true); else if (cd && cd.kind === 'auto') cancelCd();
+      changed();
+    },
+    /** where this side's cursor is (shown to the other side) */
+    postFocus(c) { if (state !== 'post' || mine.focus === c) return; mine.focus = c; sendPost(); },
+    /** the pick screen: this side's card, and whether it's locked in */
+    pick(id, ready) {
+      if (state !== 'select') return;
+      id = String(id || 'temp');
+      if (mine.id === id && mine.ready === !!ready) return;
+      localChar = id; mine.id = id; mine.ready = !!ready;
+      sendPick();
+      if (role === 'host') hostPicks();
+      changed();
+    },
+    /** the host's START on the pick screen */
+    startNow() { if (canStart()) { cd = null; startNext(); } },
     /** hotkeys during a match: true = swallowed. Escape or P (pad Start or Select, touch LEAVE) asks to
      *  leave: online has no pause, so the menu key opens the LEAVE / STAY confirm instead. */
     onKey(c) {
@@ -180,6 +454,8 @@ export function createOnline(game) {
     /** the lobby panel is up (or just closed): the attract screen shouldn't start a game */
     get busy() { return lobby.busy; },
     get active() { return !!lockstep; },
+    /** between matches in a room (post-match or the pick screen): the link is up, no match running */
+    get between() { return between(); },
     get state() { return state; },
     get statusDetail() { return detail; },
     get role() { return role; },
