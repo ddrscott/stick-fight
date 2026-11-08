@@ -14,7 +14,7 @@ import { canUse } from '../characters/registry.js';
 export const NEON = { pink: '#ff2bd6', cyan: '#2ef2ff', amber: '#ffb02e', violet: '#a66bff', white: '#fff4fd', ink: '#0a0414' };
 const DISPLAY = "'Bungee', 'Arial Black', Impact, system-ui, sans-serif";
 const LABEL = "'Teko', 'Arial Narrow', 'Helvetica Neue', system-ui, sans-serif";
-const BAR_W = 420, BAR_H = 18, BAR_Y = 16, SKEW = 12, STRIP_H = 70, ST_H = 5;
+const BAR_W = 420, BAR_H = 18, BAR_Y = 16, SKEW = 12, STRIP_H = 96, ST_H = 5;   // STRIP_H: the bars plus the name and hint lines under them
 const SIDE = [NEON.cyan, NEON.pink];
 const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a' };
 
@@ -38,6 +38,16 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.fillStyle = core ? mix(color, '#ffffff', 0.55) : color; ctx.fillText(text, x, y);
     ctx.shadowBlur = 0; ctx.restore();
     return ctx.measureText ? measure(text, size, font, weight) : size * text.length * 0.6;
+  }
+  // Plain HUD text: a solid, slightly lightened fill inside a firm dark outline, no glow. The labels
+  // along the top use it: neon glow on small text smeared it into the bright bars and the room behind.
+  function plainText(text, x, y, size, color, { font = LABEL, align = 'left', weight = 600 } = {}) {
+    ctx.save();
+    ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(3, size * 0.24); ctx.strokeStyle = 'rgba(4,1,10,0.94)'; ctx.strokeText(text, x, y);
+    ctx.fillStyle = mix(color, '#ffffff', 0.3); ctx.fillText(text, x, y);
+    ctx.restore();
+    return measure(text, size, font, weight);
   }
   function measure(text, size, font = DISPLAY, weight = '') { ctx.save(); ctx.font = `${weight} ${size}px ${font}`; const w = ctx.measureText(text).width; ctx.restore(); return w; }
   function para(x, y, w, h, side) {
@@ -97,12 +107,12 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       ctx.fillRect(side === 0 ? x + 30 + (BAR_W - 30) - sw : x - SKEW, sy, sw + SKEW, ST_H);
       ctx.restore();
     }
-    if (faint && Math.floor(clock * 8) % 2 === 0) neonText('FAINT', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 13, NEON.pink, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.6 });
-    else if (low && blink) neonText('LOW', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 13, NEON.pink, { font: LABEL, align: side === 0 ? 'left' : 'right', weight: 600, glow: 0.6 });
+    if (faint && Math.floor(clock * 8) % 2 === 0) plainText('FAINT', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 15, NEON.pink, { align: side === 0 ? 'left' : 'right' });
+    else if (low && blink) plainText('LOW', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 15, NEON.pink, { align: side === 0 ? 'left' : 'right' });
 
     // name and a small player marker (YOU / RIVAL online, P1 / P2, CPU 7, TRAINER), then pips; the
     // line under it cycles through the character's special moves (hint below)
-    const ly = sy + ST_H + 12;
+    const ly = sy + ST_H + 15;
     const diff = u.kind === 'ai' && u.controller && u.controller.getDifficulty ? u.controller.getDifficulty() : sim.difficulty;
     const named = names && names[who] ? (names[who] === 'PLAYER 1' ? 'P1' : names[who]) : '';
     const role = named || (u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && who === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? `P${who + 1}` : u.kind === 'script' ? 'TRAINER' : 'DUMMY');
@@ -111,15 +121,15 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const cname = cn && !(sim.horde && who === 1) && role !== cn ? cn : '';
     const al = side === 0 ? 'left' : 'right';
     if (cname) {
-      const cw = measure(cname, 20, LABEL, 600) + 8;
-      neonText(cname, side === 0 ? x : x + BAR_W, ly, 20, u.color || color, { font: LABEL, align: al, weight: 600, glow: 0.8, core: true });
-      neonText(role, side === 0 ? x + cw : x + BAR_W - cw, ly + 1, 15, color, { font: LABEL, align: al, weight: 500, glow: 0.5, core: false });
-      labelW[side] = cw + measure(role, 15, LABEL, 500);
-      hint(u, who, side, x, ly + 19);
-    } else labelW[side] = measure(role, 20, LABEL, 600), neonText(role, side === 0 ? x : x + BAR_W, ly, 20, color, { font: LABEL, align: al, weight: 600, glow: 0.7, core: false });
+      const cw = measure(cname, 27, LABEL, 600) + 10;
+      plainText(cname, side === 0 ? x : x + BAR_W, ly, 27, u.color || color, { align: al });
+      plainText(role, side === 0 ? x + cw : x + BAR_W - cw, ly + 2, 20, color, { align: al, weight: 500 });
+      labelW[side] = cw + measure(role, 20, LABEL, 500);
+      hint(u, who, side, x, ly + 26);
+    } else labelW[side] = measure(role, 27, LABEL, 600), plainText(role, side === 0 ? x : x + BAR_W, ly, 27, color, { align: al });
     if (sim.horde) {
       const H = sim.horde, wv = H.wave || { downed: 0, size: 0 };
-      neonText(who === 0 ? `FLOOR ${H.floorsCleared + 1}   ${H.count} DOWN` : `WAVE ${wv.downed}/${wv.size}`, side === 0 ? x + BAR_W : x, ly, 20, NEON.amber, { font: LABEL, align: side === 0 ? 'right' : 'left', weight: 600, glow: 0.7 });
+      plainText(who === 0 ? `FLOOR ${H.floorsCleared + 1}   ${H.count} DOWN` : `WAVE ${wv.downed}/${wv.size}`, side === 0 ? x + BAR_W : x, ly, 24, NEON.amber, { align: side === 0 ? 'right' : 'left' });
     } else {
       for (let k = 0; k < 2; k++) {
         const px = side === 0 ? x + BAR_W - 8 - k * 20 : x + 8 + k * 20, py = ly;
@@ -161,14 +171,14 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const a = Math.min(1, ph / HINT_FADE, (HINT_SLOT - ph) / HINT_FADE);
     const cls = typeof document !== 'undefined' ? document.documentElement.classList : null;
     const phone = !!cls && cls.contains('touch-ui');   // a phone: bigger, and just the input and the name
-    const fs = phone ? 20 : 17;
+    const fs = phone ? 27 : 23;
     const segs = [{ text: m.input, size: fs, color: NEON.amber, glow: 0.7, core: true }, { text: m.name, size: fs, color: m.accident ? KIND_COLOR.accident : SIDE[who], glow: 0.5, core: false }];
-    if (!phone && m.note) segs.push({ text: m.note, size: 14, color: NEON.violet, glow: 0.3, core: false });
+    if (!phone && m.note) segs.push({ text: m.note, size: 18, color: NEON.violet, glow: 0.3, core: false });
     const gap = 8, ws = segs.map(s => measure(s.text, s.size, LABEL, 500));
     const total = ws.reduce((p, q) => p + q, 0) + gap * (segs.length - 1);
     let cx = side === 0 ? x : x + BAR_W - total;
     ctx.save(); ctx.globalAlpha = Math.max(0, a);
-    segs.forEach((s, k) => { neonText(s.text, cx, y + (s.size < fs ? 1 : 0), s.size, s.color, { font: LABEL, align: 'left', weight: 500, glow: s.glow, core: s.core }); cx += ws[k] + gap; });
+    segs.forEach((s, k) => { plainText(s.text, cx, y + (s.size < fs ? 2 : 0), s.size, s.color, { align: 'left', weight: 500 }); cx += ws[k] + gap; });
     ctx.restore();
   }
 
@@ -315,9 +325,9 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   function tally(t, boxes, taken) {
     if (!t || typeof t !== 'object' || t.you == null) return;
     const text = `YOU ${t.you}\u2013${t.rival ?? 0} RIVAL${t.draw ? `  (${t.draw} DRAW${t.draw > 1 ? 'S' : ''})` : ''}`;
-    const y = 34 + 26 + 25, w = measure(text, 16, LABEL, 600) + 12, r = { x0: width / 2 - w / 2, x1: width / 2 + w / 2, y0: y - 10, y1: y + 10 };
+    const y = 34 + 26 + 33, w = measure(text, 20, LABEL, 600) + 12, r = { x0: width / 2 - w / 2, x1: width / 2 + w / 2, y0: y - 12, y1: y + 12 };
     ctx.save(); ctx.globalAlpha = overlaps(r, boxes) ? 0.18 : 0.95;
-    neonText(text, width / 2, y, 16, NEON.amber, { font: LABEL, weight: 600, glow: 0.5, core: false });
+    plainText(text, width / 2, y, 20, NEON.amber, { align: 'center' });
     ctx.restore();
     taken.push(r);
   }
@@ -332,8 +342,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.shadowBlur = 8; ctx.lineWidth = 2; ctx.strokeStyle = sim.timer < 10 ? NEON.pink : '#e6d6ff';
     ctx.beginPath(); ctx.arc(cx, cy, r - 5, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
     ctx.restore();
-    neonText(String(Math.ceil(sim.timer)).padStart(2, '0'), cx, cy + 1, 24, sim.timer < 10 ? NEON.pink : NEON.white, { glow: 0.6 });
-    neonText(`ROUND ${sim.round}`, cx, cy + r + 9, 16, NEON.violet, { font: LABEL, weight: 600, glow: 0.6, core: false });
+    plainText(String(Math.ceil(sim.timer)).padStart(2, '0'), cx, cy + 1, 28, sim.timer < 10 ? NEON.pink : NEON.white, { font: DISPLAY, align: 'center', weight: '' });
+    plainText(`ROUND ${sim.round}`, cx, cy + r + 11, 20, NEON.violet, { align: 'center' });
   }
 
   // screen boxes of the live fighters (and the fresh pile isn't covered either: it lies on the floor, below every slot)
