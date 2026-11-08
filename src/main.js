@@ -294,6 +294,62 @@ const PHASES = {
     { name: 'SHOULDER CHECK near the wall (wall bounce)', at: () => [W1() - 220, W1() - 120], p1: [[10, (me) => ({ rp: true, dx: -me.facing })], [92, B('lp')]], dur: 220 },
     { name: 'LOCKDOWN 1,2,1 (overhead ender)', p1: [[10, B('lp')], [26, B('rp')], [46, B('lp')]], dur: 220 },
   ],
+  // HELPDESK: the parry catches a high and a mid, loses to a low and a throw, and a whiffed stance is punished
+  helpdesk: [
+    { name: 'TICKET CLOSED b+1 catches a high (jab): the elbow answers', p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 14 && t < 17 ? { lp: true } : {}), dur: 200 },
+    { name: 'TICKET CLOSED catches a mid (snap kick)', p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 12 && t < 15 ? { lk: true } : {}), dur: 200 },
+    { name: 'TICKET CLOSED loses to a low (low kick)', p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 12 && t < 15 ? D('lk') : {}), dur: 160 },
+    { name: 'TICKET CLOSED loses to a throw', at: () => [560, 640], p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 12 && t < 15 ? { lp: true, lk: true } : {}), dur: 180 },
+    { name: 'TICKET CLOSED whiffed: the recovery is punished', p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (o.state === 'attack' && o.phase === 'recovery' && t % 4 < 2 ? { rp: true } : {}), dur: 160 },
+    { name: 'REBOOT b+2 carries him into the wall (splat)', at: () => [W1() - 360, W1() - 240], p1: [[10, (me) => ({ rp: true, dx: -me.facing })]], dur: 220 },
+    { name: 'REBOOT in the open (knockdown, he follows)', at: () => [400, 520], p1: [[10, (me) => ({ rp: true, dx: -me.facing })]], dur: 200 },
+    { name: 'CTRL ALT DEL 1,3,2 (launch), a jab juggles', p1: [[10, B('lp')], [26, B('lk')], [46, B('rp')], [110, B('lp')]], dur: 220 },
+  ],
+  // JANITOR: the long low sweep, the spin in front and behind (over a croucher a run-jump crosses up), the splat ender
+  janitor: [
+    { name: 'WET FLOOR f+3 from range under a back-holder (lows go under)', at: () => [530, 650], p2: { back: true }, p1: [[10, (me) => ({ lk: true, dx: me.facing })]], dur: 180 },
+    { name: 'WET FLOOR blocked low: punished', at: () => [480, 650], p2: (me, o, t) => (o.state === 'attack' && o.phase === 'recovery' && me.state !== 'blockstun' && t % 4 < 2 ? { rp: true } : { back: true, down: true }), p1: [[10, (me) => ({ lk: true, dx: me.facing })]], dur: 200 },
+    { name: 'MOP SPIN b+3 in front', p1: [[10, (me) => ({ lk: true, dx: -me.facing })]], dur: 200 },
+    { name: 'MOP SPIN catches a cross-up behind him', p2: (me, o, t) => (t >= 4 && t < 8 ? { jump: true, run: true, dx: me.x > o.x ? -1 : 1 } : {}), p1: [...Array.from({ length: 15 }, (_, i) => [i * 3, { down: true }]), [48, (me) => ({ lk: true, dx: -me.facing })]], dur: 220 },
+    { name: 'AISLE 3 3,3,3 (wall splat)', at: () => [W1() - 300, W1() - 210], p1: [[10, B('lk')], [30, B('lk')], [52, B('lk')]], dur: 220 },
+  ],
+  manager: [
+    { name: 'PERFORMANCE REVIEW 1,2,2 (four-hit rush ender)', p1: [[10, B('lp')], [26, B('rp')], [46, B('rp')]], dur: 280 },
+    { name: 'PERFORMANCE REVIEW blocked standing (every hook blocked)', p2: { back: true }, p1: [[10, B('lp')], [26, B('rp')], [46, B('rp')]], dur: 280 },
+    { name: 'DOWNSIZING b+3 on a crouching guard (overhead hits)', at: () => [560, 655], p2: { down: true, back: true }, p1: [[10, (me) => ({ lk: true, dx: -me.facing })]], dur: 220 },
+    { name: 'DOWNSIZING blocked standing', at: () => [575, 655], p2: { back: true }, p1: [[10, (me) => ({ lk: true, dx: -me.facing })]], dur: 220 },
+    { name: 'TOP-DOWN 3,2,3 (axe kick ender)', p1: [[10, B('lk')], [30, B('rp')], [54, B('lk')]], dur: 260 },
+  ],
+  // the mixup: after a blocked Fine Print the guard picks a height (P2 reads it right or wrong per phase)
+  accountant: [
+    { name: 'FINE PRINT d+3 hits a standing guard (low)', p2: { back: true }, p1: [[10, D('lk')]], dur: 120 },
+    { name: 'FINE PRINT blocked crouching (plus on block)', p2: { back: true, down: true }, p1: [[10, D('lk')]], dur: 120 },
+    { name: 'BALANCE SHEET d+3,4: the overhead hits the crouching guard', p2: { back: true, down: true }, p1: [[10, D('lk')], [26, B('rk')]], dur: 200 },
+    { name: 'BALANCE SHEET blocked standing (he stood for it)', p2: (me, o) => ({ back: true, down: o.move === 'finePrint' }), p1: [[10, D('lk')], [26, B('rk')]], dur: 200 },
+    { name: 'd+3,3: the second low hits him standing', p2: (me, o) => ({ back: true, down: o.move === 'finePrint' }), p1: [[10, D('lk')], [26, B('lk')]], dur: 180 },
+    { name: 'd+3,3: the second low blocked crouching', p2: { back: true, down: true }, p1: [[10, D('lk')], [26, B('lk')]], dur: 180 },
+    { name: 'WRITE-OFF d+3,3,2 (ender)', p1: [[10, D('lk')], [26, B('lk')], [50, B('rp')]], dur: 240 },
+  ],
+  intern: [
+    { name: 'COFFEE RUN f,f+1 from a dash, then 1,2 on the stumble', at: () => [420, 650], dash: 30, p1: [[30, (me) => ({ lp: true, dx: me.facing })], [80, B('lp')], [100, B('rp')]], dur: 200 },
+    { name: 'COFFEE RUN blocked deep: he eats the punish', at: () => [420, 650], dash: 30, p2: (me, o, t) => (t < 70 ? { back: true } : t >= 70 && t < 73 ? { rp: true } : {}), p1: [[30, (me) => ({ lp: true, dx: me.facing })]], dur: 200 },
+    { name: 'PAPER CUT d+1, d+1, 2 (low, low, mid finisher)', at: () => [560, 640], hold1: { down: true }, p1: [[4, { down: true }], [10, D('lp')], [26, D('lp')], [44, { rp: true }]], dur: 200 },
+    { name: 'PAPER CUT lows go under a standing guard', at: () => [560, 640], p2: { back: true }, hold1: { down: true }, p1: [[4, { down: true }], [10, D('lp')], [26, D('lp')]], dur: 140 },
+    { name: 'REPLY ALL 1,2,2 (ender: the haymaker)', at: () => [300, 390], p1: [[10, B('lp')], [26, B('rp')], [48, B('rp')]], dur: 220 },
+  ],
+  windowWasher: [
+    { name: 'DOUBLE JUMP: jump, then up again at the top', at: () => [400, 900], p1: [[6, { jump: true }], [44, { jump: true }]], dur: 170 },
+    { name: 'DOUBLE JUMP over him: a cross-up, he ends up behind', at: () => [540, 650], p1: [[6, (me) => ({ jump: true, dx: me.facing })], [12, (me) => ({ dx: me.facing })], [24, (me) => ({ dx: me.facing })], [36, (me) => ({ dx: me.facing })], [42, (me) => ({ jump: true, dx: me.facing })], [48, (me) => ({ dx: me.facing })], [60, (me) => ({ dx: me.facing })], [72, (me) => ({ dx: me.facing })]], dur: 200 },
+    { name: 'WALL JUMP out of the corner, over him', at: () => [W0() + 40, W0() + 130], p1: [[6, (me) => ({ jump: true, dx: -me.facing })], [24, { jump: true }]], dur: 180 },
+    { name: 'SQUEEGEE DIVE d+3 in the air on a croucher (overhead)', at: () => [520, 650], p2: { down: true }, p1: [[10, (me) => ({ jump: true, dx: me.facing })], [36, D('lk')]], dur: 200 },
+    { name: 'SQUEEGEE DIVE off the double jump, then 2,3 on landing', at: () => [330, 490], p1: [[6, (me) => ({ jump: true, dx: me.facing })], [36, (me) => ({ jump: true, dx: me.facing })], [70, D('lk')], [108, B('rp')], [132, B('lk')]], dur: 240 },
+    { name: 'SQUEEGEE DIVE vs a standing guard (blocked)', at: () => [520, 650], p2: { back: true }, p1: [[10, (me) => ({ jump: true, dx: me.facing })], [36, D('lk')]], dur: 200 },
+    { name: 'UPDRAFT b+3 meets a jump-in and launches', at: () => [560, 720], p2: (me, o, t) => (t >= 10 && t < 13 ? { jump: true, dx: me.x > o.x ? -1 : 1 } : t >= 40 && t < 43 ? { lk: true } : {}), p1: [],
+      react: (me, o, t) => (t < 0 ? { lk: true, dx: -me.facing } : !o.grounded && o.vy > -200 && Math.abs(o.x - me.x) < 150 ? { lk: true, dx: -me.facing } : null), dur: 220 },
+    { name: 'UPDRAFT hops his low kick', at: () => [560, 650], p1: [[20, (me) => ({ lk: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 24 && t < 27 ? { lk: true, down: true } : {}), dur: 200 },
+    { name: 'STREAK FREE 1,3,4 (ender: dropkick)', at: () => [300, 390], p1: [[10, B('lp')], [26, B('lk')], [48, B('rk')]], dur: 220 },
+    { name: 'STREAK FREE near the wall (wall splat)', at: () => [W1() - 230, W1() - 140], p1: [[10, B('lp')], [26, B('lk')], [48, B('rk')]], dur: 220 },
+  ],
   // holding back walks back; the guard snaps on only for a strike that can reach (Tekken)
   guard: [
     { name: 'hold back, nothing coming: walks back', at: () => [400, 620], p2: { back: true }, p1: [], dur: 140 },
@@ -415,6 +471,12 @@ const scenes = {
   'courier-test'(o) { timeline(PHASES.courier, o); },
   'guard-test'(o) { timeline(PHASES.guard, o); },
   'security-test'(o) { timeline(PHASES.security, o); },
+  'manager-test'(o) { timeline(PHASES.manager, o); },
+  'accountant-test'(o) { timeline(PHASES.accountant, o); },
+  'helpdesk-test'(o) { timeline(PHASES.helpdesk, o); },
+  'janitor-test'(o) { timeline(PHASES.janitor, o); },
+  'intern-test'(o) { timeline(PHASES.intern, o); },
+  'windowwasher-test'(o) { timeline(PHASES.windowWasher, o); },
   // an online match (src/net/online.js): each unit's controller reads the lockstep's input for the frame
   online(o) {
     if (!o.lockstep) { scenes.play(o); return; }
@@ -433,7 +495,7 @@ const scenes = {
 // on the URL, else TEMP vs TEMP (so every test scene is the baseline unless asked otherwise). The flow
 // passes the player's pick; the attract demo draws a random pair from the roster.
 const urlChars = [params.get('p1'), params.get('p2')];
-const SCENE_CHARS = { 'courier-test': ['courier', TEMP_ID], 'security-test': ['security', TEMP_ID] };
+const SCENE_CHARS = { 'courier-test': ['courier', TEMP_ID], 'security-test': ['security', TEMP_ID], 'manager-test': ['manager', TEMP_ID], 'accountant-test': ['accountant', TEMP_ID], 'helpdesk-test': ['helpdesk', TEMP_ID], 'janitor-test': ['janitor', TEMP_ID], 'intern-test': ['intern', TEMP_ID], 'windowwasher-test': ['windowWasher', TEMP_ID] };
 function pickChars(name, opts) {
   if (opts && opts.chars) return opts.chars;
   if (SCENE_CHARS[name] && !urlChars[0]) return SCENE_CHARS[name];

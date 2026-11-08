@@ -91,15 +91,18 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const list = me.char && me.char.ai && me.char.ai.specials;
     if (!list || !list.length || me.faint > 0) return null;
     for (const sp of list) {
-      if ((coolUntil[sp.move] || 0) > sim.stepCount) continue;
+      const key = sp.move || sp.name;   // a plan (sp.plan) may have no single move: its name keys the cooldown
+      if ((coolUntil[key] || 0) > sim.stepCount) continue;
       const fd = FRAME_DATA[sp.move];
-      if (!fd || me.stamina - fd.cost <= 6) continue;
+      if (sp.plan ? me.stamina - (sp.cost || (fd && fd.cost) || 8) <= 6 : !fd || me.stamina - fd.cost <= 6) continue;
       const min = sp.min || 0, max = sp.max || 120, lead = sp.lead != null ? sp.lead : 90;
       if (dist < min || dist > max + lead) continue;
       const w = typeof sp.when === 'function' ? sp.when : sp.when ? WHEN[sp.when] : null;
       if (w && !w(me, opp, sim, dist)) continue;
       if (!chance((sp.chance != null ? sp.chance : 0.3) * (0.5 + 0.5 * difficulty))) continue;
-      coolUntil[sp.move] = sim.stepCount + (sp.cooldown || 90);
+      coolUntil[key] = sim.stepCount + (sp.cooldown || 90);
+      // plan(me, opp, sim, dist, toward, kit): the special's own list of acts (an air jump, a wall jump: inputs a single press can't make)
+      if (sp.plan) { const p = sp.plan(me, opp, sim, dist, toward, { move, attack, press, blockFor, closer, landed, chance }); if (p && p.length) return p; continue; }
       const go = { ...attack(sp.move), ok: true };
       return dist <= max ? [go] : [move(toward, closer(max - 6), !!sp.run), go];
     }

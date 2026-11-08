@@ -56,7 +56,7 @@ export function openSelect(ui, o) {
   function paint(c) {
     if (!c || !detail) return;
     detail.style.setProperty('--c', c.color);
-    nameEl.textContent = c.name;
+    nameEl.textContent = c.name; nameEl.classList.toggle('fl-long', c.name.length > 11);
     tagEl.textContent = c.tagline;
     statsEl.textContent = '';
     for (const [label, f] of STATS) { const i = el('i'); i.style.setProperty('--v', String(clamp01(f(c)))); statsEl.append(el('span', '', label), i); }
@@ -74,7 +74,7 @@ export function openSelect(ui, o) {
       const b = button('', () => o.onPick(c.id), 'fl-card');
       b.el.style.setProperty('--c', c.color);
       const cv = document.createElement('canvas'); cv.width = 226; cv.height = 154;   // the card's shape, so the rig isn't stretched
-      b.el.append(cv, el('b', '', c.name));
+      b.el.append(cv, el('b', c.name.length > 11 ? 'fl-long' : '', c.name));   // WINDOW WASHER doesn't fit at the card's size
       grid.appendChild(b.el);
       views.push(rigView(cv, c, 0.92));
       items.push({ ...b, focusFirst: true, char: c });

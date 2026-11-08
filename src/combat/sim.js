@@ -222,7 +222,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       x: rig.x, y: rig.y, vx: 0, vy: 0, grounded: true, facing: rig.facing || (i === 0 ? 1 : -1),
       state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,
       hitstop: 0, flash: 0, stun: 0, downTimer: 0, buffer: null, bufferAge: 0,
-      health: 100, hidden: false, controller: null, kind: 'none', home: 0, prevX: 0, prevBX: 0,
+      health: 100, hidden: false, controller: null, kind: 'none', home: 0, prevX: 0, prevBX: 0, apartSteps: 0,
       last: EMPTY_INPUT, tapDir: 0, tapTimer: 0, running: false, koDone: false, prevJoints: null,
       stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
@@ -581,9 +581,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.attackStart = sim.stepCount; u.crouch = !!fd0.tc;
     // throws whiff on a croucher (crouch beats throws, mids beat crouch)
     u.grabOK = !!fd0.throw && opp && Math.abs(opp.x - u.x) <= (fd0.range || FRAME_DATA.throw.range) && !opp.crouch;
-    u.armorLeft = fd0.armor ? (fd0.armor.hits || 1) : 0; u.hitN = 0;   // character hooks: armor, multi-hit
-    // the string this press belongs to (a named move from the AI starts one from its token)
-    u.seq = u.bufferKeys || (MOVE_TOKEN[move] ? [MOVE_TOKEN[move]] : null);
+    u.armorLeft = fd0.armor ? (fd0.armor.hits || 1) : 0; u.hitN = 0; u.hitKey = 0;   // character hooks: armor, multi-hit
+    // the string this press belongs to (a named move from the AI starts one from its token; a character's
+    // own move that opens one of its strings, named by the CPU, starts it from that string's first key)
+    const opens = !MOVE_TOKEN[move] && fd0.owner && u.char.strings.find(s => s.moves[0] === move);
+    u.seq = u.bufferKeys || (MOVE_TOKEN[move] ? [MOVE_TOKEN[move]] : opens ? [opens.keys[0]] : null);
     u.seqName = u.bufferName || '';
     u.bufferKeys = null; u.bufferName = '';
     spend(u, fd0.cost);
@@ -617,7 +619,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     let opt;
     const mdT = MOVE_DATA_ && MOVE_DATA_[fd0.anim], tT = Math.max(0.02, ((mdT && mdT.activeAt) || 150) / 1000 - PREROLL);
     const oppJumping = opp && !opp.grounded && !opp.rag && (opp.state === 'jump' || (opp.state === 'attack' && FRAME_DATA[opp.move] && FRAME_DATA[opp.move].air));
-    if (opp && !fd0.throw && ((fd0.air && opp.grounded) || (!fd0.air && u.grounded && oppJumping))) {
+    if (opp && !fd0.throw && !fd0.bothSides && ((fd0.air && opp.grounded) || (!fd0.air && u.grounded && oppJumping))) {   // a bothSides spin keeps its shape (no aiming)
       // the rig aims the striking segment's frontmost edge at the target: give it the defender's
       // surface nearest the strike's origin, where both bodies will be at contact (the jumper keeps
       // flying, the jumping attacker's root keeps moving and the tip moves with it)
@@ -626,8 +628,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const udx = u.grounded ? 0 : u.vx * tT, udy = u.grounded ? 0 : u.vy * tT + g;
       const j = u.rig.joints, origin = fd0.air ? { x: j.hip.x + udx, y: j.hip.y + udy } : { x: j.rShoulder.x, y: j.rShoulder.y };
       const sp = surfaceToward(opp, origin, odx, ody);
-      if (sp) opt = { target: { x: sp.x - udx, y: sp.y - udy } };
-    } else if (opp && !fd0.throw && (opp.state === 'splat' || (opp.state === 'knockdown' && opp.rag && inAir(opp)))) {
+      // after an air jump (mechanics.airJumps / wallJump) he's above the reach the homing was built for:
+      // it swung the leg back under him and lunged the hips past the body; the strike drops onto him as keyed
+      const airJumped = fd0.air && (u.airJumpsUsed || u.wallJumps);
+      if (sp && !airJumped) opt = { target: { x: sp.x - udx, y: sp.y - udy } };
+    } else if (opp && !fd0.throw && !fd0.bothSides && (opp.state === 'splat' || (opp.state === 'knockdown' && opp.rag && inAir(opp)))) {
       const md = MOVE_DATA_ && MOVE_DATA_[fd0.anim], t = Math.max(0.02, ((md && md.activeAt) || 150) / 1000 - PREROLL);
       const c = opp.rig.joints.chest || opp.rig.joints.hip, moving = opp.state !== 'splat';
       let tx = c.x + (moving ? opp.vx * t : 0);
@@ -737,7 +742,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
 
   function updateUnit(u, opp, e) {
-    if (u.followDown && (MOVE_STATES.has(u.state) || u.state === 'block' || u.state === 'crouch' || u.state === 'landing' || (u.state === 'attack' && u.phase === 'recovery'))) {
+    // only from his feet: a vault begun in the air was cancelled by the landing and left him upstairs
+    if (u.followDown && u.grounded && (MOVE_STATES.has(u.state) || u.state === 'block' || u.state === 'crouch' || u.state === 'landing' || (u.state === 'attack' && u.phase === 'recovery'))) {
       startVault(u, u.followDown); u.followDown = null;
     }
     // standing right over a body on the floor he keeps his facing (its hip drifts as it lies there); he turns once it's clearly behind him
@@ -824,7 +830,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (u.landLag) { u.vx *= 0.8; if (--u.landLag <= 0) { u.landLag = 0; setState(u, 'idle'); tryAttack(u); } break; }
         // the rig's jump clip has its own landing squash; let it finish
         u.vx *= 0.8;
-        if (u.rig.current.done || u.rig.current.move !== 'jump') { setState(u, 'idle'); tryAttack(u); }
+        if (u.rig.current.done || (u.rig.current.move !== 'jump' && u.rig.current.move !== u.char.mechanics.airJumpClip)) { setState(u, 'idle'); tryAttack(u); }
         break;
       case 'attack': {
         if (!u.grounded && FRAME_DATA[u.move] && FRAME_DATA[u.move].air) {
@@ -996,6 +1002,24 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const t = treadBelow(x, sw.y - 2);
     return t ? Math.sign((t.x0 + t.x1) / 2 - x) || 1 : 0;
   }
+  // Never stranded on two floors: nobody can climb back up, so when the two have been on different
+  // floors for 1.5s with neither falling nor vaulting, whoever is upstairs follows down. (The
+  // follow-down vault after a floor break normally does this; this catches anything that slips by.)
+  const REGROUP_STEPS = 180;
+  function regroup() {
+    if (sim.horde || sim.phase !== 'fight') return;
+    const [a, b] = sim.units;
+    if (!a || !b || a.hidden || b.hidden) return;
+    const busy = (u) => u.falling || u.state === 'vault' || u.followDown || u.rag;
+    if ((a.floor || 0) === (b.floor || 0) || busy(a) || busy(b)) { a.apartSteps = 0; return; }
+    if (++a.apartSteps < REGROUP_STEPS) return;
+    a.apartSteps = 0;
+    const sw = stairwellNow();
+    if (!sw) return;
+    const up = (a.floor || 0) < (b.floor || 0) ? a : b;   // floor 0 is the top
+    up.followDown = sw;
+    note({ type: 'regroup', unit: up.id });
+  }
   function breakFloor(u, sw) {
     const to = sw.toFloor, info = floorInfo(to);
     if (!u.rag) { syncRig(u); startRag(u, u.vx, Math.min(u.vy, -60), { wall: 'stop', spin: 320 }); }   // a keyframed fall becomes a tumble
@@ -1130,7 +1154,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // a reeling body doesn't slide on planted feet: the root holds and the rig's reaction carries
     // the body (its shift moves the root when the reaction ends)
     if (u.grounded && (u.state === 'hitstun' || u.state === 'blockstun')) u.vx = 0;
-    if (u.glide) { if (sim.stepCount < u.glide.until && u.grounded) { if (!(u.glide.from > sim.stepCount)) u.vx = u.glide.vx; } else { u.glide = null; if (u.grounded) u.vx *= 0.3; } }
+    // a glide ends at a standstill in a strike (a carried-over third of it slid the attacker on under the body he'd launched)
+    if (u.glide) { if (sim.stepCount < u.glide.until && u.grounded) { if (!(u.glide.from > sim.stepCount)) u.vx = u.glide.vx; } else { u.glide = null; if (u.grounded) u.vx = u.state === 'attack' ? 0 : u.vx * 0.3; } }
     if (u.rag) {
       const j = u.rig.joints, nx = Math.max(bounds.x0, Math.min(bounds.x1, j.hip.x));
       u.vx = (nx - u.x) / DT; u.x = nx;
@@ -1140,6 +1165,16 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     }
     if (u.state === 'splat' || u.state === 'grabbed') return;
     if (!u.grounded) { u.vy += GRAVITY * (u.gScale || 1) * DT; u.y += u.vy * DT; }
+    // riding after a knockdown (or drifting on in recovery) stops at the near end of the body: past
+    // it he stood over its legs, and it got up behind him
+    {
+      const o = oppOf(u);
+      if (o && u.grounded && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx) {
+        const dir = Math.sign(u.vx), near = dir > 0 ? Math.min(o.x, bodyX(o)) : Math.max(o.x, bodyX(o));
+        const room = (near - u.x) * dir - 24;
+        if ((near - u.x) * dir > -40 && room < u.vx * dir * DT) { u.vx = Math.max(0, room) / DT * dir; if (room <= 0) { u.vx = 0; u.chase = false; } }
+      }
+    }
     u.x += u.vx * DT;
     // walls
     // a lying body is long: it stops short of the wall; one flying in for a splat or bounce meets it
@@ -1159,7 +1194,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (u.vy >= 0 && u.y >= fy) { u.y = fy; u.vy = 0; u.grounded = true; land(u); }
     } else if (fy > u.y + 1) { u.grounded = false; }
     if (wasAir && u.grounded && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air) airLanding(u);
-    if (wasAir && u.grounded && u.state === 'vault') { u.vaultPhase = null; u.vx = 0; setState(u, 'idle'); onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.6 }); }
+    if (wasAir && u.grounded && u.state === 'vault' && u.vaultPhase === 'drop') { u.vaultPhase = null; u.vx = 0; setState(u, 'idle'); onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.6 }); }
     if (wasAir && u.grounded && u.state === 'jump') { u.state = 'landing'; if (u.rig.current.done) { setState(u, 'idle'); tryAttack(u); } }
   }
   function wallHit(u) {
@@ -1205,9 +1240,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     for (const ev of u.rig.events) {
       if (ev.type === 'active' && u.state === 'attack') {
         u.phase = 'active';
-        // a multi-hit (frame data hits: n): each later 'active' key may connect again
+        // a multi-hit (frame data hits: n): each later 'active' key may connect again. hitKey counts the
+        // active keys; the first one never re-opens (a strike can already land in the 45ms before it)
         const mfd = FRAME_DATA[u.move];
-        if (mfd && mfd.hits > 1 && u.hitConfirmed && (u.hitN || 0) < mfd.hits) u.hitConfirmed = false;
+        if (mfd && mfd.hits > 1) {
+          u.hitKey = (u.hitKey || 0) + 1;
+          if (u.hitKey > 1 && u.hitConfirmed && (u.hitN || 0) < mfd.hits) u.hitConfirmed = false;
+        }
       }
       else if (ev.type === 'recover' && u.state === 'attack') u.phase = 'recovery';
       else if (ev.type === 'footstep' && u.grounded) onEvent({ type: 'footstep', x: u.x, y: u.y, dir: u.facing });
@@ -1292,6 +1331,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (def.hidden || INVULN.has(def.state) || def.state === 'grabbed' || sim.phase !== 'fight') return null;
     if (def.falling || att.state === 'vault' || (att.floor || 0) !== (def.floor || 0)) return null;   // down the stairwell: out of reach
     const fd = FRAME_DATA[att.move];
+    if (fd.parry) return null;   // a counter stance (parry hook) never strikes on its own; its reversal does
     if ((def.state === 'knockdown' || def.state === 'ko') && !(def.state === 'knockdown' && def.juggle && inAir(def) && def.airHits < JUGGLE_MAX)) return null;   // juggles end by gravity and a hard cap
     if (def.state === 'splat' && def.splatHit) return null;   // a splat takes one more hit
     if (fd.throw) {
@@ -1312,6 +1352,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const rk = reachKey(att, att.move);
     for (const h of hits) reachSeen[rk] = Math.max(reachSeen[rk] || 0, (h.x - att.x) * att.facing + h.r);
     const pt = testHit(hits, buildHurtboxes(def.rig));
+    // an air strike from an air jump comes down on him from above, where seating can only slide him
+    // sideways: it connects once the drawn limb really touches the drawn body
+    if (pt && fd.air && (att.airJumpsUsed || att.wallJumps) && segGap(att, def) > 2) return null;
     return pt ? { pt } : null;
   }
   // Throws: the grab holds both for a break window; 1+3 or 2+4 from the victim breaks it.
@@ -1339,6 +1382,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function awayDir(att, def) {
     // a juggle: the attacker steps in under the body, so only a body well past him flips it
     const d = bodyX(def) - att.x, tol = def.rag || !def.grounded ? 40 : 6;
+    // a bothSides spin sends him the way its striking limb points (it can land behind)
+    const afd = att.state === 'attack' && att.move && FRAME_DATA[att.move], tip = afd && afd.bothSides && afd.joint && att.rig.joints[afd.joint];
+    if (tip && Math.abs(tip.x - att.x) > 4) return Math.sign(tip.x - att.x);
     return Math.abs(d) > tol ? Math.sign(d) : att.facing;
   }
   function breakThrow(def) {
@@ -1395,11 +1441,20 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     callout(P.callout || 'PARRY', def.id, 'counter');
     note({ type: 'parry', att: def.id, def: att.id, move: caught });
     onEvent({ type: 'block', x: pt.x, y: pt.y, dir: -dir, strength: 1, move: caught, parry: true, attacker: att, defender: def });
-    if (P.reversal && FRAME_DATA[P.reversal]) { def.buffer = null; def.bufferKeys = null; startAttack(def, P.reversal); }
+    if (P.reversal && FRAME_DATA[P.reversal]) {
+      def.buffer = null; def.bufferKeys = null; def.queued = null; startAttack(def, P.reversal);
+      if (def.glide) { def.glide.until += def.hitstop; if (def.glide.from != null) def.glide.from += def.hitstop; }   // the step-in waits out the parry's freeze
+    }
   }
   function applyHit(att, def, pt, { move = att.move, trade = false } = {}) {
-    const fd = FRAME_DATA[move];
+    let fd = FRAME_DATA[move];
+    // a string's chase step stops at contact: it closed the gap, and carrying on took him under the body
+    if (att.glide && !FRAME_DATA[move].travel && att.glide.from == null) { att.glide = null; if (att.grounded) att.vx = 0; }
+    // a multi-hit's earlier hits take its `rush` fields (light, no knockdown, no callout); the hit on
+    // its last active key is the move itself
+    if (fd.hits > 1 && fd.rush && Math.max(1, att.hitKey || 0) < fd.hits) fd = { ...fd, ...fd.rush };
     const dir = awayDir(att, def);
+    if (fd.bothSides) { att.home = -dir; def.home = dir; }   // a spin that lands behind him: that's his side now (keepSides)
     att.hitConfirmed = true;
     att.hitN = (att.hitN || 0) + 1;
     if (fd.travel) att.glide = null;   // a slide or a charge stops at the body
@@ -1478,7 +1533,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // the blocker holds ground; the attacker is bounced off (visible ~40px hop back)
       def.state = 'blockstun'; def.phase = null; def.move = null; def.stun = f60(fd.blockstun); def.blockedAt = sim.stepCount;
       def.vx = dir * 260;                 // ~20px of give
-      att.vx = -dir * 520;
+      att.vx = fd.rush && fd !== FRAME_DATA[move] ? 0 : -dir * 520;   // a multi-hit's earlier hits don't bounce him off: the rest still meet the guard
       att.hitstop = def.hitstop = f60(3);   // a short freeze so the block reads
       def.facing = -dir; def.flash = 2;
       spend(def, fd.cost * STAMINA.blockCost, { noFaint: true });   // blocking costs a third of the strike, never the last point
@@ -1681,7 +1736,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const down = lyingDown(a) ? a : lyingDown(b) ? b : null, stand = down === a ? b : a;
     if (!down || !onFoot(stand) || !(down.rig && down.rig.joints && down.rig.joints.hip)) return;
     const hip = down.rig.joints.hip.x, lo = Math.min(hip, down.x), hi = Math.max(hip, down.x);
-    const side = Math.sign((stand.prevBX != null ? stand.prevBX : stand.x) - (down.prevBX != null ? down.prevBX : hip)) || Math.sign(stand.x - hip) || 1;
+    // his own side: remembered from when both stood (going by where he is now pushed him the rest of the way across)
+    const side = (oppOf(stand) === down && stand.home) || Math.sign((stand.prevBX != null ? stand.prevBX : stand.x) - (down.prevBX != null ? down.prevBX : hip)) || Math.sign(stand.x - hip) || 1;
     const edge = side > 0 ? hi - OVER : lo + OVER;
     const inside = side > 0 ? edge - stand.x : stand.x - edge;
     if (inside <= 0) return;
@@ -1701,7 +1757,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     for (let iter = 0; iter < 8; iter++) {   // two torsos leaning into each other cross in an X: it takes a few pushes
       const depth = penetration(a, b);
       if (depth <= 0.5) return;
-      const s = (b.x - a.x) >= 0 ? 1 : -1;
+      // which way to push: by position, except while one is getting up, when its root can sit on the
+      // far side of a fighter standing over its legs; then by the sides they had (no shove across)
+      const getting = a.state === 'getup' || b.state === 'getup';
+      const s = getting && oppOf(a) === b && a.home ? -a.home : getting && oppOf(b) === a && b.home ? b.home : (b.x - a.x) >= 0 ? 1 : -1;
       // whoever is reeling or being pressed gives way; two equals split it
       const give = (u, o) => (u.state === 'hitstun' || u.state === 'blockstun' ? 3 : 1) * (o.state === 'attack' ? 2 : 1);
       const ga = give(a, b), gb = give(b, a), shareA = ga / (ga + gb);
@@ -1727,7 +1786,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const tip = buildHitboxes(att.rig, att.move, att.facing)[0];
     if (!tip) return 0;
     // a tip already past his hips went through him: that's inside, however far it is from a line
-    const past = (tip.x - def.rig.joints.hip.x) * att.facing;
+    const past = (tip.x - def.rig.joints.hip.x) * (FRAME_DATA[att.move].bothSides && (def.rig.joints.hip.x - att.x) * att.facing < 0 ? -att.facing : att.facing);   // bothSides: a spin can land behind him
     if (past > 0) return -(past + 8);
     let gap = Infinity;
     const th = att.rig.shape ? TIP_HALF * att.rig.shape.tip : TIP_HALF;
@@ -1760,6 +1819,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       let d = -(gap - 1);   // + pushes the defender away, - pulls him in
       const room = dir > 0 ? bounds.x1 - def.x : def.x - bounds.x0;
       const moveDef = d > 0 ? Math.min(d, Math.max(0, room)) : d;
+      if (air && (att.airJumpsUsed || att.wallJumps) && (def.x + dir * moveDef - att.x) * dir < 24) return;   // never under him and out the far side
       def.x += dir * moveDef; att.x -= dir * (d - moveDef);
       syncRig(def); syncRig(att); rigUpd(def, 0); rigUpd(att, 0);
     }
@@ -1866,6 +1926,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     }
     resolveHits();
     separate();
+    regroup();
     stepRagdolls();
     if (sim.card) { sim.card.t -= DT; if (sim.card.t <= 0) sim.card = null; }
     for (let i = sim.callouts.length - 1; i >= 0; i--) { sim.callouts[i].t -= DT; if (sim.callouts[i].t <= 0) sim.callouts.splice(i, 1); }

@@ -216,6 +216,7 @@ function injectStyle() {
   #flow canvas.fl-big { display: block; width: 15.5cqw; height: 100%; flex: none; }
   .fl-card b { display: block; font: 600 2.2cqw/1 'Teko', sans-serif; letter-spacing: 0.08em; color: #fff; text-shadow: 0 0 0.6cqw var(--c); white-space: nowrap; }
   .fl-card b.fl-long { font-size: 1.7cqw; letter-spacing: 0.03em; }
+  .fl-cname.fl-long { font-size: 2.75cqw; }
   .fl-card.fl-focus { background: color-mix(in srgb, var(--c) 20%, rgba(14,4,30,0.72)); color: #fff; box-shadow: 0 0 1.4cqw var(--c), inset 0 0 1.2cqw color-mix(in srgb, var(--c) 40%, transparent); }
   .fl-card.fl-focus b { color: #fff; text-shadow: 0 0 0.6cqw var(--c), 0 0 1.4cqw var(--c); }
   .fl-card.fl-taken { opacity: 0.55; }
