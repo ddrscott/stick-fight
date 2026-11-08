@@ -5,6 +5,7 @@
 // PICK button, Enter, A) picks it, so a stray touch never starts a fight.
 
 import { el, button } from './ui.js';
+import { techniqueCount } from './techniques.js';
 import { createFighter, MOVES } from '../fighter/index.js';
 
 // bars out of 1, from the character's stats (TEMP, all 1s, sits about halfway on each)
@@ -90,7 +91,9 @@ export function openSelect(ui, o) {
     const foot = el('div', 'fl-selfoot');
     const pick = button('PICK', () => { const it = ui.items[ui.focus]; const c = it && it.char ? it.char : bigChar; if (c) o.onPick(c.id); }, 'fl-pink');
     const back = button('BACK', o.onBack, 'fl-violet');
-    foot.append(back.el, pick.el, el('div', 'fl-small', o.touch ? 'TAP A FIGHTER, TAP AGAIN TO PICK' : o.pad ? 'A PICKS   B BACK' : 'ENTER PICKS   ESC BACK'));
+    const tc = techniqueCount();   // the happy accidents found on this browser (src/flow/techniques.js)
+    foot.append(back.el, pick.el, el('div', 'fl-small', o.touch ? 'TAP A FIGHTER, TAP AGAIN TO PICK' : o.pad ? 'A PICKS   B BACK' : 'ENTER PICKS   ESC BACK'),
+      el('div', 'fl-small fl-found', `TECHNIQUES FOUND ${tc.found}/${tc.total}`));
     root.appendChild(foot);
     items.push(back, pick);
     return { items, focus: start, back: o.onBack, onFocus: (k, it) => { if (it && it.char) paint(it.char); } };

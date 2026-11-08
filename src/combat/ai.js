@@ -55,6 +55,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // jump last looked at and the one being answered
   const aaReadChance = () => (show ? 0.85 : Math.max(0.12, Math.min(0.8, (difficulty - 0.3) * 1.1 + (aerial ? 0.15 : 0))));   // a 12% floor: even the INTERN sometimes swats a jump-in
   let aaSeen = -1, aaFor = -1;
+  // botches (src/combat/botch.js): a CPU mostly waits for a clean press; the lower its difficulty the more
+  // often it lets a mistimed one go (and mashes on its own now and then), so the bottom of the ladder
+  // shows the system off; the showcase never botches but now and then lands a happy accident
+  const slipChance = (me) => (show ? 0 : Math.min(0.6, 0.45 * (1 - difficulty) * (1 - difficulty) + (me.char && me.char.id === 'intern' && difficulty < 0.5 ? 0.08 : 0)));   // the ladder's INTERN swings like it
+  let mashFor = -1, mashAt = -1, mashTok = null, accFor = -1, lastBotchSeen = -1;
   // where and when a launched body lands (y down, vy positive down)
   const landTime = (o, floorY) => (-o.vy + Math.sqrt(Math.max(0, o.vy * o.vy + 2 * GRAV * Math.max(0, floorY - o.y)))) / GRAV;
   const landX = (o, floorY) => o.x + o.vx * landTime(o, floorY);
@@ -259,7 +264,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   function decide(me, opp, sim, dist, toward) {
     const r = (m) => reach(m);
     const cornered = me.x - sim.bounds.x0 < 70 || sim.bounds.x1 - me.x < 70;
-    const recovering = opp.state === 'attack' && opp.phase === 'recovery';
+    const recovering = (opp.state === 'attack' && opp.phase === 'recovery') || opp.state === 'botch';   // a botch is as open as a whiff
 
     if (HIT_STATES.has(opp.state) && me.state !== 'attack') {
       if (opp.state === 'blockstun' && blockedStreak >= 2) return mixup(dist, toward, opp);
@@ -456,6 +461,15 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     // reflex (showcase): his strike whiffed and he's stuck in recovery: punish it, a string
     // starter or the launcher up close, the lunge from further, Comet Cross from a dash
+    // reflex: he botched (tangled up, open): punish it, the better the CPU the more often (only ever
+    // reached when botches are on and one happened, so it changes nothing otherwise)
+    if (opp.state === 'botch' && opp.botchAt !== lastBotchSeen && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 26 && dist < 300) {
+      lastBotchSeen = opp.botchAt;
+      if (chance(show ? 0.9 : 0.25 + 0.6 * difficulty)) {
+        queue = dist < reach('cross') + 6 ? [{ ...press(dist < reach('jab') - 12 ? pick(['2', '1', 'd2']) : '2'), ok: true }] : [move(toward, closer(reach('cross')), true), { ...press('2'), ok: true }];
+        act = null;
+      }
+    }
     if ((show || turtle) && opp.state === 'attack' && opp.phase === 'recovery' && !opp.hitConfirmed && opp.attackId !== lastPunish && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 26) {
       lastPunish = opp.attackId;
       if (chance(0.85)) {
@@ -560,9 +574,37 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (act.pressFn && !act.pressed) { act.press = act.pressFn(me, opp); act.pressed = true; }
       if (act.press) { const t = act.press; out[BTN[t[t.length - 1]]] = true; if (t[0] === 'd') out.down = true; }
       if (me.stamina < (show ? 55 : 40) && !act.attack) out.run = false;   // running drains the meter: walk when it's low
-      if (typeof act.until === 'number') act.until--;
+      // a press that would botch (it lands in my own strike, outside anything that carries on from it):
+      // decided once per act, the CPU holds it until it's clean (the grace at the end of the recovery)
+      // or, the lower its difficulty, lets it go and tangles itself up
+      let held = false;
+      if (sim.botchOn && (act.attack || act.press) && me.state === 'attack' && sim.pressMistimed && sim.pressMistimed(me, out)) {
+        if (act.slip == null) act.slip = chance(slipChance(me));
+        if (!act.slip) {
+          out.lp = out.rp = out.lk = out.rk = false; if (act.attack) out[act.attack] = false; out.down = !!act.down;
+          held = true; act.held = (act.held || 0) + 1;
+          if (act.held > 60) act = null;
+        }
+      }
+      if (held) { /* the act waits, its clock stopped */ }
+      else if (typeof act.until === 'number') act.until--;
       else if (act.until(me, opp)) act = null;
       if (act && (act.attack || act.jump || act.press) && typeof act.until === 'number' && act.until <= 0) act = null;
+    }
+    // botches on: the low end of the ladder mashes a button in the middle of its own strike now and then
+    // (decided once per strike, pressed a few steps in), and the showcase sometimes presses into a happy
+    // accident's window (decided once per strike, the first step a window is open)
+    if (sim.botchOn && me.state === 'attack' && me.grounded) {
+      if (me.attackId !== mashFor) {
+        mashFor = me.attackId; mashAt = -1;
+        const p = slipChance(me) * 0.8;
+        if (p > 0 && chance(p)) { mashAt = step + 3 + irnd(16); mashTok = pick(['1', '2', '3', '4']); }
+      }
+      if (step === mashAt && !out.lp && !out.rp && !out.lk && !out.rk) { out[BTN[mashTok]] = true; mashAt = -1; }
+      if (show && accFor !== me.attackId && sim.openAccident) {
+        const a = sim.openAccident(me);
+        if (a) { accFor = me.attackId; if (chance(0.03)) { if (a.tok === 'T') { out.lp = true; out.lk = true; } else out[BTN[a.tok]] = true; out.down = false; } }
+      }
     }
     return out;
   }

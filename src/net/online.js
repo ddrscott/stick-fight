@@ -13,7 +13,8 @@
 //   net.active                  a match is running (main.js steps it through net.advance)
 //
 // Once both players are linked (peer to peer, or the relay after RTC_TIMEOUT_MS), the host
-// picks a seed and sends {t:'start', seed, chars}; both call startMatch({ seed, localIndex, lockstep, chars }),
+// picks a seed and sends {t:'start', seed, chars, botch}; both call startMatch({ seed, localIndex, lockstep, chars, botch }),
+// botch being the host's botch setting (game.botchSetting(), src/combat/botch.js), so both sims play the same rules;
 // chars being [host's character, guest's character] (each side's pick rides its {t:'ready'} message;
 // net.setCharacter(id) sets this side's, TEMP if it never picks),
 // which main.js turns into the 'online' scene: unit 0 is the host, unit 1 the guest, each
@@ -30,13 +31,13 @@ import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
 
-export const NET_VERSION = 6;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back)
+export const NET_VERSION = 7;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
 
 /**
- * @param {{ sim: any, input: any, startMatch: (o: { seed: number, localIndex: number, lockstep: any }) => void,
- *           endMatch: (reason: string) => void, stage?: HTMLElement | null }} game
+ * @param {{ sim: any, input: any, startMatch: (o: { seed: number, localIndex: number, lockstep: any, chars?: string[], botch?: boolean }) => void,
+ *           endMatch: (reason: string) => void, stage?: HTMLElement | null, botchSetting?: () => boolean }} game
  */
 export function createOnline(game) {
   /** @type {Record<string, Function[]>} */
@@ -76,7 +77,7 @@ export function createOnline(game) {
         if (msg.v !== NET_VERSION) { setState('error', 'version'); l.close(); return; }
         remoteChar = typeof msg.char === 'string' ? msg.char : 'temp';
         remoteReady = true; maybeStart();
-      } else if (msg.t === 'start' && role === 'guest' && !lockstep) begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar]);
+      } else if (msg.t === 'start' && role === 'guest' && !lockstep) begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar], msg.botch !== false);
     });
     l.on('packet', (buf) => { if (lockstep) lockstep.onPacket(buf); });
     l.on('closed', (reason) => {
@@ -90,11 +91,12 @@ export function createOnline(game) {
     if (role !== 'host' || !localReady || !remoteReady || lockstep) return;
     const seed = crypto.getRandomValues(new Uint32Array(1))[0];
     const chars = [localChar, remoteChar];   // the host is P1
-    link.sendControl({ t: 'start', seed, chars });
-    begin(seed, chars);
+    const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;   // the host's rules for both
+    link.sendControl({ t: 'start', seed, chars, botch });
+    begin(seed, chars, botch);
   }
 
-  function begin(seed, chars = ['temp', 'temp']) {
+  function begin(seed, chars = ['temp', 'temp'], botch = true) {
     const localIndex = role === 'host' ? 0 : 1;
     lockstep = createRollback({
       sim: game.sim, localIndex, link: netsimLink(link, params.get('netsim')),
@@ -106,8 +108,8 @@ export function createOnline(game) {
     try { game.input.swallowHeld(); } catch { /* old input */ }
     document.documentElement.classList.add('online');
     emit('connected', { mode: link.mode, role, code });
-    game.startMatch({ seed, localIndex, lockstep, chars });
-    emit('start', { seed, localIndex, chars });
+    game.startMatch({ seed, localIndex, lockstep, chars, botch });
+    emit('start', { seed, localIndex, chars, botch });
     readout.show(true);
   }
 

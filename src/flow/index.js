@@ -33,6 +33,7 @@ import { roster, getCharacter, characterOr, TEMP_ID } from '../characters/index.
 import * as S from './scores.js';
 import { createMenuInput } from './menuInput.js';
 import { createUI, el, button } from './ui.js';
+import { techniques, botchEnabled, setBotchEnabled } from './techniques.js';
 import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './netApi.js';
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
@@ -582,10 +583,23 @@ export function createFlow(ctx) {
       if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
       if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }));
       if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }));
+      // botches on or off (src/combat/botch.js): remembered, and it takes effect from the next fight (online
+      // the host's setting rides the start message, so it isn't offered there)
+      if (mode !== 'online') {
+        const label = () => `BOTCHES: ${botchEnabled() ? 'ON' : 'OFF'}`;
+        const sw = button(label(), () => { setBotchEnabled(!botchEnabled()); sw.el.firstChild.textContent = label(); }, 'fl-amber');
+        sw.el.appendChild(el('small', '', 'FROM THE NEXT FIGHT'));
+        items.push(sw);
+      }
       if (mode === 'online') items.push(button('LEAVE MATCH', () => { endMsg = 'YOU LEFT THE MATCH'; go('onlineEnd'); }, 'fl-violet'));
       else items.push(button('QUIT TO TITLE', quitToTitle, 'fl-violet'));
       items.forEach(i => list.appendChild(i.el));
-      root.appendChild(list);
+      // the happy accidents: found ones by name, the rest as ???, each with a hint (never the timing)
+      const tech = techniques(), book = el('div', 'fl-tech');
+      book.appendChild(el('div', 'fl-techhead', `TECHNIQUES FOUND ${tech.filter(t => t.found).length}/${tech.length}`));
+      for (const t of tech) { const p = el('p', t.found ? 'fl-got' : ''); p.append(el('b', '', t.found ? `${t.name}  ${t.input}` : '???'), el('small', '', t.hint)); book.appendChild(p); }
+      const row = el('div', 'fl-row fl-pauserow'); row.append(list, book);
+      root.appendChild(row);
       if (!ctx.touchUI()) root.appendChild(el('div', 'fl-small', ctx.padUI() ? 'START TO RESUME' : 'P OR ESC TO RESUME   F1 MOVE LIST'));
       return { items, back: resume };
     });

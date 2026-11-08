@@ -10,12 +10,13 @@ const DISPLAY = "'Bungee', 'Arial Black', Impact, system-ui, sans-serif";
 const LABEL = "'Teko', 'Arial Narrow', 'Helvetica Neue', system-ui, sans-serif";
 const BAR_W = 420, BAR_H = 18, BAR_Y = 16, SKEW = 12, STRIP_H = 70, ST_H = 5;
 const SIDE = [NEON.cyan, NEON.pink];
-const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, break: NEON.cyan, faint: NEON.pink, finish: NEON.amber };
+const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a' };
 
 export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) {
   const ctx = canvas.getContext('2d');
   const ghost = [100, 100], seen = [100, 100], tick = [0, 0];
   let lastBanner = '', bannerAge = 0, clock = 0;
+  let foundTech = null;   // the techniques found, for the move list's third line
   let names = null;          // the flow's fighter names (the arcade ladder), else the labels below
   let charNames = null;
   const labelW = [0, 0];     // how wide each side's name label drew, so the score starts after it      // the flow's character names per slot (an arcade stage's name), else each unit's character
@@ -232,7 +233,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
 
   // flow (src/flow/, null for a ?scene= URL): { bare, score, bonus, names, hint }. bare = a menu is
   // up over a dimmed scene, so no HUD at all. Returns { prompt } on the title (see attractCard).
-  function draw({ sim, camera, dt = 0, debug = false, scene = '', paused = false, help = false, attract = null, flow = null }) {
+  function draw({ sim, camera, dt = 0, debug = false, scene = '', paused = false, help = false, attract = null, flow = null, toast = null, found = null }) {
+    foundTech = found;
     clock += dt;
     layout = {};
     names = flow && flow.names ? flow.names : null;
@@ -263,7 +265,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     for (const c of (sim.callouts || []).slice().reverse()) {
       const color = KIND_COLOR[c.kind] || (c.by === 0 ? NEON.cyan : c.by === 1 || c.by > 1 ? NEON.pink : NEON.white);
       const age = c.max - c.t;
-      items.push({ text: c.kind === 'counter' && c.text === 'COUNTER' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
+      items.push({ text: c.kind === 'counter' && c.text === 'COUNTER' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' || c.kind === 'accident' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
     }
     const rows = [STRIP_H + 22, STRIP_H + 56, STRIP_H + 90, STRIP_H + 124];
     let row = [0, 0, 0];
@@ -288,10 +290,15 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
         ctx.restore(); continue;
       }
       ctx.save(); ctx.globalAlpha = it.alpha; ctx.translate(spot.x, spot.y); ctx.scale(pop, pop);
-      neonText(it.text, 0, 0, it.size, it.color, { glow: it.kind === 'finish' ? 1.4 : 1 });
+      neonText(it.text, 0, 0, it.size, it.color, { glow: it.kind === 'finish' || it.kind === 'accident' ? 1.4 : 1 });
       ctx.restore();
     }
 
+    // a happy accident a player found for the first time (main.js): TECHNIQUE FOUND 3/8
+    if (toast) {
+      const spot = placeFree(measure(toast.text, 22) + 20, 30, [[width / 2, STRIP_H + 150], [width / 2, STRIP_H + 184]], boxes, taken);
+      if (spot) { ctx.save(); ctx.globalAlpha = Math.min(1, toast.t / 0.3); neonText(toast.text, spot.x, spot.y, 22, KIND_COLOR.accident); ctx.restore(); }
+    }
     // horde count card
     if (sim.card) {
       const k = Math.min(1, sim.card.t / 0.2), s = 1 + 0.25 * Math.max(0, sim.card.t - 0.7) / 0.2;
@@ -328,7 +335,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
 
   // the move list, two lines at the bottom; it fades out wherever a fighter is under it
   function legend(boxes, padUI = false) {
-    const h = 44, y0 = height - h;
+    const extra = foundTech && foundTech.length ? 19 : 0;   // the happy accidents found so far get a third line (src/flow/techniques.js)
+    const h = 44 + extra, y0 = height - h;
     const covered = overlaps({ x0: 0, x1: width, y0, y1: height }, boxes);
     ctx.save(); ctx.globalAlpha = covered ? 0.18 : 1;
     const g = ctx.createLinearGradient(0, y0 - 10, 0, height);
@@ -340,6 +348,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const line2 = 'AIR 1 2 3 4, d+4 DIVE   d1 d1 d3 LOW RUSH   1124 FLASH ROUNDHOUSE   1234 NEON TORNADO   214 SPIN HEEL   334 CRESCENT   d3 d3 4 GROUND RUSH   d2 1 2 4 SKY SPIKE   f,f+2 COMET   1+3 / 2+4 THROW';
     neonText(line1, width / 2, y0 + 12, 17, NEON.cyan, { font: LABEL, weight: 500, glow: 0.4, core: false });
     neonText(line2, width / 2, y0 + 31, 17, NEON.pink, { font: LABEL, weight: 500, glow: 0.4, core: false });
+    if (extra) neonText('FOUND   ' + foundTech.map(t => `${t.input} ${t.name}`).join('   '), width / 2, y0 + 50, 17, KIND_COLOR.accident, { font: LABEL, weight: 500, glow: 0.4, core: false });
     ctx.restore();
   }
 

@@ -11,6 +11,7 @@ import { mulberry32 } from './rng.js';
 import * as dm from './dmath.js';   // bit-identical hypot on every engine (online play)
 import { saveSim, loadSim } from './snapshot.js';
 import { characterOr, canUse, colorFor, TEMP_ID } from '../characters/registry.js';   // per-character stats, moves, strings (src/characters/)
+import { BOTCH_GRACE, BOTCH_CALLOUT, ACCIDENTS, chooseBotch, botchCost, accidentFor, sideOf, isFoot } from './botch.js';   // mistimed presses (src/combat/botch.js)
 
 let WALK = 180, RUN = 380, CROUCH_WALK = 70;           // replaced by the rig's own stride speeds (MOVE_DATA) so planted feet don't skate
 const JUMP_VY = 500, GRAVITY = 2000;
@@ -200,6 +201,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     wins: [0, 0], winner: -1, banner: '', bannerT: 0, difficulty: 0.6, rng: mulberry32(1), reach, reachOf, reachSeen,
     accumulator: 0, hitstopActive: 0, koSlow: 0, finisher: false, startHealth: 100, introTime: INTRO_TIME, seed: 1, horde: null, card: null,
     callouts: [], log: [],
+    botchOn: true,   // mistimed presses botch (src/combat/botch.js); the settings toggle and ?botch=0 turn it off, online the host's setting rides the start message
     floor: 0, floorBroken: false, floorInfo, get stairwell() { return stairwellNow(); },
   };
   simRef = sim;
@@ -227,6 +229,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
+      botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1,
     };
   }
   sim.units = fighters.map(makeUnit);
@@ -297,6 +300,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
 u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
+    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1;
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
     if (typeof u.rig.reset === 'function') { u.rig.x = u.x; u.rig.y = u.y; u.rig.facing = u.facing; u.rig.reset(); }
     else if ((u.rig.airborne || u.ragUsed) && makeRig) { const r = makeRig(u.color); r.color = u.color; u.rig = r; }
@@ -561,14 +565,14 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       return;
     }
     const guarding = u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld);
-    if (u.state === 'attack' || u.state === 'run') return;
+    if (u.state === 'attack' || u.state === 'run' || u.state === 'botch') return;
     const smax = u.staminaMax || STAMINA.max, rk = u.char ? u.char.stats.regen : 1;
     if (guarding) u.stamina = Math.min(smax, u.stamina + STAMINA.regenBlock * rk * DT);
     else if (sim.stepCount >= u.regenAt) u.stamina = Math.min(smax, u.stamina + STAMINA.regen * rk * DT);
   }
   // where the wall is behind a body pushed in direction dir
   const wallGap = (u, dir) => (dir > 0 ? bounds.x1 - u.x : u.x - bounds.x0);
-  function startAttack(u, move) {
+  function startAttack(u, move, rigOpt = null) {
     const isCancel = u.state === 'attack';   // chained out of a strike that connected
     // how many times in a row this move has cancelled into itself (cancelOK limits it)
     u.selfChain = isCancel && u.move === move ? (u.selfChain || 0) + 1 : 0;
@@ -578,7 +582,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.grounded && opp) { const ox = bodyX(opp); if (Math.abs(ox - u.x) > 4) u.facing = ox > u.x ? 1 : -1; }
     const fd0 = FRAME_DATA[move];
     u.state = 'attack'; u.move = move; u.phase = 'startup'; u.hitConfirmed = false; u.attackId++; u.launchCancelAt = 0; u.otgConfirm = false;
-    u.attackStart = sim.stepCount; u.crouch = !!fd0.tc;
+    u.attackStart = sim.stepCount; u.crouch = !!fd0.tc; u.activeAt = -1; u.recoverAt = -1;
     // throws whiff on a croucher (crouch beats throws, mids beat crouch)
     u.grabOK = !!fd0.throw && opp && Math.abs(opp.x - u.x) <= (fd0.range || FRAME_DATA.throw.range) && !opp.crouch;
     u.armorLeft = fd0.armor ? (fd0.armor.hits || 1) : 0; u.hitN = 0; u.hitKey = 0;   // character hooks: armor, multi-hit
@@ -643,6 +647,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // an air attack's body travel (the homing lunge, the ease onto the arc) is spread over the time
     // the player actually sees: from the pre-roll to the moment the strike goes live
     if (fd0.air) opt = { ...(opt || {}), shownAt: PREROLL * 1000, liveMs: earlyMs(u) };
+    if (rigOpt) opt = { ...(opt || {}), ...rigOpt };   // the flail's forces (botch)
     safePlay(u.rig, FRAME_DATA[move].anim || move, opt);
     // pre-roll: the frame the button is seen already shows the anticipation (the rig's first
     // 17ms moves under 6px, which reads as no response)
@@ -682,7 +687,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const t13 = (press('lp') || press('lk')) && inp.lp && inp.lk, t24 = (press('rp') || press('rk')) && inp.rp && inp.rk;
     if (t13 || t24) e.attack = (u.grounded && commandMove(t13 ? 'throw13' : 'throw24', inp, u, sim.stepCount, false)) || 'throw';   // 1+3 or 2+4 (a character's command grab first)
     else for (const b of ['lp', 'rp', 'lk', 'rk']) if (press(b)) { Object.assign(e, resolvePress(u, b, inp)); break; }
-    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && (!FRAME_DATA[m].owner || canUse(u.char, m))) { e.attack = m; break; }   // the AI names moves directly (its own character's)
+    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && !FRAME_DATA[m].botch && (!FRAME_DATA[m].owner || canUse(u.char, m))) { e.attack = m; break; }   // the AI names moves directly (its own character's)
     // double-tap run
     if (inp.dx && inp.dx !== prev.dx) {
       if (u.tapTimer > 0 && u.tapDir === inp.dx && !inp.touch) u.running = true;
@@ -740,6 +745,179 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     startAttack(u, u.buffer);
     return true;
   }
+
+  // ---- botches and happy accidents (src/combat/botch.js) -------------------------------------
+  // The token a press goes by for strings and accidents: a button's digit ('d' first when down is held),
+  // 'T' for a throw; a move the CPU or a script names goes by its button.
+  const pressTok = (e) => (e.keys && e.keys.length ? e.keys[e.keys.length - 1] : e.attack && FRAME_DATA[e.attack] && FRAME_DATA[e.attack].throw ? 'T' : (e.attack && MOVE_TOKEN[e.attack]) || null);
+  const digitOf = (t) => (t && t[0] === 'd' ? t.slice(1) : t);
+  // steps until the strike out now ends (the rig's clock over its blend and keys)
+  function stepsLeft(u) {
+    const md = MOVE_DATA_ && FRAME_DATA[u.move] && MOVE_DATA_[FRAME_DATA[u.move].anim];
+    if (!md || !md.duration) return 0;
+    return (1 - u.rig.current.t) * ((md.blend || 0) + md.duration) * 0.12;
+  }
+  // whole steps since a key of the strike out now ('start' the press, 'active' its contact key,
+  // 'recover' its recovery key), on the strike's own clock: a hit's freeze stops it
+  function stepsSince(u, rel) {
+    const md = MOVE_DATA_ && FRAME_DATA[u.move] && MOVE_DATA_[FRAME_DATA[u.move].anim];
+    if (!md || !md.duration || md.activeAt == null) return null;
+    // the clock sits on the step grid (the pre-roll, then 1/120 s a step): count whole steps from the
+    // press, and the key's step is the first one at or past it (no float lands on a floor's edge)
+    const n = Math.round((u.rig.current.t * ((md.blend || 0) + md.duration) - PREROLL * 1000) * 0.12);
+    if (rel === 'start') return n;
+    const key = rel === 'active' ? (md.blend || 0) + md.activeAt : (md.blend || 0) + md.cancel[0];
+    return n - Math.ceil((key - PREROLL * 1000) * 0.12 - 1e-6);
+  }
+  sim.stepsSince = stepsSince;
+  // Is this press mistimed? Everything that legally carries on from the strike out now behaves as it
+  // always has: a string's next press, a listed cancel, a throw replacing the first steps of a strike
+  // (1, then 3 a frame late), any press after a launch or knockdown connected (its recovery is cut short
+  // for the follow-up) or while my juggle is in the air, and anything in the last BOTCH_GRACE steps of
+  // the recovery. Any other strike pressed in the startup, active frames or most of the recovery is
+  // mistimed. In the air: a second air attack while the first is still swinging (one per jump), unless
+  // it connected (the jump-in's ground string buffers for the landing) or he's about to land.
+  // A happy accident's window outranks the buffer's leniency (a launch's follow-up, a juggle, the grace)
+  // but never a string's next press or a listed cancel. Returns null (the press behaves as it always
+  // has), 'botch', or the accident it makes.
+  function pressVerdict(u, e) {
+    if (!sim.botchOn || u.state !== 'attack' || !e.attack || u.faint > 0) return null;
+    const fd = FRAME_DATA[u.move];
+    if (!fd || fd.botch) return null;
+    if (!u.grounded && fd.air) {
+      if (u.hitConfirmed || u.phase === 'recovery' || u.rig.current.done || !FRAME_DATA[e.attack] || !FRAME_DATA[e.attack].air) return null;
+      const toFloor = u.vy > 0 ? (floorUnder(u) - u.y) / u.vy * 120 : Infinity;
+      return toFloor > BOTCH_GRACE + 4 ? 'botch' : null;
+    }
+    const tok = pressTok(e);
+    if (tok) for (const keys of [u.seq, u.bufferKeys, u.queued && u.queued.keys]) if (keys && keys.length && matchStrings([...keys, tok], u.char.strings).length) return null;
+    if (!e.keys && fd.cancels.includes(e.attack) && !(e.attack === u.move && (u.selfChain || 0) >= 1)) return null;
+    if (FRAME_DATA[e.attack] && FRAME_DATA[e.attack].throw && u.phase === 'startup' && sim.stepCount - u.attackStart <= 4) return null;
+    const acc = accidentFor(u, digitOf(tok), (rel) => stepsSince(u, rel));
+    if (acc && canUse(u.char, acc.move)) return acc;
+    if (u.hitConfirmed && (u.launchCancelAt || u.otgConfirm)) return null;
+    const o = oppOf(u);
+    if (o && o.comboBy === u.id && ((o.state === 'knockdown' && inAir(o)) || o.state === 'splat')) return null;
+    if (u.phase === 'recovery' && stepsLeft(u) <= BOTCH_GRACE) return null;
+    return 'botch';
+  }
+  const mistimed = (u, e) => pressVerdict(u, e) !== null;
+  sim.mistimed = mistimed;
+  sim.pressVerdict = pressVerdict;
+  // a body whose spin has turned its back to the opponent (a spin-out): a hit from behind is a counter
+  const backTurned = (u) => { const s = ((((u.rig.pose && u.rig.pose.spin) || 0) % 360) + 360) % 360; return s > 110 && s < 250; };
+  // a travelling clip interrupted: take its root step now (the world pose doesn't move), the way a hit
+  // on a travelling strike does
+  function takeShift(u) {
+    if (typeof u.rig.commitShift !== 'function' || u.rag) return;
+    syncRig(u); const x0 = u.rig.x; u.rig.commitShift(); u.x += u.rig.x - x0; u.botchShift = 0;
+  }
+  const SPINNING = new Set(['spinKick', 'spinHeel', 'neonTornado', 'crescent', 'mopSpin', 'helicopter', 'pivotBackfist']);
+  // The forces: what the strike out now was doing (its limb and which way it turns the body, its
+  // phase, the hips' speed, the limb's speed, the lean, a glide or a lunge under it) against what the
+  // press wants (its limb, its height, forward or not, a throw), all quantized, plus one draw from
+  // sim.rng. botch.js picks the family; each one is fed to the rig's own tools: a clip built from
+  // those numbers on top of the pose and momentum the body has (play('botch')), the point simulation
+  // for a fall, the flail as a real (weak) strike.
+  function botch(u, e, opp) {
+    const tok = pressTok(e);
+    const fdc = FRAME_DATA[u.move], fdn = FRAME_DATA[e.attack] || fdc;
+    const j = u.rig.joints, pj = u.prevJoints || j;
+    const cj = fdc.joint || (fdc.limb === 'foot' ? 'rFoot' : 'rHand'), nj = fdn.joint || (fdn.limb === 'foot' ? 'rFoot' : 'rHand');
+    const hipV = (j.hip.x - pj.hip.x) * 120 * u.facing;
+    const limbV = j[cj] && pj[cj] ? dm.hypot(j[cj].x - pj[cj].x, j[cj].y - pj[cj].y) * 120 : 0;
+    const pose = u.rig.pose || {}, md = MOVE_DATA_ && MOVE_DATA_[fdc.anim];
+    const q = (v, s, lo, hi) => Math.max(lo, Math.min(hi, Math.round(v / s)));
+    const f = {
+      cur: { foot: isFoot(cj), side: sideOf(cj), phase: u.phase === 'startup' ? 0 : u.phase === 'active' ? 1 : 2,
+        spin: SPINNING.has(u.move) || ((((pose.spin || 0) % 360) + 360) % 360) !== 0, travel: !!fdc.travel || !!u.glide || !!(md && md.shift >= 40), ender: !!fdc.ender, low: fdc.height === 'low' },
+      nw: { foot: isFoot(nj), side: sideOf(nj), low: fdn.height === 'low' || !!e.down, fwd: (e.dx || 0) * u.facing > 0 || !!fdn.travel, thrown: !!fdn.throw },
+      hv: q(hipV, 40, -12, 12), lv: q(limbV, 100, 0, 20), lean: q(pose.torso || 0, 5, -12, 12),
+    };
+    const low = u.stamina < 30, r = sim.rng(), from = u.move, air = !u.grounded, seq0 = (u.seq || []).join(' ') + ' | ' + tok + ' @' + u.phase + (u.hitConfirmed ? ' hit' : '');
+    const pick = air ? { kind: 'air', sev: 1 + f.cur.phase, alt: Math.floor(r * 4) & 3 } : chooseBotch(f, r, { noTrip: low });
+    const kind = pick.kind, sev = pick.sev, alt = pick.alt;
+    // a botch while low on stamina tips into a faint: it takes the rest of the bar
+    const cost = low ? u.stamina : botchCost(kind, sev, f, fdn.cost, fdc.ender);
+    if (!air) takeShift(u);
+    u.buffer = null; u.bufferKeys = null; u.bufferName = ''; u.queued = null; u.seq = null; u.seqName = '';
+    u.glide = null; u.followThrough = false; u.chase = false; u.launchCancelAt = 0; u.otgConfirm = false;
+    u.botchSev = sev; u.botchAt = sim.stepCount; u.botchShift = 0;
+    callout(BOTCH_CALLOUT[kind], u.id, 'botch');
+    note({ type: 'botch', att: u.id, kind, from, press: e.attack, sev, f: [f.hv, f.lv, f.lean, f.cur.phase], at: seq0 });
+    onEvent({ type: 'botch', unit: u, kind, from, press: e.attack, x: u.x, y: u.y - 90, dir: u.facing });
+    // how far a stumble may carry him: never into the opponent's body or through a wall
+    const room = (want) => {
+      const b = bandOf(u), wall = u.facing > 0 ? b.x1 - u.x : u.x - b.x0, gap = opp ? (bodyX(opp) - u.x) * u.facing : Infinity;
+      return Math.max(0, Math.min(want, wall - 4, gap > 0 ? gap - 76 : want));
+    };
+    const sc = u.rig.scale || 1, rb = { sev, alt, limb: nj, cur: cj, rot: f.cur.side || 1 };
+    if (kind === 'air') {
+      // tangled in the air: the body goes to the point simulation with the jump's momentum and a twist,
+      // and lands in a heap (the knockdown and getup flow)
+      u.botchKind = 'air'; u.state = 'knockdown'; u.phase = null; u.move = null; u.juggle = false; u.landJoints = null; u.otgHit = false; u.rolled = false; u.breakOK = false;
+      u.launchedBy = -1;
+      if (!startRag(u, u.vx * 0.8, Math.min(u.vy, 120) - 60, { wall: 'stop', spin: (f.cur.side || 1) * (260 + 60 * sev) })) safePlay(u.rig, 'knockdown');
+    } else if (kind === 'flail') {
+      // both arms at once: a weak, ugly double swing, a real strike that can still land
+      u.state = 'idle'; u.move = null; u.phase = null;
+      startAttack(u, 'flail', { botch: { sev, alt } });
+      u.seq = null;
+    } else {
+      let d = 0;
+      if (kind === 'over') d = room(Math.min(80, 26 + 12 * sev + Math.max(0, f.hv) * 3));
+      else if (kind === 'spin') d = room(6 + 6 * sev);
+      u.vx = 0; u.botchShift = d; u.botchFwd = f.hv >= 2 || f.lean >= 5 || (f.nw.fwd && !f.nw.foot) ? 1 : -1;
+      setState(u, 'botch', null);
+      safePlay(u.rig, 'botch', { botch: { ...rb, kind, d: d / sc, fwd: u.botchFwd > 0, anim: fdn.anim || e.attack } });
+    }
+    u.botchKind = kind;
+    spend(u, cost);
+  }
+  // the botch clip ran out: take its step and stand, or (a trip) pitch over into a knockdown
+  function endBotch(u) {
+    if (u.botchKind === 'trip') {
+      const fw = u.botchFwd > 0, sev = u.botchSev || 1;
+      u.state = 'knockdown'; u.juggle = false; u.landJoints = null; u.otgHit = false; u.rolled = false; u.breakOK = false; u.launchedBy = -1;
+      syncRig(u);
+      if (!startRag(u, u.facing * (fw ? 110 + 30 * sev : -(90 + 30 * sev)), -140, { wall: 'stop', spin: fw ? -(320 + 60 * sev) : 300 + 60 * sev })) { safePlay(u.rig, 'knockdown'); u.vy = -150; u.grounded = false; }
+      onEvent({ type: 'thud', x: u.x, y: u.y, dir: u.facing, strength: 0.3 });
+      return;
+    }
+    if (u.botchShift) { const b = bandOf(u); u.x = Math.max(b.x0, Math.min(b.x1, u.x + u.facing * u.botchShift)); }
+    u.botchShift = 0; u.botchKind = '';
+    if (u.downHeld && !(u.faint > 0)) { setState(u, 'crouch', u.backHeld ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; } else setState(u, 'idle');
+    syncRig(u);
+  }
+  // A happy accident: the mistimed press landed in a technique's window. It comes out as its own move
+  // (a fresh strike from wherever the body is, with its own clip and frame data), with a callout.
+  function happyAccident(u, acc) {
+    takeShift(u);
+    u.state = 'idle'; u.move = null; u.phase = null;
+    u.buffer = null; u.bufferKeys = null; u.bufferName = ''; u.queued = null; u.glide = null; u.launchCancelAt = 0;
+    startAttack(u, acc.move);
+    u.seq = null;
+    callout('HAPPY ACCIDENT · ' + acc.name, u.id, 'accident');
+    note({ type: 'accident', att: u.id, id: acc.id });
+    onEvent({ type: 'accident', unit: u, id: acc.id, name: acc.name, x: u.x, y: u.y - 100 });
+  }
+  // For the CPU (ai.js): would this held input's fresh press botch right now? Nothing is changed.
+  sim.pressMistimed = (u, inp) => {
+    if (!sim.botchOn || u.state !== 'attack' || u.botchKind) return false;
+    const prev = u.last || EMPTY_INPUT, press = (b) => inp[b] && !prev[b];
+    const e = { attack: null, keys: null, name: '', dx: inp.dx || 0, down: !!inp.down };
+    const t13 = (press('lp') || press('lk')) && inp.lp && inp.lk, t24 = (press('rp') || press('rk')) && inp.rp && inp.rk;
+    if (t13 || t24) e.attack = (u.grounded && commandMove(t13 ? 'throw13' : 'throw24', inp, u, sim.stepCount, false)) || 'throw';
+    else for (const b of ['lp', 'rp', 'lk', 'rk']) if (press(b)) { Object.assign(e, resolvePress(u, b, inp)); break; }
+    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && !FRAME_DATA[m].botch && (!FRAME_DATA[m].owner || canUse(u.char, m))) { e.attack = m; break; }
+    return !!e.attack && mistimed(u, e);
+  };
+  // For the CPU's showcase flavor: the technique whose window is open on this step, if any
+  sim.openAccident = (u) => {
+    if (!sim.botchOn || u.state !== 'attack') return null;
+    for (const a of ACCIDENTS) if (accidentFor(u, a.tok, (rel) => stepsSince(u, rel)) === a && canUse(u.char, a.move)) return a;
+    return null;
+  };
 
   function updateUnit(u, opp, e) {
     // only from his feet: a vault begun in the air was cancelled by the landing and left him upstairs
@@ -814,6 +992,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         }
         break;
       case 'grabbed':
+        break;
+      case 'botch':
+        // tangled up (botch.js): the clip carries the body, the root stays put until it ends (tick()
+        // ends it right after the rig update that finishes it, so its step lands on the same frame)
+        u.vx = u.grounded ? u.vx * 0.8 : u.vx;
+        if (u.rig.current.move !== 'botch') endBotch(u);
         break;
       case 'vault':
         vaultStep(u);
@@ -1240,6 +1424,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     for (const ev of u.rig.events) {
       if (ev.type === 'active' && u.state === 'attack') {
         u.phase = 'active';
+        if (u.activeAt < 0) u.activeAt = sim.stepCount;   // the happy accidents' windows count from here (botch.js)
         // a multi-hit (frame data hits: n): each later 'active' key may connect again. hitKey counts the
         // active keys; the first one never re-opens (a strike can already land in the 45ms before it)
         const mfd = FRAME_DATA[u.move];
@@ -1248,7 +1433,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
           if (u.hitKey > 1 && u.hitConfirmed && (u.hitN || 0) < mfd.hits) u.hitConfirmed = false;
         }
       }
-      else if (ev.type === 'recover' && u.state === 'attack') u.phase = 'recovery';
+      else if (ev.type === 'recover' && u.state === 'attack') { u.phase = 'recovery'; if (u.recoverAt < 0) u.recoverAt = sim.stepCount; }
       else if (ev.type === 'footstep' && u.grounded) onEvent({ type: 'footstep', x: u.x, y: u.y, dir: u.facing });
       else if (ev.type === 'land' && u.rag) {
         if (u.rig.events.some(e2 => e2.type === 'bounce')) continue;
@@ -1360,6 +1545,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // Throws: the grab holds both for a break window; 1+3 or 2+4 from the victim breaks it.
   function grab(att, def) {
     att.hitConfirmed = true;
+    if (def.state === 'botch') takeShift(def);
     const gfd = FRAME_DATA[att.move] || FRAME_DATA.throw;
     def.x = att.x + att.facing * 70 * (att.rig.scale || 1); syncRig(def); rigUpd(def, 0);
     // near a wall behind him it becomes the wall slam
@@ -1461,7 +1647,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // a counter: hit during his startup, or an uppercut meeting a jump-in (the anti-air)
     const antiAir = !trade && (move === 'uppercut' || move === 'risingUppercut') && !def.grounded && !def.rag &&
       (def.state === 'jump' || (def.state === 'attack' && FRAME_DATA[def.move] && FRAME_DATA[def.move].air));
-    const counter = antiAir || (!trade && def.state === 'attack' && def.phase === 'startup');
+    // a spin-out (botch.js) with its back turned is hit from behind: that's a counter too
+    const counter = antiAir || (!trade && def.state === 'attack' && def.phase === 'startup') || (def.state === 'botch' && def.botchKind === 'spin' && backTurned(def));
+    if (def.state === 'botch') takeShift(def);   // a stumble cut short keeps the ground it covered
     if (antiAir) note({ type: 'antiAir', att: att.id, def: def.id });
     if (def.state === 'down') {
       // on-the-ground hit: a flinch, not a relaunch; the getup timer keeps running after the freeze
@@ -1547,7 +1735,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // combos: a hit on a body still in hitstun extends the string, and so does every hit on a fainted
     // body (so the decay keeps running through the faint instead of starting over)
     const fadeChain = def.faint > 0 && (def.lastHitAt || -1) >= def.faintAt;
-    const chained = def.comboBy === att.id && (def.state === 'hitstun' || sim.stepCount - (def.hitstunEnd || -99) <= 6 || fadeChain);
+    // (a botch's flail never carries a combo on: mashing doesn't pay)
+    const chained = def.comboBy === att.id && !fd.botch && (def.state === 'hitstun' || sim.stepCount - (def.hitstunEnd || -99) <= 6 || fadeChain);
     def.combo = chained ? def.combo + 1 : 1; def.comboBy = att.id; def.lastHitAt = sim.stepCount;
     if (!chained) def.comboDmg = 0;
     sim.combo = { count: def.combo, by: att.id, on: def.id };
@@ -1886,6 +2075,17 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const live = sim.phase === 'fight' || ((sim.phase === 'ko' || sim.phase === 'match') && u.id === sim.winner);
       const inp = (live && u.controller) ? u.controller(u, opp, sim) : EMPTY_INPUT;
       const e = edges(u, inp);
+      // botches (botch.js): a tangled body loses its presses until it's back; a mistimed press botches
+      // (or, in a technique's window, comes out as a happy accident) instead of waiting in the buffer
+      if (u.botchKind && u.state !== 'botch' && !(u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].botch)) u.botchKind = '';
+      if (e.attack && live && sim.botchOn) {
+        if (u.botchKind) e.attack = null;
+        else {
+          // in a hit's freeze too: the body tangles (or the technique comes out) once it lets go
+          const v = pressVerdict(u, e);
+          if (v) { if (v === 'botch') botch(u, e, opp); else happyAccident(u, v); e.attack = null; }
+        }
+      }
       if (e.attack && live) {
         // a throw pressed a few steps into a jab/cross/kick startup replaces it (1 then 3 a frame late)
         if (e.attack === 'throw' && u.state === 'attack' && u.phase === 'startup' && sim.stepCount - u.attackStart <= 4) { u.state = 'idle'; u.move = null; }
@@ -1922,6 +2122,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         : u.state === 'run' ? u.char.stats.run / u.char.stride : u.state === 'crouch' && u.vx ? u.char.stats.walk / u.char.stride : 1;
       rigUpd(u, DT * rate);
       drainRig(u);
+      if (u.state === 'botch' && u.rig.current.done) endBotch(u);   // the rig took the clip's step this update: the root takes it now too
       floorStep(u);
     }
     resolveHits();

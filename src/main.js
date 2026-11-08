@@ -14,6 +14,8 @@ import { createOnline } from './net/online.js';   // online play: rooms, lockste
 import { createFlow } from './flow/index.js';     // the arcade flow: title, menus, ladder, continue, scores (src/flow/)
 import { setNet, adaptOnline } from './flow/netApi.js';
 import { roster, getCharacter, TEMP_ID } from './characters/index.js';   // registers every character before the sim is made
+import { botchEnabled, discover, techniques } from './flow/techniques.js';   // the botch switch and the happy accidents found (src/combat/botch.js)
+import { ACCIDENTS } from './combat/botch.js';
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
@@ -70,6 +72,7 @@ let shakeRng = mulberry32(7);
 const trailPrev = [null, null];
 const blockSparks = [];                // hard glyphs at a blocked contact, drawn on the emissive layer
 let debug = false, paused = false, driven = false, sceneName = 'play', help = false;
+let toast = null;   // TECHNIQUE FOUND 3/8, for a couple of seconds after a happy accident
 let attract = false;                   // the attract mode's demo bout is on (see ---- attract mode)
 let flow = null;                       // the arcade flow (see ---- arcade flow); null until it's made, off for ?scene= URLs
 
@@ -130,6 +133,16 @@ function onEvent(ev) {
       arena.liveColors = [sim.units[0].color || P1_COLOR, ...sim.units.slice(1).map(u => u.color)];
       if (ev.unit) fx.dust({ x: ev.unit.x, y: ev.unit.y, dir: ev.unit.facing });
       break;
+    case 'botch':
+      fx.dust({ x: ev.unit.x, y: ev.unit.y, dir: -ev.unit.facing });
+      break;
+    case 'accident': {
+      // a technique found by a player on this machine goes in the book (the pause menu's list)
+      light(ev.x, ev.y, 200, [0.78, 1.0, 0.23], 0.9, 0.3);
+      const u = ev.unit, mine = u.kind === 'human' || (u.kind === 'net' && online.active && u.id === (online.role === 'host' ? 0 : 1));
+      if (mine && !attract && discover(ev.id)) { const t = techniques(); toast = { text: `TECHNIQUE FOUND  ${t.filter(x => x.found).length}/${t.length}`, t: 2.2 }; }
+      break;
+    }
   }
   if (flow && flow.on) flow.event(ev);   // flow: scoring
 }
@@ -141,7 +154,7 @@ gameAudio.attach(sim);   // audio
 // online: net.host()/join(code)/openLobby(); a match runs as the 'online' scene, stepped by online.advance
 // endMatch goes to the flow (its VERSUS ONLINE end screen) when the flow is running, and only
 // falls back to the demo for a ?scene= page; online.js's own "rival left" panel is closed in favor of it
-const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o),
+const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), botchSetting: () => botchEnabled(),
   endMatch: (reason) => { if (flow && flow.on) { flow.netEnded(reason); setTimeout(() => online.closeLobby(), 0); } else setScene('attract'); } });
 
 // ---- scenes ---------------------------------------------------------------------------
@@ -169,6 +182,9 @@ function script(seq) {
   };
 }
 function place(i, x, facing) { const u = sim.units[i]; u.x = x; u.facing = facing; u.rig.x = x; u.rig.facing = facing; u.rig.update(0); }
+// a test script's press, dropped if it would botch (src/combat/botch.js): the scenes' punishers press
+// every few steps, and the presses that land in their own strike were thrown away by the buffer anyway
+const clean = (me, inp) => (sim.pressMistimed && sim.pressMistimed(me, { ...EMPTY_INPUT, ...inp }) ? {} : inp);
 
 // v2 test scenes: a timeline of phases. Each phase resets the round, places the pair, holds
 // P2's input (crouch, guard, down-back...) and presses P1's buttons at fixed steps, so heights,
@@ -196,10 +212,12 @@ function timeline(phases, o = {}) {
     if (ph.react && me.reacted && t - me.reacted < 3 && t > me.reacted) Object.assign(out, ph.react(me, opp, -1) || {});
     if (ph.walkIn && t < ph.walkIn) { if (Math.abs(opp.x - me.x) > 78) out.dx = me.facing; else if (!me.walkedIn) { me.walkedIn = true; Object.assign(out, { rk: true, down: true }); } }
     if (t === 0) me.walkedIn = false;
-    // after the scripted part: walk up and jab (to show the fight goes on wherever they ended up)
+    // after the scripted part: walk up and jab (to show the fight goes on wherever they ended up). A
+    // jab every 24 steps lands its 4th press in the 3rd jab's startup, a press the buffer used to drop;
+    // it's skipped (clean) rather than botched, so the scene plays as it always did
     if (ph.chase && t >= ph.chase && me.state !== 'vault' && opp.state !== 'down' && opp.state !== 'getup') {
       const d = opp.x - me.x;
-      if (Math.abs(d) > 82) out.dx = Math.sign(d); else if (t % 24 === 0) out.lp = true;
+      if (Math.abs(d) > 82) out.dx = Math.sign(d); else if (t % 24 === 0) Object.assign(out, clean(me, { lp: true }));
     }
     for (const [at, inp] of ph.p1) if (t >= at && t < at + 3) Object.assign(out, typeof inp === 'function' ? inp(me) : inp);
     if (++t > ph.dur) { if (o.only != null) { t = ph.dur; return EMPTY_INPUT; } k = (k + 1) % phases.length; sim.phaseName = ''; t = 0; }
@@ -220,6 +238,16 @@ function timeline(phases, o = {}) {
 const B = (b, extra) => ({ [b]: true, ...(extra || {}) });
 const D = (b) => ({ [b]: true, down: true });
 const nearRight = () => [W1() - 150, W1() - 50];
+// botch-test and accident-test: press inp on the step the strike `move` is k steps past its key (rel: 'start',
+// 'active', 'recover', on the strike's own clock, sim.stepsSince), as the sim will see it when the press lands
+const since = (rel, k, inp, move) => (me, o, t) => (t < 0 ? (typeof inp === 'function' ? inp(me) : inp)
+  : me.state === 'attack' && me.move === move && sim.stepsSince(me, rel) === k ? (typeof inp === 'function' ? inp(me) : inp) : null);
+const TOK_BTN = { 1: 'lp', 2: 'rp', 3: 'lk', 4: 'rk' };
+const ACC_FROM = { scissorKick: B('lk'), supermanPunch: B('rk'), pivotBackfist: B('rk'), flashKick: D('rp'), helicopter: D('rk'),
+  flyingTackle: (me) => ({ rp: true, dx: me.facing }), crossKnee: B('rp'), springUppercut: D('lk') };
+// where each technique lands: the backfist and the helicopter on a guard that held the first strike
+const ACC_AT = { flyingTackle: [300, 430], flashKick: [580, 650], springUppercut: [580, 650], pivotBackfist: [570, 650] };
+const ACC_P2 = { pivotBackfist: (me, o) => (o.move === 'roundhouse' ? { back: true } : {}), helicopter: { back: true, down: true } };
 const PHASES = {
   mixup: [
     { name: 'high vs crouch (ducks)', p2: { down: true }, p1: [[20, B('lp')]], dur: 90 },
@@ -300,7 +328,7 @@ const PHASES = {
     { name: 'TICKET CLOSED catches a mid (snap kick)', p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 12 && t < 15 ? { lk: true } : {}), dur: 200 },
     { name: 'TICKET CLOSED loses to a low (low kick)', p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 12 && t < 15 ? D('lk') : {}), dur: 160 },
     { name: 'TICKET CLOSED loses to a throw', at: () => [560, 640], p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 12 && t < 15 ? { lp: true, lk: true } : {}), dur: 180 },
-    { name: 'TICKET CLOSED whiffed: the recovery is punished', p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (o.state === 'attack' && o.phase === 'recovery' && t % 4 < 2 ? { rp: true } : {}), dur: 160 },
+    { name: 'TICKET CLOSED whiffed: the recovery is punished', p1: [[6, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (o.state === 'attack' && o.phase === 'recovery' && t % 4 < 2 ? clean(me, { rp: true }) : {}), dur: 160 },
     { name: 'REBOOT b+2 carries him into the wall (splat)', at: () => [W1() - 360, W1() - 240], p1: [[10, (me) => ({ rp: true, dx: -me.facing })]], dur: 220 },
     { name: 'REBOOT in the open (knockdown, he follows)', at: () => [400, 520], p1: [[10, (me) => ({ rp: true, dx: -me.facing })]], dur: 200 },
     { name: 'CTRL ALT DEL 1,3,2 (launch), a jab juggles', p1: [[10, B('lp')], [26, B('lk')], [46, B('rp')], [110, B('lp')]], dur: 220 },
@@ -308,7 +336,7 @@ const PHASES = {
   // JANITOR: the long low sweep, the spin in front and behind (over a croucher a run-jump crosses up), the splat ender
   janitor: [
     { name: 'WET FLOOR f+3 from range under a back-holder (lows go under)', at: () => [530, 650], p2: { back: true }, p1: [[10, (me) => ({ lk: true, dx: me.facing })]], dur: 180 },
-    { name: 'WET FLOOR blocked low: punished', at: () => [480, 650], p2: (me, o, t) => (o.state === 'attack' && o.phase === 'recovery' && me.state !== 'blockstun' && t % 4 < 2 ? { rp: true } : { back: true, down: true }), p1: [[10, (me) => ({ lk: true, dx: me.facing })]], dur: 200 },
+    { name: 'WET FLOOR blocked low: punished', at: () => [480, 650], p2: (me, o, t) => (o.state === 'attack' && o.phase === 'recovery' && me.state !== 'blockstun' && t % 4 < 2 ? clean(me, { rp: true }) : { back: true, down: true }), p1: [[10, (me) => ({ lk: true, dx: me.facing })]], dur: 200 },
     { name: 'MOP SPIN b+3 in front', p1: [[10, (me) => ({ lk: true, dx: -me.facing })]], dur: 200 },
     { name: 'MOP SPIN catches a cross-up behind him', p2: (me, o, t) => (t >= 4 && t < 8 ? { jump: true, run: true, dx: me.x > o.x ? -1 : 1 } : {}), p1: [...Array.from({ length: 15 }, (_, i) => [i * 3, { down: true }]), [48, (me) => ({ lk: true, dx: -me.facing })]], dur: 220 },
     { name: 'AISLE 3 3,3,3 (wall splat)', at: () => [W1() - 300, W1() - 210], p1: [[10, B('lk')], [30, B('lk')], [52, B('lk')]], dur: 220 },
@@ -365,6 +393,34 @@ const PHASES = {
     { name: 'throw broken', at: () => [560, 632], p1: [[10, { lp: true, lk: true }]], p2: (me, o, t) => (me.state === 'grabbed' && t % 6 < 3 ? { lp: true, lk: true } : {}), dur: 150 },
     { name: 'throw whiffs on crouch', at: () => [560, 632], p1: [[10, { lp: true, lk: true }]], p2: { down: true }, dur: 150 },
   ],
+  // botches (src/combat/botch.js): a mistimed press in the middle of a strike, one phase per outcome
+  // family. `since(rel, k, inp)` presses inp on the step the strike out now is k steps past that key.
+  botch: [
+    { name: 'OVERBALANCE: a second lunge on top of the first (f+2, then f+2 in its startup)', at: () => [430, 720], p1: [[10, (me) => ({ rp: true, dx: me.facing })]],
+      react: since('start', 10, (me) => ({ rp: true, dx: me.facing }), 'lungeCross'), dur: 160 },
+    { name: 'SPIN-OUT: a jab while the spin kick still turns (b+4, then 1)', at: () => [500, 720], p1: [[10, (me) => ({ rk: true, dx: -me.facing })]],
+      react: since('active', 2, { lp: true }, 'spinKick'), dur: 170 },
+    { name: 'SPIN-OUT punished from behind (counter)', at: () => [540, 690], p1: [[10, (me) => ({ rk: true, dx: -me.facing })]],
+      react: since('active', 2, { lp: true }, 'spinKick'),
+      p2: (me, o, t) => (o.state === 'botch' ? (Math.abs(o.x - me.x) > 84 ? { dx: Math.sign(o.x - me.x), run: true } : t % 6 < 3 ? clean(me, { rp: true }) : {}) : {}), dur: 170 },
+    { name: 'TRIP: a second roundhouse with the leg still up (4, then 4)', at: () => [500, 720], p1: [[10, B('rk')]],
+      react: since('start', 12, { rk: true }, 'roundhouse'), dur: 220 },
+    { name: 'FLAIL: both arms (2, then 2 in its startup)', at: () => [500, 720], p1: [[10, B('rp')]],
+      react: since('start', 8, { rp: true }, 'cross'), dur: 150 },
+    { name: 'WHIFF: a kick late in the jab\'s recovery (1, then 3)', at: () => [500, 720], p1: [[10, B('lp')]],
+      react: since('recover', 10, { lk: true }, 'jab'), dur: 150 },
+    { name: 'TANGLED: a second air attack mid-swing (jump, 3, then 4)', at: () => [420, 760], p1: [[10, (me) => ({ jump: true, dx: me.facing })], [30, B('lk')]],
+      react: since('start', 6, { rk: true }, 'flyingKick'), dur: 200 },
+    { name: 'LOW ON STAMINA: the botch faints him (2, then 2)', at: () => [500, 720], setup: () => { sim.units[0].stamina = 40; }, p1: [[10, B('rp')]],
+      react: since('start', 8, { rp: true }, 'cross'), dur: 260 },
+  ],
+  // happy accidents: each technique at its window (landing on him), then the same press a step early and
+  // a step late with him out of reach (so the first strike whiffs: after a knockdown that connects, a late
+  // press is a legal follow-up and only buffers)
+  accident: ACCIDENTS.flatMap((a) => [['', a.at[0]], [' (a step early, out of reach: botch)', a.at[0] - 1], [' (a step late, out of reach: botch)', a.at[1]]].map(([tag, k]) => ({
+    name: `${a.name}${tag}`, at: () => (tag ? [420, 720] : ACC_AT[a.id] || [560, 650]), p2: tag ? {} : ACC_P2[a.id] || {},
+    p1: [[10, ACC_FROM[a.id]]], react: since(a.rel, k, a.tok === 'T' ? { lp: true, lk: true } : B(TOK_BTN[a.tok]), a.from[0]), dur: a.id === 'pivotBackfist' ? 260 : 200,
+  }))),
 };
 
 // Seeds: ?seed=N on the URL overrides every scene's default; setScene(name, { seed })
@@ -465,6 +521,8 @@ const scenes = {
   'juggle-test'(o) { timeline(PHASES.juggle, o); },
   'trade-test'(o) { timeline(PHASES.trade, o); },
   'throw-test'(o) { timeline(PHASES.throws, o); },
+  'botch-test'(o) { timeline(PHASES.botch, o); },
+  'accident-test'(o) { timeline(PHASES.accident, o); },
   'floor-break-test'(o) { timeline(PHASES.floorBreak, o); },
   'jump-in-test'(o) { timeline(PHASES.jumpIn, o); },
   'anti-air-test'(o) { timeline(PHASES.antiAir, o); },
@@ -520,6 +578,8 @@ function setScene(name, opts) {
   shake.trauma = 0; shake.kickX = shake.kickY = 0; shake.zoomPunch = 0;
   lights.length = 0; blockSparks.length = 0; paused = false;
   camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camera.shakeX = camera.shakeY = 0;
+  // botches on or off (the pause menu's switch, ?botch=0); online, the host's setting from the start message
+  sim.botchOn = name === 'online' && opts && opts.lockstep ? opts.botch !== false : botchEnabled();
   scenes[name](opts || {});
   updateCamera(1);
 }
@@ -699,7 +759,8 @@ function render() {
   fx.lights = [...(arena.lights || []), ...lights.map(l => ({ x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity * (l.ttl / l.max) }))];
   fx.render(camera);
   const fl = flow && flow.on ? flow.hud() : null;   // flow: score, names, no HUD under a menu, the title card only on the title
-  const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help,
+  if (toast) { toast.t -= lastFrameMs / 1000; if (toast.t <= 0) toast = null; }
+  const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help, toast, found: help ? techniques().filter(t => t.found) : null,
     attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl });
   if (fl) flow.frame(layout);
 }

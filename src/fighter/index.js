@@ -800,6 +800,110 @@ MOVE_DEFS.crescent = { ...MOVE_DEFS.roundhouse, adapt: 'kick', keys: deepKeys(MO
   return k;
 }) };
 MOVE_DEFS.cometCross = { ...adapted({ ...MOVE_DEFS.lungeCross, adapt: 'step' }, 30), blend: 40 };
+
+// ---- botches (src/combat/botch.js) ------------------------------------------------------------
+// A press thrown in the middle of another strike tangles the body up. The sim works out the forces
+// (which limb was swinging, how fast the hips were going, which way the body was turning, which limb
+// the new press wanted and where) and asks for one of these clips with play('botch', { botch }) or,
+// for the flail, play('flail', { botch }). Each is built on the spot from those numbers and from the
+// pose the body is in, and play() blends into it from that pose carried forward by its momentum, so no
+// two look quite alike. The sim keeps the root still and takes the travel (`shift`) when it ends, like
+// the cross's step. Everything is in body space: x forward, angles from straight down, forward positive.
+//   b.kind   'over' (overbalance: lurches forward, catches himself with two steps), 'spin' (the turn
+//            carries him round until his back is to the opponent, then back), 'trip' (the feet cross and
+//            he pitches over: the sim hands the body to the point simulation when this ends), 'whiff' (the
+//            new limb shoots out half-formed and hangs there)
+//   b.sev    1..3, how hard; b.d px of travel; b.limb the new press's limb, b.cur the one that was out;
+//   b.alt    0..3, a little variety; b.rot +1/-1 which way the body was turning; b.fwd (trip) falling forward
+//   b.anim   (whiff) the new move's clip, whose contact pose the limb only half reaches
+const lerpN = (a, b2, t) => a + (b2 - a) * t;
+function makeBotch(b, cur) {
+  const sev = Math.max(1, Math.min(3, b.sev || 1)), alt = b.alt || 0, d = b.d || 0;
+  const hand = !b.limb || /Hand/.test(b.limb), lead = !b.limb || b.limb[0] === 'l';
+  const wob = (alt % 2 ? 1 : -1) * (4 + 3 * alt);   // which way the arms windmill, and how wide
+  if (b.kind === 'over') {
+    // the new limb thrown off-balance: an arm half out and low, the other flung back; a kick's foot
+    // reaching forward while both arms go up for balance
+    const thrown = [58 + wob * 0.5, 74], back = [-48 - wob, -18];
+    const arms = hand ? (lead ? { la: thrown, ra: back } : { la: back, ra: thrown }) : { la: [130 + wob, 160], ra: [-40, -10] };
+    const lean = 32 + 6 * sev + Math.max(0, Math.min(10, (cur.torso || 0) * 0.3));
+    return { blend: 50, blendEase: 'out', shift: d, keys: [
+      K({ ...F(d * 0.15, HIP - 6, LF, RF, 0, 6), ...(hand ? {} : lead ? { ll: [62, 30] } : { rl: [58, 26] }), torso: lean, bend: 8, head: -20, tw: lead ? -10 : 10, ...arms }, 70, 'out'),
+      K({ ...F(d * 0.3, HIP - 9, LF, RF + d * 0.5, 0, 12), torso: lean - 2, bend: 7, head: -18, tw: 4, la: [96 + wob, 132], ra: [-58, -30] }, 70, 'linear'),
+      K({ ...F(d * 0.45, HIP - 12, LF, RF + d), torso: lean - 6, bend: 6, head: -14, la: [150 + wob, 170], ra: [-30, 10] }, 70, 'out', 'footstep'),
+      K({ ...F(d * 0.65, HIP - 10, LF + d * 0.5, RF + d, 12, 0), torso: lean - 12, bend: 4, head: -10, la: [60, 100], ra: [100 - wob, 140] }, 80, 'linear'),
+      K({ ...F(d * 0.85, HIP - 9, LF + d, RF + d), torso: lean - 18, bend: 3, head: -8, la: [20, 70], ra: [150 - wob, 160] }, 70, 'out', 'footstep'),
+      K({ ...F(d, HIP - 6, LF + d, RF + d), torso: 16, bend: 2, head: -6, tw: -4, la: [76 + wob, 120], ra: [96, 130] }, 140 + 40 * sev, 'sine'),
+      K({ ...F(d, HIP - 1, LF + d, RF + d), torso: 6, bend: 0, head: -4, la: [55, 150], ra: [30, 164] }, 120, 'out'),
+      K({ ...F(d, HIP - 1, LF + d, RF + d), torso: 6, head: -3 }, 0, 'sine'),
+    ] };
+  }
+  if (b.kind === 'spin') {
+    // pivot on the lead foot; the turn the strike started keeps going past the opponent until the back
+    // is to him (spin 180 mirrors the figure about the hip), a stooped beat, then round the rest of the way
+    const s = 1;   // the spin field reads the same either way round (solve() uses its cosine)
+    const hold = 120 + 60 * sev;
+    return { blend: 40, shift: d, keys: [
+      K({ hx: 4, ll: L(4, 52, LF), rl: [16, -36], torso: 12, bend: 2, head: 4, tw: (b.rot || 1) * 14, spin: 40 * s, la: [70 + wob, 110], ra: [-30, 20] }, 60, 'in'),
+      K({ hx: 6, ll: L(6, 51, LF), rl: [-34, -60], torso: 18, bend: 3, head: -6, spin: 125 * s, la: [104 + wob, 124], ra: [-64, -34] }, 80, 'out'),
+      K({ ...F(d * 0.6, HIP - 8, LF, RF + d), torso: 20, bend: 4, head: 8, spin: 205 * s, la: [40, 60], ra: [-20, 10] }, 70, 'out', 'footstep'),
+      K({ ...F(d, HIP - 7, LF + d, RF + d), torso: 24, bend: 6, head: 16, spin: 180 * s, la: [14 + wob * 0.5, 24], ra: [-6, 6] }, hold, 'sine'),
+      K({ ...F(d, HIP - 3, LF + d, RF + d, 0, 6), torso: 12, bend: 2, head: 0, spin: 300 * s, la: [46, 120], ra: [24, 130] }, 110, 'inOut'),
+      K({ ...F(d, HIP - 1, LF + d, RF + d), torso: 6, head: -4, spin: 360 * s, la: [55, 150], ra: [30, 164] }, 90, 'out'),
+      K({ ...F(d, HIP - 1, LF + d, RF + d), torso: 6, head: -3, spin: 360 * s }, 0, 'sine'),
+    ] };
+  }
+  if (b.kind === 'trip') {
+    // the feet cross (the swinging foot hooks behind or in front of the standing one) and the hips drop
+    // over them; arms thrown up. The sim launches the body from the last key
+    const f = b.fwd ? 1 : -1;
+    return { blend: 40, keys: [
+      K({ ...F(4 * f, HIP - 6, LF - 2, LF + 6 * f, 0, 10), torso: 26 * f + 6, bend: 6 * f, head: -18 * f, la: [150 + wob, 170], ra: [-50, -20] }, 60, 'out'),
+      K({ ...F(10 * f, HIP - 15, LF + 12 * f, LF + 2, 16, 0), torso: 44 * f + 4, bend: 10 * f, head: -24 * f, la: [172, 192], ra: [96 - wob, 140] }, 70, 'in'),
+      K({ ...F(10 * f, HIP - 15, LF + 12 * f, LF + 2, 16, 0), torso: 44 * f + 4, bend: 10 * f, head: -24 * f, la: [172, 192], ra: [96 - wob, 140] }, 0, 'sine'),
+    ] };
+  }
+  // whiff: the new limb gets about 60% of the way to its contact pose with the far segment lagging (an
+  // elbow or knee still bent), the body follows it past where it should stop, and it hangs there
+  const nd = MOVE_DEFS[b.anim] || MOVE_DEFS.jab, ai = Math.max(0, nd.keys.findIndex(k => k.ev === 'active')), ap = nd.keys[ai].p;
+  const lk = !b.limb ? 'la' : b.limb === 'lHand' ? 'la' : b.limb === 'rHand' ? 'ra' : b.limb[0] === 'l' ? 'll' : 'rl';
+  const c0 = { ...STANCE, ...cur };
+  const half = { ...P({}), torso: lerpN(c0.torso, ap.torso, 0.6), bend: lerpN(c0.bend, ap.bend, 0.6), head: lerpN(c0.head, ap.head, 0.6), tw: lerpN(c0.tw, ap.tw, 0.6),
+    hx: lerpN(c0.hx, ap.hx, 0.6), la: [lerpN(c0.la[0], ap.la[0], 0.5), lerpN(c0.la[1], ap.la[1], 0.5)], ra: [lerpN(c0.ra[0], ap.ra[0], 0.5), lerpN(c0.ra[1], ap.ra[1], 0.5)],
+    ll: [lerpN(c0.ll[0], ap.ll[0], 0.6), lerpN(c0.ll[1], ap.ll[1], 0.6)], rl: [lerpN(c0.rl[0], ap.rl[0], 0.6), lerpN(c0.rl[1], ap.rl[1], 0.6)] };
+  const reach = [ap[lk][0] * 0.8 + c0[lk][0] * 0.2, ap[lk][0] * 0.8 + c0[lk][0] * 0.2 - 38 - 4 * alt];
+  half[lk] = reach;
+  const kick = lk === 'll' || lk === 'rl', dir = kick ? -1 : 1;   // a kick throws the body back over the standing leg, a punch forward
+  const over = { ...half, hx: half.hx + 6, torso: half.torso + 12 * dir, bend: half.bend + 4 * dir, [lk]: [reach[0] + 10, reach[1] - 14] };
+  const sag = { ...P(F(4, HIP - 8, LF + 4, RF)), torso: 14 + (kick ? -6 : 10), bend: 4, head: 8, tw: half.tw * 0.5, la: half.la, ra: half.ra };
+  if (!kick) sag[lk] = [reach[0] - 34, reach[1] - 50];
+  return { blend: 30, blendEase: 'out', keys: [
+    { p: half, d: 70, ease: 'out', ev: null },
+    { p: over, d: 90, ease: 'linear', ev: null },
+    { p: sag, d: 150 + 60 * sev, ease: 'sine', ev: kick ? 'footstep' : null },
+    K({ ...F(2, HIP - 4, LF + 2, RF), torso: 10, bend: 2, head: 2, la: [44, 120], ra: [24, 130] }, 140, 'inOut'),
+    K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -3 }, 0, 'sine'),
+  ] };
+}
+// The flail: both arms thrown up and back as the balance goes, then a wild overhand with the rear arm
+// that drags the body over, and a backhand on the way back up (two weak hits, frame data `flail`), then
+// he hangs there hunched and blowing. The timing is fixed (the sim's frame data and the CPU's reach are
+// measured off it); b.alt only changes how wide the arms go and which way the body leans into it.
+function makeFlail(b) {
+  const a = (b && b.alt) || 0, w = (a % 2 ? 1 : -1) * (5 + 3 * a), lean = (b && b.sev ? b.sev : 1) * 3;
+  return { blend: 30, limb: 'rHand', keys: [
+    K({ ...F(-4, HIP - 4, LF, RF), torso: -8 - lean, bend: -4, head: 8, tw: -10, la: [130 + w, 160], ra: [150 - w, 176] }, 60, 'in'),
+    K({ ...F(6, HIP - 7, LF, RF, 0, 4), torso: 22 + lean, bend: 6, head: -10, tw: 12, la: [-40 + w, -10], ra: [86, 112] }, 50, 'out', 'active'),
+    K({ ...F(8, HIP - 9, LF, RF, 0, 6), torso: 30 + lean, bend: 8, head: -6, tw: 10, la: [40, 84 + w], ra: [30 + w, 58] }, 70, 'linear'),
+    K({ ...F(4, HIP - 6, LF, RF), torso: 14, bend: 2, head: -8, tw: -12, la: [140 - w, 168], ra: [96, 72] }, 50, 'out', 'active'),
+    K({ ...F(3, HIP - 9, LF, RF), torso: 28 + lean, bend: 8, head: 12, tw: -2, la: [8, 16], ra: [12 + w * 0.5, 10] }, 80, 'inOut', 'recover'),
+    K({ ...F(2, HIP - 8, LF, RF, 0, 5), torso: 22, bend: 6, head: 10, la: [4, 12], ra: [8, 6] }, 200, 'sine'),
+    K({ ...F(0, HIP - 2, LF, RF), torso: 8, head: -2, la: [46, 130], ra: [26, 140] }, 120, 'out'),
+    K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -3 }, 0, 'sine'),
+  ] };
+}
+MOVE_DEFS.botch = makeBotch({ kind: 'over', d: 30 }, STANCE);   // a default, so the sim knows the clip (play() builds the real one)
+MOVE_DEFS.flail = makeFlail({});
 // Heights and pay-offs (v2 spec). effect: what a clean hit does to the defender.
 const META = {
   jab: ['high'], cross: ['high'], lkick: ['mid'], roundhouse: ['high', 'knockdown'], lowJab: ['low'], uppercut: ['mid', 'launch'],
@@ -958,6 +1062,9 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
   const advCache = {};
   function play(name, opt) {
     let m = MOVE_DEFS[name];
+    // a botch (src/combat/botch.js) is built from the forces the sim measured and the pose the body is in now
+    if (name === 'botch' && opt && opt.botch) m = makeBotch(opt.botch, f.pose);
+    if (name === 'flail' && opt && opt.botch) m = makeFlail(opt.botch);
     if (name === 'vault') m = makeVault(opt && opt.drop != null ? opt.drop : 340, opt && opt.railH != null ? opt.railH : 44);
     if (name === 'advance' && opt && opt.distance) { const d = Math.round(opt.distance); m = advCache[d] || (advCache[d] = makeAdvance(d)); }
     // reach: retarget a jab/cross so its tip lands d px in front of the root (the hips travel,

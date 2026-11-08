@@ -237,6 +237,16 @@ function injectStyle() {
   .fl-moves em { font: normal 600 2cqw/1 'Teko', sans-serif; color: var(--amber); text-shadow: 0 0 0.5cqw var(--amber); text-align: right; letter-spacing: 0.06em; }
   .fl-moves small { grid-column: 1 / -1; font-size: 1.55cqw; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(214,190,255,0.75); }
   .fl-selfoot { display: flex; align-items: center; gap: 2cqw; }
+  .fl-found { color: #c8ff3a; text-shadow: 0 0 0.5cqw rgba(200,255,58,0.6); }
+
+  /* pause: the menu beside the book of happy accidents (src/flow/techniques.js) */
+  .fl-pauserow { align-items: flex-start; gap: 3cqw; }
+  .fl-tech { --c: #c8ff3a; width: 44cqw; display: flex; flex-direction: column; gap: 0.7cqh; padding: 1cqw 1.4cqw; border: 2px solid color-mix(in srgb, var(--c) 60%, transparent); background: rgba(14,4,30,0.62); }
+  .fl-techhead { font: 400 1.8cqw/1 'Bungee', sans-serif; color: var(--c); text-shadow: 0 0 0.6cqw var(--c); letter-spacing: 0.04em; margin-bottom: 0.4cqh; }
+  .fl-tech p { margin: 0; display: flex; flex-direction: column; line-height: 1; }
+  .fl-tech b { font: 600 2cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: rgba(230,214,255,0.55); }
+  .fl-tech p.fl-got b { color: #fff; text-shadow: 0 0 0.5cqw var(--c); }
+  .fl-tech small { font-size: 1.4cqw; letter-spacing: 0.08em; color: rgba(214,190,255,0.7); }
   .fl-selfoot .fl-btn { min-width: 22cqw; }
   `;
   const s = document.createElement('style');
