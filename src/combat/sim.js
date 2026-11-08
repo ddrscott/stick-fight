@@ -37,6 +37,7 @@ const ROLL_STEPS = 30, ROLL_SPEED = 340, GETUP_SPEED = 2;   // the rig's getup i
 const SQUASH_STEPS = 10;            // 5 frames on the floor after touchdown (the stomp and roll window), then the getup
 const ROLL_GETUP_STEPS = 8;         // the roll is still available for the first 4 frames of the getup
 const PREROLL = 0.05;               // an attack's first rendered frame is already 50ms into its anticipation (the rig's blend and dip are under 6px before that)
+const GRAB_PULL = 6;                // px a step a grabbed body is pulled in to the throw's hold (720 px/s)
 const HIT_SEP = 40;                 // a stumbling victim and his attacker may close to 40px (64 otherwise)
 const SOLID = new Set(['idle', 'walk', 'run', 'block', 'blockstun', 'attack', 'hitstun', 'getup']);   // a rising body pushes the man standing on it to range
 const LYING = new Set(['knockdown', 'ko', 'down', 'getup', 'roll']);
@@ -229,7 +230,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
-      botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1,
+      botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
     };
   }
   sim.units = fighters.map(makeUnit);
@@ -305,7 +306,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (typeof u.rig.reset === 'function') { u.rig.x = u.x; u.rig.y = u.y; u.rig.facing = u.facing; u.rig.reset(); }
     else if ((u.rig.airborne || u.ragUsed) && makeRig) { const r = makeRig(u.color); r.color = u.color; u.rig = r; }
     u.ragUsed = false;
-    u.rag = false; u.ragLanded = false; u.queued = null; u.grabbedBy = -1;
+    u.rag = false; u.ragLanded = false; u.queued = null; u.grabbedBy = -1; u.grabTo = null;
     u.combo = 0; u.comboBy = -1; u.airUsed = 0; u.landLag = 0; u.easeBand = false;
     u.floor = 0; u.falling = false; u.breakOK = false; u.fellLanded = false; u.vaultPhase = null;
     u.airHits = 0; u.gScale = 1; u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.splatT = 0; u.crouchEnd = null; u.glide = null;
@@ -520,7 +521,22 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     return (fl[u.floor || 0] || fl[0]).y;
   }
   function safePlay(rig, name, opt) {
+    // a clip cut short takes its root step (play() commits a travelling clip's shift): the sim's root
+    // goes with it, or the next syncRig put the root back and the drawn body snapped by the step
+    const u = sim.units.find(v => v.rig === rig), track = u && !u.rag;
+    let x0 = 0;
+    if (track) { syncRig(u); x0 = rig.x; }
     try { rig.play(name, opt); } catch (e) { warnOnce('play' + name, `rig can't play '${name}', using idle`); rig.play('idle'); }
+    if (track && rig.x !== x0) { u.x += rig.x - x0; const b = bandOf(u); if (u.x < b.x0 || u.x > b.x1) u.easeBand = true; }
+  }
+  // after a rig update: a travelling clip that ended (a cross's step, a stagger, the getup's rise, a
+  // botch's stumble, the vault) moved the rig's root under an unchanged pose; the sim's root follows
+  // it here, the same step, so nothing (separation, the next syncRig) can put it back under the body
+  function takeRoot(u) {
+    if (u.rag || u.rig.x === u.x) return;
+    const b = bandOf(u);
+    u.x = u.rig.x;
+    if (u.x < b.x0 || u.x > b.x1) u.easeBand = true;   // a step that ends past the wall eases back in (physics), no snap
   }
   function setState(u, state, anim = state) {
     if (state === 'idle' && anim === 'idle' && u.faint > 0) anim = ANIM.faint;   // out on his feet
@@ -553,6 +569,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.state === 'idle') safePlay(u.rig, 'idle');
   }
   sim.endFaint = endFaint;
+  // knocked down (a hit, a throw, a trip, a floor break, a stair tumble): the bar refills to the top as he
+  // hits the floor, and any faint ends; the HUD and the status effects flash it ('refill')
+  function floored(u) {
+    if (u.faint > 0) endFaint(u);
+    const smax = u.staminaMax || STAMINA.max;
+    if (u.stamina < smax) { u.stamina = smax; onEvent({ type: 'refill', unit: u }); }
+  }
   function regen(u) {
     if (u.faint > 0) {
       // a knockdown (or a throw) knocks him out of it: he gets up with the recovery stamina
@@ -574,6 +597,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   const wallGap = (u, dir) => (dir > 0 ? bounds.x1 - u.x : u.x - bounds.x0);
   function startAttack(u, move, rigOpt = null) {
     const isCancel = u.state === 'attack';   // chained out of a strike that connected
+    // a travelling clip cut short takes its step before he turns (the step is along the old facing)
+    if (!u.rag && typeof u.rig.commitShift === 'function') { syncRig(u); const x0 = u.rig.x; u.rig.commitShift(); u.x += u.rig.x - x0; }
     // how many times in a row this move has cancelled into itself (cancelOK limits it)
     u.selfChain = isCancel && u.move === move ? (u.selfChain || 0) + 1 : 0;
     // turn to face the opponent as the attack starts: a chain of buffered attacks never
@@ -884,8 +909,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       onEvent({ type: 'thud', x: u.x, y: u.y, dir: u.facing, strength: 0.3 });
       return;
     }
-    if (u.botchShift) { const b = bandOf(u); u.x = Math.max(b.x0, Math.min(b.x1, u.x + u.facing * u.botchShift)); }
-    u.botchShift = 0; u.botchKind = '';
+    u.botchShift = 0;   // the stumble's step: the root took it with the clip's end (takeRoot) or its replacement (safePlay)
+    u.botchKind = '';
     if (u.downHeld && !(u.faint > 0)) { setState(u, 'crouch', u.backHeld ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; } else setState(u, 'idle');
     syncRig(u);
   }
@@ -1045,8 +1070,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         }
         if (u.rig.current.done) {
           // moves that step (the cross, the roundhouse) leave the root where the body ended up
-          const sh = MOVE_DATA_ && MOVE_DATA_[u.move] && MOVE_DATA_[u.move].shift;
-          if (sh) { u.x = Math.max(bounds.x0, Math.min(bounds.x1, u.x + u.facing * sh)); syncRig(u); }
+          // (the root already took that step when the clip ended: takeRoot)
           if (!u.hitConfirmed) note({ type: 'whiff', move: u.move, att: u.id });
           u.phase = null; u.move = null;
           // still holding down: stay crouched (no stand-up pop between crouch attacks)
@@ -1060,8 +1084,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         // stumble: slide back with light friction; stay in hitstun until the slide is slow
         if (u.grounded) u.vx *= STUMBLE_FRICTION;
         if (--u.stun <= 0 && Math.abs(u.vx) < 360) {
-          const react = u.rig.current.move, sh = MOVE_DATA_ && MOVE_DATA_[react] && MOVE_DATA_[react].shift;
-          if (sh && /^hit/.test(react)) { u.x = Math.max(bounds.x0, Math.min(bounds.x1, u.x + u.facing * sh)); syncRig(u); }   // the stagger's own travel (signed, negative = back)
+          // the stagger's own travel was taken when its clip ended (takeRoot), or is taken by the next play()
           u.hitstunEnd = sim.stepCount; setState(u, 'idle'); tryAttack(u);
         }   // still sliding: the counter can come out of the stumble
         break;
@@ -1076,7 +1099,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (u.rig.current.move === 'thrown' && !u.rig.current.done) break;   // the throw is still carrying him
         // touchdown: one squash beat on the floor, then straight into the getup
         if (u.grounded) {
-          u.state = 'down'; u.downTimer = SQUASH_STEPS; u.touchStep = sim.stepCount;
+          u.state = 'down'; u.downTimer = SQUASH_STEPS; u.touchStep = sim.stepCount; floored(u);
           // the clip lands when the body does: snap it to its landing pose (it lags the physics)
           for (let n = 0; n < 90 && u.rig.current.move === 'knockdown' && u.rig.current.t < 0.6; n++) rigUpd(u, DT);
           drainRig(u);
@@ -1111,6 +1134,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function unwedge(u) {
     const f = floorInfo(u.floor || 0), w = f.walls, lowY = f.y, hip = u.rig.joints.hip;
     const fell = u.falling && !u.fellLanded, at = { hx: Math.round(hip.x), hy: Math.round(hip.y), vx: Math.round(u.vx), vy: Math.round(u.vy) };
+    const from = { x: hip.x, y: hip.y };
     u.rag = false; u.falling = false; u.fellLanded = true; u.grounded = true; u.vx = 0; u.vy = 0; u.gScale = 1;
     u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.juggle = false;
     u.x = Math.max(bounds.x0 + 30, Math.min(bounds.x1 - 30, hip.x)); u.y = lowY; u.ragFloor = lowY;
@@ -1119,8 +1143,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (typeof u.rig.reset === 'function') u.rig.reset();
     u.rig.walls = [w.left, w.right];
     safePlay(u.rig, 'knockdown'); rigUpd(u, 2); u.rig.events.length = 0;
+    // the one instant relocation left in a fight: the jammed body is set down flat on the floor, in the
+    // rest pose; main.js marks both spots (a flash and an afterimage) so it never reads as a glitch
+    onEvent({ type: 'relocate', unit: u, from, to: { x: u.rig.joints.hip.x, y: u.rig.joints.hip.y } });
     if (u.state === 'ko') u.koDone = true;
-    else { u.state = 'down'; u.downTimer = SQUASH_STEPS; u.touchStep = sim.stepCount; u.otgHit = false; u.rolled = false; }
+    else { u.state = 'down'; u.downTimer = SQUASH_STEPS; u.touchStep = sim.stepCount; floored(u); u.otgHit = false; u.rolled = false; }
     onEvent({ type: 'thud', x: u.x, y: lowY, dir: u.facing, strength: fell ? 1 : 0.5 });
     note({ type: 'unwedge', def: u.id, hp: u.health, fell, ...at });
   }
@@ -1239,10 +1266,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.vaultPhase === 'clip') {
       u.vx = 0;
       if (u.rig.current.move === 'vault' && !u.rig.current.done) return;
-      const md = MOVE_DATA_ && MOVE_DATA_.vault, sh = (md && md.shift) || 56;
       u.floor = u.vaultTo; u.y = floorInfo(u.floor).y; u.grounded = true;
-      // where the clip put him; if that's past the lower floor's fight band he eases in (no snap)
-      u.x = u.x + u.facing * sh; u.easeBand = true;
+      // where the clip put him (the root took its travel when it ended: takeRoot); if that's past the
+      // lower floor's fight band he eases in (no snap)
+      u.easeBand = true;
       u.vaultPhase = null; syncRig(u); setState(u, 'idle');
       onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.6 });
       return;
@@ -1363,15 +1390,25 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // walls
     // a lying body is long: it stops short of the wall; one flying in for a splat or bounce meets it
     const pad = LYING.has(u.state) ? ((u.splatPending || u.wallBounce) && !u.grounded ? 14 : LIE_PAD) : 0;
+    // a body getting up stays where it lies: its root (at the feet) may be past the wall, its hip never is,
+    // and it stands up at the hip (takeRoot). Sliding it off the wall slid the rising body along the floor,
+    // under a man standing over it, and it stood up on his other side.
+    if (u.state === 'getup' && u.grounded) { u.vx = 0; return finishPhysics(u, wasAir); }
     if (u.easeBand) {
       if (u.x > bounds.x1) { u.x = Math.max(bounds.x1, u.x - 260 * DT); return; }
       if (u.x < bounds.x0) { u.x = Math.min(bounds.x0, u.x + 260 * DT); return; }
       u.easeBand = false;
     }
     // a body that came to rest closer to the wall than a lying body's length slides off it, never jumps
-    const slide = LYING.has(u.state) && u.grounded && u.vx === 0 ? LIE_SLIDE * DT : Infinity;
-    if (u.x < bounds.x0 + pad) { u.x = Math.max(bounds.x0, Math.min(bounds.x0 + pad, u.x + slide)); wallHit(u); }
-    else if (u.x > bounds.x1 - pad) { u.x = Math.min(bounds.x1, Math.max(bounds.x1 - pad, u.x - slide)); wallHit(u); }
+    // (a rolling or sliding one too: it stops against the pad instead of being thrown out of it)
+    const lyingSlide = LYING.has(u.state) && u.grounded;
+    if (lyingSlide && ((u.x < bounds.x0 + pad && u.vx < 0) || (u.x > bounds.x1 - pad && u.vx > 0))) u.vx = 0;
+    const slide = lyingSlide ? LIE_SLIDE * DT : Infinity;
+    if (u.x < bounds.x0 + pad) { u.x = lyingSlide ? Math.min(bounds.x0 + pad, u.x + slide) : Math.max(bounds.x0, Math.min(bounds.x0 + pad, u.x + slide)); wallHit(u); }
+    else if (u.x > bounds.x1 - pad) { u.x = lyingSlide ? Math.max(bounds.x1 - pad, u.x - slide) : Math.min(bounds.x1, Math.max(bounds.x1 - pad, u.x - slide)); wallHit(u); }
+    finishPhysics(u, wasAir);
+  }
+  function finishPhysics(u, wasAir) {
     // floors
     const fy = floorUnder(u);
     if (!u.grounded) {
@@ -1469,10 +1506,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.rig.events.length = 0;
     if (u.rag && !u.rig.airborne) {
       // the body came to rest in the rig's knockdown pose: back on the sim's root
-      const bb = bandOf(u); u.rag = false; u.x = Math.max(bb.x0, Math.min(bb.x1, u.rig.x)); u.y = u.ragFloor; u.grounded = true; u.vx = 0; u.vy = 0; u.gScale = 1;
+      // the rig put its root where the body lies, facing the way the body lies (head behind the hip);
+      // taking both as they are keeps the drawn body still: a clamped root or the old facing re-posed it
+      // a body-length away and it slid there across the floor (a body too near the wall slides off it: physics)
+      u.rag = false; u.x = u.rig.x; u.facing = u.rig.facing; u.y = u.ragFloor; u.grounded = true; u.vx = 0; u.vy = 0; u.gScale = 1;
       u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.falling = false;
       if (u.state === 'ko') u.koDone = true;
-      else if (u.state === 'knockdown' || u.state === 'splat') { u.state = 'down'; u.downTimer = SQUASH_STEPS; u.touchStep = sim.stepCount; u.otgHit = false; u.rolled = false; }
+      else if (u.state === 'knockdown' || u.state === 'splat') { u.state = 'down'; u.downTimer = SQUASH_STEPS; u.touchStep = sim.stepCount; floored(u); u.otgHit = false; u.rolled = false; }
       syncRig(u);
     }
   }
@@ -1547,7 +1587,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     att.hitConfirmed = true;
     if (def.state === 'botch') takeShift(def);
     const gfd = FRAME_DATA[att.move] || FRAME_DATA.throw;
-    def.x = att.x + att.facing * 70 * (att.rig.scale || 1); syncRig(def); rigUpd(def, 0);
+    // the grab holds him 70px in front: he is pulled there over the next few frames (GRAB_PULL px a step),
+    // never put there; one caught behind the thrower (the thrower turned to a lying body's hip and it
+    // stood up past him) turns the thrower round instead of passing the victim through him
+    const side = Math.sign(def.x - att.x);
+    if (side && side !== att.facing) { att.facing = side; syncRig(att); rigUpd(att, 0); }
+    def.grabTo = att.x + att.facing * 70 * (att.rig.scale || 1);
     // near a wall behind him it becomes the wall slam
     if (wallGap(def, att.facing) < 190 && att.move === 'throw') { att.move = 'wallSlam'; att.seqName = 'WALL SLAM'; }
     // a character's command grab (frame data grab: true) can hold for its own time and refuse the break
@@ -1575,6 +1620,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
   function breakThrow(def) {
     const att = sim.units[def.grabbedBy];
+    def.grabTo = null;
     const dir = awayDir(att, def);
     def.state = 'blockstun'; def.stun = f60(14); def.vx = dir * 300; def.hitstop = 0; def.grabbedBy = -1;
     att.state = 'blockstun'; att.stun = f60(14); att.vx = -dir * 300; att.hitstop = 0; att.move = null; att.phase = null;
@@ -1585,7 +1631,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
   function landThrow(def) {
     const att = sim.units[def.grabbedBy];
-    def.grabbedBy = -1; def.state = 'idle';
+    def.grabbedBy = -1; def.state = 'idle'; def.grabTo = null;
     // the thrower was hit out of it mid-grab (horde: a second goon): the victim just drops
     if (!att || att.state !== 'attack' || !FRAME_DATA[att.move]) return;
     att.hitstop = 0;
@@ -1858,10 +1904,23 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     sim.banner = 'KO';
   }
 
+  // A body is moved at most SEP_CAP px a step by the pushing apart (720 px/s, about twice a run): a
+  // deep overlap (a getup turning solid under a man at the wall, a landing on top of someone, a body
+  // coming to rest past the one standing over it) is resolved over a few frames as a visible shove,
+  // never in one snap. Each body still only ever goes back toward its own side.
+  const SEP_CAP = 6;
+  const sepFrom = [];
   function separate() {
+    const n = sim.units.length;
+    for (let i = 0; i < n; i++) sepFrom[i] = sim.units[i].x;
     // two passes: a push can wake a spring or a layered reaction that leaves a sliver behind
     for (let pass = 0; pass < 2; pass++)
-      for (let i = 0; i < sim.units.length; i++) for (let j = i + 1; j < sim.units.length; j++) separatePair(sim.units[i], sim.units[j]);
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) separatePair(sim.units[i], sim.units[j]);
+    for (let i = 0; i < n; i++) {
+      const u = sim.units[i], d = u.x - sepFrom[i];
+      if (Math.abs(d) <= SEP_CAP || u.rag) continue;
+      u.x = sepFrom[i] + Math.sign(d) * SEP_CAP; syncRig(u); rigUpd(u, 0);
+    }
   }
   // Solid bodies: the two fighters' hurtbox shapes (head, spine, legs, arms) may not overlap.
   // The only exception is a striking limb on its way in (until it connects); a lying body is
@@ -1949,7 +2008,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // which way to push: by position, except while one is getting up, when its root can sit on the
       // far side of a fighter standing over its legs; then by the sides they had (no shove across)
       const getting = a.state === 'getup' || b.state === 'getup';
-      const s = getting && oppOf(a) === b && a.home ? -a.home : getting && oppOf(b) === a && b.home ? b.home : (b.x - a.x) >= 0 ? 1 : -1;
+      // otherwise each body goes back toward the side it was on when the step began (a pushbox): two roots
+      // that passed in one step (a lunge, a glide, a slide into a body) were pushed out the far side, a swap
+      // with no motion to show it. A jump that crossed was already over there when the step began.
+      const was = Math.sign(b.prevX - a.prevX);
+      const s = getting && oppOf(a) === b && a.home ? -a.home : getting && oppOf(b) === a && b.home ? b.home : was || ((b.x - a.x) >= 0 ? 1 : -1);
       // whoever is reeling or being pressed gives way; two equals split it
       const give = (u, o) => (u.state === 'hitstun' || u.state === 'blockstun' ? 3 : 1) * (o.state === 'attack' ? 2 : 1);
       const ga = give(a, b), gb = give(b, a), shareA = ga / (ga + gb);
@@ -2100,6 +2163,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
       if (u.flash > 0) u.flash--;
       if (u.state === 'grabbed') {
+        if (u.grabTo != null) { const d = u.grabTo - u.x; u.x += Math.max(-GRAB_PULL, Math.min(GRAB_PULL, d)); if (Math.abs(d) <= GRAB_PULL) u.grabTo = null; syncRig(u); rigUpd(u, 0); }
         if ((e.attack === 'throw' || (e.attack && FRAME_DATA[e.attack].throw)) && !(u.faint > 0) && !u.grabNoBreak) breakThrow(u);
         else if (--u.grabT <= 0) landThrow(u);
         u.buffer = null;
@@ -2121,6 +2185,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const rate = u.state === 'getup' ? GETUP_SPEED : u.state === 'walk' ? u.char.stats.walk * (u.backHeld ? u.char.stats.backWalk : 1) / u.char.stride
         : u.state === 'run' ? u.char.stats.run / u.char.stride : u.state === 'crouch' && u.vx ? u.char.stats.walk / u.char.stride : 1;
       rigUpd(u, DT * rate);
+      takeRoot(u);
       drainRig(u);
       if (u.state === 'botch' && u.rig.current.done) endBotch(u);   // the rig took the clip's step this update: the root takes it now too
       floorStep(u);

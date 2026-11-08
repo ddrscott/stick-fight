@@ -101,9 +101,10 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const sw = (BAR_W - 30) * st;
     if (sw > 0) {
       ctx.save(); para(x + (side === 0 ? 30 : 0), sy, BAR_W - 30, ST_H, side); ctx.clip();
-      const c = faint ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
+      const ra = refillAt.get(u), refill = ra != null && clock - ra < 0.6, rflash = refill && Math.floor(clock * 14) % 2 === 0;   // knocked down: it refills with a flash
+      const c = rflash ? NEON.white : faint ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
       ctx.globalAlpha = faint ? 0.6 : 1;
-      ctx.shadowColor = faint ? NEON.violet : low ? NEON.pink : NEON.amber; ctx.shadowBlur = faint ? 4 : low ? 12 : 8; ctx.fillStyle = c;
+      ctx.shadowColor = faint ? NEON.violet : low ? NEON.pink : NEON.amber; ctx.shadowBlur = faint ? 4 : low || refill ? 12 : 8; ctx.fillStyle = c;
       ctx.fillRect(side === 0 ? x + 30 + (BAR_W - 30) - sw : x - SKEW, sy, sw + SKEW, ST_H);
       ctx.restore();
     }
@@ -188,11 +189,13 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   // it), air-jump pips, and a thin stamina bar that shows once stamina is spent and flashes when low.
   // It sits above the head, steps sideways off the other fighter, clamps on screen and fades when it
   // has nowhere clear to go (owner requirement 5). It only reads the sim.
-  const trk = new WeakMap();   // unit -> { x, y, a, stunMax, lastStun, stamShow, counter, flashT }
+  const trk = new WeakMap();
+  const refillAt = new WeakMap();   // unit -> HUD clock of its last knockdown refill (the corner bar flashes)   // unit -> { x, y, a, stunMax, lastStun, stamShow, counter, flashT }
   const tstate = (u) => { let s = trk.get(u); if (!s) { s = { x: null, y: null, a: 0, stunMax: 1, lastStun: 0, stamShow: 0, counter: 0, armor: 0, parry: 0 }; trk.set(u, s); } return s; };
   function event(ev) {
     if (ev.type === 'hit' && ev.defender) { if (ev.counter) tstate(ev.defender).counter = 0.5; if (ev.armor) tstate(ev.defender).armor = 0.4; }
     if (ev.type === 'block' && ev.parry && ev.defender) tstate(ev.defender).parry = 0.5;
+    if (ev.type === 'refill' && ev.unit) { tstate(ev.unit).refill = 0.6; refillAt.set(ev.unit, clock); }   // knocked down: the bar refills to the top
   }
   function statusOf(u, s) {
     const fd = u.state === 'attack' && u.move ? FRAME_DATA[u.move] : null;
@@ -228,14 +231,14 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const boxes = who.map(boxOf);
     who.forEach((u, i) => {
       const s = tstate(u);
-      s.counter = Math.max(0, s.counter - dt); s.armor = Math.max(0, s.armor - dt); s.parry = Math.max(0, s.parry - dt);
+      s.counter = Math.max(0, s.counter - dt); s.armor = Math.max(0, s.armor - dt); s.parry = Math.max(0, s.parry - dt); s.refill = Math.max(0, (s.refill || 0) - dt);
       if (u.stun > s.lastStun) s.stunMax = Math.max(1, u.stun);
       s.lastStun = u.stun;
       const st = statusOf(u, s);
       const stam = Math.max(0, Math.min(1, (u.stamina == null ? 100 : u.stamina) / (u.staminaMax || 100)));
       const low = stam < 0.35 && !(u.faint > 0);
       // the stamina bar shows once some is spent, and lingers a beat after it refills
-      s.stamShow = stam < 0.97 || u.faint > 0 ? 1.2 : Math.max(0, s.stamShow - dt);
+      s.stamShow = stam < 0.97 || u.faint > 0 || s.refill > 0 ? 1.2 : Math.max(0, s.stamShow - dt);   // (and through a knockdown refill's flash)
       const mech = u.char && u.char.mechanics;
       const pips = mech && mech.airJumps > 0 && !u.grounded ? { left: Math.max(0, mech.airJumps - (u.airJumpsUsed || 0)), max: mech.airJumps } : null;
       if (!st && !s.stamShow && !pips) { s.a = 0; s.x = null; return; }
@@ -296,8 +299,10 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
         const blink = Math.floor(clock * 7) % 2 === 0, bx = s.x - bw / 2;
         ctx.save(); ctx.globalAlpha *= u.faint > 0 ? 0.6 : low ? 1 : Math.min(1, s.stamShow) * 0.75;
         ctx.fillStyle = low && blink ? 'rgba(255,43,214,0.35)' : 'rgba(14,4,30,0.75)'; ctx.fillRect(bx - 1, y - 1, bw + 2, 4);
-        const c = u.faint > 0 ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
-        ctx.shadowColor = c; ctx.shadowBlur = low ? 8 : 4; ctx.fillStyle = c; ctx.fillRect(bx, y, bw * stam, 2);
+        const flash = s.refill > 0 && Math.floor(clock * 14) % 2 === 0;   // a knockdown refill flashes it white
+        const c = flash ? NEON.white : u.faint > 0 ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
+        if (s.refill > 0) ctx.globalAlpha = Math.max(ctx.globalAlpha, 0.95);
+        ctx.shadowColor = c; ctx.shadowBlur = low || s.refill > 0 ? 10 : 4; ctx.fillStyle = c; ctx.fillRect(bx, y, bw * stam, 2);
         ctx.restore();
         y += 6;
       }

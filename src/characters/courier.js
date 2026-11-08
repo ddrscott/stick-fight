@@ -53,7 +53,7 @@ export default {
   altColor: '#ff8a3d',
   accent: '#2ef2ff',
   // walk/run/jump/dash multiply the baseline; health is out of 100; a light body (weight < 1) flies farther
-  stats: { health: 90, walk: 1.2, backWalk: 0.95, run: 1.2, jump: 1.06, dash: 1.2, weight: 0.88, stamina: 1, regen: 1.15, damage: 0.97 },
+  stats: { health: 97, walk: 1.2, backWalk: 0.95, run: 1.2, jump: 1.06, dash: 1.2, weight: 0.9, stamina: 1, regen: 1.25, damage: 1.03 },
   body: { scale: 0.96, headR: 14.5, upperLeg: 32, lowerLeg: 31.5, limbW: 11, limbTip: 8.5, torsoW: 13.5, hipW: 10, lean: 5, accessory: cap },
   moves: {
     expressSlide: { rig: expressSlide, frame: { limb: 'foot', damage: 10, kb: { x: 260, y: 210 }, hitstun: 0, blockstun: 10, hitstop: 7, knockdown: true, height: 'low', tc: true,

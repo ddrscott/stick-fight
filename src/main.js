@@ -121,6 +121,9 @@ function onEvent(ev) {
       fx.dust({ x: ev.x, y: ev.y + 60, dir: ev.dir });
       shake.trauma = Math.min(1, shake.trauma + 0.35);
       break;
+    case 'relocate':
+      relocateFX(ev);
+      break;
     case 'land': case 'body':
       fx.dust({ x: ev.x, y: ev.y, dir: ev.dir || 1 });
       break;
@@ -128,6 +131,7 @@ function onEvent(ev) {
       fx.dust({ x: ev.x, y: ev.y, dir: -ev.dir });
       break;
     case 'round':
+      poseState.clear();   // spawns face each other: no turnaround out of the last round's facing
       if (look.floor) startOnFloor(look.floor);   // an arcade stage fought downstairs: every round starts there
       arena.liveColors = [sim.units[0].color || P1_COLOR, sim.units[1].color || P2_COLOR];
       syncArenaToFx();
@@ -580,6 +584,7 @@ function setScene(name, opts) {
   shakeRng = mulberry32(7);
   shake.trauma = 0; shake.kickX = shake.kickY = 0; shake.zoomPunch = 0;
   lights.length = 0; blockSparks.length = 0; paused = false; statusFX.reset();
+  ghosts.length = 0; poseState.clear();   // the draw smoothing starts fresh (no turnaround out of the last scene's facing)
   camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camera.shakeX = camera.shakeY = 0;
   // botches on or off (the pause menu's switch, ?botch=0); online, the host's setting from the start message
   sim.botchOn = name === 'online' && opts && opts.lockstep ? opts.botch !== false : botchEnabled();
@@ -745,7 +750,8 @@ function render() {
   const order = [...sim.units].sort((p, q) => (p.state === 'attack') - (q.state === 'attack') || q.id - p.id);
   for (const u of order) {
     if (u.hidden) continue;
-    const off = drawOffset(u); drawnOff.set(u, off);
+    const { off, joints } = frameDraw(u);
+    const realJ = u.rig.joints; u.rig.joints = joints;   // the turnaround and snap fade, drawn only (put back below)
     ctxs.figures.save(); ctxs.figures.translate(off.x, off.y);
     u.rig.draw(ctxs.figures);
     if (u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld)) drawGuard(u, ctxs.figures);
@@ -753,7 +759,9 @@ function render() {
     // a knocked-down body reads as down: 30% darker while it is on the floor
     else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);
     ctxs.figures.restore();
+    u.rig.joints = realJ;
   }
+  drawGhosts(ctxs.figures, ctxs.emissive);
   // ragdolls: KO'd horde goons still in the air after their unit respawned
   for (const r of sim.ragdolls || []) {
     const j = {}; for (const k in r.joints) j[k] = { x: r.x + r.joints[k].x, y: r.y + r.joints[k].y };
@@ -817,6 +825,100 @@ function copyJoints(src, dst) {
   dst = dst || {};
   for (const k in src) { const p = dst[k] || (dst[k] = { x: 0, y: 0 }); p.x = src[k].x; p.y = src[k].y; }
   return dst;
+}
+// where the head and hip are drawn this frame (the turnaround, the snap fade and the smoothing offset applied), for measurements
+function drawnPoints(u) {
+  const j = drawnJ.get(u) || (u.rig && u.rig.joints), off = drawnOff.get(u) || NO_OFF;
+  if (!j || !j.head) return null;
+  const at = (p) => ({ x: p.x + off.x, y: p.y + off.y });
+  return { head: at(j.head), hip: at(j.hip) };
+}
+
+// ---- draw smoothing on the ground: the turnaround and the snap fade (visual only) ----------------
+// Both only read the sim and the rig and change what is drawn this frame; hit detection, contact and
+// the netcode's state keep the real pose. Classic 2D fighters never mirror a sprite in place: facing
+// flips play a turn. Here a grounded fighter whose facing flips is drawn pivoting on his feet over
+// TURN_MS: the drawing is squashed horizontally about the root from the old facing (-1) through zero to
+// the new (+1). Anything else that would still move the drawn body more than SNAP_PX in one frame (a
+// lying body re-posed for a roll, a knockdown clip snapped to its landing, a pose cut short) is
+// cross-faded from where it was drawn over FADE_MS instead. A launched, thrown, falling or ragdoll
+// body draws raw, the jump and air moves keep drawOffset's catch-up, and a strike that connects draws
+// touching: both end on the contact frame, under the impact flash.
+const TURN_MS = 100, FADE_MS = 110, SNAP_PX = 18, SNAP_HEAD = 1e9, SNAP_MAX = 260;
+const UPRIGHT = new Set(['idle', 'walk', 'run', 'block', 'blockstun', 'crouch', 'attack', 'landing', 'hitstun', 'botch']);
+const poseState = new Map(), drawnJ = new Map();
+const cloneJ = (j) => { const o = {}; for (const k in j) o[k] = { x: j[k].x, y: j[k].y }; return o; };
+function frameDraw(u) {
+  const off = drawOffset(u); drawnOff.set(u, off);
+  const real = u.rig.joints;
+  let ps = poseState.get(u);
+  if (!ps) { ps = { facing: u.facing, turnT: 0, fadeT: 0, from: null, last: null }; poseState.set(u, ps); }
+  const dt = Math.max(1, lastFrameMs);
+  const raw = u.rag || u.falling || u.state === 'grabbed' || u.state === 'splat' || u.state === 'vault' || (u.state === 'knockdown' && !u.grounded) || (u.state === 'ko' && !u.grounded);
+  const contact = u.hitstop > 0 || (sim.hitstopActive > 0 && u.state === 'attack');
+  const air = !!(drawState.get(u) && drawState.get(u).on);   // drawOffset is already catching this body up
+  // the turnaround: a grounded, upright fighter's facing flipped since the last frame
+  if (u.facing !== ps.facing) {
+    ps.turnT = !raw && !contact && u.grounded && UPRIGHT.has(u.state) ? TURN_MS : 0;
+    ps.facing = u.facing;
+  }
+  if (raw || contact) { ps.turnT = 0; ps.fadeT = 0; }
+  let J = real;
+  if (ps.turnT > 0) {
+    const k = 1 - ps.turnT / TURN_MS, sx = -Math.cos(Math.PI * k), px = u.rig.x;   // -1 (the old facing) .. 0 .. 1
+    J = {};
+    for (const n in real) J[n] = { x: px + (real[n].x - px) * sx, y: real[n].y };
+    ps.turnT = Math.max(0, ps.turnT - dt);
+  }
+  // the snap fade: a jump from where this body was drawn last frame
+  // (a discontinuity: far more than the body moved the frame before, so fast motion that is really
+  // motion, a glide, a stagger, a run, is never filtered)
+  const L = ps.last, rh = real.hip, mv = ps.rh ? Math.hypot(rh.x - ps.rh.x, rh.y - ps.rh.y) : 0;
+  if (L && L.hip && !raw && !contact && !air && mv > 1.8 * (ps.mv || 0) + 6) {
+    const dh = Math.hypot(J.hip.x - L.hip.x, J.hip.y - L.hip.y), dd = Math.hypot(J.head.x - L.head.x, J.head.y - L.head.y);
+    if ((dh > SNAP_PX || dd > SNAP_HEAD) && dh < SNAP_MAX && dd < SNAP_MAX) {
+      // kept relative to the root, so the root's own motion from here on (a roll, a slide) passes straight through
+      ps.from = {}; for (const n in L) ps.from[n] = { x: L[n].x - u.rig.x, y: L[n].y - u.rig.y };
+      ps.fadeT = FADE_MS;
+    }
+  }
+  ps.rh = { x: rh.x, y: rh.y }; ps.mv = mv;
+  if (ps.fadeT > 0 && ps.from) {
+    const w = ps.fadeT / FADE_MS, e = w * w * (3 - 2 * w), F = ps.from, src = J, rx = u.rig.x, ry = u.rig.y;   // smoothstep: leaves the old pose softly
+    J = {};
+    for (const n in src) J[n] = F[n] ? { x: src[n].x + (F[n].x + rx - src[n].x) * e, y: src[n].y + (F[n].y + ry - src[n].y) * e } : src[n];
+    ps.fadeT = Math.max(0, ps.fadeT - dt);
+  }
+  ps.last = J === real ? cloneJ(real) : J;
+  drawnJ.set(u, J);
+  return { off, joints: J };
+}
+
+// ---- instant relocations get a mark ----------------------------------------------------------
+// The sim's one remaining teleport (a body jammed in the stairwell set down on the floor, 'relocate')
+// leaves an afterimage where the body was and a flash at both spots, so it reads as an event.
+const ghosts = [];
+function relocateFX(ev) {
+  const u = ev.unit, j = drawnJ.get(u) || u.rig.joints;
+  if (j && j.head) ghosts.push({ joints: cloneJ(j), color: u.color, radius: (u.rig.radius || 11), ttl: 0.4, max: 0.4 });
+  for (const p of [ev.from, ev.to]) {
+    light(p.x, p.y, 160, [0.75, 0.9, 1.0], 1.0, 0.3);
+    fx.hit({ x: p.x, y: p.y, strength: 0.5, dir: 1, flashR: 46, debris: 'none' });
+  }
+}
+function drawGhosts(ctx, glow) {
+  for (let i = ghosts.length - 1; i >= 0; i--) {
+    const g = ghosts[i];
+    g.ttl -= lastFrameMs / 1000;
+    if (g.ttl <= 0) { ghosts.splice(i, 1); continue; }
+    const k = g.ttl / g.max;
+    for (const [c, a] of [[ctx, 0.45 * k], [glow, 0.8 * k]]) {
+      if (!c) continue;
+      c.save(); c.globalAlpha = a;
+      drawJoints(c, g.joints, g.color, 5, g.radius);
+      c.restore();
+    }
+  }
 }
 
 // ---- attract mode ------------------------------------------------------------------------------
@@ -932,7 +1034,10 @@ window.__gauntlet = {
   step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
   ready: false,   // true once fonts are in and the first frame has rendered
 };
-window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; } };
+window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
+  // measurement hooks: a frame stepped without drawing (the draw smoothing still runs), and where a body is drawn
+  stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); },
+  drawn: (u) => drawnPoints(u), poseState };
 // no load race for captures: fonts first, then one real rendered frame, then ready
 // the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
 // loads on its own); offline, the system fallbacks are used after a short wait
