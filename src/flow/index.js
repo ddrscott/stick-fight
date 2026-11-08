@@ -348,7 +348,6 @@ export function createFlow(ctx) {
         case 'paused':
           if (k === 'pause' || k === 'escape' || k === 'start' || k === 'back') { resume(); return; }
           break;
-        case 'enterInitials': return initialsKey(k);
       }
       if (k === 'up' || k === 'down' || k === 'left' || k === 'right') ui.move(k);
       else if (k === 'confirm' || k === 'start') ui.activate();
@@ -358,9 +357,10 @@ export function createFlow(ctx) {
       if (ctx.netBusy && ctx.netBusy()) return false;
       if (state === 'enterInitials') {
         if (/^Key[A-Z]$/.test(e.code)) { setLetter(e.code.slice(3)); cursorTo(slot + 1); return true; }
-        const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Backspace: 'back', Enter: 'confirm', NumpadEnter: 'confirm' };
-        if (map[e.code]) { if (!e.repeat || /Arrow/.test(e.code)) initialsKey(map[e.code]); return true; }
-        return false;
+        if (/^(Digit|Numpad)[0-9]$/.test(e.code)) { setLetter(e.code.slice(-1)); cursorTo(slot + 1); return true; }
+        if (e.code === 'Backspace') { cursorTo(slot - 1); return true; }
+        if (e.code === 'Enter' || e.code === 'NumpadEnter') { if (!e.repeat) submitInitials(); return true; }
+        return false;   // arrows move across the on-screen keyboard
       }
       if (state === 'onlineJoin') {
         const ch = e.key && e.key.length === 1 ? e.key.toUpperCase() : '';
@@ -499,8 +499,23 @@ export function createFlow(ctx) {
       return { items: [b] };
     });
   }
-  // initials: three slots, up/down change a letter, left/right move, confirm moves on and submits
-  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  // The on-screen keyboard: a standard layout, the number row on top, then QWERTY. Keys a screen
+  // doesn't take (room codes skip 0/O and 1/I/L) stay in place, drawn dim, and the D-pad skips them.
+  const KB_ROWS = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
+  function keyboard(allowed, type, extras = []) {
+    const kb = el('div', 'fl-kb'), items = [];
+    KB_ROWS.forEach((row, r) => {
+      const line = el('div', 'fl-kbrow');
+      for (const ch of row) {
+        if (allowed(ch)) { const k = button(ch, () => type(ch), 'fl-key'); line.appendChild(k.el); items.push(k); }
+        else line.appendChild(el('div', 'fl-btn fl-key fl-off', ch));
+      }
+      if (r === KB_ROWS.length - 1) for (const x of extras) { const k = button(x.label, x.act, `fl-key fl-wide ${x.cls || ''}`); line.appendChild(k.el); items.push(k); }
+      kb.appendChild(line);
+    });
+    return { el: kb, items };
+  }
+  // initials: three slots filled from the keyboard (or typed); DEL steps back, ENTER saves
   let initials = ['A', 'A', 'A'], slot = 0, slotEls = [];
   function screenInitials() {
     initials = ['A', 'A', 'A']; slot = 0;
@@ -508,37 +523,26 @@ export function createFlow(ctx) {
     ui.show('fl-initials', (root) => {
       root.append(el('h1', 'fl-h2', 'NEW HIGH SCORE'), el('div', 'fl-label', `${['1ST', '2ND', '3RD', '4TH', '5TH'][rank] || ''} PLACE  ·  ${S.fmt(entry ? entry.score : 0)}`));
       const slots = el('div', 'fl-slots');
-      const items = [];
       slotEls = [];
       for (let i = 0; i < 3; i++) {
-        const s = el('div', 'fl-slot');
-        const up = button('▲', () => { cursorTo(i); spin(1); }, 'fl-arrow');
+        const sl = el('div', 'fl-slot');
         const b = el('b', '', initials[i]);
-        const dn = button('▼', () => { cursorTo(i); spin(-1); }, 'fl-arrow');
         b.addEventListener('click', () => cursorTo(i));
-        s.append(up.el, b, dn.el); slots.appendChild(s); slotEls.push(s);
-        items.push(up, dn);
+        sl.append(b); slots.appendChild(sl); slotEls.push(sl);
       }
       root.appendChild(slots);
-      const ok = button('ENTER', submitInitials, 'fl-pink');
-      root.appendChild(ok.el); items.push(ok);
-      root.appendChild(el('div', 'fl-small', ctx.touchUI() ? 'TAP THE ARROWS, THEN ENTER' : 'TYPE YOUR INITIALS, OR UP/DOWN AND ENTER'));
-      return { items, focus: items.length - 1 };
+      const kb = keyboard((ch) => /[A-Z0-9]/.test(ch), (ch) => { setLetter(ch); cursorTo(slot + 1); },
+        [{ label: 'DEL', act: () => cursorTo(slot - 1), cls: 'fl-violet' }, { label: 'ENTER', act: submitInitials, cls: 'fl-pink' }]);
+      root.appendChild(kb.el);
+      const items = kb.items;
+      root.appendChild(el('div', 'fl-small', ctx.touchUI() ? 'TAP YOUR INITIALS, THEN ENTER' : 'TYPE YOUR INITIALS AND PRESS ENTER'));
+      return { items, focus: items.findIndex((k) => k.el.textContent === 'A'), back: () => cursorTo(slot - 1) };
     });
     paintSlots();
   }
   function paintSlots() { slotEls.forEach((s, i) => { s.classList.toggle('fl-cur', i === slot); (s.querySelector('b')).textContent = initials[i]; }); }
   function cursorTo(i) { slot = Math.max(0, Math.min(2, i)); paintSlots(); }
   function setLetter(ch) { initials[slot] = ch; paintSlots(); if (ctx.click) ctx.click(); }
-  function spin(d) { const k = LETTERS.indexOf(initials[slot]); setLetter(LETTERS[(k + d + LETTERS.length) % LETTERS.length]); }
-  function initialsKey(k) {
-    if (k === 'up') spin(1);
-    else if (k === 'down') spin(-1);
-    else if (k === 'left') cursorTo(slot - 1);
-    else if (k === 'right') cursorTo(slot + 1);
-    else if (k === 'back' || k === 'escape') cursorTo(slot - 1);
-    else if (k === 'confirm' || k === 'start') { if (slot < 2 && k === 'confirm') cursorTo(slot + 1); else submitInitials(); }
-  }
   function submitInitials() {
     if (state !== 'enterInitials' || !entry) return;
     const rank = S.addScore(entry.mode, { name: initials.join(''), score: entry.score, note: entry.note });
@@ -675,10 +679,8 @@ export function createFlow(ctx) {
       for (let i = 0; i < CODE_LEN; i++) { const s = el('div', 'fl-slot'); s.appendChild(el('b', '', '')); slots.appendChild(s); codeSlots.push(s); }
       root.appendChild(slots);
       const items = [];
-      const pad = el('div', 'fl-keypad');
-      for (const ch of CODE_ALPHABET) { const k = button(ch, () => typeCode(ch), 'fl-key'); pad.appendChild(k.el); items.push(k); }
-      const del = button('DEL', () => typeCode('DEL'), 'fl-key fl-wide fl-violet'); pad.appendChild(del.el); items.push(del);
-      root.appendChild(pad);
+      const kb = keyboard((ch) => CODE_ALPHABET.includes(ch), typeCode, [{ label: 'DEL', act: () => typeCode('DEL'), cls: 'fl-violet' }]);
+      root.appendChild(kb.el); items.push(...kb.items);
       const row = el('div', 'fl-row');
       const join = button('JOIN', tryJoin, 'fl-pink'), back = button('BACK', () => go('onlineMenu'), 'fl-violet');
       join.el.style.minWidth = back.el.style.minWidth = '20cqw';

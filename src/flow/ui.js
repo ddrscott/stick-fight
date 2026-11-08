@@ -180,9 +180,12 @@ function injectStyle() {
   .fl-slot.fl-cur b { border-color: var(--pink); color: #fff; box-shadow: 0 0 1.4cqw var(--pink); text-shadow: 0 0 1cqw var(--pink); }
   .fl-arrow { min-width: 7.4cqw; min-height: max(40px, 6cqh); padding: 0; font-size: 2.6cqw; }
   .fl-code b { width: 6.4cqw; height: 7.6cqw; font-size: 5cqw; line-height: 8cqw; }
-  .fl-keypad { display: grid; grid-template-columns: repeat(8, 6.6cqw); gap: 0.7cqw; }
-  .fl-key { min-width: 0; min-height: 0; width: 6.6cqw; height: 6.6cqw; padding: 0.4cqw 0 0; font-size: 3.4cqw; }
-  .fl-key.fl-wide { font-size: 2.2cqw; }
+  /* the on-screen keyboard: number row on top, then QWERTY rows, each row centered like a real one */
+  .fl-kb { display: flex; flex-direction: column; align-items: center; gap: 0.6cqw; }
+  .fl-kbrow { display: flex; gap: 0.6cqw; justify-content: center; }
+  .fl-key { min-width: 0; min-height: 0; width: 5.6cqw; height: 5.6cqw; padding: 0.4cqw 0 0; font-size: 3cqw; }
+  .fl-key.fl-wide { width: 9.6cqw; font-size: 2.2cqw; }
+  .fl-key.fl-off { opacity: 0.2; pointer-events: none; display: flex; align-items: center; justify-content: center; }
   .fl-link { font-size: 2.1cqw; letter-spacing: 0.06em; color: var(--cyan); text-shadow: 0 0 0.5cqw var(--cyan); word-break: break-all; max-width: 80cqw; text-align: center; }
   .fl-dots::after { content: ''; animation: fl-dots 1.2s steps(4) infinite; }
   @keyframes fl-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
@@ -212,6 +215,7 @@ function injectStyle() {
   #flow .fl-card canvas { display: block; width: 100%; height: 78%; }
   #flow canvas.fl-big { display: block; width: 15.5cqw; height: 100%; flex: none; }
   .fl-card b { display: block; font: 600 2.2cqw/1 'Teko', sans-serif; letter-spacing: 0.08em; color: #fff; text-shadow: 0 0 0.6cqw var(--c); white-space: nowrap; }
+  .fl-card b.fl-long { font-size: 1.7cqw; letter-spacing: 0.03em; }
   .fl-card.fl-focus { background: color-mix(in srgb, var(--c) 20%, rgba(14,4,30,0.72)); color: #fff; box-shadow: 0 0 1.4cqw var(--c), inset 0 0 1.2cqw color-mix(in srgb, var(--c) 40%, transparent); }
   .fl-card.fl-focus b { color: #fff; text-shadow: 0 0 0.6cqw var(--c), 0 0 1.4cqw var(--c); }
   .fl-card.fl-taken { opacity: 0.55; }
