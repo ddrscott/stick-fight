@@ -29,7 +29,10 @@
 // errors. Nothing stored but the time the room expires. A crew room opens one of these for each
 // match it starts.
 import { DurableObject } from "cloudflare:workers";
-import { type Env, API, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName } from "./env";
+import { type Env, API, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName, track } from "./env";
+
+// the events the page may send (src/analytics.js); anything else is dropped
+const EVENT_NAMES = new Set(["visit", "mode", "pick", "stage", "arcade_end", "horde_end", "online_match", "install", "technique"]);
 import { Crew, SLUG_RE } from "./crew";
 import { handleAuth } from "./auth";
 
@@ -108,6 +111,7 @@ export default {
       if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
       if (!(await allowed(env.ROOM_LIMIT, req))) return json({ error: "busy", message: BUSY }, 429, { "retry-after": "60" });
       const code = await claimRoom(env);
+      if (code) track(env, req, "room_create");
       return code ? json({ code }) : json({ error: "no free room code, try again" }, 503);
     }
 
@@ -117,6 +121,19 @@ export default {
       if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return json({ error: "expected a WebSocket" }, 426);
       if (!(await allowed(env.JOIN_LIMIT, req))) return refusedSocket("busy");
       return env.ROOMS.get(env.ROOMS.idFromName(code)).fetch(req);
+    }
+
+    // analytics events from the page (src/analytics.js); a fixed list, short labels, no ids
+    if (parts.length === 1 && parts[0] === "e") {
+      if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+      if (!(await allowed(env.EVENT_LIMIT, req))) return new Response(null, { status: 204 });
+      const body = await req.json<{ e?: unknown; l?: unknown; v?: unknown }>().catch(() => ({} as { e?: unknown; l?: unknown; v?: unknown }));
+      const e = typeof body.e === "string" ? body.e : "";
+      if (EVENT_NAMES.has(e)) {
+        const labels = Array.isArray(body.l) ? body.l.filter((x) => typeof x === "string" || typeof x === "number").map((x) => String(x).replace(/[^\w .:+-]/g, "").slice(0, 40)) : [];
+        track(env, req, e, labels, typeof body.v === "number" ? body.v : 0);
+      }
+      return new Response(null, { status: 204 });
     }
 
     if (parts.length === 1 && parts[0] === "ice") {
@@ -133,7 +150,7 @@ export default {
       if (!name) return json({ error: "bad-name" }, 400);
       for (let i = 0; i < 6; i++) {
         const slug = newSlug(name);
-        if (await env.CREWS.get(env.CREWS.idFromName(slug)).create(slug, name)) return json({ slug, name });
+        if (await env.CREWS.get(env.CREWS.idFromName(slug)).create(slug, name)) { track(env, req, "crew_create"); return json({ slug, name }); }
       }
       return json({ error: "try again" }, 503);
     }

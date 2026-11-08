@@ -36,6 +36,7 @@
 // Every screen that waits on the player has at least two buttons and a footer legend; the control
 // scheme (one for every screen) is in controls.js. "MAIN MENU" always means modeSelect.
 
+import { track } from '../analytics.js';   // cookieless game analytics (README, Analytics)
 import { LADDER, buildLadder } from './ladder.js';
 import { openSelect } from './select.js';
 import { roster, getCharacter, characterOr, TEMP_ID } from '../characters/index.js';
@@ -335,6 +336,7 @@ export function createFlow(ctx) {
   function decide() {
     if (mode === 'horde') {
       entry = { mode: 'horde', score: run.score, note: `${run.floors} FLOOR${run.floors === 1 ? '' : 'S'}` };
+      track('horde_end', [sel.player], run.floors);
       go('gameOver');
     } else if (resultWin) {
       const st = ladder()[run.stage];
@@ -345,7 +347,8 @@ export function createFlow(ctx) {
   }
   function nextStage() {
     if (state !== 'stageClear') return;   // a second press in the same frame must not skip a stage
-    if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR' }; go('ending'); return; }
+    if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR' }; track('arcade_end', [sel.player, 'clear'], ladder().length); go('ending'); return; }
+    track('stage', [sel.player], run.stage + 2);   // reached the next stage
     run.stage++;
     go('stageIntro');
   }
@@ -360,9 +363,9 @@ export function createFlow(ctx) {
   }
   function resume() { if (state === 'paused') go(resumeTo); }
   function mainMenu() { if (mode === 'online') netReset(); mode = null; go('modeSelect'); }
-  function startArcade() { newRun('arcade'); run.ladder = buildLadder(sel.player, getCharacter); go('stageIntro'); }
-  function startHorde() { newRun('horde'); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }
-  function startTraining() { newRun('training'); ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }
+  function startArcade() { newRun('arcade'); run.ladder = buildLadder(sel.player, getCharacter); track('mode', ['arcade', sel.player]); go('stageIntro'); }
+  function startHorde() { newRun('horde'); track('mode', ['horde', sel.player]); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }
+  function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }
   // ---- character select --------------------------------------------------------------------------------
   function toSelect(m) {
     // the first time online, a name first (other players see it); it's remembered after that
@@ -622,7 +625,7 @@ export function createFlow(ctx) {
   }
   function tickContinue() { if (countEl) { const n = String(Math.max(0, Math.ceil(10 - t - 0.0001))); if (countEl.textContent !== n) countEl.textContent = n; } }
   function screenGameOver() {
-    if (mode === 'arcade') entry = { mode: 'arcade', score: run.score, note: `STAGE ${ladder()[run.stage].n}` };
+    if (mode === 'arcade') { entry = { mode: 'arcade', score: run.score, note: `STAGE ${ladder()[run.stage].n}` }; track('arcade_end', [sel.player, 'over'], ladder()[run.stage].n); }
     ui.show('fl-gameover', (root) => {
       root.append(el('h1', 'fl-h1', 'GAME OVER'));
       const tl = el('div', 'fl-tally');

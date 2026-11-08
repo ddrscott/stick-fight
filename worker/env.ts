@@ -13,6 +13,8 @@ export interface Env {
   JOIN_LIMIT?: RateLimit;    // WebSocket joins per IP, quick rooms and crew rooms
   CREW_LIMIT?: RateLimit;    // crew room creations per IP
   AUTH_LIMIT?: RateLimit;    // profile and sign-in calls per IP
+  EVENT_LIMIT?: RateLimit;   // analytics events per IP
+  EVENTS?: AnalyticsEngineDataset;   // game analytics (worker/index.ts track, README Analytics)
   TURN_KEY_ID?: string;      // secrets; absent in local dev unless .dev.vars has them
   TURN_KEY_API_TOKEN?: string;
   DEV_LOGIN_CODES?: string;  // "1" only in .dev.vars: no email is sent, the code comes back in the answer
@@ -81,4 +83,14 @@ export function cleanName(raw: unknown, min = 3, max = 12): string | null {
   if (typeof raw !== "string") return null;
   const s = raw.toUpperCase().replace(/[^A-Z0-9 ]/g, "").replace(/\s+/g, " ").trim();
   return s.length >= min && s.length <= max ? s : null;
+}
+
+/** Game analytics: one Analytics Engine data point. blob1 is the event, then up to 6 short labels;
+ *  double1 a number (a stage, a score). Never a player id, name or email. */
+export function track(env: Env, req: Request | null, event: string, labels: string[] = [], value = 0) {
+  if (!env.EVENTS) return;
+  const cf = (req && (req as unknown as { cf?: { country?: string } }).cf) || {};
+  try {
+    env.EVENTS.writeDataPoint({ indexes: [event.slice(0, 32)], blobs: [event.slice(0, 32), ...labels.slice(0, 6).map((l) => String(l).slice(0, 40)), String(cf.country || '')], doubles: [Number(value) || 0] });
+  } catch { /* analytics never breaks the game */ }
 }

@@ -49,6 +49,11 @@
     // new crew rooms per IP
     { "name": "CREW_LIMIT", "namespace_id": "7103", "simple": { "limit": 5, "period": 60 } },
     // profile and sign-in calls per IP (the per-email and per-hour caps live in D1)
-    { "name": "AUTH_LIMIT", "namespace_id": "7104", "simple": { "limit": 20, "period": 60 } }
-  ]
+    { "name": "AUTH_LIMIT", "namespace_id": "7104", "simple": { "limit": 20, "period": 60 } },
+    // analytics events per IP (POST /api/e)
+    { "name": "EVENT_LIMIT", "namespace_id": "7105", "simple": { "limit": 60, "period": 60 } }
+  ],
+  // Game analytics (Workers Analytics Engine): cookieless events, no player ids; query with the
+  // SQL API (README, Analytics). The dataset is created on the first write.
+  "analytics_engine_datasets": [{ "binding": "EVENTS", "dataset": "stick_fight_events" }]
 }

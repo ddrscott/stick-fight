@@ -46,6 +46,7 @@
 // reliable socket and are only delayed). Set it on both pages: ?netsim=30,5,2 on each is about
 // 60 ms of round trip with 2% loss. ?relay=1 forces the relay.
 
+import { track } from '../analytics.js';
 import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
@@ -186,6 +187,7 @@ export function createOnline(game) {
     document.documentElement.classList.add('online');
     emit('connected', { mode: link.mode, role, code });
     game.startMatch({ seed, localIndex, lockstep, chars, botch });
+    if (localIndex === 0) track('online_match', [chars[0] || '', chars[1] || '', crewMode ? 'crew' : 'quick'], m);   // the host counts it once
     emit('start', { seed, localIndex, chars, botch, n: m });
     readout.show(true);
   }

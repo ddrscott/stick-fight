@@ -23,7 +23,7 @@
 //
 // A crew with no activity (nobody opening it, no result) for 90 days is deleted by the alarm.
 import { DurableObject } from "cloudflare:workers";
-import { type Env, claimRoom, sha256, PID_RE, cleanName } from "./env";
+import { type Env, claimRoom, sha256, PID_RE, cleanName, track } from "./env";
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const CREW_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -219,6 +219,7 @@ export class Crew extends DurableObject<Env> {
       return true;
     });
     if (!recorded) return;
+    track(this.env, null, "crew_match", [hc, gc, winner < 0 ? "draw" : "win"]);   // analytics: fighters, no ids
     await this.touch();
     this.broadcast();
     // winner stays on: someone else is waiting, so the loser makes room

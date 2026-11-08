@@ -57,6 +57,34 @@ The game is installable (`public/manifest.webmanifest`, icons in `public/icons/`
 - **Installed:** `<html>` gets `.standalone`, and INSTALL and the touch fullscreen button go away.
 - **Service worker** (`public/sw.js`, registered on https only and never on `?scene=` test pages): hashed `assets/*` files are cache-first, everything else network-first with the cache as the fallback, so a deploy shows up on the next launch and the installed game plays offline. The room API and other origins are left to the network. Bump `CACHE` in `sw.js` if the cached core list changes.
 
+## Analytics
+
+Cookieless and with no player ids, names or emails: the page sends small events to its own Worker (`src/analytics.js` → `POST /stick-fight/api/e`), which writes them to Cloudflare **Workers Analytics Engine**, dataset `stick_fight_events` (binding `EVENTS` in `wrangler.jsonc`). Off on `?scene=` pages, on localhost, and when the browser sends Do Not Track. The Worker only accepts a fixed list of event names, cuts labels short, and rate-limits per IP (`EVENT_LIMIT`).
+
+| Event (blob1) | Labels (blob2…) | Number (double1) | Sent by |
+|---|---|---|---|
+| `visit` | touch or mouse, app or web, referrer host, direct / crew-link / room-link | | page load |
+| `install` | | | the browser installed the app |
+| `mode` | arcade / horde / training, fighter | | starting a mode |
+| `stage` | fighter | stage reached | arcade |
+| `arcade_end` | fighter, over / clear | last stage | arcade |
+| `horde_end` | fighter | floors cleared | horde |
+| `online_match` | host's fighter, guest's fighter, crew / quick | match number | the host, once per match |
+| `room_create`, `crew_create` | | | the Worker |
+| `crew_match` | host's fighter, guest's fighter, win / draw | | the crew room, per recorded result |
+
+The last blob is the visitor's country (from Cloudflare). Query with the SQL API using a token with **Account Analytics Read**:
+
+```sh
+curl -s https://api.cloudflare.com/client/v4/accounts/0223b96fe77599b23ff8ec7fcd32e2f1/analytics_engine/sql \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "SELECT blob1 AS event, count() AS n FROM stick_fight_events WHERE timestamp > NOW() - INTERVAL '7' DAY GROUP BY event ORDER BY n DESC"
+```
+
+For example, favorite fighters: `SELECT blob3 AS fighter, count() AS n FROM stick_fight_events WHERE blob1 = 'mode' GROUP BY fighter ORDER BY n DESC`. Data is kept for three months.
+
+The page also carries the main site's Plausible tag, and Cloudflare Web Analytics (visitor dashboard) can be turned on for askscottpierce.com in the Cloudflare dashboard.
+
 ## Arcade flow
 
 Plain `index.html` runs like a cabinet. Everything around a fight is one state machine in `src/flow/index.js`; every move between screens goes through one `go()` that refuses any move not in its transition table, so a double press can't skip a screen.
