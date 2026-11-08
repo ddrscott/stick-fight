@@ -1,8 +1,9 @@
 // The character select screen (the flow's charSelect state): a grid of the registered roster, each
 // card a live idle rig in the character's neon, and a sheet for the focused one: a bigger rig that
 // shows off a unique move now and then, the name and tagline, stat bars and the unique move list.
-// Keys and the pad move the cursor by geometry (ui.js); a tap focuses a card and a second tap (or the
-// PICK button, Enter, A) picks it, so a stray touch never starts a fight.
+// Keys and the pad move the cursor by geometry (ui.js); Enter, Space or A on a card picks it, and so
+// does the PICK button. A tap focuses a card and a second tap picks it, so a stray touch never starts
+// a fight. B, Esc, Backspace, Select or the BACK button go back.
 
 import { el, button } from './ui.js';
 import { techniqueCount } from './techniques.js';
@@ -92,11 +93,12 @@ export function openSelect(ui, o) {
     const pick = button('PICK', () => { const it = ui.items[ui.focus]; const c = it && it.char ? it.char : bigChar; if (c) o.onPick(c.id); }, 'fl-pink');
     const back = button('BACK', o.onBack, 'fl-violet');
     const tc = techniqueCount();   // the happy accidents found on this browser (src/flow/techniques.js)
-    foot.append(back.el, pick.el, el('div', 'fl-small', o.touch ? 'TAP A FIGHTER, TAP AGAIN TO PICK' : o.pad ? 'A PICKS   B BACK' : 'ENTER PICKS   ESC BACK'),
+    // the keys and buttons are in the footer legend (ui.js); touch gets the one thing it can't guess
+    foot.append(back.el, pick.el, el('div', 'fl-small fl-touchonly', 'TAP A FIGHTER, TAP AGAIN TO PICK'),
       el('div', 'fl-small fl-found', `TECHNIQUES FOUND ${tc.found}/${tc.total}`));
     root.appendChild(foot);
     items.push(back, pick);
-    return { items, focus: start, back: o.onBack, onFocus: (k, it) => { if (it && it.char) paint(it.char); } };
+    return { items, focus: start, back: o.onBack, onFocus: (k, it) => { if (it && it.char) paint(it.char); }, legend: [['move'], ['confirm', 'PICK'], ['back', 'BACK']] };
   });
   paint(roster[start]);
 

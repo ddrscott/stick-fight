@@ -6,6 +6,13 @@
 // A screen is a root element plus its focusable items. Keys and the pad move the focus by
 // geometry (the nearest item in that direction), so lists, button rows and the keypad all navigate
 // the same way; the mouse moves it by hovering, and a click or a tap activates the item.
+//
+// Every screen that waits on the player has at least two real buttons, opens with the focus on its
+// primary action, and gets a footer legend (src/flow/controls.js) of what each control does there,
+// in the glyphs of the device in use. An item with disabled() true is drawn dim, and the focus,
+// the D-pad and the mouse skip it.
+
+import { legend } from './controls.js';
 
 export function el (tag, cls = '', text) {
   const n = document.createElement(tag);
@@ -31,9 +38,16 @@ export function createUI(onSound) {
   let focusFn = null;
   let token = 0;
 
+  const off = (k) => !!(items[k] && items[k].disabled && items[k].disabled());
   function setFocus(i, sound = false) {
     if (!items.length) { focus = -1; return; }
     i = Math.max(0, Math.min(items.length - 1, i));
+    if (off(i)) {   // never on a disabled item: the nearest enabled one in list order
+      let best = -1;
+      for (let d = 1; d < items.length && best < 0; d++) { if (i - d >= 0 && !off(i - d)) best = i - d; else if (i + d < items.length && !off(i + d)) best = i + d; }
+      if (best < 0) return;
+      i = best;
+    }
     if (i !== focus && sound && onSound) onSound();
     const changed = i !== focus;
     focus = i;
@@ -53,12 +67,22 @@ export function createUI(onSound) {
     items.forEach((it, k) => {
       // focusFirst: a tap on an item that isn't focused only focuses it; a second tap activates (a
       // character card: look before you pick)
-      it.el.addEventListener('click', (e) => { e.preventDefault(); if (my !== token) return; if (it.focusFirst && focus !== k) { setFocus(k, true); return; } setFocus(k); activate(); });
-      it.el.addEventListener('pointerenter', (e) => { if ((e).pointerType === 'mouse' && my === token) setFocus(k); });
+      it.el.addEventListener('click', (e) => { e.preventDefault(); if (my !== token || off(k)) return; if (it.focusFirst && focus !== k) { setFocus(k, true); return; } setFocus(k); activate(); });
+      it.el.addEventListener('pointerenter', (e) => { if ((e).pointerType === 'mouse' && my === token && !off(k)) setFocus(k); });
     });
+    // the legend: the screen's own, or move / select / back from what it has
+    const lg = out.legend !== undefined ? out.legend
+      : [...(items.length > 1 ? [['move']] : []), ...(items.length ? [['confirm', 'SELECT']] : []), ...(backFn ? [['back', 'BACK']] : [])];
+    if (lg && lg.length) s.appendChild(legend(lg));
     focus = -1;
+    refresh();
     setFocus(out.focus || 0);
     return s;
+  }
+  /** redraw the disabled state (and move the focus off an item that just turned off) */
+  function refresh() {
+    items.forEach((it, k) => it.el.classList.toggle('fl-dis', off(k)));
+    if (focus >= 0 && off(focus)) setFocus(focus);
   }
   function clear() {
     token++;
@@ -67,7 +91,7 @@ export function createUI(onSound) {
   }
   function activate() {
     const it = items[focus];
-    if (!it) return;
+    if (!it || off(focus)) return;
     if (onSound) onSound('on');
     it.el.classList.add('fl-hit'); setTimeout(() => it.el.classList.remove('fl-hit'), 120);
     it.act();
@@ -81,7 +105,7 @@ export function createUI(onSound) {
     const a = c(items[focus].el);
     let best = -1, bd = Infinity;
     items.forEach((it, k) => {
-      if (k === focus) return;
+      if (k === focus || off(k)) return;
       const b = c(it.el), dx = b.x - a.x, dy = b.y - a.y;
       const main = dir === 'up' ? -dy : dir === 'down' ? dy : dir === 'left' ? -dx : dx;
       const cross = dir === 'up' || dir === 'down' ? Math.abs(dx) : Math.abs(dy);
@@ -92,7 +116,7 @@ export function createUI(onSound) {
     if (best >= 0) setFocus(best, true);
   }
   return {
-    root, pauseBtn, show, clear, activate, back, move, setFocus,
+    root, pauseBtn, show, clear, activate, back, move, setFocus, refresh,
     get screen() { return screen; },
     get focus() { return focus; },
     get items() { return items; },
@@ -114,7 +138,7 @@ function injectStyle() {
     -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
   #flow * { box-sizing: border-box; }
   .fl-screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.6cqh; }
-  .fl-veil { pointer-events: auto; background: radial-gradient(ellipse at 50% 45%, rgba(18,5,38,0.80), rgba(5,1,12,0.92)); }
+  .fl-veil { padding-bottom: 6.5cqh; pointer-events: auto; background: radial-gradient(ellipse at 50% 45%, rgba(18,5,38,0.80), rgba(5,1,12,0.92)); }
   .fl-h1, .fl-h2, .fl-h3 { margin: 0; font-family: 'Bungee', 'Arial Black', Impact, sans-serif; font-weight: 400; line-height: 1; text-align: center; letter-spacing: 0.02em; }
   .fl-h1 { --c: var(--pink); font-size: 7.4cqw; color: #ffd6f6; text-shadow: 0 0 0.5cqw var(--c), 0 0 1.6cqw var(--c), 0 0 3cqw var(--c); }
   .fl-h2 { --c: var(--cyan); font-size: 4.2cqw; color: #d8fdff; text-shadow: 0 0 0.4cqw var(--c), 0 0 1.4cqw var(--c); }
@@ -135,11 +159,26 @@ function injectStyle() {
   .fl-btn.fl-focus small { opacity: 0.85; }
   .fl-btn.fl-hit { transform: scale(0.96); }
   .fl-btn:focus { outline: none; }
+  .fl-btn.fl-dis { opacity: 0.38; cursor: default; }
   .fl-pink { --c: var(--pink); } .fl-amber { --c: var(--amber); } .fl-violet { --c: var(--violet); }
 
-  /* title: the START button sits where the HUD's prompt would be (main.js positions it per frame) */
+  /* title: the START button sits where the HUD's prompt would be (main.js positions the group per
+     frame), HIGH SCORES and CONTROLS in a row under it */
   .fl-title { pointer-events: none; }
-  .fl-start { position: absolute; transform: translate(-50%, -50%); min-width: 0; padding: 0.5cqw 3cqw 0; --c: var(--amber);
+  .fl-titlegroup { position: absolute; width: 0; height: 0; }
+  .fl-titlerow { position: absolute; left: 0; top: 5.4cqh; transform: translateX(-50%); gap: 1.2cqw; }
+  html.touch-ui:not(.pad-ui) .fl-titlerow { top: 7.4cqh; }
+  .fl-mini { min-width: 0; min-height: max(36px, 6cqh); padding: 0.4cqw 1.6cqw 0; font-size: 2.1cqw; white-space: nowrap; }
+  .fl-slim { min-height: max(40px, 6.4cqh); font-size: 2.6cqw; }
+  .fl-touchonly { display: none; } html.dev-touch .fl-touchonly { display: block; }
+  .fl-newhi { color: #fff; text-shadow: 0 0 0.6cqw var(--pink), 0 0 1.4cqw var(--pink); }
+  /* the controls screen: the fight table beside the menu table */
+  .fl-ctlrow { align-items: flex-start; gap: 3cqw; }
+  .fl-ctlcol { display: flex; flex-direction: column; gap: 2.4cqh; max-width: 34cqw; }
+  .fl-ctlnote { text-align: left; font-size: 1.6cqw; line-height: 1.15; }
+  .fl-controls .lg-table { padding: 1.2cqw 1.6cqw; border: 2px solid rgba(166,107,255,0.6); background: rgba(14,4,30,0.62); }
+  .fl-title .lg-bar { bottom: 1.2cqh; }
+  .fl-start { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); min-width: 0; white-space: nowrap; padding: 0.5cqw 3cqw 0; --c: var(--amber);
     font-family: 'Bungee', 'Arial Black', sans-serif; font-weight: 400; font-size: 2.5cqw; letter-spacing: 0.06em; }
   .fl-start span { animation: fl-blink 1.1s steps(1) infinite; }
   html.touch-ui:not(.pad-ui) .fl-start { font-size: 3.2cqw; min-height: max(52px, 11cqh); padding: 0.6cqw 4.2cqw 0; }
@@ -241,6 +280,8 @@ function injectStyle() {
 
   /* pause: the menu beside the book of happy accidents (src/flow/techniques.js) */
   .fl-pauserow { align-items: flex-start; gap: 3cqw; }
+  .fl-pause .fl-list .fl-btn { min-height: max(40px, 7.2cqh); }
+  .fl-tech.fl-ctlpanel { --lg-size: 1.6cqw; padding: 1.2cqw 1.8cqw; }
   .fl-tech { --c: #c8ff3a; width: 44cqw; display: flex; flex-direction: column; gap: 0.7cqh; padding: 1cqw 1.4cqw; border: 2px solid color-mix(in srgb, var(--c) 60%, transparent); background: rgba(14,4,30,0.62); }
   .fl-techhead { font: 400 1.8cqw/1 'Bungee', sans-serif; color: var(--c); text-shadow: 0 0 0.6cqw var(--c); letter-spacing: 0.04em; margin-bottom: 0.4cqh; }
   .fl-tech p { margin: 0; display: flex; flex-direction: column; line-height: 1; }

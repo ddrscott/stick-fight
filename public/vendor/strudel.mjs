@@ -3532,7 +3532,9 @@ class Db {
       t,
       // duration of each cycle
       0.1,
-      0.1,
+      // stick-fight patch: look 0.45s ahead (upstream 0.1). On phones a long game frame stalled the
+      // main thread past the 0.2s window and the cyclist skipped whole slices ("too late"): choppy music.
+      0.45,
       u,
       o
     );

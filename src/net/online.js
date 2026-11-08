@@ -30,6 +30,7 @@
 import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
+import { legend, watchDevice } from '../flow/controls.js';
 
 export const NET_VERSION = 7;   // bump when the sim or the netcode changes in a way old builds can't play against (2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
@@ -166,10 +167,12 @@ export function createOnline(game) {
       readout.tick();
       return n;
     },
-    /** hotkeys during a match: true = swallowed. Escape (or pad Select / touch LEAVE) asks to leave. */
+    /** hotkeys during a match: true = swallowed. Escape or P (pad Start or Select, touch LEAVE) asks to
+     *  leave: online has no pause, so the menu key opens the LEAVE / STAY confirm instead. */
     onKey(c) {
       if (!lockstep) return false;
-      if (c === 'Escape' || c === 'KeyR') { lobby.confirmLeave(); return true; }
+      // (not while the panel is up or just closed: the Start that chose STAY mustn't reopen it)
+      if (c === 'Escape' || c === 'KeyR' || c === 'KeyP') { if (!lobby.busy) lobby.confirmLeave(); return true; }
       return c !== 'KeyH' && c !== 'F1' && c !== 'Slash';   // hitboxes and the move list are local; nothing else runs
     },
     openLobby(mode = 'menu', c = '') { lobby.open(mode, c); },
@@ -262,7 +265,7 @@ function createLobby(net, game) {
   function html() {
     const s = net.state;
     if (mode === 'message') return `<h2>${msg}</h2><div class="nf-row"><button data-act="close" class="nf-btn">OK</button></div>`;
-    if (mode === 'leave') return `<h2>LEAVE THE MATCH?</h2><div class="nf-row"><button data-act="leave" class="nf-btn nf-pink">LEAVE</button><button data-act="stay" class="nf-btn">STAY</button></div>`;
+    if (mode === 'leave') return `<h2>LEAVE THE MATCH?</h2><div class="nf-row"><button data-act="leave" class="nf-btn nf-pink">LEAVE</button><button data-act="stay" class="nf-btn" data-default>STAY</button></div>`;
     if (mode === 'menu') return `<h2>PLAY ONLINE</h2><div class="nf-col"><button data-act="host" class="nf-btn">HOST A ROOM</button><button data-act="join" class="nf-btn">JOIN A ROOM</button><button data-act="close" class="nf-btn nf-dim">BACK</button></div>`;
     if (s === 'error') {
       return `<h2>${ERRORS[net.statusDetail] || 'SOMETHING WENT WRONG'}</h2><div class="nf-row"><button data-act="menu" class="nf-btn">BACK</button></div>`;
@@ -286,8 +289,12 @@ function createLobby(net, game) {
     const input = /** @type {HTMLInputElement | null} */ (root.querySelector('.nf-code'));
     if (input) joinCode = input.value;
     root.innerHTML = `<div class="nf-panel" role="dialog" aria-modal="true">${html()}</div>`;
+    // the footer legend (src/flow/controls.js): the same keys and buttons as every menu
+    const panel = root.querySelector('.nf-panel');
+    if (panel) panel.appendChild(legend(mode === 'leave' ? [['move'], ['confirm', 'SELECT'], ['back', 'STAY']] : [['move'], ['confirm', 'SELECT'], ['back', 'BACK']]));
     const again = focusAct === 'code' ? root.querySelector('.nf-code') : focusAct && root.querySelector(`[data-act="${focusAct}"]`);
-    const el = /** @type {HTMLElement | null} */ (again || root.querySelector('.nf-code') || root.querySelector('.nf-btn'));
+    // the safe choice first (STAY on the leave confirm), else the first button
+    const el = /** @type {HTMLElement | null} */ (again || root.querySelector('.nf-code') || root.querySelector('[data-default]') || root.querySelector('.nf-btn'));
     if (el) el.focus({ preventScroll: true });
   }
 
@@ -322,12 +329,14 @@ function createLobby(net, game) {
     const t = e.target;
     if (t instanceof HTMLInputElement) { const p = t.selectionStart; t.value = t.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); t.setSelectionRange(p, p); joinCode = t.value; }
   });
-  // keyboard: arrows move between buttons, Enter presses, Escape backs out (capture phase, so the
-  // game's own key handling never sees these while the panel is up)
+  // keyboard: arrows move between buttons, Enter or Space presses, Escape or Backspace backs out
+  // (capture phase, so the game's own key handling never sees these while the panel is up). A held
+  // key's repeats are ignored, so the Escape that opened the confirm can't also close it.
   window.addEventListener('keydown', (e) => {
     if (mode === 'closed') return;
     e.stopImmediatePropagation();
-    if (e.code === 'Escape') { e.preventDefault(); back(); }
+    if (e.repeat && !/^Arrow/.test(e.code)) { e.preventDefault(); return; }
+    if (e.code === 'Escape' || (e.code === 'Backspace' && !(document.activeElement instanceof HTMLInputElement))) { e.preventDefault(); back(); }
     else if (e.code === 'Enter' && document.activeElement instanceof HTMLInputElement) { e.preventDefault(); act('go'); }
     else if (/^Arrow(Up|Down|Left|Right)$/.test(e.code) && !(document.activeElement instanceof HTMLInputElement && /Left|Right/.test(e.code))) { e.preventDefault(); move(/Up|Left/.test(e.code) ? -1 : 1); }
   }, true);
@@ -345,7 +354,8 @@ function createLobby(net, game) {
     const i = f.indexOf(/** @type {HTMLElement} */ (document.activeElement));
     f[(i + d + f.length) % f.length].focus();
   }
-  // gamepad: D-pad or stick moves, A presses, B backs out; on the code box, up/down turn the letter
+  // gamepad: D-pad or stick moves, A presses, B or Select backs out (STAY on the leave confirm), Start
+  // is STAY there and A anywhere else; on the code box, up/down turn the letter
   const ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let caret = 0, stickHeld = 0;
   function poll() {
@@ -356,15 +366,18 @@ function createLobby(net, game) {
     const down = g.buttons.map(b => b.pressed || b.value > 0.5);
     const ay = g.axes[1] || 0, ax = g.axes[0] || 0;
     const dir = down[12] || ay < -0.6 ? 'up' : down[13] || ay > 0.6 ? 'down' : down[14] || ax < -0.6 ? 'left' : down[15] || ax > 0.6 ? 'right' : '';
-    const edge = (i) => down[i] && !padPrev[i];
+    const was = padPrev;   // the last poll's buttons (padPrev is overwritten below, so edge() can't read it)
+    const edge = (i) => down[i] && !was[i];
     const stickEdge = dir && stickHeld === 0;
     stickHeld = dir ? stickHeld + 1 : 0;
     if (stickHeld > 18) stickHeld = 0;   // held: repeat
     padPrev = down;
     if (mode === 'closed') return;
     const input = document.activeElement instanceof HTMLInputElement ? document.activeElement : null;
-    if (edge(0)) { if (input) act('go'); else if (document.activeElement instanceof HTMLElement && root.contains(document.activeElement)) document.activeElement.click(); }
+    const press = () => { if (input) act('go'); else if (document.activeElement instanceof HTMLElement && root.contains(document.activeElement)) document.activeElement.click(); };
+    if (edge(0)) press();
     else if (edge(1) || edge(8)) back();
+    else if (edge(9)) { if (mode === 'leave') lobby.close(); else press(); }
     else if (stickEdge) {
       if (input && (dir === 'up' || dir === 'down')) {
         const v = input.value.padEnd(caret + 1, 'A').split('');
@@ -381,11 +394,18 @@ function createLobby(net, game) {
   const lobby = {
     render,
     open(m = 'menu', c = '') {
+      watchDevice();
       mode = m === 'host' ? 'host' : m === 'join' ? 'join' : m;
       root.hidden = false;
       if (c) joinCode = String(c).toUpperCase();
       render();
-      if (!padRaf) padRaf = requestAnimationFrame(poll);
+      if (!padRaf) {
+        // what's held now (the Start or Select that opened it) waits to be let go before it counts
+        const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+        const g = pads.find(p => p && p.mapping === 'standard') || pads[0];
+        padPrev = g ? g.buttons.map(b => b.pressed || b.value > 0.5) : [];
+        padRaf = requestAnimationFrame(poll);
+      }
       if (mode === 'host' && net.state === 'idle') net.host().catch(() => {});
       if (mode === 'join' && c) net.join(c).catch(() => {});
     },
@@ -393,6 +413,8 @@ function createLobby(net, game) {
       if (mode === 'closed') return;
       mode = 'closed'; root.hidden = true; root.innerHTML = ''; closedAt = performance.now();
       cancelAnimationFrame(padRaf); padRaf = 0;
+      // back to the match (STAY): the A or Enter that chose it doesn't also throw a kick
+      if (net.active) { try { game.input.swallowHeld(); } catch { /* old input */ } }
     },
     message(text) { msg = text; lobby.open('message'); },
     confirmLeave() { lobby.open('leave'); },
@@ -423,6 +445,8 @@ function injectStyle() {
   .nf-status { margin: 4px 0 clamp(8px, 2vmin, 14px); font: 600 clamp(18px, 4vmin, 24px)/1 'Teko', sans-serif; letter-spacing: 0.1em;
     color: var(--cyan); text-shadow: 0 0 8px var(--cyan); animation: nf-blink 1.1s steps(1) infinite; }
   @keyframes nf-blink { 70% { opacity: 0.35; } }
+  .nf-panel { position: relative; padding-bottom: clamp(40px, 9vmin, 56px); }
+  .nf-panel .lg-bar { --lg-size: clamp(13px, 2.6vmin, 18px); bottom: clamp(10px, 2.2vmin, 16px); }
   .nf-row, .nf-col { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   .nf-col { flex-direction: column; align-items: stretch; }
   .nf-btn { --c: var(--cyan); appearance: none; cursor: pointer; min-height: 44px; padding: 6px 18px; border-radius: 2px;

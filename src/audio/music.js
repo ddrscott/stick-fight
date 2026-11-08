@@ -121,6 +121,14 @@ export function createMusic({ tracks = TRACKS } = {}) {
     return pool[(k + 1) % pool.length];
   }
 
+  // Phones: the audio thread runs out of time on the full mix (choppy music), so touch devices get a
+  // lighter one: supersaws thinned to 2 unison voices, and no distortion or bit-crush worklets (each
+  // runs in its own processor). Reverb, delays and filters stay, so the tracks keep their shape.
+  const LITE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  function lite(code) {
+    if (!LITE) return code;
+    return code.replace(/\.unison\(\d+\)/g, '.unison(2)').replace(/\.distort\("[^"]*"\)/g, '').replace(/\.crush\(\d+\)/g, '');
+  }
   async function play(index = state.track) {
     const mine = ++generation;
     clearTimeout(onward);
@@ -132,7 +140,7 @@ export function createMusic({ tracks = TRACKS } = {}) {
       // no sound device (headless) never settles this promise, so don't wait forever
       await Promise.race([mod.getAudioContext().resume(), new Promise(r => setTimeout(r, 1000))]);
       mod.hush();   // the clock back to cycle 0: the track starts at the top of its form
-      const pattern = await mod.evaluate(tracks[state.track].code);
+      const pattern = await mod.evaluate(lite(tracks[state.track].code));
       if (mine !== generation) return;
       if (!pattern) { quiet(); return; }
       state.playing = true; apply(); state.started++;

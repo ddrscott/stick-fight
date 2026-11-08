@@ -5,10 +5,12 @@
 // makes no sense. history keeps the last moves for tests (window.__flow.history).
 //
 //   off             a ?scene= URL or __gauntlet.setScene: the flow stays out of the way
-//   attract         the CPU demo under the title; only the START button, Enter/Space or pad
-//                   Start/A starts. A tap anywhere else only wakes the sound
-//   highScores      the top-5 table between demo bouts (and after a game)
-//   modeSelect      ARCADE, VERSUS ONLINE, HORDE, TRAINING
+//   attract         the CPU demo under the title: START, HIGH SCORES, CONTROLS. Only the START
+//                   button (or Enter/Space/A on it, or pad Start) starts. A tap anywhere else only
+//                   wakes the sound
+//   highScores      the top-5 table between demo bouts, after a game, or from the title
+//   controls        the fight and menu controls, keyboard and gamepad (from the title)
+//   modeSelect      ARCADE, VERSUS ONLINE, HORDE, TRAINING: the MAIN MENU every screen offers
 //   charSelect      pick a fighter (select.js) for the mode picked; training then picks the dummy
 //   stageIntro      the stage card (sim held), then fighting
 //   fighting        a round on; roundEnd while the sim shows KO/TIME; back to fighting next round
@@ -18,7 +20,7 @@
 //   gameOver        the final score, then enterInitials (a top-5 score) or highScores
 //   enterInitials   three letters for the table
 //   ending          the credits after the ladder
-//   paused          RESUME / RESTART / QUIT over the held scene (single-player modes)
+//   paused          RESUME / RESTART / BOTCHES / CONTROLS / MAIN MENU over the held scene (single-player modes)
 //   onlineMenu, onlineHost, onlineJoin, onlineConnecting, onlineFighting, onlineEnd   (netApi.js)
 //
 // The 30 second idle return only runs where nothing is lost: the menus (mode select, the online
@@ -26,6 +28,9 @@
 // horde run left alone plays itself out (the CPU or the goons win), then CONTINUE runs down, the
 // score is offered to the table (entered as it stands after 30 more seconds), and the cabinet is
 // back on the demo with the score kept. A paused game stays paused.
+//
+// Every screen that waits on the player has at least two buttons and a footer legend; the control
+// scheme (one for every screen) is in controls.js. "MAIN MENU" always means modeSelect.
 
 import { LADDER, buildLadder } from './ladder.js';
 import { openSelect } from './select.js';
@@ -35,33 +40,35 @@ import { createMenuInput } from './menuInput.js';
 import { createUI, el, button } from './ui.js';
 import { techniques, botchEnabled, setBotchEnabled } from './techniques.js';
 import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './netApi.js';
+import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
   off: ['attract', 'onlineJoin', 'charSelect'],
-  attract: ['modeSelect', 'highScores'],
+  attract: ['modeSelect', 'highScores', 'controls'],
   highScores: ['attract', 'modeSelect'],
+  controls: ['attract', 'modeSelect'],
   modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect'],
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'onlineMenu', 'onlineJoin', 'attract'],
-  stageIntro: ['fighting'],
+  stageIntro: ['fighting', 'modeSelect'],
   fighting: ['roundEnd', 'result', 'paused', 'attract'],
   roundEnd: ['fighting', 'result', 'paused'],
   result: ['stageClear', 'continue', 'gameOver'],
-  stageClear: ['stageIntro', 'ending'],
+  stageClear: ['stageIntro', 'ending', 'modeSelect'],
   continue: ['stageIntro', 'gameOver'],
-  gameOver: ['enterInitials', 'highScores'],
+  gameOver: ['enterInitials', 'highScores', 'modeSelect'],
   enterInitials: ['highScores'],
-  ending: ['enterInitials', 'highScores'],
-  paused: ['fighting', 'roundEnd', 'stageIntro', 'attract'],
+  ending: ['enterInitials', 'highScores', 'modeSelect'],
+  paused: ['fighting', 'roundEnd', 'stageIntro', 'attract', 'modeSelect'],
   onlineMenu: ['modeSelect', 'charSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract'],
-  onlineHost: ['onlineMenu', 'onlineFighting', 'onlineEnd'],
+  onlineHost: ['onlineMenu', 'onlineFighting', 'onlineEnd', 'modeSelect'],
   onlineJoin: ['onlineMenu', 'onlineConnecting', 'attract'],
-  onlineConnecting: ['onlineJoin', 'onlineFighting', 'onlineEnd'],
+  onlineConnecting: ['onlineJoin', 'onlineFighting', 'onlineEnd', 'modeSelect'],
   onlineFighting: ['onlineEnd'],
-  onlineEnd: ['onlineMenu', 'attract'],
+  onlineEnd: ['onlineMenu', 'onlineHost', 'onlineConnecting', 'modeSelect', 'attract'],
 };
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
-const DEMO = new Set(['attract', 'modeSelect', 'charSelect', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
+const DEMO = new Set(['attract', 'controls', 'modeSelect', 'charSelect', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
 // the sim steps in these (plus onlineFighting, unless the net module steps it)
 const STEPS = new Set([...DEMO, 'fighting', 'roundEnd', 'result']);
 // the HUD draws in these; everything else is a menu over a dimmed scene, HUD off
@@ -86,7 +93,7 @@ const ONLINE = new Set(['onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnect
  */
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
-const MENU_MUSIC = new Set(['attract', 'highScores', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
+const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -99,7 +106,10 @@ export function createFlow(ctx) {
   let bonus = { text: '', t: 0 };
   let resumeTo = 'fighting';
   let demoKO = false;
-  let hs = { mode: 'arcade', highlight: -1, postGame: false, loop: 0 };
+  let hs = { mode: 'arcade', highlight: -1, postGame: false, loop: 0, manual: false };
+  let menu = null;   // createMenuInput's handle (swallow), made below
+  let retryTo = null;   // onlineEnd's RETRY: the screen that failed before a match started (onlineHost, onlineConnecting)
+  let pauseView = 'tech';   // the pause menu's right panel: 'tech' (the happy accidents) or 'controls'
   let entry = null;
   let resultWin = false, clearBonus = 0;
   let endMsg = '', joinCode = '', netSession = 0;
@@ -122,6 +132,9 @@ export function createFlow(ctx) {
     leave(prev, next);
     state = next; t = 0; idle = 0;
     history.push(`${prev}>${next}`); if (history.length > 300) history.shift();
+    // the press that changed screens stays out of the next one: menus ignore it, and so does the
+    // fighter, until it's let go (a round rolling over mid-fight isn't a screen change: a held guard stays held)
+    if (!(PLAY.has(prev) && PLAY.has(next))) { if (menu) menu.swallow(); try { ctx.input.swallowHeld(); } catch { /* old input */ } }
     classes();
     enter(next, prev);
     music();
@@ -152,12 +165,11 @@ export function createFlow(ctx) {
       case 'off': ui.clear(); netReset(); mode = null; return;
       case 'attract': mode = null; if (ctx.sceneName() !== 'attract') demo(); return screenTitle();
       case 'highScores': demo(); return screenScores();
+      case 'controls': ensureDemo(); return screenControls();
       case 'modeSelect': mode = null; ensureDemo(); return screenModes();
       case 'charSelect': ensureDemo(); return screenSelect();
       case 'stageIntro': return screenStage();
-      case 'fighting':
-        if (prev === 'stageIntro' || prev === 'paused' || prev === 'modeSelect') ctx.input.swallowHeld();   // the press that got us here doesn't throw a punch
-        ui.clear(); return;
+      case 'fighting': ui.clear(); return;   // go() swallowed the press that got us here, so it doesn't throw a punch
       case 'roundEnd': return roundBonus();
       case 'result': return screenResult();
       case 'stageClear': return screenClear();
@@ -198,11 +210,11 @@ export function createFlow(ctx) {
     if (DEMO.has(state)) {
       // the demo's KO card holds a beat longer
       if (sim.phase === 'ko' && !demoKO) { demoKO = true; sim.phaseTimer = 1.6; }
-      if (idle > IDLE_MS && (state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || state === 'onlineEnd')) go('attract');
+      if (idle > IDLE_MS && (state === 'controls' || state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || state === 'onlineEnd')) go('attract');
     }
     if (state === 'charSelect' && selCtl) selCtl.tick(dt);
     switch (state) {
-      case 'highScores': if (t > 7) go('attract'); break;
+      case 'highScores': if (hs.postGame || hs.manual ? idle > IDLE_MS : t > 7) go('attract'); break;   // the attract loop's table turns over; one the player is reading waits
       case 'stageIntro': if (t > 3.4) go('fighting'); break;
       case 'fighting': if (mode === 'training' && idle > IDLE_MS) go('attract'); break;
       case 'result': if (t > 2.6) decide(); break;
@@ -298,7 +310,7 @@ export function createFlow(ctx) {
     if (state === 'fighting' || state === 'roundEnd') { resumeTo = state; go('paused'); }
   }
   function resume() { if (state === 'paused') go(resumeTo); }
-  function quitToTitle() { if (mode === 'online') netReset(); mode = null; go('attract'); }
+  function mainMenu() { if (mode === 'online') netReset(); mode = null; go('modeSelect'); }
   function startArcade() { newRun('arcade'); run.ladder = buildLadder(sel.player, getCharacter); go('stageIntro'); }
   function startHorde() { newRun('horde'); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }
   function startTraining() { newRun('training'); ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }
@@ -327,32 +339,32 @@ export function createFlow(ctx) {
     if (sel.step === 'dummy') { sel.step = 'player'; screenSelect(); }
     else go(sel.join ? 'attract' : 'modeSelect');
   }
-  function pressStart() { if (state === 'attract' || (state === 'highScores' && !hs.postGame)) go('modeSelect'); else if (state === 'highScores') go('attract'); }
+  function pressStart() { if (state === 'attract') go('modeSelect'); }
+  function openScores() { hs = { mode: 'arcade', highlight: -1, postGame: false, loop: hs.loop, manual: true }; go('highScores'); }
 
   // ---- input ------------------------------------------------------------------------------------------
-  createMenuInput({
+  // One scheme for every screen (controls.js): directions move the focus, confirm (Enter, Space, A)
+  // presses the focused button, back (Esc, Backspace, B, Select) runs the screen's back if it has
+  // one, Start is confirm except on the title (it starts) and in the pause menu (it resumes), and
+  // del (pad X) is DEL on the two keyboard screens. In a fight, P, Esc, Start or Select pause.
+  menu = createMenuInput({
     onActivity() { idle = 0; },
     onKey(k) {
-      if (state === 'off' || state === 'onlineFighting') return;   // online: the net module's LEAVE confirm owns Esc / Select
+      if (state === 'off' || state === 'onlineFighting') return;   // online: the net module's LEAVE confirm owns Esc / Start / Select
       if (ctx.netBusy && ctx.netBusy()) return;   // its panel is up; it can't block the pad, so we ignore it here
       if (PLAY.has(state)) {
-        if (state !== 'result' && (k === 'pause' || k === 'escape' || k === 'start')) pause();
+        if (state !== 'result' && (k === 'pause' || k === 'escape' || k === 'start' || k === 'select')) pause();
         return;
       }
+      if (k === 'up' || k === 'down' || k === 'left' || k === 'right') { ui.move(k); return; }
       switch (state) {
-        case 'attract': case 'highScores':
-          if (k === 'confirm' || k === 'start') pressStart();
-          return;
-        case 'stageIntro': if ((k === 'confirm' || k === 'start') && t > 0.6) go('fighting'); return;
-        case 'stageClear': if ((k === 'confirm' || k === 'start') && t > 1.2) nextStage(); return;
-        case 'gameOver': case 'ending': if ((k === 'confirm' || k === 'start') && t > 1.2) afterGame(); return;
-        case 'paused':
-          if (k === 'pause' || k === 'escape' || k === 'start' || k === 'back') { resume(); return; }
-          break;
+        case 'attract': if (k === 'start') { pressStart(); return; } break;
+        case 'paused': if (k === 'pause' || k === 'start' || k === 'escape' || k === 'back' || k === 'select') { resume(); return; } break;
+        case 'enterInitials': if (k === 'del') { cursorTo(slot - 1); return; } break;
+        case 'onlineJoin': if (k === 'del') { typeCode('DEL'); return; } break;
       }
-      if (k === 'up' || k === 'down' || k === 'left' || k === 'right') ui.move(k);
-      else if (k === 'confirm' || k === 'start') ui.activate();
-      else if (k === 'back' || k === 'escape') ui.back();
+      if (k === 'confirm' || k === 'start') ui.activate();
+      else if (k === 'back' || k === 'escape' || k === 'select') ui.back();
     },
     onText(e) {
       if (ctx.netBusy && ctx.netBusy()) return false;
@@ -375,19 +387,38 @@ export function createFlow(ctx) {
   });
 
   // ---- screens --------------------------------------------------------------------------------------------
+  // Each returns its items (the primary action first unless focus says otherwise), its back (only
+  // where there's somewhere to go back to), and its legend when the default (move, select, back)
+  // doesn't say it right. MAIN MENU is always modeSelect.
+  const MOVE = ['move'], SELECT = ['confirm', 'SELECT'];
+  /** a row of buttons, the same width */
+  function btnRow(root, items, width = '20cqw') {
+    const row = el('div', 'fl-row');
+    for (const it of items) { it.el.style.minWidth = width; row.appendChild(it.el); }
+    root.appendChild(row);
+    return items;
+  }
+  const mainMenuBtn = (guard = 0) => button('MAIN MENU', () => { if (t >= guard) mainMenu(); }, 'fl-violet');
   let startBtn = null;
   function screenTitle() {
     ui.show('fl-title', (root) => {
+      // START sits on the title card's prompt (frame() moves the group); HIGH SCORES and CONTROLS under it
+      const group = el('div', 'fl-titlegroup');
       const b = button('', pressStart, 'fl-start');
       // touch.js marks <html> after this first screen is built, so the label is picked by CSS
       b.el.append(el('span', 'fl-keys', 'PRESS START'), el('span', 'fl-touch', 'START'));
-      root.appendChild(b.el);
-      startBtn = b.el;
-      startBtn.style.left = '50%'; startBtn.style.top = '39%';
-      return { items: [b] };
+      const row = el('div', 'fl-row fl-titlerow');
+      const scores = button('HIGH SCORES', openScores, 'fl-mini');
+      const how = button('CONTROLS', () => go('controls'), 'fl-mini fl-violet');
+      row.append(scores.el, how.el);
+      group.append(b.el, row);
+      root.appendChild(group);
+      startBtn = group;
+      group.style.left = '50%'; group.style.top = '39%';
+      return { items: [b, scores, how], legend: [MOVE, SELECT, ['start', 'START']] };
     }, { veil: false });
   }
-  function screenScores() {
+  function screenScores(focus = 0) {
     const rows = S.table(hs.mode);
     ui.show('fl-scores', (root) => {
       root.append(el('h1', 'fl-h2', 'HIGH SCORES'), el('div', 'fl-label', hs.mode === 'arcade' ? 'ARCADE' : 'HORDE'), el('div', 'fl-rule'));
@@ -397,10 +428,28 @@ export function createFlow(ctx) {
         tb.append(el('span', 'fl-rank' + cls, `${i + 1}`), el('span', cls, r.name), el('span', 'fl-score' + cls, S.fmt(r.score)), el('span', 'fl-note' + cls, r.note));
       });
       root.appendChild(tb);
-      const items = [];
-      const b = button(hs.postGame ? 'CONTINUE' : ctx.touchUI() ? 'START' : 'PRESS START', pressStart, 'fl-amber');
-      root.appendChild(b.el); items.push(b);
-      return { items };
+      // after a game CONTINUE goes back to the title, as the cabinet always did; from the attract loop or
+      // the title the table is a detour, so MAIN MENU leads
+      const items = hs.postGame
+        ? [button('CONTINUE', () => go('attract'), 'fl-amber'), button('MAIN MENU', () => go('modeSelect'), 'fl-violet')]
+        : [button('MAIN MENU', () => go('modeSelect'), 'fl-amber'), button('TITLE', () => go('attract'), 'fl-violet')];
+      items.push(button(hs.mode === 'arcade' ? 'HORDE TABLE' : 'ARCADE TABLE', () => {
+        hs.mode = hs.mode === 'arcade' ? 'horde' : 'arcade'; hs.highlight = -1; hs.manual = true; screenScores(2);
+      }));
+      btnRow(root, items, '17cqw');
+      return { items, focus, back: () => go('attract'), legend: [MOVE, SELECT, ['back', 'TITLE']] };
+    });
+  }
+  function screenControls() {
+    ui.show('fl-controls', (root) => {
+      root.append(el('h1', 'fl-h2', 'CONTROLS'));
+      const row = el('div', 'fl-row fl-ctlrow');
+      const right = el('div', 'fl-ctlcol');
+      right.append(controlsTable(MENUS, 'MENUS'), el('div', 'fl-small fl-ctlnote', 'ON A TOUCH SCREEN THE LEFT THUMB STEERS, THE BUTTONS STRIKE AND GUARD, AND MENUS ARE TAPPED. F1 SHOWS THE MOVE LIST IN A FIGHT.'));
+      row.append(controlsTable(FIGHT, 'FIGHT'), right);
+      root.appendChild(row);
+      const items = btnRow(root, [button('MAIN MENU', () => go('modeSelect'), 'fl-pink'), button('BACK', () => go('attract'), 'fl-violet')]);
+      return { items, back: () => go('attract') };
     });
   }
   function screenModes() {
@@ -414,8 +463,9 @@ export function createFlow(ctx) {
         mk('HORDE', 'FLOOR BY FLOOR, AS MANY AS YOU CAN', () => toSelect('horde'), 'fl-amber'),
         mk('TRAINING', 'A DUMMY THAT NEVER HITS BACK', () => toSelect('training'), 'fl-violet'),
       ];
+      const back = button('BACK', () => go('attract'), 'fl-violet fl-slim');
+      list.appendChild(back.el); items.push(back);
       root.appendChild(list);
-      root.appendChild(el('div', 'fl-small', ctx.touchUI() ? 'TAP A MODE' : 'ENTER TO PICK   ESC BACK'));
       return { items, back: () => go('attract') };
     });
   }
@@ -444,11 +494,12 @@ export function createFlow(ctx) {
       root.append(el('h1', 'fl-h1', `STAGE ${st.n}`), vs, el('div', 'fl-label', st.tagline));
       pips(root, st);
       if (run.continues) root.appendChild(el('div', 'fl-small', `CONTINUES ${run.continues}`));
-      root.appendChild(el('div', 'fl-small', ctx.touchUI() ? 'TAP TO FIGHT' : 'PRESS START'));
-      return {};
+      // no back here: B is a kick, and a player mashing through the card mustn't quit the run
+      const items = btnRow(root, [button('FIGHT', () => { if (t > 0.3) go('fighting'); }, 'fl-pink'), mainMenuBtn(0.3)]);
+      return { items, legend: [MOVE, SELECT] };
     });
-    // a tap anywhere on the card skips it (it's a card, not the title: nothing else to hit)
-    const s = ui.screen; if (s) s.addEventListener('click', () => { if (state === 'stageIntro' && t > 0.6) go('fighting'); });
+    // a tap on the card itself (not a button) skips it too
+    const s = ui.screen; if (s) s.addEventListener('click', (e) => { if (e.target instanceof Element && e.target.closest('.fl-btn')) return; if (state === 'stageIntro' && t > 0.6) go('fighting'); });
   }
   function screenResult() {
     resultWin = sim.wins[0] > sim.wins[1];
@@ -465,9 +516,8 @@ export function createFlow(ctx) {
       root.appendChild(tl);
       const last = run.stage >= ladder().length - 1;
       root.appendChild(el('div', 'fl-label', last ? 'THE BUILDING IS YOURS' : `NEXT  ${ladder()[run.stage + 1].name}`));
-      const b = button(last ? 'CONTINUE' : 'NEXT STAGE', () => { if (t > 0.5) nextStage(); }, 'fl-amber');
-      root.appendChild(b.el);
-      return { items: [b] };
+      const items = btnRow(root, [button(last ? 'CONTINUE' : 'NEXT STAGE', () => { if (t > 0.5) nextStage(); }, 'fl-amber'), mainMenuBtn(0.5)]);
+      return { items, legend: [MOVE, SELECT] };
     });
   }
   let countEl = null;
@@ -477,12 +527,10 @@ export function createFlow(ctx) {
       countEl = el('div', 'fl-count', '10');
       root.appendChild(countEl);
       root.appendChild(el('div', 'fl-label', `RETRY STAGE ${ladder()[run.stage].n}  ·  ${ladder()[run.stage].name}`));
-      const row = el('div', 'fl-row');
       const yes = button('YES', () => { if (t < 0.4 || state !== 'continue') return; run.score = run.stageStart; run.continues++; go('stageIntro'); }, 'fl-pink');
       const no = button('NO', () => { if (t < 0.4) return; go('gameOver'); });
-      yes.el.style.minWidth = no.el.style.minWidth = '18cqw';
-      row.append(yes.el, no.el); root.appendChild(row);
-      return { items: [yes, no], back: () => { if (t >= 0.4) go('gameOver'); } };
+      // no back: NO is a choice, not a way out, and B is the kick a player who just lost is mashing
+      return { items: btnRow(root, [yes, no], '18cqw'), legend: [MOVE, SELECT] };
     });
   }
   function tickContinue() { if (countEl) { const n = String(Math.max(0, Math.ceil(10 - t - 0.0001))); if (countEl.textContent !== n) countEl.textContent = n; } }
@@ -495,9 +543,9 @@ export function createFlow(ctx) {
       else tl.append(el('span', '', 'REACHED'), el('span', '', `STAGE ${ladder()[run.stage].n}`));
       tl.append(el('span', '', 'FINAL SCORE'), el('span', '', S.fmt(run.score)));
       root.appendChild(tl);
-      const b = button('CONTINUE', () => { if (t > 0.8) afterGame(); }, 'fl-amber');
-      root.appendChild(b.el);
-      return { items: [b] };
+      if (entry && S.rankFor(entry.mode, entry.score) >= 0) root.appendChild(el('div', 'fl-label fl-newhi', 'NEW HIGH SCORE  ·  CONTINUE TO SIGN IT'));
+      const items = btnRow(root, [button('CONTINUE', () => { if (t > 0.8) afterGame(); }, 'fl-amber'), mainMenuBtn(0.8)]);
+      return { items, legend: [MOVE, SELECT] };
     });
   }
   // The on-screen keyboard: a standard layout, the number row on top, then QWERTY. Keys a screen
@@ -536,8 +584,9 @@ export function createFlow(ctx) {
         [{ label: 'DEL', act: () => cursorTo(slot - 1), cls: 'fl-violet' }, { label: 'ENTER', act: submitInitials, cls: 'fl-pink' }]);
       root.appendChild(kb.el);
       const items = kb.items;
-      root.appendChild(el('div', 'fl-small', ctx.touchUI() ? 'TAP YOUR INITIALS, THEN ENTER' : 'TYPE YOUR INITIALS AND PRESS ENTER'));
-      return { items, focus: items.findIndex((k) => k.el.textContent === 'A'), back: () => cursorTo(slot - 1) };
+      root.appendChild(el('div', 'fl-small fl-touchonly', 'TAP YOUR INITIALS, THEN ENTER'));
+      // no back: there's nothing behind this screen (left alone, the initials go in as they stand)
+      return { items, focus: items.findIndex((k) => k.el.textContent === 'A'), legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL']] };
     });
     paintSlots();
   }
@@ -547,7 +596,7 @@ export function createFlow(ctx) {
   function submitInitials() {
     if (state !== 'enterInitials' || !entry) return;
     const rank = S.addScore(entry.mode, { name: initials.join(''), score: entry.score, note: entry.note });
-    hs = { mode: entry.mode, highlight: rank, postGame: true, loop: hs.loop };
+    hs = { mode: entry.mode, highlight: rank, postGame: true, loop: hs.loop, manual: false };
     entry = null;
     go('highScores');
   }
@@ -568,40 +617,44 @@ export function createFlow(ctx) {
       ];
       for (const [h, p] of lines) { const q = el('p'); q.append(el('b', '', h), document.createTextNode(p)); inner.appendChild(q); }
       roll.appendChild(inner); root.appendChild(roll);
-      const b = button('CONTINUE', () => { if (t > 1.2) afterGame(); }, 'fl-amber');
-      root.appendChild(b.el);
-      return { items: [b] };
+      const items = btnRow(root, [button('CONTINUE', () => { if (t > 1.2) afterGame(); }, 'fl-amber'), mainMenuBtn(1.2)]);
+      return { items, legend: [MOVE, SELECT] };
     });
   }
   function screenPause() {
     ui.show('fl-pause', (root) => {
       root.append(el('h1', 'fl-h2', 'PAUSED'));
       if (mode === 'arcade') root.appendChild(el('div', 'fl-label', `STAGE ${ladder()[run.stage].n}  ·  ${ladder()[run.stage].name}  ·  ${S.fmt(run.score)}`));
-      if (mode === 'online') root.appendChild(el('div', 'fl-label', 'THE MATCH KEEPS RUNNING'));
       const list = el('div', 'fl-list');
       const items = [button('RESUME', resume, 'fl-pink')];
       if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
       if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }));
       if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }));
       // botches on or off (src/combat/botch.js): remembered, and it takes effect from the next fight (online
-      // the host's setting rides the start message, so it isn't offered there)
-      if (mode !== 'online') {
-        const label = () => `BOTCHES: ${botchEnabled() ? 'ON' : 'OFF'}`;
-        const sw = button(label(), () => { setBotchEnabled(!botchEnabled()); sw.el.firstChild.textContent = label(); }, 'fl-amber');
-        sw.el.appendChild(el('small', '', 'FROM THE NEXT FIGHT'));
-        items.push(sw);
-      }
-      if (mode === 'online') items.push(button('LEAVE MATCH', () => { endMsg = 'YOU LEFT THE MATCH'; go('onlineEnd'); }, 'fl-violet'));
-      else items.push(button('QUIT TO TITLE', quitToTitle, 'fl-violet'));
+      // the host's setting rides the start message; online never pauses anyway)
+      const label = () => `BOTCHES: ${botchEnabled() ? 'ON' : 'OFF'}`;
+      const sw = button(label(), () => { setBotchEnabled(!botchEnabled()); sw.el.firstChild.textContent = label(); }, 'fl-amber');
+      sw.el.appendChild(el('small', '', 'FROM THE NEXT FIGHT'));
+      items.push(sw);
+      // the right panel: the book of happy accidents, or the controls (keyboard and gamepad)
+      const panel = el('div', 'fl-tech');
+      const view = button('', () => { pauseView = pauseView === 'tech' ? 'controls' : 'tech'; paint(); });
+      const paint = () => {
+        view.el.textContent = pauseView === 'tech' ? 'SHOW CONTROLS' : 'SHOW TECHNIQUES';
+        panel.textContent = '';
+        panel.classList.toggle('fl-ctlpanel', pauseView === 'controls');
+        if (pauseView === 'controls') { panel.appendChild(controlsTable(FIGHT, 'FIGHT')); return; }
+        // the happy accidents: found ones by name, the rest as ???, each with a hint (never the timing)
+        const tech = techniques();
+        panel.appendChild(el('div', 'fl-techhead', `TECHNIQUES FOUND ${tech.filter(x => x.found).length}/${tech.length}`));
+        for (const x of tech) { const p = el('p', x.found ? 'fl-got' : ''); p.append(el('b', '', x.found ? `${x.name}  ${x.input}` : '???'), el('small', '', x.hint)); panel.appendChild(p); }
+      };
+      items.push(view, button('MAIN MENU', mainMenu, 'fl-violet'));
       items.forEach(i => list.appendChild(i.el));
-      // the happy accidents: found ones by name, the rest as ???, each with a hint (never the timing)
-      const tech = techniques(), book = el('div', 'fl-tech');
-      book.appendChild(el('div', 'fl-techhead', `TECHNIQUES FOUND ${tech.filter(t => t.found).length}/${tech.length}`));
-      for (const t of tech) { const p = el('p', t.found ? 'fl-got' : ''); p.append(el('b', '', t.found ? `${t.name}  ${t.input}` : '???'), el('small', '', t.hint)); book.appendChild(p); }
-      const row = el('div', 'fl-row fl-pauserow'); row.append(list, book);
+      paint();
+      const row = el('div', 'fl-row fl-pauserow'); row.append(list, panel);
       root.appendChild(row);
-      if (!ctx.touchUI()) root.appendChild(el('div', 'fl-small', ctx.padUI() ? 'START TO RESUME' : 'P OR ESC TO RESUME   F1 MOVE LIST'));
-      return { items, back: resume };
+      return { items, back: resume, legend: [MOVE, SELECT, ['back', 'RESUME'], ['start', 'RESUME']] };
     });
   }
 
@@ -612,14 +665,19 @@ export function createFlow(ctx) {
     netOff = [];
     try { getNet().leave(); } catch { /* stub */ }
   }
+  /** a failure before or between matches: the message, and RETRY goes back to the screen that failed */
+  function netFail(msg) {
+    endMsg = msg;
+    retryTo = state === 'onlineHost' || state === 'onlineConnecting' ? state : null;
+    if (TRANSITIONS[state].includes('onlineEnd')) go('onlineEnd');
+  }
   function listen(session) {
     const net = getNet();
     const guard = (fn) => (e) => { if (session === netSession) fn(e); };
-    const fail = (msg) => guard(() => { endMsg = msg; if (TRANSITIONS[state].includes('onlineEnd')) go('onlineEnd'); });
     netOff.push(
       net.on('connected', guard(() => { if (state === 'onlineHost' || state === 'onlineConnecting') go('onlineFighting'); })),
-      net.on('peer-left', fail('YOUR RIVAL LEFT')),
-      net.on('error', guard((e) => { endMsg = String((e && e.message) || 'CONNECTION LOST').toUpperCase(); if (TRANSITIONS[state].includes('onlineEnd')) go('onlineEnd'); })),
+      net.on('peer-left', guard(() => netFail('YOUR RIVAL LEFT'))),
+      net.on('error', guard((e) => netFail(String((e && e.message) || 'CONNECTION LOST').toUpperCase()))),
       net.on('status', guard((e) => { if (statusEl && e && e.text) statusEl.textContent = e.text; })),
     );
   }
@@ -628,6 +686,7 @@ export function createFlow(ctx) {
   function netEnded(reason) {
     if (state !== 'onlineFighting') return;
     endMsg = reason === 'left' ? 'YOU LEFT THE MATCH' : reason === 'lost' ? 'CONNECTION LOST' : 'YOUR RIVAL LEFT';
+    retryTo = null;   // the room is gone with the match
     go('onlineEnd');
   }
   function screenOnline() {
@@ -635,9 +694,10 @@ export function createFlow(ctx) {
       root.append(el('h1', 'fl-h2', 'VERSUS ONLINE'), el('div', 'fl-label', 'ONE OF YOU HOSTS, THE OTHER JOINS WITH THE CODE'));
       const list = el('div', 'fl-list');
       const items = [
-        button('HOST A GAME', () => { if (!getNet().available) { endMsg = 'ONLINE PLAY IS NOT READY YET'; go('onlineEnd'); } else go('onlineHost'); }, 'fl-pink'),
+        button('HOST A GAME', () => { if (!getNet().available) { endMsg = 'ONLINE PLAY IS NOT READY YET'; retryTo = null; go('onlineEnd'); } else go('onlineHost'); }, 'fl-pink'),
         button('JOIN A GAME', () => { joinCode = ''; go('onlineJoin'); }),
         button('BACK', () => go('charSelect'), 'fl-violet'),
+        button('MAIN MENU', () => go('modeSelect'), 'fl-violet fl-slim'),
       ];
       items.forEach(i => list.appendChild(i.el));
       root.appendChild(list);
@@ -654,35 +714,41 @@ export function createFlow(ctx) {
       waitEl = el('div', 'fl-label fl-dots', 'OPENING A ROOM');
       statusEl = waitEl;
       root.append(codeEl, linkEl, waitEl);
-      const row = el('div', 'fl-row'), items = [];
-      // send the link: the phone's share sheet where there is one, and the clipboard everywhere
+      const items = [];
+      // send the link: the phone's share sheet where there is one, and the clipboard everywhere (both
+      // wait for the room: dim, and skipped by the focus, until there's a link)
+      const noLink = () => !linkEl.textContent;
       const copy = button('COPY LINK', () => {
         const link = linkEl.textContent || '';
         if (!link) return;
         Promise.resolve().then(() => navigator.clipboard.writeText(link))
           .then(() => { copy.el.textContent = 'COPIED'; }, () => { copy.el.textContent = 'COPY FAILED'; })
           .then(() => setTimeout(() => { copy.el.textContent = 'COPY LINK'; }, 1400));
-      });
+      }, 'fl-pink');
+      copy.disabled = noLink;
       items.push(copy);
       if (typeof navigator.share === 'function') {
-        items.push(button('SHARE', () => {
+        const share = button('SHARE', () => {
           const url = linkEl.textContent || '';
           if (url) navigator.share({ title: 'Neon Stick Fight', text: `Fight me online, room ${codeEl.textContent}`, url }).catch(() => {});
-        }));
+        });
+        share.disabled = noLink;
+        items.push(share);
       }
-      const cancel = button('CANCEL', () => go('onlineMenu'), 'fl-violet');
-      items.push(cancel);
-      for (const it of items) { it.el.style.minWidth = '20cqw'; row.appendChild(it.el); }
-      root.appendChild(row);
-      return { items, focus: items.length - 1, back: () => go('onlineMenu') };
+      items.push(button('CANCEL', () => go('onlineMenu'), 'fl-violet'), mainMenuBtn());
+      btnRow(root, items, '17cqw');
+      return { items, back: () => go('onlineMenu') };
     });
+    const fallback = ui.focus;   // COPY LINK is dim until the room opens, so the focus starts on CANCEL
     listen(session);
     getNet().host().then(({ code, link }) => {
       if (session !== netSession) return;
       codeEl.textContent = code;
       linkEl.textContent = link || roomLink(code);
       if (/OPENING/.test(waitEl.textContent || '')) waitEl.textContent = 'WAITING FOR A FRIEND';
-    }).catch((e) => { if (session !== netSession) return; endMsg = String((e && e.message) || e).toUpperCase(); go('onlineEnd'); });
+      ui.refresh();
+      if (ui.focus === fallback) ui.setFocus(0);   // the player hasn't moved: COPY LINK, now it works
+    }).catch((e) => { if (session !== netSession) return; netFail(String((e && e.message) || e).toUpperCase()); });
   }
   let codeSlots = [], joinBtn = null;
   function screenJoin() {
@@ -695,19 +761,18 @@ export function createFlow(ctx) {
       const items = [];
       const kb = keyboard((ch) => CODE_ALPHABET.includes(ch), typeCode, [{ label: 'DEL', act: () => typeCode('DEL'), cls: 'fl-violet' }]);
       root.appendChild(kb.el); items.push(...kb.items);
-      const row = el('div', 'fl-row');
       const join = button('JOIN', tryJoin, 'fl-pink'), back = button('BACK', () => go('onlineMenu'), 'fl-violet');
-      join.el.style.minWidth = back.el.style.minWidth = '20cqw';
-      row.append(join.el, back.el); root.appendChild(row);
+      join.disabled = () => joinCode.length !== CODE_LEN;   // dim, and the focus skips it, until the code is whole
+      btnRow(root, [join, back]);
       items.push(join, back);
       joinBtn = join.el;
-      return { items, focus: joinCode.length === CODE_LEN ? items.length - 2 : 0, back: () => go('onlineMenu') };
+      return { items, focus: joinCode.length === CODE_LEN ? items.length - 2 : 0, back: () => go('onlineMenu'), legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', 'BACK']] };
     });
     paintCode();
   }
   function paintCode() {
     codeSlots.forEach((s, i) => { (s.querySelector('b')).textContent = joinCode[i] || ''; s.classList.toggle('fl-cur', i === Math.min(joinCode.length, CODE_LEN - 1)); });
-    if (joinBtn) joinBtn.style.opacity = joinCode.length === CODE_LEN ? '1' : '0.45';
+    if (state === 'onlineJoin') ui.refresh();
   }
   function typeCode(ch) {
     if (state !== 'onlineJoin') return;
@@ -726,20 +791,22 @@ export function createFlow(ctx) {
       msg = el('div', 'fl-label fl-dots', 'CONNECTING');
       statusEl = msg;
       root.appendChild(msg);
-      const cancel = button('CANCEL', () => go('onlineJoin'), 'fl-violet');
-      root.appendChild(cancel.el);
-      return { items: [cancel], back: () => go('onlineJoin') };
+      const items = btnRow(root, [button('CANCEL', () => go('onlineJoin'), 'fl-violet'), mainMenuBtn()]);
+      return { items, back: () => go('onlineJoin') };
     });
     listen(session);
     getNet().join(joinCode).then(() => { if (session === netSession && /^CONNECTING/.test(msg.textContent || '')) msg.textContent = 'FINDING THE ROOM'; })
-      .catch((e) => { if (session !== netSession) return; endMsg = String((e && e.message) || e).toUpperCase(); go('onlineEnd'); });
+      .catch((e) => { if (session !== netSession) return; netFail(String((e && e.message) || e).toUpperCase()); });
   }
   function screenOnlineEnd() {
     ui.show('fl-onlineend', (root) => {
       root.append(el('h1', 'fl-h2', 'VERSUS ONLINE'), el('div', 'fl-h3', endMsg || 'DISCONNECTED'));
-      const ok = button('OK', () => go('onlineMenu'), 'fl-pink');
-      root.appendChild(ok.el);
-      return { items: [ok], back: () => go('onlineMenu') };
+      const items = [];
+      // RETRY only where the same thing can work a second time: a room that didn't open, a join that didn't connect
+      if (retryTo) items.push(button(retryTo === 'onlineHost' ? 'HOST AGAIN' : 'TRY AGAIN', () => { const to = retryTo; retryTo = null; if (to) go(to); }, 'fl-pink'));
+      items.push(button('ONLINE MENU', () => go('onlineMenu'), retryTo ? '' : 'fl-pink'), mainMenuBtn());
+      btnRow(root, items, '18cqw');
+      return { items, back: () => go('onlineMenu') };
     });
   }
 
@@ -757,7 +824,9 @@ export function createFlow(ctx) {
       bonus: bonus.t > 0 ? bonus.text : '',
       names: mode === 'arcade' ? ['PLAYER 1', st.boss ? 'BOSS' : `STAGE ${st.n}`] : null,
       charNames: mode === 'arcade' ? [null, st.name] : null,   // the stage's name (a TEMP stands in for a character that isn't built yet)
-      hint: touch ? '' : state === 'onlineFighting' ? (pad ? 'SELECT  LEAVE' : 'F1  MOVES     ESC  LEAVE') : pad ? 'START  PAUSE' : 'F1  MOVES     P  PAUSE',
+      // in a fight the only hint is the way to the menu (and the move list on a keyboard); a pad's is
+      // in the pause menu's SHOW CONTROLS
+      hint: touch ? '' : state === 'onlineFighting' ? (pad ? `${startName()}  LEAVE` : 'F1  MOVES     ESC  LEAVE') : pad ? `${startName()}  PAUSE` : 'F1  MOVES     ESC  PAUSE',
     };
   }
   /** after the HUD drew: the START button follows the title card's prompt slot, and fades the same way */
@@ -799,7 +868,7 @@ export function createFlow(ctx) {
     get on() { return state !== 'off'; },
     /** the sim's demo audio gate: the demo runs behind these states */
     get demo() { return DEMO.has(state) || state === 'highScores'; },
-    debug: { history, run, sel, go, debugKO, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S },
+    debug: { history, run, sel, go, debugKO, ui, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S },
   };
 }
 
