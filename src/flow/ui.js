@@ -268,8 +268,16 @@ function injectStyle() {
   .fl-card b { display: block; font: 600 1.55cqw/1 'Teko', sans-serif; letter-spacing: 0.05em; color: #fff; text-shadow: 0 0 0.6cqw var(--c); white-space: nowrap; }
   .fl-card b.fl-long { font-size: 1.32cqw; line-height: 0.88; letter-spacing: 0.02em; white-space: normal; text-align: center; padding: 0 0.2cqw; }
   .fl-cname.fl-long { font-size: 2.45cqw; }
-  .fl-card.fl-focus { background: color-mix(in srgb, var(--c) 20%, rgba(14,4,30,0.72)); color: #fff; box-shadow: 0 0 1.4cqw var(--c), inset 0 0 1.2cqw color-mix(in srgb, var(--c) 40%, transparent); }
+  /* the cursor has to win at a glance: the other cards sit back (a faint border in their color, no
+     glow, the rig a little dim), the focused one lifts, glows and fills in its color */
+  .fl-card { border-color: color-mix(in srgb, var(--c) 30%, transparent); background: rgba(10,3,22,0.55); box-shadow: none; transition: transform 90ms ease-out, background 80ms, border-color 80ms; }
+  #flow .fl-card canvas { opacity: 0.72; transition: opacity 90ms; }
+  .fl-card b { color: rgba(255,244,253,0.8); text-shadow: 0 0 0.5cqw color-mix(in srgb, var(--c) 60%, transparent); }
+  .fl-card.fl-focus { z-index: 1; transform: translateY(-0.7cqh) scale(1.06); border-color: var(--c); background: color-mix(in srgb, var(--c) 26%, rgba(14,4,30,0.72)); color: #fff;
+    box-shadow: 0 0 0 1px color-mix(in srgb, #fff 55%, var(--c)), 0 0 1.6cqw var(--c), 0 0 3.4cqw color-mix(in srgb, var(--c) 55%, transparent), inset 0 0 1.4cqw color-mix(in srgb, var(--c) 50%, transparent); }
+  #flow .fl-card.fl-focus canvas { opacity: 1; }
   .fl-card.fl-focus b { color: #fff; text-shadow: 0 0 0.6cqw var(--c), 0 0 1.4cqw var(--c); }
+  .fl-card.fl-focus.fl-hit { transform: translateY(-0.7cqh) scale(1.01); }
   .fl-card.fl-taken { opacity: 0.55; }
   .fl-detail { --c: var(--cyan); width: 42cqw; height: 63.5cqh; display: flex; gap: 1.2cqw; padding: 1.2cqw 1.4cqw; border: 2px solid var(--c); background: rgba(14,4,30,0.7);
     box-shadow: 0 0 1.4cqw color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 2cqw color-mix(in srgb, var(--c) 18%, transparent); }
@@ -305,7 +313,12 @@ function injectStyle() {
   /* online, between matches: the post-match screen and the pick screen's rival status */
   .fl-card { position: relative; }
   .fl-card .fl-tag { position: absolute; top: 0.5cqh; right: 0.4cqw; font: normal 400 1.2cqw/1 'Bungee', sans-serif; padding: 0.35cqw 0.5cqw 0.2cqw; color: var(--deep); background: var(--amber); box-shadow: 0 0 0.8cqw var(--amber); letter-spacing: 0.04em; }
-  .fl-card.fl-rival { border-style: dashed; }
+  /* the rival's cursor: an amber dashed frame inside the border (lime when ready), so it reads on a
+     dim card and still shows when both cursors are on the same card; yours is tagged YOU */
+  .fl-card.fl-rival { outline: 2px dashed var(--amber); outline-offset: -0.55cqw; }
+  .fl-card.fl-rivalready { outline-color: #c8ff3a; }
+  .fl-netpick .fl-card.fl-focus .fl-tag { top: 3.4cqh; }   /* both cursors on one card: YOU over RIVAL */
+  .fl-netpick .fl-card.fl-focus::before { content: 'YOU'; position: absolute; top: 0.5cqh; left: 0.4cqw; font: normal 400 1.2cqw/1 'Bungee', sans-serif; padding: 0.35cqw 0.5cqw 0.2cqw; color: var(--deep); background: var(--pink); box-shadow: 0 0 0.8cqw var(--pink); letter-spacing: 0.04em; }
   .fl-card.fl-rivalready .fl-tag { background: #c8ff3a; box-shadow: 0 0 0.8cqw #c8ff3a; }
   /* the online pick screen has a status line more than the plain select: the cards and sheet give up the room */
   .fl-netpick { gap: 1.1cqh; padding-top: 2.4cqh; }
