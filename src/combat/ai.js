@@ -77,7 +77,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   let pickedString = null;
   // knocked down: when to get up and how (stand, roll, a wake-up strike, or lie there until the clock stands
   // him up), picked once per knockdown; a strike coming at the body or a whiff over it can change the plan
-  let downFor = -1, downSeen = -1;
+  let downFor = -1, downSeen = -1, stompGuard = -1;
   function wakePlan(me, opp) {
     const hip = me.rig.joints.hip.x, away = -(Math.sign(opp.x - hip) || 1), near = Math.abs(opp.x - hip) < 175 && opp.grounded;
     const k = rng(), wait = 10 + irnd(show ? 60 : 12 + Math.round(70 * difficulty));
@@ -309,8 +309,13 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // or hover with movement, and a meaty timed so the active frames arrive as he stands
       const floored = opp.state === 'down';
       if (dist > 100) return [move(toward, closer(90), true)];
-      // stomp: the body lies past its root, so close to within 40px of the root first
-      if (floored && !opp.otgHit && chance(0.5 + 0.4 * difficulty)) return dist < 40 ? [attack('sweep')] : [move(toward, closer(36), true), attack('sweep')];
+      // a ground hit, once per knockdown: the stomp (real damage, but a body that rises through it punishes the
+      // whiff) when it reaches, now and then the old low poke at the feet; otherwise wait over him, guard up
+      if (floored && !opp.otgHit) {
+        if (sim.stompOK && sim.stompOK(me) && me.stamina > 30 && chance(0.3 + 0.35 * difficulty)) return [attack('stomp')];
+        if (chance(0.25)) return dist < 40 ? [attack('sweep')] : [move(toward, closer(36), true), attack('sweep')];
+        if (chance(0.25 + 0.4 * difficulty)) return [blockFor(10 + irnd(10))];
+      }
       const mid = (sim.bounds.x0 + sim.bounds.x1) / 2;
       const bodyBetweenMeAndCenter = Math.sign(mid - me.x) === toward && Math.abs(mid - me.x) > 160;
       if (floored && bodyBetweenMeAndCenter && chance(0.5)) return [move(toward, (m, o) => (o.x - m.x) * toward < -46), move(0, 4)];   // step over it
@@ -525,6 +530,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       lastCounter = opp.attackId;
       if (me.stamina > 26 && chance(show ? 0.2 : 0.55 + 0.6 * difficulty)) { queue = [attack(dist < reach('jab') + 45 ? 'jab' : 'cross')]; act = null; }
       else if (show && chance(0.6)) { queue = [blockFor(14)]; act = null; }   // respect his advantage
+    }
+    // my stomp landed: he's pinned for about my recovery, then a wake-up strike can come: guard it
+    if (me.state === 'attack' && me.move === 'stomp' && me.hitConfirmed && me.attackId !== stompGuard) {
+      stompGuard = me.attackId;
+      if (chance(show ? 0.9 : 0.2 + 0.6 * difficulty)) { queue = [blockFor(40 + irnd(20))]; act = null; }
     }
     // knocked down: the getup plan, once per knockdown (sim.js 'down')
     if (me.state === 'down' && me.touchStep !== downFor) { downFor = me.touchStep; queue = wakePlan(me, opp); act = null; }

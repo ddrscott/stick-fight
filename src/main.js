@@ -285,6 +285,15 @@ const PHASES = {
     { name: 'WAKE KICK blocked standing: the rise is punished', p1: [[10, D('rk')]], p1f: over(punishRise({ back: true })), p2: wakeAt({ lk: true }), dur: 300 },
     { name: 'WAKE SWEEP blocked down-back: the rise is punished', p1: [[10, D('rk')]], p1f: over(punishRise({ back: true, down: true })), p2: wakeAt({ rk: true }), dur: 300 },
   ],
+  // stomp-test: the same knockdown, then P1 stomps (d+4) over the body; P2 stays down, rises through it, or waits it out
+  stomp: [
+    { name: 'STOMP d+4 on a body that stays down: 9 damage, pinned under the heel', p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), dur: 320 },
+    { name: 'a greedy STOMP: the wake kick rises through its startup and punishes it (counter)', p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: wakeAt({ lk: true }, 121), dur: 300 },
+    { name: 'STOMP whiffs on a roll: open for the whole recovery', p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: wakeAt({ dx: 1 }, 118), dur: 300 },
+    { name: 'STOMP lands, he wakes kicking at once: the stomper guards it', p1: [[10, D('rk')], [124, D('rk')]], p1f: over((me, o, t) => (t > 160 ? { back: true } : {})), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
+    { name: "STOMP lands, the stomper doesn't guard: the wake kick punishes", p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
+    { name: 'one ground hit per knockdown: a second stomp passes over him', p1: [[10, D('rk')], [124, D('rk')], [210, D('rk')]], p1f: over(), dur: 340 },
+  ],
   mixup: [
     { name: 'high vs crouch (ducks)', p2: { down: true }, p1: [[20, B('lp')]], dur: 90 },
     { name: 'low vs standing guard (hits)', p2: { back: true }, at: () => [578, 650], p1: [[20, D('lk')]], dur: 100 },
@@ -578,6 +587,7 @@ const scenes = {
   // Two aggressive AIs on short health: each round ends in a few hits, so a full
   // best-of-3 and its body pile fit in a capture.
   'getup-test'(o) { timeline(PHASES.getup, o); },
+  'stomp-test'(o) { timeline(PHASES.stomp, o); },
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
   'stamina-test'(o) { timeline(PHASES.stamina, o); },
   'string-ender-test'(o) { timeline(PHASES.strings, o); },

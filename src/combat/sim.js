@@ -231,6 +231,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
+      downPin: 0,  // steps a stomped body is held on the floor
       wakeUp: 0,   // a wake-up strike from the floor: 1 lying, 2 rising (sim.js isWake)
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
       shockT: 0, shockUsed: false, rootT: 0,   // character hooks: shock (extra stun), root (no walk or jump)
@@ -307,7 +308,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
 u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
-    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0;
+    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0;
     u.shockT = 0; u.shockUsed = false; u.rootT = 0;
     u.regenMul = 1; u.regenEnd = -1; u.regenLen = 0; u.regenTag = ''; u.speedMul = 1; u.speedEnd = -1; u.speedLen = 0; u.speedTag = '';
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
@@ -514,7 +515,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // touchdown: the body is on the floor (a hit, a throw, a trip, a floor break, a stair tumble), and stays
   // there until its player picks a getup option or DOWN_MAX runs out
   function toDown(u) {
-    u.state = 'down'; u.downTimer = DOWN_MAX; u.touchStep = sim.stepCount; floored(u);
+    u.state = 'down'; u.downTimer = DOWN_MAX; u.touchStep = sim.stepCount; u.downPin = 0; floored(u);
     u.buffer = null; u.bufferKeys = null; u.queued = null;   // a press made in the air isn't a getup choice
   }
   const wallMode = (u) => (u.splatPending ? 'splat' : u.wallBounce ? 'bounce' : 'stop');
@@ -771,6 +772,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const sm = inStance(u) && FRAME_DATA[u.move].stance.moves[BTN_NUM[b]];
     if (sm && canUse(u.char, sm)) return { attack: sm, keys: null, name: '' };
     const tok = (inp.down ? 'd' : '') + BTN_NUM[b];
+    if (inp.down && (b === 'lk' || b === 'rk') && stompOK(u)) return { attack: 'stomp', keys: null, name: '' };   // over a body on the floor
     if (u.state === 'jump' || !u.grounded) return { attack: resolveButton(b, inp, u, sim.stepCount), keys: null, name: '' };
     if (seqLive(u)) {
       const cand = [...u.seq, tok], m = matchStrings(cand, u.char.strings);
@@ -783,6 +785,14 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     return { attack: resolveButton(b, inp, u, sim.stepCount), keys: [tok], name: '' };
   }
   sim.resolvePress = resolvePress;
+  // down + a kick is the stomp when the opponent lies on the floor close enough for its step to reach
+  const STOMP_RANGE = 175;   // px from his root to the body's hip: a standing body stops ~150 from it on the feet side
+  function stompOK(u) {
+    const o = oppOf(u);
+    return !!o && u.grounded && !u.rag && (o.state === 'down' || o.state === 'roll' || o.state === 'getup' || wakeLying(o)) && !o.rag &&
+      (o.floor || 0) === (u.floor || 0) && Math.abs(bodyX(o) - u.x) <= STOMP_RANGE;
+  }
+  sim.stompOK = stompOK;
 
   // Which buffered strike may cancel the one that just connected. A button press cancels only as
   // the next hit of a string in the table (strings.js), so mashing one button gives that button's
@@ -1162,6 +1172,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         // lying there until the player picks: a fresh left or right rolls (at once), up stands in place, a
         // button is a wake-up strike (both read once the squash is over); nothing for DOWN_MAX and he stands
         u.vx *= 0.75;
+        if (u.downPin > 0) { u.downPin--; break; }   // pinned under a stomp's heel: nothing yet (a press made now still buffers)
         if (e.dxPress && !u.rolled) { startRoll(u, e.dxPress); break; }   // a fresh press, not a held direction
         const lain = DOWN_MAX - u.downTimer--;
         if (lain >= SQUASH_STEPS) {
@@ -1465,7 +1476,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // it he stood over its legs, and it got up behind him
     {
       const o = oppOf(u);
-      if (o && u.grounded && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx) {
+      const stomping = u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].otg;   // the stomp's step goes in over the legs
+      if (o && u.grounded && !stomping && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx) {
         const dir = Math.sign(u.vx), near = dir > 0 ? Math.min(o.x, bodyX(o)) : Math.max(o.x, bodyX(o));
         const room = (near - u.x) * dir - 24;
         if ((near - u.x) * dir > -40 && room < u.vx * dir * DT) { u.vx = Math.max(0, room) / DT * dir; if (room <= 0) { u.vx = 0; u.chase = false; } }
@@ -1657,7 +1669,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       return { grab: true };
     }
     const floored = def.state === 'down';
-    if (floored && (!OTG_MOVES.has(att.move) || def.otgHit)) return null;   // one ground hit per knockdown, low moves only
+    if (floored && (!(OTG_MOVES.has(att.move) || fd.otg) || def.otgHit)) return null;   // one ground hit per knockdown, low moves and the stomp only
     // a character's hop or flying knee: lows pass under it from the press until its recovery
     if (fd.height === 'low' && def.state === 'attack' && def.phase !== 'recovery' && FRAME_DATA[def.move] && FRAME_DATA[def.move].lowInvuln) return null;
     // a high passes over a croucher (logged once per strike for measurement)
@@ -1827,10 +1839,21 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       return;
     }
     if (def.state === 'down') {
-      // on-the-ground hit: a flinch, not a relaunch; the getup timer keeps running after the freeze
-      def.otgHit = true; def.health = Math.max(1, def.health - OTG.damage); def.flash = FLASH_STEPS;
-      def.bounce = OTG.bounce; att.otgConfirm = true;
-      att.hitstop = def.hitstop = f60(OTG.hitstop);
+      // on-the-ground hit: a flinch, not a relaunch; the getup timer keeps running after the freeze. A low's is
+      // a 3-damage poke the striker can cancel into a meaty; the stomp (frame data otg) does real damage, counted
+      // in the combo it ends (decay and soft cap), pins the body under the heel, and can't be cancelled
+      def.otgHit = true; def.flash = FLASH_STEPS; def.bounce = OTG.bounce;
+      if (fd.otg) {
+        const chained = def.comboBy === att.id;
+        def.combo = chained ? (def.combo || 1) + 1 : 1; if (!chained) def.comboDmg = 0;
+        def.comboBy = att.id; def.lastHitAt = sim.stepCount; sim.combo = { count: def.combo, by: att.id, on: def.id };
+        def.health = Math.max(1, def.health - comboDamage(def, fd.damage * att.char.stats.damage * comboScale(COMBO_DMG, def.combo)));
+        def.downPin = f60(fd.pin || 0); if (def.downTimer < def.downPin + 2) def.downTimer = def.downPin + 2;
+        att.hitstop = def.hitstop = f60(fd.hitstop); att.glide = null; att.vx = 0;
+      } else {
+        def.health = Math.max(1, def.health - OTG.damage); att.otgConfirm = true;
+        att.hitstop = def.hitstop = f60(OTG.hitstop);
+      }
       att.releaseEv = { type: 'release', x: pt.x, y: pt.y, dir, strength: 0.4, ko: false };
       note({ type: 'hit', move, att: att.id, def: def.id, otg: true });
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.4, move, limb: fd.limb, flashR: 24, ko: false, knockdown: true, otg: true, attacker: att, defender: def });
