@@ -10,7 +10,11 @@
 //   a.reflectY, a.gloss              the wet floor plane for the compositor's mirror: { y, depth, x0, x1, gaps }
 //   a.walls                          { left, right } x of the wall faces at the main floor's ends
 //   floors[i].fightBand / .walls / .spawns, a.spawnsByFloor[i]   per-floor fight data
-//   a.stairwell                      { x0, x1, y, rail: { x0, x1, h }, toFloor } opening in floors[0]
+//   a.stairwells                     [{ x0, x1, y, rail: { x0, x1, h }, toFloor, flight }] openings in floors[0]
+//                                    (a.stairwell is the first, for older callers)
+//   a.stairs                         [{ head, foot, dir, slope, run, rise, back0, top, bottom, solid }] the
+//                                    walkable flights, one per stairwell (src/combat/sim.js walks them)
+//   a.stairY(k, x), a.treadY(k, x)   the walking line and the tread top under x on flight k
 //   a.treads, a.stairRail            stair step tops and handrails, collision for falling bodies
 //   a.doors[i]                       [{ x, y, side, kind }] where goons enter floor i
 //   a.openDoor(f, j, s), a.doorOpen(f, j)   swing a door open for s seconds; 0..1 openness
@@ -251,7 +255,7 @@ export function createArena(name = 'building') {
 
   const g = def.geometry;
   const floors = g.floors.map((f) => ({ ...f, fightBand: f.fightBand && { ...f.fightBand }, walls: f.walls && { ...f.walls }, spawns: f.spawns && f.spawns.map((p) => ({ ...p })) }));
-  const stairs = g.stairs.map((s) => ({ ...s }));
+  const stairs = g.stairs.map((s) => ({ ...s, solid: (s.solid || []).map((q) => ({ ...q })) }));
   const lights = g.lights.map((l) => ({ ...l, color: [...l.color] }));
   const spawns = g.spawns.map((s) => ({ ...s }));
 
@@ -263,6 +267,14 @@ export function createArena(name = 'building') {
     walls: floors[0].walls ? { ...floors[0].walls } : { left: floors[0].x0, right: floors[0].x1 },
     spawnsByFloor: floors.map((f, i) => (f.spawns ? f.spawns.map((p) => ({ ...p })) : i === 0 ? spawns.map((p) => ({ ...p })) : [])),
     stairwell: g.stairwell ? { ...g.stairwell, rail: { ...g.stairwell.rail } } : null,
+    stairwells: (g.stairwells || (g.stairwell ? [g.stairwell] : [])).map((w) => ({ ...w, rail: { ...w.rail } })),
+    // the walking line on flight k at x: through the treads' middles, clamped to the two floors
+    stairY(k, x) { const st = stairs[k]; return Math.max(st.top, Math.min(st.bottom, st.top + st.slope * (x - st.head) * st.dir)); },
+    // the top of the tread under x on flight k (a foot stands on it)
+    treadY(k, x) {
+      const st = stairs[k], i = Math.floor((x - st.back0) * st.dir / st.run);
+      return i < 0 ? st.top : i >= (st.bottom - st.top) / st.rise ? st.bottom : st.top + i * st.rise;
+    },
     treads: (g.treads || []).map((t) => ({ ...t })),
     stairRail: (g.stairRail || []).map((t) => ({ ...t })),
     doors: (g.doors || []).map((list) => list.map((d) => ({ ...d }))),
@@ -315,19 +327,32 @@ export function createArena(name = 'building') {
     // the main floor can pile up on the lower one.
     addBody(snap = {}) {
       const dir = snap.facing === -1 || snap.facing === 1 ? -snap.facing : (arena.bodies.length % 2 ? -1 : 1);
+      // a body that came to rest on a flight of stairs lies there as it fell, along the steps (a lying
+      // pose is flat); it still lingers and fades like the rest
+      if (typeof snap.stair === 'number' && snap.stair >= 0 && stairs[snap.stair] && hasAllJoints(snap.joints)) {
+        const idx = arena.bodies.length;
+        const color = pickBodyColor(snap.color || '#333', arena.liveColors, idx, arena.bodies.slice(-4).map((b) => b.color));
+        const drawColor = capLuma(desaturate(color, 0.55));
+        const j = copyJoints(snap.joints);
+        const body = { x: snap.x, y: snap.y, dir, floor: null, stair: snap.stair, color, drawColor, rim: lighten(drawColor, 0.22),
+          radius: typeof snap.radius === 'number' ? snap.radius : 11, lineWidth: typeof snap.lineWidth === 'number' ? snap.lineWidth : 5,
+          from: j, to: copyJoints(j), t: 1, age: 0, joints: copyJoints(j) };
+        arena.bodies.push(body);
+        return body;
+      }
       const sy = typeof snap.y === 'number' ? snap.y : floors[0].y;
       let floor = floors[0];
       for (const f of floors) if (Math.abs(f.y - sy) < Math.abs(floor.y - sy)) floor = f;
-      // bodies lie inside the floor's fight band (on the lower floor, left of the stair)
-      const band = floor.fightBand || { x0: floor.x0 + 70, x1: floor.x1 - 70 };
+      // bodies lie inside the floor's fight band (on the lower floor, between the stair feet)
+      const band = floor.room || floor.fightBand || { x0: floor.x0 + 70, x1: floor.x1 - 70 };
       const margin = floor.fightBand ? 40 : 0;
       let x = Math.max(band.x0 + margin, Math.min(band.x1 - margin, typeof snap.x === 'number' ? snap.x : (band.x0 + band.x1) / 2));
       const m = measure(snap.joints);
-      // Nothing rests over the stairwell's opening (the fighters' walking line runs across it, the
-      // floor doesn't): a body that would lie over the hole slides off to the nearer solid edge
+      // Nothing rests over a stairwell's opening (the fighters' walking line runs across it, the
+      // floor doesn't): a body that would lie over a hole slides off to the nearer solid edge
       // (the settle tween carries it there), or the other edge when the nearer one is out of band.
-      const sw = arena.stairwell;
-      if (sw && Math.abs(floor.y - sw.y) < 1) {
+      for (const sw of arena.stairwells) {
+        if (Math.abs(floor.y - sw.y) >= 1) continue;
         let a = Infinity, b = -Infinity;
         for (const v of [0, 1]) { const p = lyingPose(x, floor.y, dir, m, v); for (const k in p) { a = Math.min(a, p[k].x); b = Math.max(b, p[k].x); } }
         a -= 12; b += 12;   // the head's and limbs' thickness

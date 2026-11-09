@@ -32,6 +32,7 @@
 import { EMPTY_INPUT } from './input.js';
 import { matchStrings } from './strings.js';
 import { FRAME_DATA, AIR_TECH } from './frameData.js';
+import { stairRoute } from './stairNav.js';
 
 const DOWN_STATES = new Set(['knockdown', 'down', 'getup', 'ko']);
 const STICK_DWELL = 16;   // steps (120Hz) the CPU's stick direction holds before it may change: ~133 ms, a person's reversal
@@ -132,10 +133,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     return null;
   }
-  // the stairwell (v3): a live opening on this floor, and where it is relative to the two of us
-  function well(me, sim) {
-    const sw = sim.stairwell;
-    if (!sw || sw.toFloor == null || sim.floorBroken || sim.horde || (me.floor || 0) !== 0) return null;
+  // the stairwell (v3): a live opening on this floor, and where it is relative to the two of us; of the two
+  // openings, the one nearest `at` (him, to send him over its rail; me, not to back into it)
+  function well(me, sim, at = me) {
+    const sw = sim.wellNear ? sim.wellNear(at.x) : sim.stairwell;
+    if (!sw || sw.toFloor == null || sim.floorBroken || sim.horde || (me.floor || 0) !== 0 || (sim.onStair && sim.onStair(me))) return null;
     if (show && (sim.roundClock || 0) < 14) return null;   // the demo saves the floor break for later in the round
     return { sw, cx: (sw.x0 + sw.x1) / 2 };
   }
@@ -155,7 +157,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // an ender only when the rest of the string fits in the bar (the last point faints)
       if (last.ender) w += me.stamina > restCost(st, me.seq.length) + 4 && !me.faint ? 1.2 * difficulty : -3;
       if (last.splat && wallNear) w += 2;
-      if (wellBeyond(well(me, sim), me, opp) && (last.juggle || last.splat || (last.kb && last.kb.x >= 400))) w += 2.5;
+      if (wellBeyond(well(me, sim, opp), me, opp) && (last.juggle || last.splat || (last.kb && last.kb.x >= 400))) w += 2.5;
       if (blocked && last.ender) w -= 1.5;   // a blocked string ends early more often
       return w;
     };
@@ -351,7 +353,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // spent: stay out and let the meter come back (it refills in about two seconds)
     if (me.stamina < (show ? 28 : 30) || me.faint > 0) return dist < 200 && !cornered && !wellBehindMe(well(me, sim), me, opp) ? [move(-toward, 10)] : [blockFor(10)];
     // the stairwell: send him over the railing when he's by it; never back up into it myself
-    const w = well(me, sim);
+    const w = well(me, sim, opp);
     if (wellBeyond(w, me, opp) && me.stamina > 40 && chance(0.35 + 0.45 * difficulty + (grap ? 0.3 : 0))) {
       if (dist < 95) return [move(toward, closer(78)), attack('throw')];   // a throw toward the opening goes over
       if (dist > 140 && dist < 320) return [move(toward, (m, o) => Math.abs(o.x - m.x) < 150, true), { ...move(toward, 2, true), attack: 'cometCross' }];
@@ -359,7 +361,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (dist < r('jab') + 10) return [press('1')];   // into 1,2,3,4 Neon Tornado or 2,1,4 when it lands
       return [move(toward, closer(r('jab')), true), press('2')];
     }
-    if (wellBehindMe(w, me, opp) && chance(0.6)) return dist < r('jab') + 10 ? [attack(pick(['jab', 'lowKick', 'throw']))] : [move(toward, 6, true)];
+    if (wellBehindMe(well(me, sim), me, opp) && chance(0.6)) return dist < r('jab') + 10 ? [attack(pick(['jab', 'lowKick', 'throw']))] : [move(toward, 6, true)];
     // the wall is behind him: go for the wall payoffs
     const wallBehind = (toward > 0 ? sim.bounds.x1 - opp.x : opp.x - sim.bounds.x0) < 220;
     if (wallBehind && me.stamina > 45 && chance(0.35 + 0.4 * difficulty)) {
@@ -414,6 +416,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     const toward = Math.sign(opp.x - me.x) || me.facing;
     const dist = Math.abs(opp.x - me.x);
+    // he's on another floor, or up or down the stairs out of reach: take the stairs to him (stairNav.js)
+    const nav = stairRoute(me, opp, sim);
+    if (nav) { queue = []; act = null; return nav; }
     if (me.attackId !== seenAttackId) { seenAttackId = me.attackId; lastAttackStep = step; }
     if (me.state === 'hitstun' && opp.attackId !== lastHitTakenId) { lastHitTakenId = opp.attackId; myRun = 0; }
 

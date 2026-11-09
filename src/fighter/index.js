@@ -1074,6 +1074,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     airborne: false,       // true while the point simulation drives the body
     walls: null,           // [leftX, rightX] world walls for the point simulation (combat sets it)
     treads: null,          // [{x0, x1, y}] one-way surfaces from above (stair treads, floor slabs) for falling bodies
+    slopes: null,          // [{x0, x1, y0, y1}] solid ground lines over the floor plane (a flight of stairs): nothing goes below them
     floorY: null,          // ground plane for the point simulation when it differs from f.y (a lower floor)
     play, update, draw, react, launch, wallSplat, groundBounce, reset,
   };
@@ -1437,7 +1438,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     rag = null; f.airborne = false; fadeFrom = null; fadeT = 0; reactL = null; vel = null; lastBase = null;
     for (const k in springs) delete springs[k];
     f.pose = clonePose(STANCE); move = null; limbHot = false; strikeTimer = 0;
-    if (opt.full) { airTrack = null; landEase = null; lastHipLock = null; strikeDir = null; prevJoints = null; keys = []; ki = 0; kt = 0; shifted = false; dropped = false; f.walls = null; f.treads = null; f.floorY = null; }
+    if (opt.full) { airTrack = null; landEase = null; lastHipLock = null; strikeDir = null; prevJoints = null; keys = []; ki = 0; kt = 0; shifted = false; dropped = false; f.walls = null; f.treads = null; f.slopes = null; f.floorY = null; }
     play('idle'); update(0); f.events.length = 0;
   }
   function wallSplat(side) {
@@ -1493,7 +1494,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
         });
         const ground = f.floorY != null ? f.floorY : f.y;
         for (const k in P) {
-          const q = P[k], fl = ground - q.r;
+          const q = P[k], fl = groundAt(q.x, ground) - q.r;
           if (f.treads) for (let ti = 0; ti < f.treads.length; ti++) {
             const t = f.treads[ti];
             if (q.x < t.x0 || q.x > t.x1 || q.py + q.r > t.y + 0.5 || q.y + q.r <= t.y) continue;
@@ -1528,7 +1529,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const ground = f.floorY != null ? f.floorY : f.y;
     let surf = -Infinity;
     for (const k in P) { J[k] = { x: P[k].x, y: P[k].y }; speed = Math.max(speed, dm.hypot(P[k].x - P[k].px, P[k].y - P[k].py) / h); surf = Math.max(surf, P[k].y + P[k].r); }
-    for (const k in P) if (P[k].y + P[k].r >= surf - 1.5) onFloor++;
+    for (const k in P) if (P[k].y + P[k].r >= surf - 1.5 || (f.slopes && P[k].y + P[k].r >= groundAt(P[k].x, ground) - 1.5)) onFloor++;   // on a flight, touching the steps under it
     rag.surf = surf;
     prevJoints = f.joints; f.joints = J;
     f.x = J.hip.x;
@@ -1545,6 +1546,18 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       rag.rest = 0;
     }
     if (rag.rest > 0.3) endRag();
+  }
+  // the ground under x for the point simulation: the floor plane, or a slope over it (a flight of stairs)
+  function groundAt(x, ground) {
+    if (!f.slopes) return ground;
+    let g = ground;
+    for (let i = 0; i < f.slopes.length; i++) {
+      const s2 = f.slopes[i];
+      if (x < s2.x0 || x > s2.x1) continue;
+      const y = s2.x1 > s2.x0 ? s2.y0 + (s2.y1 - s2.y0) * (x - s2.x0) / (s2.x1 - s2.x0) : Math.min(s2.y0, s2.y1);
+      if (y < g) g = y;
+    }
+    return g;
   }
   function endRag() {
     const snap = f.joints;
@@ -1709,7 +1722,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
   }
   function getState(into) {
     const s = into || {};
-    s.x = f.x; s.y = f.y; s.facing = f.facing; s.airborne = f.airborne; s.walls = f.walls; s.treads = f.treads; s.floorY = f.floorY;
+    s.x = f.x; s.y = f.y; s.facing = f.facing; s.airborne = f.airborne; s.walls = f.walls; s.treads = f.treads; s.slopes = f.slopes; s.floorY = f.floorY;
     s.pose = f.pose;
     s.joints = copyMap(f.joints, s.joints);
     s.events = f.events.length ? f.events.slice() : null;
@@ -1731,7 +1744,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     return s;
   }
   function setState(s) {
-    f.x = s.x; f.y = s.y; f.facing = s.facing; f.airborne = s.airborne; f.walls = s.walls; f.treads = s.treads; f.floorY = s.floorY;
+    f.x = s.x; f.y = s.y; f.facing = s.facing; f.airborne = s.airborne; f.walls = s.walls; f.treads = s.treads; f.slopes = s.slopes || null; f.floorY = s.floorY;
     f.pose = s.pose;
     f.joints = copyMap(s.joints, {});
     f.events.length = 0; if (s.events) for (const e of s.events) f.events.push(e);

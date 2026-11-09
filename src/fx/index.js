@@ -38,7 +38,7 @@
 //   fx.tune.hiLift   shoulder lift on lit surfaces in the upper range (not emissive cores).
 //   fx.reflect.depth the wet floor plane's depth under reflect.y: the mirror is gone by then.
 //   fx.reflect.x0/x1 world x the mirror spans (the floor between the walls), fx.reflect.gaps [{x0,x1}] world x
-//       where it doesn't (a hole in the floor: the stairwell). Only the first gap is used.
+//       where it doesn't (a hole in the floor: a stairwell). The first two gaps are used.
 //   Callers must not add camera.shakeX/Y into their own transforms when options.shake is on.
 
 import { getContext, program, texture, framebuffer, uploadCanvas, quadBuffer } from './gl.js';
@@ -595,7 +595,10 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
         gl.uniform1f(P.u.u_farLight, fx.far.light);
         gl.uniform3fv(P.u.u_farHaze, fx.far.haze);
         // Parallax: the far plane moves less than the camera.
-        gl.uniform2f(P.u.u_farOffset, ((cam.x - W / 2) * fx.far.parallax) / W, -((cam.y - H / 2) * fx.far.parallax) / H);
+        // fx.far.base: how much of that the caller already drew the far layer shifted by (a wide stage redraws
+        // its skyline in steps rather than needing a canvas as wide as the whole parallax range)
+        const fbase = fx.far.base || { x: 0, y: 0 };
+        gl.uniform2f(P.u.u_farOffset, ((cam.x - W / 2) * fx.far.parallax - fbase.x) / W, -((cam.y - H / 2) * fx.far.parallax - fbase.y) / H);
         gl.uniform3fv(P.u.u_horizon, fx.sky.horizon);
         gl.uniform1f(P.u.u_horizonY, toScreen(0, fx.sky.horizonY)[1]);
         gl.uniform1f(P.u.u_horizonW, fx.sky.horizonWidth * z);
@@ -730,10 +733,11 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
         gl.uniform1f(P.u.u_reflRipple, R && R.ripple !== undefined ? R.ripple : 1);
         gl.uniform1f(P.u.u_reflDepth, (R && R.depth ? R.depth : 80) * z);
         {
-          const g = R && R.gaps && R.gaps[0];
+          const g = R && R.gaps && R.gaps[0], g2 = R && R.gaps && R.gaps[1];
           const sx = (x) => toScreen(x, 0)[0];
           gl.uniform4f(P.u.u_reflMask, g ? sx(g.x0) : -1e5, g ? sx(g.x1) : -1e5,
             R && typeof R.x0 === 'number' ? sx(R.x0) : -1e5, R && typeof R.x1 === 'number' ? sx(R.x1) : 1e5);
+          if (P.u.u_reflGap2) gl.uniform2f(P.u.u_reflGap2, g2 ? sx(g2.x0) : -1e5, g2 ? sx(g2.x1) : -1e5);
         }
         gl.uniform1f(P.u.u_fgOn, fgOn ? 1 : 0);
         gl.uniform1f(P.u.u_fgOpacity, fx.foreground.opacity);
