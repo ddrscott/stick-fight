@@ -34,6 +34,7 @@ import { matchStrings } from './strings.js';
 import { FRAME_DATA, AIR_TECH } from './frameData.js';
 
 const DOWN_STATES = new Set(['knockdown', 'down', 'getup', 'ko']);
+const STICK_DWELL = 16;   // steps (120Hz) the CPU's stick direction holds before it may change: ~133 ms, a person's reversal
 const HIT_STATES = new Set(['hitstun', 'blockstun']);
 const GETUP_MS = 336;   // the rig's 672ms getup clip at the sim's 2x; a meaty is timed against it
 const GRAV = 2000;      // the sim's gravity, to predict where a launched body lands
@@ -78,6 +79,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // knocked down: when to get up and how (stand, roll, a wake-up strike, or lie there until the clock stands
   // him up), picked once per knockdown; a strike coming at the body or a whiff over it can change the plan
   let downFor = -1, downSeen = -1, stompGuard = -1;
+  // the stick a human hand holds: the direction (and run) last sent and when it last changed (see STICK_DWELL)
+  let stickDx = 0, stickRun = false, stickAt = -999;
   // falling: the air recovery out of a juggle (once per hit, the step to press it), a second jab on the way
   // down after a whiffed air attack (once per jump), an air attack out of the vault's drop (once per vault)
   let techFor = -1, techAt = -1, fallFor = -1, vaultFor = -1;
@@ -333,11 +336,12 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         return press;
       }
       const k = rng();
-      if (dist > 95) return [move(toward, 4), move(0, 4)];
-      if (dist < 50) return [move(-toward, 3), move(0, 4)];
-      if (k < 0.5) return [move(toward, 3), move(-toward, 3)];        // shuffle over him
-      if (k < 0.7) return [move(toward, 2), blockFor(2), move(0, 3)]; // feint
-      return [move(0, 4 + irnd(4))];
+      // human-scale beats: a step is ~20 steps (170 ms), a pause longer (each used to be 2 to 4 steps, a seizure)
+      if (dist > 95) return [move(toward, 18), move(0, 16)];
+      if (dist < 50) return [move(-toward, 18), move(0, 16)];
+      if (k < 0.5) return [move(toward, 20), move(0, 10), move(-toward, 20)];   // shuffle over him
+      if (k < 0.7) return [move(toward, 16), blockFor(12), move(0, 14)];        // feint
+      return [move(0, 20 + irnd(16))];
     }
     const losing = !rush && me.health < 0.3 * (sim.horde ? sim.startHealth : me.maxHealth || sim.startHealth) && me.health < opp.health;
     if (grap && dist < 95 && !opp.crouch && me.stamina > 30 && chance(0.4)) return [move(toward, closer(78)), attack('throw')];
@@ -625,7 +629,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (dist < 260 && chance(0.25 + 0.45 * difficulty)) out[chance(0.5) ? 'rk' : 'lk'] = true;
     }
     if (!act && dist < 140 && (opp.state === 'block' || opp.state === 'blockstun') && /^(idle|walk)$/.test(me.state)) {
-      out.dx = (Math.floor(step / 6) % 2) ? toward : -toward;   // a shuffle between thinks, not a stand
+      out.dx = (Math.floor(step / 30) % 2) ? toward : -toward;   // a shuffle between thinks, not a stand (a quarter second each way)
     }
     if (act) {
       out.dx = typeof act.dx === 'function' ? act.dx(me, opp) : act.dx; out.run = act.run; out.block = act.block; out.jump = act.jump;
@@ -670,6 +674,17 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         if (a) { accFor = me.attackId; if (chance(0.03)) { if (a.tok === 'T') { out.lp = true; out.lk = true; } else out[BTN[a.tok]] = true; out.down = false; } }
       }
     }
+    // A hand on a stick. Plans can be a few steps long, and back-to-back plans used to flip the direction
+    // every 2 to 4 steps (25 ms) over a downed body, which restarted the walk, idle and run clips each time:
+    // the arms seized. Walking, running or standing, the direction holds at least STICK_DWELL steps before
+    // it changes, about as fast as a person reverses a stick. Jumps, rolls, guards and the floor pass through.
+    if (/^(idle|walk|run)$/.test(me.state) && !out.jump && !out.block) {
+      const dx = out.dx || 0, run = !!out.run && dx !== 0;
+      if (dx !== stickDx || run !== stickRun) {
+        if (step - stickAt < STICK_DWELL) { out.dx = stickDx; out.run = stickRun; }
+        else { stickDx = dx; stickRun = run; stickAt = step; }
+      }
+    } else { stickDx = out.dx || 0; stickRun = !!out.run; }
     return out;
   }
   think.debug = () => ({ mixLog, blockedStreak, lastBlockedId, queue: queue.map(a => a.attack || (a.jump ? 'jump' : 'move')), act: act && (act.attack || (act.block ? 'block' : 'move')) });

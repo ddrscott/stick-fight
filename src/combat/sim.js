@@ -761,7 +761,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     }
     // double-tap run
     if (inp.dx && inp.dx !== prev.dx) {
-      if (u.tapTimer > 0 && u.tapDir === inp.dx && !inp.touch) u.running = true;
+      if (u.tapTimer > 0 && u.tapDir === inp.dx && !inp.touch && u.kind !== 'ai') u.running = true;   // a double-tap is a human's run; the CPU asks with run
       u.tapDir = inp.dx; u.tapTimer = 0.25;
     }
     if (!inp.dx) u.running = false;
