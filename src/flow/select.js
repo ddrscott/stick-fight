@@ -71,7 +71,7 @@ export function openSelect(ui, o) {
     for (const [label, f] of STATS) { const i = el('i'); i.style.setProperty('--v', String(clamp01(f(c)))); statsEl.append(el('span', '', label), i); }
     movesEl.textContent = '';
     for (const m of (c.moveList || []).slice(0, 4)) { const p = el('p'); p.append(el('b', '', m.name), el('em', '', m.input), el('small', '', m.note || '')); movesEl.appendChild(p); }
-    big = rigView(bigCanvas, c, 2.05); bigChar = c; bigT = 0; showing = false;
+    big = rigView(bigCanvas, c, 1.9); bigChar = c; bigT = 0; showing = false;
   }
 
   ui.show(`fl-select ${o.cls || ''}`, (root) => {
@@ -83,15 +83,15 @@ export function openSelect(ui, o) {
     roster.forEach((c) => {
       const b = button('', () => o.onPick(c.id), 'fl-card');
       b.el.style.setProperty('--c', c.color);
-      const cv = document.createElement('canvas'); cv.width = 226; cv.height = 154;   // the card's shape, so the rig isn't stretched
-      b.el.append(cv, el('b', c.name.length > 11 ? 'fl-long' : '', c.name));   // WINDOW WASHER doesn't fit at the card's size
+      const cv = document.createElement('canvas'); cv.width = 160; cv.height = 200;   // the card's shape (6 columns of tall cards, 18 fit), so the rig isn't stretched
+      b.el.append(cv, el('b', c.name.length > 9 ? 'fl-long' : '', c.name));   // a long name (WINDOW WASHER) goes smaller and may take two lines
       grid.appendChild(b.el);
       cards.set(c.id, b.el);
-      views.push(rigView(cv, c, 0.92));
+      views.push(rigView(cv, c, 1.08));
       items.push({ ...b, focusFirst: true, char: c });
     });
     detail = el('div', 'fl-detail');
-    bigCanvas = document.createElement('canvas'); bigCanvas.width = 250; bigCanvas.height = 540; bigCanvas.className = 'fl-big';
+    bigCanvas = document.createElement('canvas'); bigCanvas.width = 210; bigCanvas.height = 540; bigCanvas.className = 'fl-big';
     const info = el('div', 'fl-info');
     nameEl = el('h1', 'fl-cname'); tagEl = el('div', 'fl-tagline'); statsEl = el('div', 'fl-stats'); movesEl = el('div', 'fl-moves');
     info.append(nameEl, tagEl, statsEl, movesEl);

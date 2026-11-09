@@ -960,6 +960,7 @@ function lerpPose(a, b, t) {
   const o = {};
   for (const k of SCALARS) o[k] = lerp(a[k], b[k], t);
   for (const k of LIMBS) o[k] = [lerp(a[k][0], b[k][0], t), lerp(a[k][1], b[k][1], t)];
+  if (a.ext || b.ext) o.ext = lerp(a.ext || 0, b.ext || 0, t);   // ext: px a held object reaches past the striking hand (hitboxes.js; a pose without it has none)
   return o;
 }
 const clonePose = p => lerpPose(p, p, 0);
@@ -1559,7 +1560,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     ctx.arc(J.head.x, J.head.y, R.headR * s, 0, Math.PI * 2);
     ctx.fill();
     // a character's accessory (a cap, a hard hat, a headset): a few strokes on the head, lit like the body
-    if (accessory) { ctx.save(); try { accessory(ctx, J, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s }); } catch (e) { /* a bad accessory never breaks the frame */ } ctx.restore(); }
+    if (accessory) { ctx.save(); try { accessory(ctx, J, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s, pose: f.pose }); } catch (e) { /* a bad accessory never breaks the frame */ } ctx.restore(); }
     if (pants) ctx.fillStyle = pants;
     limb(ctx, J.hip, J.rKnee, J.rFoot, w, tip);
     if (pants) ctx.fillStyle = f.color;

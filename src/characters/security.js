@@ -80,7 +80,7 @@ export default {
     escort: { rig: escort, frame: { limb: 'hand', damage: 10, kb: { x: 780, y: 200 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
       throw: true, grab: true, noBreak: true, unblockable: true, range: 92, hold: 16, splat: true, cost: 30, reach: 70, flashR: 32, callout: 'ESCORT' } },   // range 116, cost 24 and 12 damage dominated once stamina came back faster
     shoulderCheck: { rig: shoulderCheck, frame: { limb: 'hand', damage: 12, kb: { x: 460, y: 230 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, height: 'mid',
-      armor: { hits: 1, dmg: 0.5 }, wallBounce: true, cost: 26, reach: 80, flashR: 36, callout: 'SHOULDER CHECK' } },
+      armor: { hits: 1, dmg: 0.7 }, wallBounce: true, cost: 30, reach: 80, flashR: 36, callout: 'SHOULDER CHECK' } },   // armor took half damage at cost 26 and landed ~80% of the time
     lockdown: { rig: lockdown, frame: { limb: 'hand', damage: 16, kb: { x: 260, y: 300 }, hitstun: 0, blockstun: 16, hitstop: 10, knockdown: true, ender: true, height: 'overhead',
       reach: 85, flashR: 40, callout: 'LOCKDOWN' } },
   },

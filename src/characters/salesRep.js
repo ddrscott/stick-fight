@@ -1,2 +1,153 @@
-// stub: replaced by the character's builder (see README Characters)
-export default null;
+// SALES REP: pressure and feints. A slim, forward-leaning build, quick on his feet and a little light.
+// Cold Call (f,f+1) is a lunging jab whose startup is a pitch, not a promise: press back+3 in its first
+// 100 ms and it turns into The Pitch (a low shin kick), or press a throw and it turns into Close the Deal
+// (the `feint` hook: a designed cancel, never a botch). Close the Deal (f+1+3) is a fast handshake grab,
+// The Pitch (b+3) works on its own too, and one unique string, ALWAYS BE CLOSING (3, 1, 2), ends in a
+// rising phone-hand uppercut that launches. Keeps every shared string.
+import { RIG_KIT } from '../fighter/index.js';
+
+const { K, F, L, LF, RF, HIP } = RIG_KIT;
+
+// f,f+1: the lead hand drops to the hip (the pitch), a push off the rear foot, and the jab goes out long
+// with the body sliding in behind it (frame data travel, which starts after the feint window: a feint
+// leaves him where he stood). No root shift: the glide carries him.
+const coldCall = { blend: 40, limb: 'lHand', keys: [
+  K({ ...F(-4, HIP - 4, LF, RF), torso: 4, bend: 0, head: -2, tw: 8, la: [36, 118], ra: [30, 168] }, 50, 'in'),
+  K({ ...F(2, HIP - 7, LF + 10, RF + 4, 9, 0), torso: 14, bend: 2, head: -6, tw: 4, la: [52, 108], ra: [30, 166] }, 60, 'linear'),
+  K({ ...F(10, HIP - 9, LF + 16, RF + 6, 3, 0), torso: 24, bend: 4, head: -10, tw: -6, la: [76, 96], ra: [32, 164] }, 60, 'linear'),
+  K({ ...F(16, HIP - 10, LF + 16, RF + 6), torso: 32, bend: 6, head: -12, tw: -14, la: [94, 92], ra: [34, 162] }, 40, 'out', 'active'),
+  K({ ...F(17, HIP - 10.5, LF + 16, RF + 6), torso: 33, bend: 6, head: -12, tw: -15, la: [95, 93], ra: [34, 162] }, 60, 'inOut'),
+  K({ ...F(16, HIP - 8, LF + 16, RF + 8), torso: 26, bend: 5, head: -10, tw: -12, la: [94, 76], ra: [34, 162] }, 100, 'in', 'recover'),
+  K({ ...F(8, HIP - 3, LF + 8, RF + 6, 0, 6), torso: 12, bend: 1, head: -6, tw: -2, la: [60, 130], ra: [30, 164] }, 100, 'out', 'footstep'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4 }, 0, 'sine'),
+] };
+
+// b+3, or back+3 out of Cold Call's startup: dip over the rear leg and snap the lead foot into his shin
+const pitch = { blend: 40, limb: 'lFoot', height: 'low', keys: [
+  K({ hx: -2, rl: L(-2, 49, RF), ll: [40, -20], torso: 8, bend: 2, head: -2, tw: 4, la: [50, 140], ra: [30, 164] }, 50, 'in'),
+  K({ hx: 4, rl: L(4, 47, RF), ll: [64, -4], torso: 14, bend: 3, head: -4, tw: 2, la: [56, 128], ra: [30, 164] }, 40, 'linear'),
+  K({ hx: 12, rl: L(12, 46, RF), ll: [60, 82], torso: 18, bend: 3, head: -6, tw: -4, la: [70, 112], ra: [30, 158] }, 40, 'out', 'active'),
+  K({ hx: 12, rl: L(12, 46, RF), ll: [61, 83], torso: 19, bend: 3, head: -6, tw: -4, la: [70, 112], ra: [30, 158] }, 60, 'inOut'),
+  K({ hx: 8, rl: L(8, 48, RF), ll: [52, 6], torso: 12, bend: 2, head: -4, la: [60, 130], ra: [30, 162] }, 60, 'inOut', 'recover'),
+  K({ hx: 3, rl: L(3, 51, RF), ll: [36, -14], torso: 6, head: -2, la: [54, 146], ra: [28, 166] }, 60, 'inOut'),
+  K({ ...F(1, HIP, LF, RF), torso: 5, head: -4, la: [52, 152], ra: [28, 166] }, 60, 'out', 'footstep'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 5, head: -3 }, 0, 'sine'),
+] };
+
+// f+1+3 (or a throw out of Cold Call's startup): the lead hand goes out for the handshake, takes his hand
+// (the grab holds on the active key), yanks him in, and the rear shoulder drives him away
+const closeDeal = { blend: 40, limb: 'lHand', shift: 26, keys: [
+  K({ ...F(-2, HIP - 3, LF, RF), torso: 6, bend: 0, head: -3, tw: 6, la: [60, 100], ra: [30, 160] }, 60, 'in'),
+  K({ ...F(6, HIP - 6, LF + 12, RF, 6, 0), torso: 14, bend: 2, head: -5, tw: 2, la: [82, 90], ra: [36, 150] }, 50, 'out'),
+  K({ ...F(12, HIP - 7, LF + 16, RF), torso: 20, bend: 3, head: -6, tw: -2, la: [92, 90], ra: [40, 140] }, 40, 'out', 'active'),
+  K({ ...F(4, HIP - 8, LF + 16, RF), torso: -6, bend: -3, head: 2, tw: -12, la: [58, 40], ra: [70, 118] }, 60, 'in'),
+  K({ ...F(18, HIP - 10, LF + 26, RF + 6), torso: 28, bend: 6, head: -10, tw: 16, la: [40, 100], ra: [96, 88] }, 50, 'out', 'recover'),
+  K({ ...F(20, HIP - 6, LF + 26, RF + 6), torso: 16, bend: 3, head: -6, la: [50, 130], ra: [60, 120] }, 130, 'inOut'),
+  K({ ...F(22, HIP - 2, LF + 26, RF + 26, 0, 8), torso: 8, head: -4, la: [54, 148], ra: [30, 162] }, 110, 'inOut', 'footstep'),
+  K({ ...F(26, HIP - 1, LF + 26, RF + 26), torso: 6, head: -4 }, 0, 'sine'),
+] };
+
+// ALWAYS BE CLOSING's ender: sink with the phone hand low, then drive it up through his chin onto the toes
+const abc = { blend: 40, limb: 'rHand', shift: 12, keys: [
+  K({ ...F(0, HIP - 10, LF, RF), torso: 18, bend: 6, head: 4, tw: -12, la: [40, 140], ra: [-10, 30] }, 60, 'in'),
+  K({ ...F(6, HIP - 7, LF + 10, RF, 6, 0), torso: 10, bend: 3, head: -2, tw: -4, la: [36, 146], ra: [30, 100] }, 40, 'linear'),
+  K({ ...F(12, HIP + 1, LF + 12, RF, 0, 4), torso: 2, bend: -2, head: -12, tw: 12, la: [30, 150], ra: [100, 170] }, 40, 'out', 'active'),
+  K({ ...F(12, HIP + 2, LF + 12, RF, 0, 6), torso: -4, bend: -3, head: -14, tw: 13, la: [30, 150], ra: [116, 178] }, 70, 'inOut'),
+  K({ ...F(10, HIP, LF + 12, RF), torso: 2, bend: -1, head: -8, tw: 6, la: [40, 146], ra: [70, 140] }, 90, 'inOut', 'recover'),
+  K({ ...F(10, HIP - 2, LF + 12, RF + 12, 0, 8), torso: 7, head: -4, la: [54, 148], ra: [30, 162] }, 100, 'inOut', 'footstep'),
+  K({ ...F(12, HIP - 1, LF + 12, RF + 12), torso: 6, head: -4 }, 0, 'sine'),
+] };
+
+// a skinny necktie down the shirt front, and a phone in the rear hand (held across the palm, so it never
+// sticks out past the fist), its screen lit
+function tieAndPhone(ctx, J, o) {
+  const s = o.scale, n = J.neck, c = J.chest;
+  let dx = c.x - n.x, dy = c.y - n.y; const L0 = Math.hypot(dx, dy) || 1; dx /= L0; dy /= L0;
+  const fx = dy * o.facing, fy = -dx * o.facing;
+  const kx = n.x + dx * 3.5 * s + fx * 3.8 * s, ky = n.y + dy * 3.5 * s + fy * 3.8 * s;
+  const tx = kx + dx * L0 * 1.12 + fx * 2 * s, ty = ky + dy * L0 * 1.12 + fy * 2 * s, w = 2.2 * s;
+  ctx.lineJoin = 'round';
+  const path = () => {
+    ctx.beginPath();
+    ctx.moveTo(kx - dy * w, ky + dx * w); ctx.lineTo(kx + dy * w, ky - dx * w);
+    ctx.lineTo(tx + dy * w * 1.2 - dx * w, ty - dx * w * 1.2 - dy * w); ctx.lineTo(tx, ty);
+    ctx.lineTo(tx - dy * w * 1.2 - dx * w, ty + dx * w * 1.2 - dy * w); ctx.closePath();
+  };
+  ctx.strokeStyle = '#1a0408'; ctx.lineWidth = 2 * s; path(); ctx.stroke();
+  ctx.fillStyle = o.accent; path(); ctx.fill();
+  ctx.fillStyle = o.accent; ctx.beginPath(); ctx.arc(kx, ky, 2.2 * s, 0, Math.PI * 2); ctx.fill();
+  // the phone: across the rear forearm's end, centered just behind the fist
+  const e = J.rElbow, h = J.rHand;
+  let ax = h.x - e.x, ay = h.y - e.y; const La = Math.hypot(ax, ay) || 1; ax /= La; ay /= La;
+  const px = -ay, py = ax, cx = h.x - ax * 3 * s, cy = h.y - ay * 3 * s, hl = 6.5 * s, hw = 3.4 * s;
+  const rect = (k) => {
+    ctx.beginPath();
+    ctx.moveTo(cx + px * hl * k + ax * hw * k, cy + py * hl * k + ay * hw * k); ctx.lineTo(cx - px * hl * k + ax * hw * k, cy - py * hl * k + ay * hw * k);
+    ctx.lineTo(cx - px * hl * k - ax * hw * k, cy - py * hl * k - ay * hw * k); ctx.lineTo(cx + px * hl * k - ax * hw * k, cy + py * hl * k - ay * hw * k); ctx.closePath();
+  };
+  ctx.fillStyle = '#0a0414'; rect(1.25); ctx.fill();
+  ctx.fillStyle = '#9ff8ff'; rect(0.82); ctx.fill();
+}
+
+export default {
+  id: 'salesRep',
+  name: 'SALES REP',
+  tagline: 'HAVE YOU GOT A MINUTE? GREAT',
+  color: '#ffe066',
+  altColor: '#9b8cff',
+  accent: '#ff3b3b',
+  pants: '#ff3b3b',
+  altPants: '#2ee8ff',
+  // light and quick: runs you down, a touch less health
+  stats: { health: 100, walk: 1.08, backWalk: 0.92, run: 1.1, jump: 1.02, dash: 1.1, weight: 0.98, stamina: 1, regen: 1.15, damage: 1.05 },
+  body: { scale: 1, headR: 14.5, torsoW: 14, hipW: 10.5, limbW: 11.4, limbTip: 8.7, lean: 4, accessory: tieAndPhone },
+  moves: {
+    // the feint: back+3 (sr_pitch) or a throw in the first 100 ms of startup replaces the jab (frame data feint)
+    sr_coldCall: { rig: coldCall, frame: { limb: 'hand', damage: 9, kb: { x: 0, y: 0 }, hitstun: 28, blockstun: 10, hitstop: 6, knockdown: false, height: 'mid',
+      travel: { vx: 320, at: 130, ms: 120 }, feint: { ms: 90, into: { sr_pitch: 'sr_pitchFeint', sr_pitchFeint: 'sr_pitchFeint', throw: 'sr_closeFeint', sr_closeDeal: 'sr_closeFeint', sr_closeFeint: 'sr_closeFeint' } },
+      cost: 18, reach: 110, flashR: 32, callout: 'COLD CALL' } },
+    sr_pitch: { rig: pitch, frame: { limb: 'foot', damage: 7, kb: { x: 0, y: 0 }, hitstun: 24, blockstun: 6, hitstop: 5, knockdown: false, height: 'low',
+      cost: 14, reach: 85, flashR: 26, callout: 'THE PITCH' } },
+    // the feint's versions: the lunge already started, so the low slides in behind it and the handshake reaches
+    // farther (the grab pulls him in to the hold, 720 px/s)
+    sr_pitchFeint: { frame: { limb: 'foot', damage: 7, kb: { x: 0, y: 0 }, hitstun: 24, blockstun: 6, hitstop: 5, knockdown: false, height: 'low',
+      travel: { vx: 400, at: 20, ms: 130 }, cost: 12, reach: 120, flashR: 26, anims: ['sr_pitch'], callout: 'THE PITCH' } },
+    sr_closeFeint: { frame: { limb: 'hand', damage: 11, kb: { x: 520, y: 260 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
+      throw: true, grab: true, unblockable: true, range: 150, hold: 12, cost: 20, reach: 70, flashR: 30, anims: ['sr_closeDeal'], callout: 'CLOSE THE DEAL' } },
+    sr_closeDeal: { rig: closeDeal, frame: { limb: 'hand', damage: 11, kb: { x: 520, y: 260 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
+      throw: true, grab: true, unblockable: true, range: 92, hold: 12, cost: 24, reach: 70, flashR: 30, callout: 'CLOSE THE DEAL' } },
+    sr_abc: { rig: abc, frame: { limb: 'hand', damage: 13, kb: { x: 130, y: 470 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, juggle: true, ender: true,
+      height: 'mid', reach: 70, flashR: 36, callout: 'ALWAYS BE CLOSING' } },
+  },
+  commands: [
+    { button: '1', motion: 'ff', move: 'sr_coldCall' },
+    { button: '3', motion: 'b', move: 'sr_pitch' },
+    { button: '1+3', motion: 'f', move: 'sr_closeDeal' },
+    { button: '2+4', motion: 'f', move: 'sr_closeDeal' },
+  ],
+  strings: { add: [{ name: 'ALWAYS BE CLOSING', keys: ['3', '1', '2'], moves: ['lkick', 'jab', 'sr_abc'] }] },
+  ai: {
+    style: 'rushdown',
+    range: 'close',
+    specials: [
+      // the pitch: run in with Cold Call and, against a guard, turn it into the low or the handshake
+      { name: 'srFeint', cost: 36, min: 90, max: 180, lead: 60, chance: 0.6, cooldown: 120, when: (me, o) => o.grounded && (o.backHeld || o.state === 'block' || o.crouch),
+        plan: (me, o, sim, dist, toward, k) => [
+          k.move(toward, 6, true),
+          { ...k.attack('sr_coldCall'), dx: toward },
+          k.move(0, (m) => m.state !== 'attack' || m.move !== 'sr_coldCall' || sim.stepCount - m.attackStart >= 5),
+          { ...k.attack(o.crouch ? 'sr_pitchFeint' : (o.backHeld || o.state === 'block') && sim.rng() < 0.5 ? 'sr_closeFeint' : 'sr_pitchFeint'), onlyIf: (m) => m.state === 'attack' && m.move === 'sr_coldCall' && m.phase === 'startup' },
+        ] },
+      { move: 'sr_coldCall', min: 90, max: 180, lead: 60, run: true, when: 'whiff', chance: 0.6, cooldown: 90 },
+      { move: 'sr_coldCall', min: 110, max: 170, lead: 60, run: true, when: (me, o) => o.grounded && !o.crouch && o.state !== 'attack' && o.state !== 'block', chance: 0.2, cooldown: 180 },
+      { move: 'sr_closeDeal', min: 0, max: 90, when: 'guarding', chance: 0.5, cooldown: 110 },
+      { move: 'sr_pitch', min: 40, max: 90, when: (me, o) => o.grounded && !o.crouch && o.backHeld, chance: 0.3, cooldown: 130 },
+    ],
+  },
+  moveList: [
+    { name: 'COLD CALL', input: '→→ 1', note: 'lunge jab, feints into ←3 or a throw' },
+    { name: 'THE PITCH', input: '← 3', note: 'low shin kick' },
+    { name: 'CLOSE THE DEAL', input: '→ 1+3', note: 'fast handshake grab' },
+    { name: 'ALWAYS BE CLOSING', input: '3, 1, 2', note: 'string, phone uppercut launches' },
+  ],
+};

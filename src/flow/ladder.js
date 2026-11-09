@@ -35,6 +35,18 @@ export const EXTRAS = [
 ];
 // THE MANAGER is the boss; a player who picked him fights this one at the top instead
 export const SUB_BOSS = { char: 'security', name: 'HEAD OF SECURITY', tagline: 'NOBODY GETS PAST THE FRONT DESK', color: '#5dff8a', style: 'grappler' };
+// THE CEO: a secret seventh stage, only for a run that beat the boss without a continue (and didn't pick him)
+export const SECRET_BOSS = { n: 7, char: 'ceo', name: 'THE CEO', tagline: 'THE BOARD HAS DECIDED YOU’RE A COST', difficulty: 1.0, style: 'showcase', color: '#ffd84f', preset: 'neon-rain', floor: 0, seed: 79, boss: true, secret: true };
+/**
+ * The stage after the last one, or null: THE CEO when the run used no continues, he's built, and the player isn't him.
+ * @param {Stage[]} ladder @param {number} continues @param {string} playerId @param {(id: string) => any} getChar
+ * @returns {Stage | null}
+ */
+export function secretStage(ladder, continues, playerId, getChar) {
+  if (continues || playerId === SECRET_BOSS.char || ladder.some((s) => s.secret)) return null;
+  const c = getChar(SECRET_BOSS.char);
+  return c && c.id === SECRET_BOSS.char ? { ...SECRET_BOSS, wants: SECRET_BOSS.char } : null;
+}
 
 /**
  * The ladder for a run: the six stages with the player's own character swapped out where possible.

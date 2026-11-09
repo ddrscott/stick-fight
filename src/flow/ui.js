@@ -257,24 +257,25 @@ function injectStyle() {
 
   /* character select (select.js): a grid of live rigs on the left, the focused one's sheet on the right */
   .fl-select { justify-content: flex-start; padding-top: 3.2cqh; gap: 1.4cqh; }
-  .fl-selrow { display: flex; gap: 2.2cqw; align-items: stretch; }
-  .fl-grid { display: grid; grid-template-columns: repeat(3, 13.2cqw); grid-auto-rows: 20.5cqh; gap: 0.9cqw; align-content: start; }
-  .fl-card { min-width: 0; min-height: 0; width: 13.2cqw; height: 20.5cqh; padding: 0 0 0.6cqh; justify-content: flex-end; gap: 0; overflow: hidden; }
+  .fl-selrow { display: flex; gap: 1.6cqw; align-items: stretch; }
+  /* six columns of tall cards: three rows hold all 18 fighters beside the sheet */
+  .fl-grid { display: grid; grid-template-columns: repeat(6, 7.2cqw); grid-auto-rows: 20.5cqh; gap: 0.9cqh 0.55cqw; align-content: start; }
+  .fl-card { min-width: 0; min-height: 0; width: 7.2cqw; height: 20.5cqh; padding: 0 0 0.7cqh; justify-content: flex-end; gap: 0; overflow: hidden; }
   /* index.html makes every canvas in #stage a full-stage layer; these are inline */
   #flow .fl-card canvas, #flow canvas.fl-big { position: static; inset: auto; }
-  #flow .fl-card canvas { display: block; width: 100%; height: 78%; }
-  #flow canvas.fl-big { display: block; width: 15.5cqw; height: 100%; flex: none; }
-  .fl-card b { display: block; font: 600 2.2cqw/1 'Teko', sans-serif; letter-spacing: 0.08em; color: #fff; text-shadow: 0 0 0.6cqw var(--c); white-space: nowrap; }
-  .fl-card b.fl-long { font-size: 1.7cqw; letter-spacing: 0.03em; }
-  .fl-cname.fl-long { font-size: 2.75cqw; }
+  #flow .fl-card canvas { display: block; width: 100%; flex: 1 1 0; min-height: 0; object-fit: contain; object-position: center bottom; }
+  #flow canvas.fl-big { display: block; width: 12.6cqw; height: 100%; flex: none; }
+  .fl-card b { display: block; font: 600 1.55cqw/1 'Teko', sans-serif; letter-spacing: 0.05em; color: #fff; text-shadow: 0 0 0.6cqw var(--c); white-space: nowrap; }
+  .fl-card b.fl-long { font-size: 1.32cqw; line-height: 0.88; letter-spacing: 0.02em; white-space: normal; text-align: center; padding: 0 0.2cqw; }
+  .fl-cname.fl-long { font-size: 2.45cqw; }
   .fl-card.fl-focus { background: color-mix(in srgb, var(--c) 20%, rgba(14,4,30,0.72)); color: #fff; box-shadow: 0 0 1.4cqw var(--c), inset 0 0 1.2cqw color-mix(in srgb, var(--c) 40%, transparent); }
   .fl-card.fl-focus b { color: #fff; text-shadow: 0 0 0.6cqw var(--c), 0 0 1.4cqw var(--c); }
   .fl-card.fl-taken { opacity: 0.55; }
-  .fl-detail { --c: var(--cyan); width: 47cqw; height: 63.5cqh; display: flex; gap: 1.2cqw; padding: 1.2cqw 1.4cqw; border: 2px solid var(--c); background: rgba(14,4,30,0.7);
+  .fl-detail { --c: var(--cyan); width: 42cqw; height: 63.5cqh; display: flex; gap: 1.2cqw; padding: 1.2cqw 1.4cqw; border: 2px solid var(--c); background: rgba(14,4,30,0.7);
     box-shadow: 0 0 1.4cqw color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 2cqw color-mix(in srgb, var(--c) 18%, transparent); }
-  .fl-big { display: block; width: 15.5cqw; height: 100%; flex: none; }
+  .fl-big { display: block; width: 12.6cqw; height: 100%; flex: none; }
   .fl-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.9cqh; }
-  .fl-cname { margin: 0; font: 400 3.5cqw/1 'Bungee', 'Arial Black', sans-serif; color: #fff; text-shadow: 0 0 0.5cqw var(--c), 0 0 1.5cqw var(--c); white-space: nowrap; }
+  .fl-cname { margin: 0; font: 400 3.1cqw/1 'Bungee', 'Arial Black', sans-serif; color: #fff; text-shadow: 0 0 0.5cqw var(--c), 0 0 1.5cqw var(--c); white-space: nowrap; }
   .fl-tagline { font-size: 1.8cqw; font-weight: 500; letter-spacing: 0.1em; line-height: 1.05; color: rgba(230,214,255,0.85); }
   .fl-stats { display: grid; grid-template-columns: auto 1fr; column-gap: 1cqw; row-gap: 0.55cqh; align-items: center; margin-top: 0.4cqh; }
   .fl-stats span { font-size: 1.7cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1; color: rgba(214,190,255,0.85); }

@@ -9,7 +9,7 @@ import { addFrameData, FRAME_DATA } from '../combat/frameData.js';
 import { buildStrings } from '../combat/strings.js';
 
 // the select screen's order (registered ones only); TEMP, the baseline, comes first
-export const ROSTER_ORDER = ['temp', 'intern', 'helpdesk', 'courier', 'security', 'janitor', 'manager', 'accountant', 'windowWasher'];
+export const ROSTER_ORDER = ['temp', 'intern', 'helpdesk', 'courier', 'security', 'janitor', 'manager', 'accountant', 'windowWasher', 'hrRep', 'salesRep', 'barista', 'chef', 'wellness', 'electrician', 'receptionist', 'lawyer', 'ceo'];
 export const TEMP_ID = 'temp';
 const STAT_DEFAULTS = { health: 100, walk: 1, backWalk: 1, run: 1, jump: 1, dash: 1, weight: 1, stamina: 1, regen: 1, damage: 1 };
 const MOTIONS = new Set(['', 'f', 'b', 'd', 'df', 'db', 'ff', 'run', 'rise', 'air', 'airDown']);

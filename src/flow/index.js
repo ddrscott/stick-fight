@@ -37,7 +37,7 @@
 // scheme (one for every screen) is in controls.js. "MAIN MENU" always means modeSelect.
 
 import { track } from '../analytics.js';   // cookieless game analytics (README, Analytics)
-import { LADDER, buildLadder } from './ladder.js';
+import { LADDER, buildLadder, secretStage } from './ladder.js';
 import { openSelect } from './select.js';
 import { roster, getCharacter, characterOr, TEMP_ID } from '../characters/index.js';
 import * as S from './scores.js';
@@ -347,6 +347,9 @@ export function createFlow(ctx) {
   }
   function nextStage() {
     if (state !== 'stageClear') return;   // a second press in the same frame must not skip a stage
+    // the boss down without a continue: THE CEO is waiting upstairs (a secret seventh stage, src/flow/ladder.js)
+    const secret = run.stage >= ladder().length - 1 && mode === 'arcade' && secretStage(ladder(), run.continues, sel.player, getCharacter);
+    if (secret) run.ladder = [...ladder(), secret];
     if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR' }; track('arcade_end', [sel.player, 'clear'], ladder().length); go('ending'); return; }
     track('stage', [sel.player], run.stage + 2);   // reached the next stage
     run.stage++;

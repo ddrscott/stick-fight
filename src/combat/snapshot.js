@@ -34,6 +34,7 @@ export function saveSim(sim, arena, into) {
   s.horde = sim.horde ? clone(sim.horde) : null;
   s.ragdolls = sim.ragdolls.length ? sim.ragdolls.map((r) => ({ ...r })) : null;
   s.log = sim.log.slice();
+  if (s.reach) for (const k in s.reach) if (!(k in sim.reachSeen)) delete s.reach[k];   // a reused snapshot mustn't keep a reach learned after this point
   s.reach = Object.assign(s.reach || {}, sim.reachSeen);
   s.bx0 = sim.bounds.x0; s.bx1 = sim.bounds.x1;
   s.rng = sim.rng; s.rngState = sim.rng.state;

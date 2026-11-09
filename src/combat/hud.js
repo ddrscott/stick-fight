@@ -185,7 +185,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
 
   // ---- the overhead status track: a compact readout over each fighter's head, so the state of the
   // fight reads where the eyes already are. Only what's active shows: STUN / GUARD with a draining
-  // bar, FAINT, DOWN / GET UP, BOTCH, ARMOR, PARRY, COUNTER, OPEN (a whiffed strike's recovery: punish
+  // bar (SHOCKED while a shock runs), FAINT, DOWN / GET UP, BOTCH, ARMOR, PARRY, STANCE, ROOTED, COUNTER, OPEN (a whiffed strike's recovery: punish
   // it), air-jump pips, and a thin stamina bar that shows once stamina is spent and flashes when low.
   // It sits above the head, steps sideways off the other fighter, clamps on screen and fades when it
   // has nowhere clear to go (owner requirement 5). It only reads the sim.
@@ -204,6 +204,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (s.armor > 0) return { text: 'ARMOR', color: NEON.amber, pop: s.armor };
     if (s.parry > 0) return { text: 'PARRY', color: NEON.cyan, pop: s.parry };
     if (u.faint > 0) return { text: 'FAINT', color: NEON.pink, bar: Math.min(1, u.faint / (1.5 * 120)), barColor: NEON.violet, dizzy: true };
+    if (u.state === 'hitstun' && u.shockT > 0) return { text: 'SHOCKED', color: '#fff27a', bar: stunK, barColor: '#ffe066' };   // frame data shock
     if (u.state === 'hitstun') return { text: 'STUN', color: '#ff3d6e', bar: stunK, barColor: '#ff2b4a' };
     if (u.state === 'blockstun') return { text: 'GUARD', color: NEON.cyan, bar: stunK, barColor: NEON.cyan };
     if (u.state === 'block' || (u.state === 'crouch' && u.backHeld)) return { text: u.crouch ? 'LOW GUARD' : 'GUARD', color: NEON.cyan, dim: true };
@@ -212,6 +213,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (u.state === 'botch') return { text: 'BOTCH', color: '#ff6a3d' };
     if (fd && fd.armor && u.armorLeft > 0 && u.phase !== 'recovery') return { text: 'ARMOR', color: NEON.amber };
     if (fd && fd.parry && u.phase !== 'recovery') return { text: 'PARRY', color: NEON.cyan };
+    if (fd && fd.stance && u.phase !== 'recovery') return { text: 'STANCE', color: NEON.white, glow: NEON.pink };   // frame data stance
+    if (u.rootT > 0 && u.state !== 'attack') return { text: 'ROOTED', color: '#ffe066', bar: Math.min(1, u.rootT / 60), barColor: '#ffe066' };   // frame data root
     if (fd && u.phase === 'recovery' && !u.hitConfirmed && !fd.air) return { text: 'OPEN', color: NEON.amber, dim: true };
     return null;
   }
@@ -241,10 +244,15 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       s.stamShow = stam < 0.97 || u.faint > 0 || s.refill > 0 ? 1.2 : Math.max(0, s.stamShow - dt);   // (and through a knockdown refill's flash)
       const mech = u.char && u.char.mechanics;
       const pips = mech && mech.airJumps > 0 && !u.grounded ? { left: Math.max(0, mech.airJumps - (u.airJumpsUsed || 0)), max: mech.airJumps } : null;
-      if (!st && !s.stamShow && !pips) { s.a = 0; s.x = null; return; }
+      // timed statuses (the sim's applyStatus: WRITTEN UP, WIRED): a small tag each, its bar draining to the left
+      const timed = [];
+      if (u.regenTag && sim.stepCount < u.regenEnd) timed.push({ text: u.regenTag, k: (u.regenEnd - sim.stepCount) / Math.max(1, u.regenLen), color: u.regenMul < 1 ? '#ff6ad5' : '#c8ff3a' });
+      if (u.speedTag && sim.stepCount < u.speedEnd) timed.push({ text: u.speedTag, k: (u.speedEnd - sim.stepCount) / Math.max(1, u.speedLen), color: u.speedMul > 1 ? '#c8ff3a' : '#ff6ad5' });
+      if (!st && !s.stamShow && !pips && !timed.length) { s.a = 0; s.x = null; return; }
       const fs = Math.round(17 * big), tw = st ? measure(st.text, fs, DISPLAY) : 0;
-      const bw = Math.round(54 * big), w = Math.max(tw, bw) + 10;
-      const h = (st ? fs + 2 : 0) + (st && st.bar != null ? 7 : 0) + (s.stamShow ? 6 : 0) + (pips ? 10 : 0) + 4;
+      const tfs = Math.round(12 * big), ttw = timed.reduce((m, t) => Math.max(m, measure(t.text, tfs, DISPLAY)), 0);
+      const bw = Math.round(54 * big), w = Math.max(tw, bw, ttw) + 10;
+      const h = (st ? fs + 2 : 0) + (st && st.bar != null ? 7 : 0) + timed.length * (tfs + 5) + (s.stamShow ? 6 : 0) + (pips ? 10 : 0) + 4;
       const me = boxes[i], other = boxes.filter((_, k) => k !== i);
       const hx = sx(u.rig.joints.head.x), headTop = me.y0 - (u.faint > 0 ? 14 * z : 0);   // fainted: clear of the stars circling the head
       const clampX = (x) => Math.max(w / 2 + 10, Math.min(width - w / 2 - 10, x));
@@ -294,6 +302,13 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
           ctx.restore();
           y += 7;
         }
+      }
+      for (const t of timed) {
+        neonText(t.text, s.x, y + tfs / 2 + 1, tfs, t.color, { glow: 0.6, core: true });
+        y += tfs + 1;
+        ctx.save(); ctx.fillStyle = 'rgba(14,4,30,0.8)'; ctx.fillRect(s.x - bw / 2 - 1, y - 1, bw + 2, 4);
+        ctx.shadowColor = t.color; ctx.shadowBlur = 6; ctx.fillStyle = t.color; ctx.fillRect(s.x - bw / 2, y, bw * Math.max(0, Math.min(1, t.k)), 2); ctx.restore();
+        y += 4;
       }
       if (s.stamShow) {
         const blink = Math.floor(clock * 7) % 2 === 0, bx = s.x - bw / 2;

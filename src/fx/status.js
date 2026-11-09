@@ -12,6 +12,8 @@
 //   air jump     a cyan ring kicked out under the feet when an extra jump is spent
 //   low stamina  a breath puff every second or so; exhausted, sweat flicks and steam wisps too
 //   accident     a gold four-point glint where a happy accident lands
+//   shocked      yellow-white arcs crackling off the joints while a shock (frame data shock) runs
+//   rooted       a yellow ring pulsing round each foot while a root (frame data root) holds
 //
 // Quality tiers (fx.tier): tier 1 drops the sweat, steam and the halos' second pass, and caps the puffs.
 import { FRAME_DATA } from '../combat/frameData.js';
@@ -53,6 +55,29 @@ export function createStatusFX() {
     if (tier > 1) { ctx.globalAlpha = Math.min(1, alpha) * 0.35; drawJoints(ctx, j, color, width * 1.7, r + width * 0.6); }
     ctx.restore();
   }
+  // electric arcs jumping off the joints, out past the outline (the layer is hidden over the body), jagged,
+  // a new set every 50ms (drawing only, never the sim)
+  const ARC_J = ['head', 'lHand', 'rHand', 'lElbow', 'rElbow', 'lKnee', 'rKnee', 'lFoot', 'rFoot', 'neck'];
+  function crackle(ctx, j, tier, lights, chest) {
+    const seed = Math.floor(clock * 20);
+    let q = (seed * 7919) % 233280;
+    const rnd = () => { q = (q * 9301 + 49297) % 233280; return q / 233280; };
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let n = 0; n < (tier > 1 ? 5 : 3); n++) {
+      const a = j[ARC_J[Math.floor(rnd() * ARC_J.length)]];
+      if (!a) continue;
+      let dx = a.x - (j.neck.x + j.hip.x) / 2, dy = a.y - (j.neck.y + j.hip.y) / 2; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+      const len = 26 + rnd() * 22, sw = (rnd() - 0.5) * 1.2;
+      const b = { x: a.x + (dx + dy * sw) * len, y: a.y + (dy - dx * sw) * len };
+      ctx.beginPath(); ctx.moveTo(a.x, a.y);
+      for (let k = 1; k < 5; k++) ctx.lineTo(a.x + (b.x - a.x) * k / 5 + (rnd() - 0.5) * 18, a.y + (b.y - a.y) * k / 5 + (rnd() - 0.5) * 18);
+      ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = '#ffe066'; ctx.globalAlpha = 0.5; ctx.lineWidth = 5; ctx.stroke();
+      ctx.strokeStyle = WHITE; ctx.globalAlpha = 0.95; ctx.lineWidth = 1.6; ctx.stroke();
+    }
+    ctx.restore();
+    lights.push({ x: chest.x, y: chest.y, radius: 140, color: [1, 0.95, 0.45], intensity: 0.5 + 0.3 * rnd() });
+  }
   function star(ctx, x, y, s, color, rot = 0) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = color;
     ctx.beginPath();
@@ -85,6 +110,14 @@ export function createStatusFX() {
         const pulse = 0.75 + 0.25 * Math.sin(clock * 28);
         halo(ctx, u, RED, 0.45 * k * pulse + 0.08, 16, tier);
         lights.push({ x: chest.x, y: chest.y, radius: 120, color: [1, 0.15, 0.25], intensity: 0.55 * k + 0.1 });
+      }
+      // shocked (frame data shock): crackling arcs jumping between the joints, re-drawn every few frames
+      if (u.shockT > 0 && u.state === 'hitstun') crackle(ctx, j, tier, lights, chest);
+      // rooted (frame data root): a yellow ring pulsing round each planted foot
+      if (u.rootT > 0 && u.grounded) {
+        ctx.save(); ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 2; ctx.globalAlpha = 0.5 + 0.3 * Math.sin(clock * 14);
+        for (const f of [j.lFoot, j.rFoot]) { ctx.beginPath(); ctx.ellipse(f.x, u.y + 2, 14, 4, 0, 0, Math.PI * 2); ctx.stroke(); }
+        ctx.restore();
       }
       // guard up: a shimmer arc in front of the guard, over the head and chest (crouched: the shins)
       const guarding = u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld);

@@ -92,10 +92,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     wall: (m, o, sim) => Math.min(o.x - sim.bounds.x0, sim.bounds.x1 - o.x) < 220 && Math.sign(o.x - m.x) === Math.sign((o.x - sim.bounds.x0 < sim.bounds.x1 - o.x ? sim.bounds.x0 : sim.bounds.x1) - o.x),
     far: (m, o) => Math.abs(o.x - m.x) > 160,
   };
-  function special(me, opp, sim, dist, toward) {
+  function special(me, opp, sim, dist, toward, reflex = false) {
     const list = me.char && me.char.ai && me.char.ai.specials;
     if (!list || !list.length || me.faint > 0) return null;
     for (const sp of list) {
+      if (!!sp.reflex !== reflex) continue;   // reflex: true specials are checked every step (think), the rest when deciding
       const key = sp.move || sp.name;   // a plan (sp.plan) may have no single move: its name keys the cooldown
       if ((coolUntil[key] || 0) > sim.stepCount) continue;
       const fd = FRAME_DATA[sp.move];
@@ -527,8 +528,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       queue = (opp.state === 'block' || blockedStreak >= 1) ? mixup(dist, toward, opp) : show ? [opener(opp, dist)] : [attack(dist < reach('jab') + 10 ? 'jab' : 'cross')]; act = null;
     }
     if (act && act.block && typeof act.until === 'number' && act.until > 4 && opp.state !== 'attack' && !HIT_STATES.has(opp.state)) act.until = 4;
+    // reflex: a character's own reflex specials (ai.specials with reflex: true: LAWYER's Objection at a grab starting up,
+    // THE CEO's Golden Parachute at a strike), looked at every step instead of only when deciding
+    if (/^(idle|walk|block|crouch|blockstun)$/.test(me.state)) { const rx = special(me, opp, sim, dist, toward, true); if (rx) { queue = rx; act = null; } }
 
-    const done = !act || (typeof act.until === 'function' ? act.until(me, opp) : act.until <= 0);
+    const done =!act || (typeof act.until === 'function' ? act.until(me, opp) : act.until <= 0);
     if (done) {
       if (queue.length) { act = queue.shift(); if (act.onlyIf && !act.onlyIf(me, opp)) act = null; }
       // no re-deciding during my own attack (each new plan would overwrite the buffered press);

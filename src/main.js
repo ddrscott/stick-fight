@@ -86,7 +86,8 @@ function onEvent(ev) {
     case 'hit':
       // the FX burst is small and sits on the striking limb; the camera does nothing until
       // release. A body hit sheds no crate chunks.
-      fx.hit({ x: ev.x, y: ev.y, strength: ev.ko ? 1.0 : ev.counter ? 0.9 : 0.3 + 0.4 * ev.strength, dir: ev.dir, flashR: (ev.flashR || 36) * (ev.counter ? 1.3 : 1), debris: 'none' });
+      fx.hit({ x: ev.x, y: ev.y, strength: ev.ko ? 1.0 : ev.counter ? 0.9 : 0.3 + 0.4 * ev.strength, dir: ev.dir, flashR: (ev.flashR || 36) * (ev.counter ? 1.3 : 1), debris: 'none',
+        flashColor: (FRAME_DATA[ev.move] && FRAME_DATA[ev.move].flashColor) || undefined });   // a move's own flash color (CHEF's Flambé)
       // a counter hit gets its own flash (magenta), drawn behind the fighters
       if (ev.counter && typeof fx.counterFlash === 'function') fx.counterFlash({ x: ev.x, y: ev.y });
       light(ev.x, ev.y, 120 + 140 * ev.strength, ev.counter ? [1.0, 0.25, 0.75] : [1.0, 0.62, 0.3], 0.8 + 0.5 * ev.strength, ev.ko ? 0.5 : 0.22);
@@ -385,6 +386,33 @@ const PHASES = {
     { name: 'STREAK FREE 1,3,4 (ender: dropkick)', at: () => [300, 390], p1: [[10, B('lp')], [26, B('lk')], [48, B('rk')]], dur: 220 },
     { name: 'STREAK FREE near the wall (wall splat)', at: () => [W1() - 230, W1() - 140], p1: [[10, B('lp')], [26, B('lk')], [48, B('rk')]], dur: 220 },
   ],
+  // CHEF: the armored overhead chop (on a crouching guard, through a jab, blocked and punished), the launching flick, the splat ender
+  chef: [
+    { name: 'CLEAVER b+2 on a crouching guard (overhead hits)', at: () => [560, 655], p2: { down: true, back: true }, p1: [[10, (me) => ({ rp: true, dx: -me.facing })]], dur: 220 },
+    { name: 'CLEAVER armors his jab and chops through it', at: () => [560, 650], p1: [[10, (me) => ({ rp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 22 && t < 25 ? { lp: true } : {}), dur: 220 },
+    { name: 'CLEAVER blocked standing: punished', at: () => [560, 655], p2: (me, o, t) => (o.state === 'attack' && o.phase === 'recovery' && me.state !== 'blockstun' && t % 4 < 2 ? clean(me, { rp: true }) : { back: true }), p1: [[10, (me) => ({ rp: true, dx: -me.facing })]], dur: 220 },
+    { name: 'FLAMBÉ b+1 launches (the flash), jabs juggle', at: () => [580, 650], p1: [[10, (me) => ({ lp: true, dx: -me.facing })], [74, B('lp')], [96, B('lp')]], dur: 220 },
+    { name: 'EIGHTY-SIX 1,1,4 into the wall (splat)', at: () => [W1() - 260, W1() - 170], p1: [[10, B('lp')], [26, B('lp')], [44, B('rk')]], dur: 220 },
+  ],
+  // WELLNESS COACH: Tree Pose held into each of its buttons, tapped (it steps out on its own), the overhead ender
+  wellness: [
+    { name: 'TREE POSE b+1 held, then 4: CRANE KICK launches', at: () => [560, 660], p1: [[10, (me) => ({ lp: true, dx: -me.facing })], ...Array.from({ length: 16 }, (_, i) => [13 + i * 3, { lp: true }]), [52, { lp: true, rk: true }]], dur: 220 },
+    { name: 'TREE POSE, then 3: ROOT SWEEP under a standing guard', at: () => [570, 655], p2: (me, o, t) => (t >= 50 ? { back: true } : {}), p1: [[10, (me) => ({ lp: true, dx: -me.facing })], ...Array.from({ length: 16 }, (_, i) => [13 + i * 3, { lp: true }]), [52, { lp: true, lk: true }]], dur: 200 },
+    { name: 'CRANE KICK on a crouching guard (a mid: it hits)', at: () => [560, 660], p2: { down: true, back: true }, p1: [[10, (me) => ({ lp: true, dx: -me.facing })], ...Array.from({ length: 16 }, (_, i) => [13 + i * 3, { lp: true }]), [52, { lp: true, rk: true }]], dur: 220 },
+    { name: 'TREE POSE held, then 2: steps out', at: () => [500, 680], p1: [[10, (me) => ({ lp: true, dx: -me.facing })], ...Array.from({ length: 20 }, (_, i) => [13 + i * 3, { lp: true }]), [70, { lp: true, rp: true }]], dur: 160 },
+    { name: 'TREE POSE tapped: holds a beat and steps out by itself', at: () => [500, 680], p1: [[10, (me) => ({ lp: true, dx: -me.facing })]], dur: 160 },
+    { name: 'TREE POSE caught by a jab in its startup (counter)', at: () => [575, 650], p1: [[10, (me) => ({ lp: true, dx: -me.facing })]], p2: (me, o, t) => (t >= 8 && t < 11 ? { lp: true } : {}), dur: 160 },
+    { name: 'SUN SALUTATION 1,3,4 (overhead split kick)', at: () => [400, 490], p1: [[10, B('lp')], [26, B('lk')], [48, B('rk')]], dur: 240 },
+  ],
+  // ELECTRICIAN: the shock (and once per combo), the root (no walking away, but he guards), the ender
+  electrician: [
+    { name: 'LIVE WIRE f+1: SHOCKED, then 2, 3 land in the extra stun', at: () => [560, 655], p1: [[10, (me) => ({ lp: true, dx: me.facing })], [80, B('rp')], [100, B('lk')]], dur: 220 },
+    { name: 'LIVE WIRE twice in one combo (named, as the CPU does): the second only stuns (once per combo)', at: () => [560, 655], p1: [[10, (me) => ({ lp: true, dx: me.facing })], [84, { electrician_liveWire: true }]], dur: 220 },
+    { name: 'LIVE WIRE blocked standing', at: () => [560, 655], p2: { back: true }, p1: [[10, (me) => ({ lp: true, dx: me.facing })]], dur: 140 },
+    { name: 'GROUND FAULT df+3 under a standing guard: ROOTED, he can\'t walk away', at: () => [570, 650], p2: (me, o, t) => (t >= 18 ? { back: true } : {}), p1: [[10, (me) => ({ lk: true, down: true, dx: me.facing })]], dur: 200 },
+    { name: 'GROUND FAULT: rooted, he still guards the cross', at: () => [560, 650], p2: (me, o, t) => (t > 40 ? { back: true } : {}), p1: [[10, (me) => ({ lk: true, down: true, dx: me.facing })], [62, B('rp')]], dur: 200 },
+    { name: 'SHORT CIRCUIT 2,1,2 (two-palm ender)', at: () => [400, 490], p1: [[10, B('rp')], [30, B('lp')], [48, B('rp')]], dur: 220 },
+  ],
   // holding back walks back; the guard snaps on only for a strike that can reach (Tekken)
   guard: [
     { name: 'hold back, nothing coming: walks back', at: () => [400, 620], p2: { back: true }, p1: [], dur: 140 },
@@ -542,6 +570,9 @@ const scenes = {
   'janitor-test'(o) { timeline(PHASES.janitor, o); },
   'intern-test'(o) { timeline(PHASES.intern, o); },
   'windowwasher-test'(o) { timeline(PHASES.windowWasher, o); },
+  'chef-test'(o) { timeline(PHASES.chef, o); },
+  'wellness-test'(o) { timeline(PHASES.wellness, o); },
+  'electrician-test'(o) { timeline(PHASES.electrician, o); },
   // an online match (src/net/online.js): each unit's controller reads the lockstep's input for the frame
   online(o) {
     if (!o.lockstep) { scenes.play(o); return; }
@@ -561,6 +592,93 @@ const scenes = {
 // passes the player's pick; the attract demo draws a random pair from the roster.
 const urlChars = [params.get('p1'), params.get('p2')];
 const SCENE_CHARS = { 'courier-test': ['courier', TEMP_ID], 'security-test': ['security', TEMP_ID], 'manager-test': ['manager', TEMP_ID], 'accountant-test': ['accountant', TEMP_ID], 'helpdesk-test': ['helpdesk', TEMP_ID], 'janitor-test': ['janitor', TEMP_ID], 'intern-test': ['intern', TEMP_ID], 'windowwasher-test': ['windowWasher', TEMP_ID] };
+// HR REP, SALES REP, BARISTA: each unique move landing as designed, the character as P1 against a TEMP. The
+// status phases run past the timer (WRITTEN UP 3s, WIRED 2.5s) so the tag can be seen running out.
+{
+  const fwd = (b) => (me) => ({ [b]: true, dx: me.facing }), back = (b) => (me) => ({ [b]: true, dx: -me.facing });
+  const walk = (a, b) => Array.from({ length: Math.ceil((b - a) / 3) }, (_, i) => [a + i * 3, (me) => ({ dx: me.facing })]);   // walk in over steps a..b
+  const spend = (me, o, t) => (t === 60 || t === 100 || t === 140 ? { lp: true } : {});   // P2 burns stamina so his slow regen shows
+  Object.assign(PHASES, {
+    hrRep: [
+      { name: 'WRITE-UP b+1: WRITTEN UP, half regen for 3s (he jabs the air and refills slowly)', p1: [[10, back('lp')]], p2: spend, dur: 480 },
+      { name: 'the same jabs without a write-up (regen compare)', p1: [], p2: spend, dur: 240 },
+      { name: 'WRITE-UP is a high: a croucher ducks it', p2: { down: true }, p1: [[10, back('lp')]], dur: 140 },
+      { name: 'MANDATORY TRAINING b+2 from long range: he staggers back on his feet', at: () => [440, 600], p1: [[10, back('rp')]], dur: 200 },
+      { name: 'MANDATORY TRAINING blocked (his back to the wall)', at: () => [W1() - 200, W1() - 40], p2: { back: true }, p1: [[10, back('rp')]], dur: 160 },
+      { name: 'EXIT INTERVIEW 2,1,2: written up and shoved out, no knockdown', p1: [[10, B('rp')], [30, B('lp')], [48, B('rp')]], p2: (me, o, t) => (t === 200 || t === 240 ? { lp: true } : {}), dur: 460 },
+    ],
+    salesRep: [
+      { name: 'COLD CALL f,f+1 lands', at: () => [380, 640], dash: 26, p1: [[26, fwd('lp')]], dur: 150 },
+      { name: 'COLD CALL feints into THE PITCH (back+3 in startup) under a standing guard', at: () => [W1() - 230, W1() - 40], dash: 18, p2: { back: true }, p1: [[18, fwd('lp')], [25, back('lk')]], dur: 160 },
+      { name: 'COLD CALL feints into CLOSE THE DEAL (a throw in startup) through a guard', at: () => [W1() - 230, W1() - 40], dash: 18, p2: { back: true }, p1: [[18, fwd('lp')], [25, { lp: true, lk: true }]], dur: 200 },
+      { name: 'back+3 after the feint window: that one botches', at: () => [W1() - 230, W1() - 40], dash: 18, p2: { back: true }, p1: [[18, fwd('lp')], [36, back('lk')]], dur: 200 },
+      { name: 'CLOSE THE DEAL f+1+3 (fast grab)', at: () => [560, 645], p1: [[10, (me) => ({ lp: true, lk: true, dx: me.facing })]], dur: 180 },
+      { name: 'ALWAYS BE CLOSING 3,1,2 launches, a jab juggles', p1: [[10, B('lk')], [30, B('lp')], [46, B('rp')], [104, B('lp')]], dur: 220 },
+    ],
+    barista: [
+      { name: 'ESPRESSO SHOT b+1: WIRED, then a jab comes out faster', at: () => [560, 700], p1: [[6, back('lp')], ...walk(96, 124), [130, B('lp')]], dur: 380 },
+      { name: 'the same jab not wired (timing compare)', at: () => [560, 650], p1: [[130, B('lp')]], dur: 200 },
+      { name: 'POUR OVER b+2: four hits, the palm knocks down', p1: [[10, back('rp')]], dur: 200 },
+      { name: 'POUR OVER blocked standing (every hit blocked)', p2: { back: true }, p1: [[10, back('rp')]], dur: 180 },
+      { name: 'LATTE ART 1,2,1 (whirling backfist ender)', p1: [[10, B('lp')], [26, B('rp')], [46, B('lp')]], dur: 200 },
+      { name: 'WIRED LATTE ART: the shot, then 1,2,1 with faster startups', at: () => [560, 670], p1: [[6, back('lp')], ...walk(80, 104), [110, B('lp')], [124, B('rp')], [140, B('lp')]], dur: 300 },
+    ],
+  });
+  Object.assign(scenes, { 'hrrep-test'(o) { timeline(PHASES.hrRep, o); }, 'salesrep-test'(o) { timeline(PHASES.salesRep, o); }, 'barista-test'(o) { timeline(PHASES.barista, o); } });
+  Object.assign(SCENE_CHARS, { 'hrrep-test': ['hrRep', TEMP_ID], 'salesrep-test': ['salesRep', TEMP_ID], 'barista-test': ['barista', TEMP_ID] });
+}
+Object.assign(SCENE_CHARS, { 'chef-test': ['chef', TEMP_ID], 'wellness-test': ['wellness', TEMP_ID], 'electrician-test': ['electrician', TEMP_ID] });
+// RECEPTIONIST, LAWYER, THE CEO: each unique move landing as designed (and what beats it), the character as P1.
+// p2as(id): the phase's P2 (a TEMP unless it says so; LAWYER's ESCORT phase needs a SECURITY)
+{
+  const p2as = (id) => () => { if (sim.units[1].char.id !== id) sim.setCharacter(1, id); };
+  const fwd = (b) => (me) => ({ [b]: true, dx: me.facing }), back = (b) => (me) => ({ [b]: true, dx: -me.facing });
+  const tossBack = (me) => ({ lp: true, lk: true, dx: -me.facing });
+  const pressIn = Array.from({ length: 10 }, (_, i) => [14 + i * 3, (me) => (me.state === 'attack' ? { dx: me.facing } : {})]);   // walking in through the recovery while he's in blockstun
+  const punish = (me, o) => (o.state === 'attack' && o.phase === 'recovery' && Math.abs(o.x - me.x) < 130 ? clean(me, { rp: true }) : {});
+  Object.assign(PHASES, {
+    receptionist: [
+      { name: 'PLEASE HOLD f+1 from long range (the end of the cord lands)', at: () => [470, 640], setup: p2as(TEMP_ID), p1: [[10, fwd('lp')]], dur: 170 },
+      { name: 'PLEASE HOLD blocked at range', at: () => [470, 640], setup: p2as(TEMP_ID), p2: { back: true }, p1: [[10, fwd('lp')]], dur: 170 },
+      { name: 'PLEASE HOLD hits a croucher (a mid)', at: () => [470, 640], setup: p2as(TEMP_ID), p2: { down: true }, p1: [[10, fwd('lp')]], dur: 170 },
+      { name: 'PLEASE HOLD up close: the cord goes past him, the cross punishes', at: () => [560, 640], setup: p2as(TEMP_ID), p1: [[10, fwd('lp')]], p2: punish, dur: 190 },
+      { name: 'TRANSFER b+1+3: up over her head, down on her other side', at: () => [560, 632], setup: p2as(TEMP_ID), p1: [[10, tossBack]], dur: 260 },
+      { name: 'TRANSFER out of the corner (now he has the wall behind him)', at: () => [W0() + 170, W0() + 242], setup: p2as(TEMP_ID), p1: [[10, tossBack]], dur: 280 },
+      { name: "TRANSFER can't be broken", at: () => [560, 632], setup: p2as(TEMP_ID), p1: [[10, tossBack]], p2: (me, o, t) => (me.state === 'grabbed' && t % 6 < 3 ? { lp: true, lk: true } : {}), dur: 260 },
+      { name: 'TRANSFER with her back to the wall: no room, a plain toss forward', at: () => [W0() + 70, W0() + 142], setup: p2as(TEMP_ID), p1: [[10, tossBack]], dur: 220 },
+      { name: 'HANG UP 3,1,1 (overhead ender)', setup: p2as(TEMP_ID), p1: [[10, B('lk')], [30, B('lp')], [50, B('lp')]], dur: 220 },
+    ],
+    lawyer: [
+      { name: 'OBJECTION! b+1 catches a throw: SUSTAINED', at: () => [430, 502], setup: p2as(TEMP_ID), p1: [[6, back('lp')]], p2: (me, o, t) => (t >= 12 && t < 15 ? { lp: true, lk: true } : {}), dur: 200 },
+      { name: "OBJECTION! catches SECURITY's ESCORT", at: () => [430, 515], setup: p2as('security'), p2: (me, o, t) => (t >= 8 && t < 11 ? { lp: true, lk: true, dx: Math.sign(o.x - me.x) } : {}), p1: [],
+        react: (me, o, t) => (t < 0 ? back('lp')(me) : o.state === 'attack' && o.move === 'escort' ? back('lp')(me) : null), dur: 220 },
+      { name: 'OBJECTION! loses to a strike (his jab: a counter hit)', setup: p2as(TEMP_ID), p1: [[6, back('lp')]], p2: (me, o, t) => (t >= 12 && t < 15 ? { lp: true } : {}), dur: 160 },
+      { name: 'OBJECTION! whiffed: the recovery is punished', setup: p2as(TEMP_ID), p1: [[6, back('lp')]], p2: punish, dur: 180 },
+      { name: 'CROSS-EXAMINATION f+1 blocked (plus, he steps in), then the throw beats his guard', at: () => [400, 480], setup: p2as(TEMP_ID), p2: (me, o) => (o.state === 'attack' || me.state === 'blockstun' ? { back: true } : {}), p1: [[10, fwd('lp')], ...pressIn],
+        react: (me, o, t) => (t < 0 ? { lp: true, lk: true } : t > 12 && me.state === 'idle' && o.state === 'blockstun' ? { lp: true, lk: true } : null), dur: 200 },
+      { name: 'CROSS-EXAMINATION blocked, he ducks the throw: the mid (snap kick) hits the croucher', at: () => [400, 480], setup: p2as(TEMP_ID),
+        p2: (me, o, t) => (me.state === 'blockstun' || (o.state === 'attack' && o.move === 'lawyer_crossExam') ? { back: true } : t > 20 ? { back: true, down: true } : {}), p1: [[10, fwd('lp')], ...pressIn],
+        react: (me, o, t) => (t < 0 ? B('lk') : t > 12 && me.state === 'idle' && o.crouch ? B('lk') : null), dur: 200 },
+      { name: 'CROSS-EXAMINATION on hit: the cross links', setup: p2as(TEMP_ID), p1: [[10, fwd('lp')]], react: (me, o, t) => (t < 0 ? { cross: true } : me.state === 'attack' && me.hitConfirmed && o.state === 'hitstun' ? { cross: true } : null), dur: 180 },
+      { name: 'CLOSING ARGUMENT 2,3,2 by the wall (splat)', at: () => [W1() - 300, W1() - 210], setup: p2as(TEMP_ID), p1: [[10, B('rp')], [32, B('lk')], [54, B('rp')]], dur: 240 },
+    ],
+    ceo: [
+      { name: 'GOLDEN PARACHUTE b+1: his cross passes through', at: () => [560, 646], p2: (me, o, t) => (t >= 4 && t < 7 ? { rp: true } : {}), p1: [[23, back('lp')]], dur: 160 },
+      { name: 'GOLDEN PARACHUTE: his throw passes through', at: () => [560, 632], p2: (me, o, t) => (t >= 12 && t < 15 ? { lp: true, lk: true } : {}), p1: [[12, back('lp')]], dur: 160 },
+      { name: 'GOLDEN PARACHUTE: the landing is open (he follows it in, a cross catches it)', at: () => [560, 650], p1: [[6, back('lp')]],
+        p2: (me, o, t) => (o.state === 'attack' && o.move === 'ceo_parachute' && sim.stepsSince(o, 'start') >= 28 ? clean(me, { rp: true }) : t > 8 && Math.abs(o.x - me.x) > 100 ? { dx: Math.sign(o.x - me.x), run: true } : {}), dur: 160 },
+      { name: 'HOSTILE TAKEOVER d/f+2 launches, d/f+2 again in the air: the ender carries him into the wall', at: () => [W0() + 300, W0() + 220],
+        p1: [[10, (me) => ({ rp: true, down: true, dx: me.facing })]],
+        react: (me, o, t) => (t < 0 || (me.state === 'attack' && me.move === 'ceo_takeover' && me.hitConfirmed && o.state === 'knockdown' && o.juggle) ? { rp: true, down: true, dx: me.facing } : null), dur: 260 },
+      { name: 'uppercut d+2 launches, HOSTILE TAKEOVER ends it', at: () => [400, 470], p1: [[10, D('rp')]],
+        react: (me, o, t) => (t < 0 || (me.state === 'attack' && me.move === 'uppercut' && me.hitConfirmed && o.state === 'knockdown' && o.juggle) ? { rp: true, down: true, dx: me.facing } : null), dur: 260 },
+      { name: 'HOSTILE TAKEOVER blocked: open, the cross punishes', p2: (me, o) => (me.state === 'blockstun' || o.phase !== 'recovery' ? { back: true } : punish(me, o)), p1: [[10, (me) => ({ rp: true, down: true, dx: me.facing })]], dur: 150 },
+      { name: 'STOCK SPLIT 2,1,2 (two-hit ender)', at: () => [400, 490], p1: [[10, B('rp')], [30, B('lp')], [48, B('rp')]], dur: 220 },
+    ],
+  });
+  Object.assign(scenes, { 'receptionist-test'(o) { timeline(PHASES.receptionist, o); }, 'lawyer-test'(o) { timeline(PHASES.lawyer, o); }, 'ceo-test'(o) { timeline(PHASES.ceo, o); } });
+  Object.assign(SCENE_CHARS, { 'receptionist-test': ['receptionist', TEMP_ID], 'lawyer-test': ['lawyer', TEMP_ID], 'ceo-test': ['ceo', TEMP_ID] });
+}
 function pickChars(name, opts) {
   if (opts && opts.chars) return opts.chars;
   if (SCENE_CHARS[name] && !urlChars[0]) return SCENE_CHARS[name];
