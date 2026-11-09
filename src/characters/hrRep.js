@@ -102,6 +102,8 @@ export default {
   id: 'hrRep',
   name: 'HR REP',
   tagline: 'THIS IS GOING IN YOUR FILE',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): watchful: damped springs, straightens up, a glance at the file
+  life: { spring: 0.9, damp: 1.2, eye: 1.05, breath: 0.9, sway: 0.4, swayHz: 0.35, habits: ['straighten', 'glance'] },
   color: '#ff9de6',
   altColor: '#7dffb2',
   accent: '#fff0b8',

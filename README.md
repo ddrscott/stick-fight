@@ -600,6 +600,7 @@ Replace your character's file in `src/characters/` with a default export like `c
 - `stats`, each relative to TEMP (all default 1 except health): `health` (out of 100), `walk`, `backWalk` (a share of the walk), `run`, `jump`, `dash` (multiplies every `travel`), `weight` (knockback taken: x by 1/weight, y by 1/sqrt(weight)), `stamina` (the bar's size), `regen`, `damage` (every hit he lands).
 - `body`, for the rig (`createFighter({ body })`, `rig.setBody`): `scale`, `headR`, `upperArm`, `lowerArm`, `upperLeg`, `lowerLeg`, `lowerTorso`, `upperTorso`, `limbW`, `limbTip`, `torsoW`, `hipW` (defaults in `RIG`, `src/fighter/index.js`), `lean` (degrees of extra forward pitch), `stance` (degrees each leg spreads), and `accessory(ctx, joints, { scale, facing, color, accent, headR })`: a few strokes drawn over the head on the figures layer, so it's lit like the body. Hit and hurt radii and the contact surface scale with `scale` and the limb and torso widths, and a walk or run cycle plays at the rate that keeps feet planted at the character's speed. Watch the reach: a longer arm or a thicker fist wins the poke game outright (SECURITY's first build won three rounds in four on jabs and crosses alone).
 - `prop` (optional): `{ draw(ctx, joints, { scale, facing, color, accent, sway, at, len }), at, len, hz, damping }`, something that hangs and swings (TEMP's lanyard, THE MANAGER's tie). The rig draws it over the chest after the head, and the life layer swings its free end by `sway` (see Layout, The life layer). Drawn only, so it costs the sim nothing; flat color, never a glow.
+- `life` (optional): how it moves, drawn only: `{ spring, damp, eye, breath, breathAmp, sway, swayHz, bounce, bounceHz, habits, laugh, ko }`, every field optional (see Layout, The life layer, Signatures). Give a new character at least its own numbers, so nobody moves identically.
 - `moves`: `{ name: { rig, frame } }`. Names are global: never reuse a shared or another character's name (registration throws). `rig` is a clip in the `MOVE_DEFS` format, built with `RIG_KIT` from `src/fighter/index.js`: `K(pose, ms, ease, ev)`, the IK helpers `F`, `L`, `leg`, the guard feet and hip `LF`, `RF`, `HIP`, the crouch `crouchP` and `CH`, and `base(name)` with `deepKeys` to start from a shared clip. A clip has `blend`, `limb` (the joint that carries the hitbox: `lHand`, `rHand`, `lFoot`, `rFoot`, `lKnee`, `rKnee`, `lElbow`, `rElbow`; button 1 is the lead hand, 2 the rear, 3 the lead foot, 4 the rear), `keys` with one `'active'` key (more for a multi-hit) and a `'recover'` key (the cancel window runs from it), and optionally `shift` (root travel when it ends), `air`, `chainFrom`. `frame` is a `FRAME_DATA` entry (`src/combat/frameData.js`; `addFrameData` fills what's left out): `limb` ('hand' or 'foot', for its radius), `damage`, `kb`, `hitstun`, `blockstun`, `hitstop`, `knockdown`, `height` ('high', 'mid', 'low', 'overhead', 'throw'), `cost`, `cancels`, `reach`, `flashR`, `juggle`, `splat`, `groundBounce`, `ender`, `callout`, `tc`, `react` (a reaction clip), and the hooks below. A frame-only entry (no `rig`) plays another clip through `anims: ['clip']` (SAME DAY's ender plays the slide).
 - `commands`: `{ button, motion, move }`. Buttons '1' to '4', '1+3', '2+4'; motions '' (neutral), 'f', 'b', 'd', 'df', 'db', 'ff' (dashing: running or just after), 'run', 'rise' (released down), 'air', 'airDown'. A command replaces the shared move for that button and motion, and the most specific motion wins. A string continuation still beats a command.
 - `strings`: `{ drop: ['SKY SPIKE'], add: [{ name, keys, moves }] }`. Keys are tokens ('1'..'4', 'd1'..'d4'; after the first, a plain token also matches its down variant), moves the move for each press, the last being the ender. Strings that share a prefix must agree on its moves. Registration warns about conflicts, including a sequence that collides through the down variant (1, 2, d3 is UPTOWN).
@@ -737,14 +738,14 @@ Two players, each on their own phone or computer, fight online. One hosts a room
 - `src/audio/` — sound effects and music (see Sound). `main.js` makes two calls into it: `gameAudio.attach(sim)` and `gameAudio.event(ev)` from its event router. During the attract demo (and the menus over it) it holds the events back and attaches `null` instead of the sim (so the whiff watcher is quiet too), then attaches the sim again when a game starts.
 - `demo/*.html` — one page per module so each can be judged alone.
 - `window.__game.advance(ms)` steps the game without drawing a frame (fast, for counting events over a long demo); `window.__gauntlet.step(ms)` steps and draws.
-- `src/fighter/life.js` — the life layer (below): eyeline, springs and props, fatigue, drawn only.
+- `src/fighter/life.js` — the life layer (below): eyeline, springs and props, fatigue, takes, per-character signatures and idle habits, drawn only.
 - `gauntlet/` — the quality loop: the brief (with the owner requirements), the capture tool and the workbench log. The reference images and per-round critic captures stay out of the public repo (see `.gitignore`); the reference images belong to their owners.
 
 ### The life layer
 
-What a puppeteer adds on top of the keyframes (`src/fighter/life.js`). The clips carry the acting; this layer makes the figure look like it's watching, carrying weight and getting tired.
+What a puppeteer adds on top of the keyframes (`src/fighter/life.js`). The clips carry the acting; this layer makes the figure look like it's watching, carrying weight, getting tired, reacting to the other fighter and fidgeting like itself.
 
-**Drawn only, always.** The rig's joints drive the hitboxes, and online play runs the rig on both machines and saves and hashes it for rollback. The life layer never touches any of that: `render()` in `src/main.js` takes the joints `frameDraw()` produced for this frame (the turnaround and snap fade already applied), and `life.apply(u, joints, sim, dt)` returns a moved copy that only the drawing uses, the same way the draw smoothing works. Its springs live in the layer, keyed by unit, and step once per rendered frame on real time, so a rollback re-running sim steps never runs them twice; they reset with the draw smoothing on a scene change and a new round, and stand still whenever the sim does (paused, a menu over the fight) and in a hit's freeze, so a contact frame still holds. The prop's swing reaches the rig's `draw()` as `rig.sway`, set before the draw and cleared after; it isn't part of `getState()`. `?life=0` turns the layer off for an A/B, and `window.__game.life.on` does the same live.
+**Drawn only, always.** The rig's joints drive the hitboxes, and online play runs the rig on both machines and saves and hashes it for rollback. The life layer never touches any of that: `render()` in `src/main.js` takes the joints `frameDraw()` produced for this frame (the turnaround and snap fade already applied), and `life.apply(u, joints, sim, dt)` returns a moved copy that only the drawing uses, the same way the draw smoothing works. Its springs live in the layer, keyed by unit, and step once per rendered frame on real time, so a rollback re-running sim steps never runs them twice; they reset with the draw smoothing on a scene change and a new round, and stand still whenever the sim does (paused, a menu over the fight) and in a hit's freeze, so a contact frame still holds. The prop's swing reaches the rig's `draw()` as `rig.sway`, set before the draw and cleared after; it isn't part of `getState()`. `?life=0` turns the layer off for an A/B, and `window.__game.life.on` does the same live (`window.__game.life.extras = false` keeps the eyeline, springs and fatigue and drops the takes, signatures and habits).
 
 - **Eyeline.** The head pitches toward what the fighter is watching: the other fighter's chest by default, the striking limb while a strike winds up at him (FRAME_DATA `joint`), the hip of a body on the floor, the loser after a KO. A critically damped turn of about 0.1 s, at most 12 degrees up and 15 down, and weighted by state (full in idle, walk, crouch and guard, about half in an attack, none launched, thrown or knocked down), so the clips' own head keys run the big moves. Think, then move: as his own strike starts (or a step), the head nods 7 degrees toward the target and leads by 2 px, gone in about 0.1 s.
 - **Springs.** The head lags the neck on a loose spring (3.2 Hz, at most 3.5 px), the hands trail a little outside a strike (6 Hz, 2.5 px), and a hit sends a wave up the body after the freeze: the hips first, the chest 30 ms later, the shoulders and arms at 55 to 75, the head at 90, each a 150 ms push away from the attacker of 3.5 to 8 px by the damage. The feet never move.
@@ -757,7 +758,56 @@ What a puppeteer adds on top of the keyframes (`src/fighter/life.js`). The clips
 
 - **Fatigue.** Under 40% stamina (all of it by 10%) the shoulders, arms and head heave with the breath, 1.6 breaths a second rising to 3.2, up to 4.5 px; the shoulders round forward 2 px, the guard's hands sag 9 px toward the belt (the elbows 4), and the head hangs 3.5 px. It eases in over a quarter second and out over 0.6 as the bar refills, only in idle, walk, crouch and guard; a faint keeps its own dizzy clip.
 
+- **Takes.** Reactions to the other fighter, the way a Muppet's best moments are its reactions. The sim emits nothing new for them: the layer compares unit fields frame to frame (`botchAt`, `faintAt`, a strike going into `hitstun` with no damage taken, `sim.phase === 'ko'` with `sim.winner`). Each is a short keyed curve (smoothstep between keys, so every key is a still point and nothing steps) on the head, torso and arms, eased in and out by a weight, and plays only over idle, walk, crouch and guard: if the fighter starts a strike, gets hit or knocked down mid-take, the weight eases out in about 70 ms. One take at a time, and a new one starts at least 0.6 s after the last began.
+
+| Take | When | What it looks like |
+|---|---|---|
+| double take | the other fighter botches | a beat, the head snaps toward them, back, a second smaller look (0.9 s); with `laugh`, a little shoulder shake of a laugh |
+| watching a faint | the other fighter faints | leans back, the guard drops 6 px, the head tilts, held while they're out |
+| flinch | this fighter's strike is parried | "oh!": the head pulls back, the shoulders come up, at 60% over the reel clip (0.5 s) |
+| settle | this fighter lands a parry | a small settle into the legs and a nod (0.55 s) |
+| KO hold | this fighter wins the round | once standing, a held silhouette for up to 0.8 s (the kabuki *mie*): stand tall, chin up, guard lowered; THE MANAGER straightens his tie, the TEMP slumps, exhausted and relieved |
+
+- **Signatures.** A character's `life` entry (in its file, next to `prop`) tunes how it moves, so nobody moves identically. Every field is optional: `spring` and `damp` multiply the head and hand springs, `eye` how fast the eyeline turns, `breath` the breath's tempo (the fatigue heave included), `breathAmp` px of an everyday breath while standing, `sway` and `swayHz` an idle weight sway, `bounce` and `bounceHz` a light bounce on the toes, `habits` the idle habits it picks from (a name twice is twice as likely), `laugh` the laugh in its double take, `ko` its KO hold (`'tie'`, `'slump'`, or the generic stand-tall). The sway, bounce and breath play only while standing idle and ease in and out over a quarter second.
+- **Habits.** Idle business, like a puppeteer's: after a randomized 1.8 to 3.6 s of quiet (standing idle, not fainted or tired, no take playing, the other fighter not attacking or jumping and more than 130 px away), a habit from the character's list plays (1 to 2.6 s), never the same one twice running when it has others, and the next waits 3.5 to 6.5 s more. Anything happening eases it out in about 80 ms. Habits move the guard a few px at most and never point a limb at the other fighter, so one never hides a guard or reads as a strike. The randomness is the layer's own (`Math.random`), never the sim's rng.
+
+| Habit | What it looks like |
+|---|---|
+| `glance` | two nervous glances back over the shoulder |
+| `fidget` | weight from foot to foot, a quick look up |
+| `straighten` | up straight, precisely, the hands tucked in, held, then back |
+| `watch` | the lead wrist comes up in front of the chest and the head tips down to it |
+| `neckRoll` | a slow roll of the neck |
+| `deepBreath` | one long breath in and out |
+| `shrug` | a shrug |
+| `shakeOut` | shaking the hands out, the guard dropping a touch |
+
+| Character | Signature | Habits |
+|---|---|---|
+| TEMP | a quicker eye, a little sway; slumps when he wins | glance (twice as likely), shrug |
+| INTERN | loose springs, a quick eye, a wide fast sway; laughs | fidget (twice as likely), glance |
+| HELPDESK | slow, even | shrug, neckRoll |
+| COURIER | quick springs, a bounce on the toes; laughs | shakeOut, glance |
+| SECURITY | stiff springs, a slow eye, a wide slow sway | neckRoll |
+| JANITOR | unhurried | neckRoll, shrug |
+| THE MANAGER | firm springs, an unhurried eye; laughs; straightens his tie when he wins | watch |
+| ACCOUNTANT | well damped, barely a sway | straighten |
+| WINDOW WASHER | loose springs, a breezy sway | glance, shakeOut |
+| THE CEO | firm springs, the slowest eye; laughs | straighten, watch |
+| RECEPTIONIST | a quick eye | glance, straighten |
+| LAWYER | damped | straighten, shrug |
+| SALES REP | a bounce, a quick eye; laughs | shrug, shakeOut |
+| HR REP | damped, watchful | straighten, glance |
+| BARISTA | loose springs, a fast breath, a quick bounce; laughs | shakeOut, fidget |
+| CHEF | a heavy sway | shakeOut, neckRoll |
+| WELLNESS COACH | soft springs, a slow, deep breath you can see, a slow sway | deepBreath |
+| ELECTRICIAN | quick springs | shakeOut, glance |
+
+- **On the fighter pages.** A fighter page's big rig (`site/rigs.js`, ShowcaseView) runs the same layer on its own between moves: the signature, the prop swinging and the habits (the next move waits for a habit to finish). The move cards and the build's roster sprites (a seamless 12-frame idle loop) don't use it.
+
 Cost: about 3 µs per fighter per frame (`life.apply` timed in Node on two real rigs, 200,000 calls). Checked with `?life=0` against the default on the same seeded scenes, stepped at a fixed 60fps and drawn every frame: the sim's state (every unit's own fields, every rig joint and the clip clock) hashed every 100 steps matched with the layer on and off, and between two runs with it on, in ai-fight (TEMP v THE MANAGER, seed 42, 1,200 steps), combo-test, parry-test and stomp-test (900 each), with the same max combos, health and callouts.
+
+The takes, signatures and habits, measured (2026-11-09, `vite preview`, four seeded ai-fight bouts of 1,800 steps: TEMP v THE MANAGER, INTERN v BARISTA, SECURITY v COURIER, ACCOUNTANT v WELLNESS COACH, each run three ways, everything on, `life.extras = false`, and `?life=0`): the sim hashes every 100 steps matched in all three, 72 of 72. Smoothness, counted as frames where a drawn hand or head moved more than 15 px in one 60fps frame while the fighter stood, walked or guarded (2,750 such frames in all): 111 with the takes and habits, 114 without them, 94 with the layer off. The takes and habits add none; the same walk-cycle frames show up in both lists, and the gap to "off" is the eyeline and springs above. Standing idle in Node for 40 s each, every character's fastest drawn hand or head move with the habits playing is 1 to 2.9 px a frame (0.7 without the layer), and every habit in every list fired.
 
 Props are flat solid color, like the fighters: nothing on a fighter glows.
 

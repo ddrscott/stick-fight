@@ -107,6 +107,8 @@ export default {
   id: 'windowWasher',
   name: 'WINDOW WASHER',
   tagline: 'DOES FLOOR 37 FROM OUTSIDE',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): used to the wind: loose springs, a breezy sway, a glance down
+  life: { spring: 1.15, damp: 0.85, eye: 1.1, sway: 1.2, swayHz: 0.5, habits: ['glance', 'shakeOut'] },
   color: '#5b8cff',
   altColor: '#ff7a4d',
   accent: '#d8ff3a',

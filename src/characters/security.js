@@ -71,6 +71,8 @@ export default {
   id: 'security',
   name: 'SECURITY',
   tagline: 'WILL ESCORT YOU OUT. THROUGH THE RAILING',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): slow, heavy and planted: stiff springs, a slow eye, a wide slow sway, a neck roll
+  life: { spring: 0.7, damp: 1.3, eye: 0.75, breath: 0.8, sway: 2.2, swayHz: 0.3, habits: ['neckRoll'] },
   color: '#5dff8a',
   altColor: '#ffd84f',
   accent: '#e9fff0',

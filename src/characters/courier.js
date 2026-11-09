@@ -49,6 +49,8 @@ export default {
   id: 'courier',
   name: 'COURIER',
   tagline: 'DELIVERS IN THIRTY SECONDS OR LESS',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): light on the toes: a quick bounce, quick eyes, shaking the hands out
+  life: { spring: 1.3, damp: 0.9, eye: 1.3, breath: 1.25, sway: 0.4, swayHz: 0.6, bounce: 1.2, bounceHz: 2.2, habits: ['shakeOut', 'glance'], laugh: true },
   color: '#ff2bd6',
   altColor: '#ff8a3d',
   accent: '#2ef2ff',

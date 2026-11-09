@@ -96,6 +96,8 @@ export default {
   id: 'receptionist',
   name: 'RECEPTIONIST',
   tagline: 'PLEASE HOLD. YOUR BEATING IS IMPORTANT TO US',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): attentive: a quick eye, glances at the door, straightens up
+  life: { eye: 1.2, damp: 1.1, sway: 0.5, swayHz: 0.45, habits: ['glance', 'straighten'] },
   color: '#b46bff',
   altColor: '#ff5fd2',
   accent: '#ffe3f7',

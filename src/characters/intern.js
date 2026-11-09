@@ -94,6 +94,8 @@ export default {
   id: 'intern',
   name: 'INTERN',
   tagline: 'UNPAID, AND SWINGING LIKE IT',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): can't stand still: loose springs, a quick eye, foot-to-foot fidgeting; laughs at your botch
+  life: { spring: 1.25, damp: 0.85, eye: 1.35, breath: 1.2, sway: 1.6, swayHz: 0.7, habits: ['fidget', 'fidget', 'glance'], laugh: true },
   color: '#ffb02e',
   altColor: '#3fd0ff',
   accent: '#ff4f7b',

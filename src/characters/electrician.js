@@ -91,6 +91,8 @@ export default {
   id: 'electrician',
   name: 'ELECTRICIAN',
   tagline: 'DID YOU TRY TURNING YOURSELF OFF AND ON',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): a little wired: quick springs, shaking the hands out, a glance
+  life: { spring: 1.1, damp: 0.95, eye: 1.1, breath: 1.05, sway: 0.7, swayHz: 0.5, habits: ['shakeOut', 'glance'] },
   color: '#5b8cff',
   pants: '#ffe066',
   altColor: '#ff8a3d',

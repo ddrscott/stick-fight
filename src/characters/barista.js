@@ -85,6 +85,8 @@ export default {
   id: 'barista',
   name: 'BARISTA',
   tagline: 'ORDER UP. THE ORDER IS PAIN',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): over-caffeinated: loose springs, a fast breath, a quick bounce, shaking out, fidgeting; laughs at your botch
+  life: { spring: 1.3, damp: 0.8, eye: 1.3, breath: 1.5, sway: 0.5, swayHz: 0.8, bounce: 1.8, bounceHz: 2.6, habits: ['shakeOut', 'fidget'], laugh: true },
   color: '#ffb02e',
   altColor: '#5dd6ff',
   accent: '#fff1dc',

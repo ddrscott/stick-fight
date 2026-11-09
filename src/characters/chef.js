@@ -93,6 +93,8 @@ export default {
   id: 'chef',
   name: 'CHEF',
   tagline: 'THE SPECIAL TODAY IS YOU',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): on his feet all night: a heavy sway, shaking out, a neck roll
+  life: { sway: 0.8, swayHz: 0.4, habits: ['shakeOut', 'neckRoll'] },
   color: '#f0f0f0',
   pants: '#ff3b3b',
   altColor: '#7fd6ff',

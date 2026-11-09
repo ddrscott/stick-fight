@@ -84,6 +84,8 @@ export default {
   id: 'accountant',
   name: 'ACCOUNTANT',
   tagline: 'READ THE FINE PRINT. THEN THE OVERHEAD',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): precise: well-damped springs, barely a sway, straightens up exactly
+  life: { spring: 0.8, damp: 1.4, eye: 1.1, breath: 0.95, sway: 0.3, swayHz: 0.5, habits: ['straighten'] },
   color: '#ffe066',
   altColor: '#c6ff3d',
   accent: '#7af0ff',

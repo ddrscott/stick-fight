@@ -99,6 +99,8 @@ export default {
   id: 'wellness',
   name: 'WELLNESS COACH',
   tagline: 'BREATHE IN. NOW BREATHE THROUGH THE FLOOR',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): calm: soft springs, a slow eye, a slow deep breath you can see, long breaths in and out
+  life: { spring: 0.8, damp: 1.2, eye: 0.8, breath: 0.55, breathAmp: 2.2, sway: 0.9, swayHz: 0.2, habits: ['deepBreath'] },
   color: '#5dff8a',
   pants: '#ff2bd6',
   altColor: '#b78bff',

@@ -79,6 +79,8 @@ export default {
   id: 'janitor',
   name: 'JANITOR',
   tagline: 'WORKS THE LOWER FLOOR. MOPS WITH JUMP-INS',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): unhurried: an easy sway, a neck roll, a shrug
+  life: { spring: 0.95, eye: 0.9, breath: 0.9, sway: 1, swayHz: 0.4, habits: ['neckRoll', 'shrug'] },
   color: '#b46bff',
   altColor: '#5effc0',
   accent: '#ffd23f',

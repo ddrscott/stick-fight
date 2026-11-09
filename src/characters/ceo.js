@@ -73,6 +73,8 @@ export default {
   id: 'ceo',
   name: 'THE CEO',
   tagline: 'THE BOARD HAS DECIDED YOU’RE A COST',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): in no hurry at all: firm springs, a slow eye, straightens up, checks the time; amused by your botch
+  life: { spring: 0.8, damp: 1.25, eye: 0.7, breath: 0.85, sway: 0.4, swayHz: 0.3, habits: ['straighten', 'watch'], laugh: true },
   color: '#ffd84f',
   altColor: '#ff8a3d',
   accent: '#2ee8ff',

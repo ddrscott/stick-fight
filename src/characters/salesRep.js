@@ -93,6 +93,8 @@ export default {
   id: 'salesRep',
   name: 'SALES REP',
   tagline: 'HAVE YOU GOT A MINUTE? GREAT',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): always on: a bounce, a quick eye, a shrug, shaking the hands out; laughs at your botch
+  life: { spring: 1.2, damp: 0.9, eye: 1.25, breath: 1.15, sway: 1, swayHz: 0.6, bounce: 0.6, bounceHz: 1.6, habits: ['shrug', 'shakeOut'], laugh: true },
   color: '#ffe066',
   altColor: '#9b8cff',
   accent: '#ff3b3b',

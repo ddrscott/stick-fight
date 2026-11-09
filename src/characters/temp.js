@@ -30,6 +30,8 @@ export default {
   id: 'temp',
   name: 'TEMP',
   tagline: 'FIRST DAY. KNOWS THE BASICS',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): first day: a little quick to look around, a nervous glance back, an exhausted slump when he wins
+  life: { eye: 1.15, breath: 1.1, sway: 0.6, swayHz: 0.45, habits: ['glance', 'glance', 'shrug'], ko: 'slump' },
   color: '#f0f0f0',
   altColor: '#E85D00',
   accent: '#ffb02e',

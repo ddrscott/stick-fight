@@ -85,6 +85,8 @@ export default {
   id: 'helpdesk',
   name: 'HELPDESK',
   tagline: 'HAVE YOU TRIED BLOCKING?',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): patient: a slow, even sway, a shrug, a neck roll between tickets
+  life: { spring: 0.9, damp: 1.1, eye: 0.9, breath: 0.9, sway: 0.5, swayHz: 0.35, habits: ['shrug', 'neckRoll'] },
   color: '#2ee8ff',
   altColor: '#ff5fd2',
   accent: '#f4fbff',

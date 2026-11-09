@@ -8,6 +8,7 @@
 // lower resolution, and prefers-reduced-motion gets still poses (a move card still plays on a tap).
 import { getCharacter, TEMP_ID } from '../src/characters/index.js';
 import { createFighter, MOVE_DATA } from '../src/fighter/index.js';
+import { createLife } from '../src/fighter/life.js';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const COARSE = matchMedia('(pointer: coarse)').matches;
@@ -93,18 +94,23 @@ class MoveView {
   }
 }
 
-// the fighter page's big rig: guard, then one of its moves, round and round
+// the fighter page's big rig: guard, then one of its moves, round and round. Between moves it stands with the
+// game's life layer on top (src/fighter/life.js): the character's own sway, bounce and breath, its prop swinging,
+// and now and then one of its idle habits, which the next move waits for.
 class ShowcaseView {
   constructor(canvas, c, seqs) {
     this.s = new Surface(canvas); this.c = c; this.rig = makeRig(c);
     this.seqs = seqs.map((q) => q.filter(hasClip)).filter((q) => q.length);
-    this.n = 0; this.i = -1; this.t = 0;
+    this.n = 0; this.i = -1; this.t = 0; this.gap = rand(2.2, 4.4);
+    this.life = createLife();
+    this.unit = { id: 0, state: 'idle', phase: 'recovery', rig: this.rig, facing: 1, x: 0, char: c, health: 1, stamina: 1, staminaMax: 1, hitstop: 0 };
+    this.sim = { units: [this.unit], phase: null, hitstopActive: 0 };
   }
   tick(dt) {
     const { rig, s, c } = this;
     this.t += dt;
-    if (this.i < 0 && this.t > 2.2 && this.seqs.length && !REDUCED) {
-      this.q = this.seqs[this.n++ % this.seqs.length]; this.i = 0; rig.x = 0; safePlay(rig, this.q[0]);
+    if (this.i < 0 && this.t > this.gap && this.seqs.length && !REDUCED && !this.life.busy(this.unit)) {
+      this.q = this.seqs[this.n++ % this.seqs.length]; this.i = 0; rig.x = 0; safePlay(rig, this.q[0]); this.gap = rand(2.2, 4.4);
     } else if (this.i >= 0) {
       for (const ev of rig.events) if (ev.type === 'recover' && this.i < this.q.length - 1) { this.i++; safePlay(rig, this.q[this.i], { chain: true }); break; }
     }
@@ -115,7 +121,12 @@ class ShowcaseView {
     s.clear();
     const zoom = s.h / 235, x = s.w * 0.4, y = s.h * 0.92;
     s.floorGlow(x + 20 * zoom, y, s.w * 0.55, c.color);
+    // the life layer draws on a copy of the joints, like the game's render()
+    this.unit.state = this.i >= 0 ? 'attack' : 'idle'; this.unit.x = rig.x;
+    const real = rig.joints, J = REDUCED ? real : this.life.apply(this.unit, real, this.sim, dt);
+    rig.joints = J;
     s.rig(rig, c.color, x, y, zoom, 12);
+    rig.joints = real; rig.sway = null;
   }
 }
 

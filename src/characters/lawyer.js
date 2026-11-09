@@ -87,6 +87,8 @@ export default {
   id: 'lawyer',
   name: 'LAWYER',
   tagline: 'OBJECTION. ALSO, YOU’RE ON THE FLOOR',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): measured: damped springs, straightens up, a shrug
+  life: { spring: 0.9, damp: 1.2, breath: 0.95, sway: 0.4, swayHz: 0.4, habits: ['straighten', 'shrug'] },
   color: '#9aa7ff',
   altColor: '#5effc0',
   accent: '#f2f4ff',

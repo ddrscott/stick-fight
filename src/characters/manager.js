@@ -91,6 +91,8 @@ export default {
   id: 'manager',
   name: 'THE MANAGER',
   tagline: 'YOUR PERFORMANCE REVIEW IS NOW',
+  // how it moves (the life layer's signature, src/fighter/life.js: drawn only): composed: firm springs, an unhurried eye, a look at his watch; straightens his tie when he wins
+  life: { spring: 0.85, damp: 1.15, eye: 0.85, breath: 0.9, sway: 0.6, swayHz: 0.35, habits: ['watch'], laugh: true, ko: 'tie' },
   color: '#ff3b3b',
   altColor: '#ffd84f',
   accent: '#ffd84f',
