@@ -869,6 +869,23 @@ function camLive() {
   for (const u of sim.units) if (u !== a && u !== b && !u.hidden && Math.abs(u.x - a.x) < CAM.engage) live.push(u);
   return live;
 }
+// How far the touch controls (the stick on the left, the button cluster on the right) reach into the stage, in
+// canvas px. On a phone held sideways the gutters beside the 16:9 stage are narrow and the controls sit over it,
+// so the camera keeps the bodies between them. Zero wherever the controls aren't over the stage (desktop, a pad,
+// portrait, where they sit under it). Read from the layout twice a second, never every frame.
+let insetAt = -1e9, insetL = 0, insetR = 0;
+function touchInsets() {
+  const now = performance.now();
+  if (now - insetAt < 500) return;
+  insetAt = now; insetL = insetR = 0;
+  if (!touchUI()) return;
+  const st = document.getElementById('stage'), cl = document.querySelector('.tc-cluster'), base = document.querySelector('.tc-base');
+  if (!st) return;
+  const S = st.getBoundingClientRect(), k = W / Math.max(1, S.width);
+  const over = (r) => r.width > 0 && r.height > 0 && r.top < S.bottom && r.bottom > S.top;
+  if (cl) { const r = cl.getBoundingClientRect(); if (over(r)) insetR = Math.min(W * 0.25, Math.max(0, S.right - r.left) * k); }
+  if (base) { const r = base.getBoundingClientRect(); if (over(r)) insetL = Math.min(W * 0.25, Math.max(0, r.right - S.left) * k); }
+}
 // The last word, once frameDraw has placed this frame's drawing: whatever the prediction in updateCamera missed
 // (a contact snap, a fade that outran it), the drawn bodies stay inside the frame and under the HUD strip.
 function fitCameraToDrawn() {
@@ -879,16 +896,19 @@ function fitCameraToDrawn() {
     for (const k in j) { const px = j[k].x + o.x, py = j[k].y + o.y; if (px - r < x0) x0 = px - r; if (px + r > x1) x1 = px + r; if (py - r < y0) y0 = py - r; if (py + 0.5 * r > y1) y1 = py + 0.5 * r; }
   }
   if (!(x1 >= x0)) return;
-  const zf = Math.min((H - CAM.padTop - CAM.padBot) / Math.max(1, y1 - y0), (W - 2 * CAM.padX) / Math.max(1, x1 - x0));
+  const sx0 = CAM.padX + insetL, sx1 = W - CAM.padX - insetR;   // the screen span bodies keep to
+  const zf = Math.min((H - CAM.padTop - CAM.padBot) / Math.max(1, y1 - y0), (sx1 - sx0) / Math.max(1, x1 - x0));
   if (camera.zoom > zf && zf >= 0.85) { camZoom = Math.min(camZoom, zf); camera.zoom = zf; }
-  const z = camera.zoom, hw = W / 2 / z, hh = H / 2 / z;
-  camera.x = clamp(camera.x, x1 + CAM.padX / z - hw, x0 - CAM.padX / z + hw);
+  const z = camera.zoom, hh = H / 2 / z;
+  camera.x = clamp(camera.x, x1 - (sx1 - W / 2) / z, x0 - (sx0 - W / 2) / z);
   camera.y = clamp(camera.y, y1 + CAM.padBot / z - hh, y0 - CAM.padTop / z + hh);
 }
 function updateCamera(dt, snap = false) {
   if (sim.hitstopActive > 0) { camera.shakeX = 0; camera.shakeY = 0; return; }
   if (camCut) { snap = true; camCut = false; }
   const live = camLive();
+  touchInsets();
+  const sx0 = CAM.padX + insetL, sx1 = W - CAM.padX - insetR;   // the screen span bodies keep to (the touch controls narrow it)
   // where each body is on the floor: a tumbling (point-simulated) or vaulting body is wherever its hip
   // is, not its floor line (a body falling down the stairwell already belongs to the floor below)
   const at = (u) => {
@@ -909,10 +929,10 @@ function updateCamera(dt, snap = false) {
   const zClose = H / (standH + (CAM.headroom + CAM.footroom) * head);
   // apart: both roots plus a leg's reach each side, and every drawn limb, across the frame's width
   const needW = Math.max(xb - xa + 2 * CAM.reachK * standH, ex1 - ex0);
-  let zt = Math.min(zClose, Math.max(CAM.wide, (W - 2 * CAM.padX) / needW));
+  let zt = Math.min(zClose, Math.max(CAM.wide, (sx1 - sx0) / needW));
   // every live body fits (a launch, a jump, two floors apart), with a soft margin so the zoom eases out before
   // fitCameraToDrawn has to force it; below the wide framing only when it must
-  const fitZ = (s) => Math.min((H - CAM.padTop - CAM.padBot - 2 * s) / Math.max(1, ey1 - ey0), (W - 2 * CAM.padX - 2 * s) / Math.max(1, ex1 - ex0));
+  const fitZ = (s) => Math.min((H - CAM.padTop - CAM.padBot - 2 * s) / Math.max(1, ey1 - ey0), (sx1 - sx0 - 2 * s) / Math.max(1, ex1 - ex0));
   const zFit = fitZ(0);
   zt = Math.min(zt, Math.max(fitZ(CAM.soft), Math.min(zFit, CAM.wide)));
   if (dy > 120 || zFit < CAM.wide) zt = Math.max(0.85, zt);   // two floors apart (a floor break, the follow-down)
@@ -925,12 +945,13 @@ function updateCamera(dt, snap = false) {
   if (shake.zoomPunch < 0.002) shake.zoomPunch = 0;
   camera.zoom = Math.min(camZoom * (1 + shake.zoomPunch), Math.max(camZoom, zFit));
   // the framing goes by camZoom; the hard fit by the zoom actually on screen, punch included
-  const z = camZoom, hw = W / 2 / z, hh = H / 2 / z, ze = camera.zoom, hwe = W / 2 / ze, hhe = H / 2 / ze;
+  const z = camZoom, hw = W / 2 / z, hh = H / 2 / z, ze = camera.zoom, hhe = H / 2 / ze;
   // horizontal: centered on the bodies; the view may run 120px past either wall (the exterior is painted),
   // so a body thrown into the corner lands on screen
   const wx0 = sim.bounds.x0 - 120 + hw, wx1 = sim.bounds.x1 + 120 - hw;
-  const fitX = (v, s = 0) => clamp(v, ex1 + (CAM.padX + s) / ze - hwe, ex0 - (CAM.padX + s) / ze + hwe);
-  const tx = fitX(wx1 > wx0 ? Math.max(wx0, Math.min(wx1, (xa + xb) / 2)) : (wx0 + wx1) / 2, CAM.soft);
+  const fitX = (v, s = 0) => clamp(v, ex1 - (sx1 - s - W / 2) / ze, ex0 - (sx0 + s - W / 2) / ze);
+  const mid = (xa + xb) / 2 - ((sx0 + sx1) / 2 - W / 2) / z;   // the pair's middle on the middle of that span
+  const tx = fitX(wx1 > wx0 ? Math.max(wx0, Math.min(wx1, mid)) : (wx0 + wx1) / 2, CAM.soft);
   // vertical: close in, the feet sit 1 head over the bottom edge; at the wide framing the old center
   // (the floor line less 120); in between, a blend by zoom. Never past the lowest floor (plus a little
   // ground) or far above the highest one, and never cropping a body or putting a head under the HUD.
