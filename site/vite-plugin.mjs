@@ -2,8 +2,7 @@
 // game (play/index.html) and the generated fighter pages (fighters/, from site/generate.mjs). This plugin
 //   - runs the generator in a fresh Node process before a build or a dev start (a fresh process so the
 //     character registry is always imported anew), and lists every page as a build input;
-//   - fills the homepage's markers from .site/home.json: <!--@roster--> (the cast grid), <!--@controls-->
-//     (the controls tables), <!--@count--> (how many fighters) and <!--@stages--> (the arcade ladder's
+//   - fills the homepage's markers from .site/home.json: <!--@roster--> (the cast grid), <!--@count--> (how many fighters) and <!--@stages--> (the arcade ladder's
 //     length); a marker with no fill fails the build;
 //   - in dev, regenerates and reloads when a character file, the frame data, the rig or the site's own
 //     templates change.
@@ -11,13 +10,14 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-const WATCH = /[\\/](src[\\/]characters[\\/]|src[\\/]combat[\\/](frameData|strings|hitboxes)\.js|src[\\/]fighter[\\/]index\.js|src[\\/]flow[\\/](controls|ladder)\.js|site[\\/](data|templates|generate)\.mjs)/;
+const WATCH = /[\\/](src[\\/]characters[\\/]|src[\\/]combat[\\/](frameData|strings|hitboxes)\.js|src[\\/]fighter[\\/]index\.js|src[\\/]flow[\\/](controls|ladder)\.js|site[\\/](data|templates|generate|guide)\.mjs)/;
 
 export function sitePlugin() {
   let root = process.cwd();
   const generate = () => execFileSync(process.execPath, [join(root, 'site', 'generate.mjs')], { stdio: 'inherit', cwd: root });
   const pages = () => {
-    const input = { main: resolve(root, 'index.html'), play: resolve(root, 'play/index.html'), fighters: resolve(root, 'fighters/index.html') };
+    const input = { main: resolve(root, 'index.html'), play: resolve(root, 'play/index.html'), fighters: resolve(root, 'fighters/index.html'),
+      guide: resolve(root, 'how-to-play/index.html'), 'guide-philosophy': resolve(root, 'how-to-play/philosophy/index.html'), 'guide-strategy': resolve(root, 'how-to-play/strategy/index.html') };
     for (const d of readdirSync(join(root, 'fighters'), { withFileTypes: true })) {
       if (d.isDirectory() && existsSync(join(root, 'fighters', d.name, 'index.html'))) input[`fighter-${d.name}`] = resolve(root, 'fighters', d.name, 'index.html');
     }

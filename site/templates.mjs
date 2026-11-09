@@ -50,7 +50,7 @@ export function topbar(root) {
   <a class="s-logo" href="${root}"><span>NEON</span> STICK FIGHT</a>
   <nav class="s-nav" aria-label="Site">
     <a href="${root}fighters/">FIGHTERS</a>
-    <a href="${root}#how">HOW TO PLAY</a>
+    <a href="${root}how-to-play/">HOW TO PLAY</a>
     <a href="${root}#online">ONLINE</a>
     <a href="${root}#about">ABOUT</a>
     <a href="${REPO}">GITHUB</a>
@@ -64,7 +64,7 @@ export function footer(root) {
   <div class="s-foot-in">
     <p><a class="s-logo" href="${root}"><span>NEON</span> STICK FIGHT</a></p>
     <nav class="s-foot-nav" aria-label="Footer">
-      <a href="${root}play/">Play</a><a href="${root}fighters/">Fighters</a><a href="${root}#how">How to play</a><a href="${root}#online">Online</a><a href="${root}#about">About and credits</a><a href="${REPO}">GitHub</a>
+      <a href="${root}play/">Play</a><a href="${root}fighters/">Fighters</a><a href="${root}how-to-play/">How to play</a><a href="${root}how-to-play/strategy/">Strategy</a><a href="${root}#online">Online</a><a href="${root}#about">About and credits</a><a href="${REPO}">GitHub</a>
     </nav>
     <p>Free and open source under the GNU AGPL v3. Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL).</p>
     <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>
@@ -72,7 +72,7 @@ export function footer(root) {
 </footer>`;
 }
 
-const script = (root) => `<script type="module" src="${root}site/site.js"></script>`;
+export const script = (root) => `<script type="module" src="${root}site/site.js"></script>`;
 
 // ---- the roster grid (homepage and the roster index) ----------------------------------------------------
 //   detail: the roster index's line of health and unique moves

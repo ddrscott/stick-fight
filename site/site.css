@@ -344,3 +344,34 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
   .s-move-rig { height: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .s-card { transition: none; } .s-sprite img { animation: none; } }
+
+/* ---- how to play pages (site/guide.mjs) and the homepage's links to them ---- */
+.s-guide-nav { display: flex; gap: 6px; flex-wrap: wrap; padding: 18px 0 0; }
+.s-guide-nav a { font: 600 20px/1 var(--label); letter-spacing: 0.1em; color: var(--dim); text-decoration: none; padding: 9px 14px 6px; border: 1px solid var(--line); background: var(--panel); }
+.s-guide-nav a:hover { color: #fff; border-color: var(--dim); }
+.s-guide-nav a[aria-current] { color: #12001a; background: var(--amber); border-color: var(--amber); }
+.s-guide .s-h1 { margin-bottom: 18px; }
+.s-guide-next { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.s-guide-next a { display: grid; gap: 6px; padding: 16px 18px 14px; background: var(--panel); border: 1px solid var(--line); text-decoration: none; color: var(--ink); }
+.s-guide-next a:hover { border-color: var(--cyan); }
+.s-guide-next b { font: 600 24px/1 var(--label); letter-spacing: 0.08em; color: var(--cyan); }
+.s-guide-next span { font-size: 16px; color: var(--dim); }
+.s-guide-3 { grid-template-columns: 1fr; }
+.s-pillars { display: grid; gap: 14px; }
+.s-pillars article { display: grid; grid-template-columns: 90px 1fr; column-gap: 20px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+.s-pillars article > :not(.s-pillar-n) { grid-column: 2; }
+.s-pillars p { margin: 0 0 10px; max-width: 46em; }
+.s-pillars .s-h3 { color: var(--amber); font-size: 30px; }
+.s-pillar-n { grid-row: span 3; font: 400 44px/1 var(--display); color: #fff; text-shadow: 0 0 10px var(--pink); }
+.s-tips { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.s-tips article { background: var(--panel); border: 1px solid var(--line); padding: 18px 18px 8px; }
+.s-tips .s-h3 { color: var(--amber); }
+.s-tips p { margin: 0 0 12px; font-size: 17px; }
+.s-beats tbody th { color: #fff; }
+@media (max-width: 600px) {
+  .s-tips { grid-template-columns: 1fr; }
+  .s-pillars article { grid-template-columns: 1fr; }
+  .s-pillars article > :not(.s-pillar-n) { grid-column: 1; }
+  .s-pillar-n { grid-row: auto; font-size: 32px; margin-bottom: 6px; }
+}
+.s-story p:not(.s-lede) + p { margin-top: 14px; }
