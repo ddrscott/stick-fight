@@ -402,13 +402,13 @@ const PHASES = {
   // the flight at its head), a fight on the steps (the higher man has the height), knockdowns lying along
   // them, a throw and a sweep there, and the trip back up after a floor break
   stairs: [
-    { name: 'up the left flight from the lower floor (walk past the foot)', abs: true, setup: () => { onFlight(0, LOWER, 900, -1); onFlight(1, -1, 180, 1); },
+    { name: 'up the left flight from the lower floor (walk past the foot)', abs: true, setup: () => { onFlight(0, LOWER, 1000, -1); onFlight(1, -1, 200, 1); },
       p1: [], p1f: (me) => ((me.floor || 0) === 1 || me.stair >= 0 ? { dx: -1 } : {}), dur: 520 },
     { name: 'up the right flight too, running', abs: true, setup: () => { onFlight(0, LOWER, 1660, 1); onFlight(1, -1, 2380, -1); },
       p1: [], p1f: (me) => ((me.floor || 0) === 1 || me.stair >= 0 ? { dx: 1, run: true } : {}), dur: 300 },
-    { name: 'down at the head: down + toward the flight steps onto it', abs: true, setup: () => { onFlight(0, -1, 230, 1); onFlight(1, LOWER, 1300, -1); },
-      p1: [], p1f: (me, o, t) => (t < 30 ? walkTo(285)(me) : me.stair >= 0 || (me.floor || 0) === 1 ? (Math.abs(me.x - 1000) > 8 ? { dx: 1 } : {}) : { dx: 1, down: true }), dur: 420 },
-    { name: 'crouching at the head (no forward) stays upstairs', abs: true, setup: () => { onFlight(0, -1, 300, 1); onFlight(1, -1, 560, -1); },
+    { name: 'down at the head: down + toward the flight steps onto it', abs: true, setup: () => { onFlight(0, -1, stairX(0, -70), 1); onFlight(1, LOWER, 1300, -1); },
+      p1: [], p1f: (me, o, t) => (t < 30 ? walkTo(stairX(0, -15))(me) : me.stair >= 0 || (me.floor || 0) === 1 ? (Math.abs(me.x - 1000) > 8 ? { dx: 1 } : {}) : { dx: 1, down: true }), dur: 440 },
+    { name: 'crouching at the head (no forward) stays upstairs', abs: true, setup: () => { onFlight(0, -1, stairX(0, 0), 1); onFlight(1, -1, stairX(0, 260), -1); },
       p1: [], hold1: { down: true }, dur: 120 },
     { name: 'on the steps: the higher man\'s 1,2,4 knocks him down the flight', abs: true, setup: () => { onFlight(0, 0, stairX(0, 110), 1); onFlight(1, 0, stairX(0, 190), -1); },
       p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], dur: 320 },

@@ -218,7 +218,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   // only at the foot (where it comes to rest on top decides the rest: restOnSurface).
   function stairMembership(u) {
     const S = stairsNow();
-    if (!S.length) return false;
+    if (!S.length || (u.falling && !u.fellLanded && u.rag)) return false;   // a floor break's tumble belongs to the floor below until it comes to rest
     if (onStair(u)) {
       const st = S[u.stair], along = (u.x - st.head) * st.dir, len = (st.foot - st.head) * st.dir;
       if (along > len) { u.stair = -1; u.floor = st.toFloor != null ? st.toFloor : 1; return true; }
@@ -265,7 +265,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       u.stair = k; u.floor = stairFloor(k, hip.x); u.y = stairY(k, u.x); u.ragFloor = u.y;
       return;
     }
-    u.stair = -1; u.y = u.ragFloor;
+    u.stair = -1; u.floor = 1; u.y = u.ragFloor;
   }
   // where a body is: a lying or tumbling body's root can sit at its feet or be re-based when it settles,
   // so sides and facing go by its hip
@@ -627,7 +627,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (!sw) return outer;
     if (hipY < t.y + 25) return [sw.x0 + 4, sw.x1 - 4];
     const T = (arena.treads || []).filter(q => q.flight == null || q.flight === sw.flight);
-    if (hipY < floorInfo(u.floor).y - 120 && T.length) return [Math.min(sw.x0, ...T.map(q => q.x0)) - 4, Math.max(sw.x1, ...T.map(q => q.x1)) + 4];
+    // through the flight: from the opening's head-side edge (beyond it is the shaft under the main floor's
+    // end) to the treads' far end
+    const st = sw.flight != null ? stairsNow()[sw.flight] : null;
+    if (hipY < floorInfo(u.floor).y - 120 && T.length) {
+      const lo = Math.min(sw.x0, ...T.map(q => q.x0)) - 4, hi = Math.max(sw.x1, ...T.map(q => q.x1)) + 4;
+      return st ? (st.dir > 0 ? [sw.x0 + 4, hi] : [lo, sw.x1 - 4]) : [lo, hi];
+    }
     return outer;
   }
   const inAir = (u) => (u.rag ? !u.ragLanded : !u.grounded);
@@ -1454,6 +1460,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     return best;
   }
   function flightDir(sw, x) {
+    const st = sw.flight != null ? stairsNow()[sw.flight] : null;
+    if (st) return st.dir;   // the flight under the opening goes down this way
     const t = treadBelow(x, sw.y - 2);
     return t ? Math.sign((t.x0 + t.x1) / 2 - x) || 1 : 0;
   }
@@ -1483,14 +1491,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // own walls once it lands
     u.fallWell = wellsNow().indexOf(sw);
     u.floor = to; u.stair = -1; u.ragFloor = info.y; u.rig.y = info.y; u.falling = true; u.fellLanded = false; u.rig.walls = ragWalls(u);
-    // the stair treads, plus the main floor's slab either side of the openings (one-way from above), and
-    // the flights as solid ground under them
+    // the stair treads, plus the main floor's slab either side of the openings (one-way from above)
     const top = floorInfo(0), slab = [];
     let x = top.walls.left;
     for (const w of [...wellsNow()].sort((p, q) => p.x0 - q.x0)) { slab.push({ x0: x, x1: w.x0, y: top.y }); x = w.x1; }
     slab.push({ x0: x, x1: top.walls.right, y: top.y });
     u.rig.treads = [...(arena.treads || []), ...slab];
-    u.rig.slopes = stairSolids();
+    u.rig.slopes = null;   // the tumble clatters down tread by tread (the flights as one solid slope only slide it)
     // down the flight: the first steps under the opening are near floor level, so the body is sent
     // the way the stairs descend
     const dirDown = flightDir(sw, u.rig.joints.hip.x);

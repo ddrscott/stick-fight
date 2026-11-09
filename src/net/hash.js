@@ -5,7 +5,7 @@
 
 const UNIT_FIELDS = [
   'x', 'y', 'vx', 'vy', 'facing', 'grounded', 'state', 'move', 'phase', 'health', 'stamina', 'faint',
-  'hitstop', 'stun', 'downTimer', 'combo', 'floor', 'attackId', 'hidden', 'rag', 'falling', 'airHits',
+  'hitstop', 'stun', 'downTimer', 'combo', 'floor', 'stair', 'attackId', 'hidden', 'rag', 'falling', 'airHits',
 ];
 
 const f64 = new Float64Array(1);

@@ -22,15 +22,16 @@
 //
 // Logical space 2560x720: two office floors, each twice the width of the first building, with a
 // straight stair at each end. The fight is symmetric about x 1280: walls at 125 and 2435, a
-// stairwell 175px in from each wall, the spawns either side of the middle. Layers, top to bottom:
+// stairwell 325px in from each wall (a corner to splat in beyond it, like the first building's
+// 290px past its stairwell), the spawns either side of the middle. Layers, top to bottom:
 //   y    0..50   a strip of the floor above: desk tops and glowing monitors
 //   y   50..70   ceiling slab of the main floor
-//   y   70..360  the main floor: elevator | stair head | doors, vending | two windows | copier,
-//                doors | stair head | outer wall | outside
+//   y   70..360  the main floor: elevator | corner | stairwell | doors, vending | two windows |
+//                copier, doors | stairwell | corner | outer wall | outside
 //   y  360..416  the main floor's wet floor plane, seen from just above: from the back wall
 //                (y 360, the walkable line) forward to the cut edge. The mirror lives here.
 //   y  416..440  the main slab cut through: a concrete section face, its underside the lower
-//                floor's ceiling. The stairwells are holes through both, x 300..640 and 1920..2260.
+//                floor's ceiling. The stairwells are holes through both, x 450..790 and 1770..2110.
 //   y  440..700  the lower floor: a stair under each hole, storage under the flights, and between
 //                the two stair feet the lower room: a lit doorway, the TV, a corridor, a door
 //   y  700..720  the lower floor's wet floor plane
@@ -79,8 +80,8 @@ export const STAIR_RUN = 25, STAIR_RISE = 20, STAIR_N = (LOW_FLOOR_Y - FLOOR_Y) 
 export const STAIR_SLOPE = STAIR_RISE / STAIR_RUN;
 export const STAIR_RAIL_H = 44;
 export const FLIGHTS = [
-  { head: 300, dir: 1 },          // left: down to the right
-  { head: W - 300, dir: -1 },     // right: down to the left
+  { head: 450, dir: 1 },          // left: down to the right
+  { head: W - 450, dir: -1 },     // right: down to the left
 ].map((f, i) => ({ id: i, ...f, foot: f.head + f.dir * (LOW_FLOOR_Y - FLOOR_Y) / STAIR_SLOPE, back0: f.head - f.dir * STAIR_RUN / 2 }));
 // the hole each flight comes up through: from its head to where a man on the steps clears the slab
 export const STAIRWELLS = FLIGHTS.map((f) => {
@@ -91,20 +92,23 @@ export const STAIRWELLS = FLIGHTS.map((f) => {
 export const STAIRWELL = STAIRWELLS[0];   // compatibility: the first one
 
 // Main floor (left to right).
-export const TUBES = [{ x: 470, halfW: 100 }, { x: 960, halfW: 100 }, { x: 1600, halfW: 100 }, { x: 2090, halfW: 100 }];
+export const TUBES = [{ x: 420, halfW: 100 }, { x: 960, halfW: 100 }, { x: W - 960, halfW: 100 }, { x: W - 420, halfW: 100 }];
 export const TUBE_NAMES = ['tubeA', 'tubeB', 'tubeC', 'tubeD'];
 export const TUBE_H = 9;
 export const TUBE_Y = CEIL_Y + 6;
-export const DOOR_SETS = [{ x: 700, y: 170, w: 160, h: 190 }, { x: W - 700 - 160, y: 170, w: 160, h: 190 }];
+export const DOOR_SETS = [{ x: 806, y: 170, w: 160, h: 190 }, { x: W - 806 - 160, y: 170, w: 160, h: 190 }];
 export const DOORS = DOOR_SETS[0];
 export const EXITS = DOOR_SETS.map((d, i) => ({ x: d.x + d.w / 2 - 28, y: 132, w: 56, h: 22, light: i ? 'exitB' : 'exit' }));
 export const EXIT = EXITS[0];
-export const VENDING = { x: 884, y: 218, w: 64, h: 142 };
-export const COPIER = { x: W - 884 - 92, y: 274, w: 92, h: 86 };   // across the room from the vending machine
-export const CLOCK = { x: 1000, y: 130, r: 18 };
-export const NOTICE = { x: W - 1000 - 34, y: 124, w: 68, h: 50 };   // a pinboard, where the clock is on the other half
+export const VENDING = { x: 980, y: 218, w: 64, h: 142 };
+export const COPIER = { x: W - 980 - 92, y: 274, w: 92, h: 86 };   // across the room from the vending machine
+export const CLOCK = { x: 1012, y: 130, r: 18 };
+export const NOTICE = { x: W - 1012 - 34 - 20, y: 124, w: 68, h: 50 };   // a pinboard, where the clock is on the other half
 // two windows either side of a pillar at the middle
-export const WINDOWS = [{ x: MID - 250, y: 100, w: 220, h: 180 }, { x: MID + 30, y: 100, w: 220, h: 180 }];
+export const WINDOWS = [{ x: MID - 230, y: 100, w: 210, h: 180 }, { x: MID + 20, y: 100, w: 210, h: 180 }];
+// the corners beyond the stairwells: a water cooler on the floor by the elevator, a fire hose cabinet on the outer wall's corner
+export const COOLER = { x: 268, y: 266, w: 34, h: 94 };
+export const HOSE = { x: W - 300 - 46, y: 196, w: 46, h: 70 };
 export const WINDOW = WINDOWS[1];
 // the second window's top-right pane is smashed: the rain comes in there and sprays the floor under it
 export const BROKEN_PANE = { x: WINDOW.x + WINDOW.w / 2, y: WINDOW.y, w: WINDOW.w / 2, h: WINDOW.h / 2 };
@@ -120,24 +124,24 @@ export const DESKS = DESK_HUES.map((hue, i) => ({ x: 200 + i * 236, hue }));
 export const LOW_ROOM = { x0: FLIGHTS[0].foot, x1: FLIGHTS[1].foot };
 export const LOWER_WINDOWS = [{ x: 150, y: 462, w: 110, h: 110 }, { x: W - 150 - 110, y: 462, w: 110, h: 110 }];
 export const LOWER_WINDOW = LOWER_WINDOWS[0];
-export const DOOR_L = { x: 790, y: 560, w: 84, h: 140 };
-export const TV = { x: 930, y: 456, w: 110, h: 62 };
+export const DOOR_L = { x: 902, y: 560, w: 84, h: 140 };
+export const TV = { x: 1018, y: 456, w: 110, h: 62 };
 // the far door is small because it is far: it sits at the end of a corridor whose opening is full height
 export const FAR_HALL = { x: MID - 47, y: 560, w: 94, h: 140 };
 export const FAR_DOOR = { x: MID - 27, y: 612, w: 54, h: 88 };
-export const DOOR_R = { x: W - 790 - 80, y: 560, w: 80, h: 140 };
-export const TV2 = { x: W - 930 - 110, y: 456, w: 110, h: 62 };   // a second screen: the status board
+export const DOOR_R = { x: W - 902 - 80, y: 560, w: 80, h: 140 };
+export const TV2 = { x: W - 1018 - 110, y: 456, w: 110, h: 62 };   // a second screen: the status board
 // the top 80px of the lower room is all the game camera shows of it at gameplay zoom, so
 // the lower floor's strongest reads sit there: pendant lamps, an exit arrow, the TVs, the stair lamps
-export const LOW_PENDANTS = [{ x: 1000 }, { x: MID }, { x: W - 1000 }];
+export const LOW_PENDANTS = [{ x: 1010 }, { x: MID }, { x: W - 1010 }];
 export const LOW_PENDANT_Y = LOW_CEIL_Y + 6;
 export const LOW_EXIT = { x: MID + 110, y: 450, w: 64, h: 20 };
 // mid-value wall sconces on bare wall between the doorways
-export const SCONCES = [{ x: 1120 }, { x: W - 1120 }];
+export const SCONCES = [{ x: 1172 }, { x: W - 1172 }];
 export const SCONCE_Y = 520;
 // under each flight: a storage door in its stringer wall, and a mop sink / lockers in the shaft beyond
-export const STORE_DOORS = FLIGHTS.map((f) => ({ x: f.dir > 0 ? 470 : W - 470 - 56, y: 606, w: 56, h: 94 }));
-export const LOCKERS = FLIGHTS.map((f) => ({ x: f.dir > 0 ? 262 : W - 262 - 64, y: 590, w: 64, h: 110 }));
+export const STORE_DOORS = FLIGHTS.map((f) => ({ x: f.dir > 0 ? f.head + 175 : f.head - 175 - 56, y: 606, w: 56, h: 94 }));
+export const LOCKERS = FLIGHTS.map((f) => ({ x: f.dir > 0 ? 300 : W - 300 - 64, y: 590, w: 64, h: 110 }));
 
 // Plants, in the room, background art (behind the fighters, so they never cover one): a potted
 // plant standing on the main floor in the corner by the elevator, and a planter hanging on
@@ -734,6 +738,23 @@ function drawCopier(ctx, pal) {
   for (let k = 0; k < 2; k++) rect(ctx, c.x + 8, c.y + 46 + k * 18, c.w - 16, 12, null, pal.lineSoft, pal.lineW * 0.8);
 }
 
+// the water cooler: a bottle on a cabinet, standing on the floor; the fire hose cabinet: a box on the wall
+// with a glass door and the reel behind it
+function drawCorners(ctx, pal) {
+  const c = COOLER;
+  rect(ctx, c.x, c.y + 34, c.w, c.h - 34, pal.door, pal.line, pal.lineW);
+  rect(ctx, c.x + 4, c.y + 30, c.w - 8, 6, pal.doorPanel, pal.line, pal.lineW * 0.8);
+  ctx.fillStyle = pal.glass; ctx.strokeStyle = pal.line; ctx.lineWidth = pal.lineW;
+  ctx.beginPath(); ctx.moveTo(c.x + 7, c.y + 30); ctx.lineTo(c.x + 5, c.y + 8); ctx.lineTo(c.x + 12, c.y); ctx.lineTo(c.x + c.w - 12, c.y); ctx.lineTo(c.x + c.w - 5, c.y + 8); ctx.lineTo(c.x + c.w - 7, c.y + 30); ctx.closePath(); ctx.fill(); ctx.stroke();
+  rect(ctx, c.x + 10, c.y + 46, 6, 6, pal.screen, pal.line, 1); rect(ctx, c.x + c.w - 16, c.y + 46, 6, 6, pal.screen, pal.line, 1);
+  const h = HOSE;
+  rect(ctx, h.x, h.y, h.w, h.h, pal.silhouette ? '#7a3a4e' : '#ffffff', pal.line, pal.lineW);
+  rect(ctx, h.x + 5, h.y + 5, h.w - 10, h.h - 10, pal.glass, pal.line, pal.lineW * 0.8);
+  ctx.strokeStyle = pal.line; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(h.x + h.w / 2, h.y + h.h / 2, 13, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(h.x + h.w / 2, h.y + h.h / 2, 5, 0, Math.PI * 2); ctx.stroke();
+}
+
 function drawNotice(ctx, pal) {
   const n = NOTICE;
   rect(ctx, n.x, n.y, n.w, n.h, pal.desk, pal.line, pal.lineW);
@@ -761,9 +782,9 @@ function drawTubes(ctx, pal) {
 function drawMainFloor(ctx, pal, cam) {
   rect(ctx, -200, CEIL_Y, W + 400, FLOOR_Y - CEIL_Y, pal.wall, null);
   line(ctx, WALL_L, FLOOR_Y - 10, WALL_R, FLOOR_Y - 10, pal.lineSoft, pal.lineW); // baseboard
-  for (const x of [660, MID, W - 660]) line(ctx, x, CEIL_Y, x, FLOOR_Y - 10, pal.lineSoft, pal.lineW); // wall seams
+  for (const x of [STAIRWELLS[0].x1 + 6, W - STAIRWELLS[0].x1 - 6]) line(ctx, x, CEIL_Y, x, FLOOR_Y - 10, pal.lineSoft, pal.lineW); // wall seams
   // the pillar between the two windows
-  rect(ctx, MID - 30, CEIL_Y, 60, FLOOR_Y - CEIL_Y - 10, pal.wall, pal.lineSoft, pal.lineW);
+  rect(ctx, MID - 20, CEIL_Y, 40, FLOOR_Y - CEIL_Y - 10, pal.wall, pal.lineSoft, pal.lineW);
   if (pal.silhouette) {
     // soffit shadow: the slab overhang throws the top of the wall into shade
     const sh = ctx.createLinearGradient(0, CEIL_Y, 0, CEIL_Y + 34);
@@ -776,6 +797,7 @@ function drawMainFloor(ctx, pal, cam) {
   drawCopier(ctx, pal);
   drawClock(ctx, pal, cam);
   drawNotice(ctx, pal);
+  drawCorners(ctx, pal);
   for (const w of WINDOWS) drawOpening(ctx, pal, w);
   drawPlants(ctx, pal);
   drawTubes(ctx, pal);
