@@ -16,6 +16,8 @@ const DISPLAY = "'Bungee', 'Arial Black', Impact, system-ui, sans-serif";
 const LABEL = "'Teko', 'Arial Narrow', 'Helvetica Neue', system-ui, sans-serif";
 const TIMER = { cy: 40, r: 33, size: 38 };   // the round clock: a ring between the bars, ROUND n under it (the tally under that)
 const BAR_W = 420, BAR_H = 18, BAR_Y = 16, SKEW = 12, STRIP_H = 96, ST_H = 5;   // STRIP_H: the bars plus the name and hint lines under them
+// screen px from the top that the bars, names and move hints own (with their shade): the camera keeps heads below it
+export const HUD_TOP = STRIP_H + 30;
 const SIDE = [NEON.cyan, NEON.pink];
 const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a' };
 

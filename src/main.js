@@ -1,14 +1,14 @@
 // The game. Wires fighter (A), fx (B), arena (D) and the combat sim (C), routes combat
 // events to effects and camera, draws the HUD, and exposes window.__gauntlet.
 import { camera } from './camera.js';
-import { createFighter, MOVES, MOVE_DATA } from './fighter/index.js';
+import { createFighter, MOVES, MOVE_DATA, RIG_KIT } from './fighter/index.js';
 import { createLife } from './fighter/life.js';   // the life layer: eyeline, springs and props, fatigue (drawn only; ?life=0 turns it off)
 import { createFX } from './fx/index.js';
 import { createStatusFX } from './fx/status.js';   // state read off the bodies: stun halo, guard shimmer, dizzy stars, breath
 import { createArena, drawJoints } from './arena/index.js';
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
-import { createHUD } from './combat/hud.js';
+import { createHUD, HUD_TOP } from './combat/hud.js';
 import { FRAME_DATA } from './combat/frameData.js';
 import { mulberry32 } from './combat/rng.js';
 import { gameAudio } from './audio/index.js';   // audio: all sound logic lives in src/audio/
@@ -137,7 +137,7 @@ function onEvent(ev) {
       fx.dust({ x: ev.x, y: ev.y, dir: -ev.dir });
       break;
     case 'round':
-      poseState.clear(); life.reset();   // spawns face each other: no turnaround out of the last round's facing
+      poseState.clear(); drawnJ.clear(); drawnOff.clear(); life.reset(); camCut = true;   // spawns face each other: no turnaround out of the last round's facing (and no stale drawn pose for the camera)
       if (look.floor) startOnFloor(look.floor);   // an arcade stage fought downstairs: every round starts there
       arena.liveColors = [sim.units[0].color || P1_COLOR, sim.units[1].color || P2_COLOR];
       syncArenaToFx();
@@ -786,8 +786,8 @@ function setScene(name, opts) {
   shakeRng = mulberry32(7);
   shake.trauma = 0; shake.kickX = shake.kickY = 0; shake.zoomPunch = 0;
   lights.length = 0; blockSparks.length = 0; paused = false; statusFX.reset();
-  ghosts.length = 0; poseState.clear(); life.reset();   // the draw smoothing starts fresh (no turnaround out of the last scene's facing)
-  camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camera.shakeX = camera.shakeY = 0;
+  ghosts.length = 0; poseState.clear(); drawnJ.clear(); drawnOff.clear(); life.reset();   // the draw smoothing starts fresh (no turnaround out of the last scene's facing)
+  camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camZoom = 1; camera.shakeX = camera.shakeY = 0;
   // botches on or off (the pause menu's switch, ?botch=0); online, the host's setting from the start message
   sim.botchOn = name === 'online' && opts && opts.lockstep ? opts.botch !== false : botchEnabled();
   // the round time and best-of: online the host's (the start message), in the flow's own fights the player's
@@ -797,66 +797,188 @@ function setScene(name, opts) {
     : picked ? { roundTime: roundTime(), winsNeeded: winsFor(bestOf()) } : { roundTime: DEFAULT_ROUND_TIME, winsNeeded: winsFor(DEFAULT_BEST_OF) };
   sim.roundTime = rules.roundTime; sim.winsNeeded = rules.winsNeeded;
   scenes[name](opts || {});
-  updateCamera(1);
+  updateCamera(1, true);
 }
 
 // ---- camera ------------------------------------------------------------------------------
-// Frozen while either fighter is in hitstop: the contact pose has to hold on screen.
-function updateCamera(dt) {
-  if (sim.hitstopActive > 0) { camera.shakeX = 0; camera.shakeY = 0; return; }
-  // the hero and the goon he is on (a second goon off at range doesn't pull the frame)
+// Tekken-style framing. At close range the view is sized from the taller fighter's own body: 4 head
+// heights (a head is 2 x rig.radius) of air over his standing head and 1 under his feet, so two fighters
+// in each other's face fill the frame. As they separate it eases out so both bodies plus a leg's reach
+// stay in frame, down to the wide framing (zoom 1) at full-screen distance. Whatever the zoom, every
+// live body (its real joints) stays inside the frame and under the HUD strip: a jump or a launch pans
+// up first and eases out when the pan isn't enough. Everything comes from the bodies, sim.bounds and
+// the floors' data, never from a fixed stage width. Frozen while either fighter is in hitstop: the
+// contact pose has to hold on screen.
+const CAM = {
+  headroom: 4, footroom: 1,   // head heights over the taller standing head and under the feet, at close range
+  wide: 1.0,                  // the far end: full-screen apart
+  reachK: 0.95,               // a leg's reach past each root, as a share of standing height (kicks run 80-120 px)
+  engage: 420,                // horde: another goon this close to the hero joins the frame
+  padX: 28, padBot: 10, padTop: HUD_TOP + 12,   // screen px a body keeps from the edges (the top clears the bars, names and hints)
+  soft: 48,                   // screen px more that the eased target keeps, so the camera starts moving before the hard fit has to
+  zoomIn: 3, zoomOut: 9,      // easing rates: push in slowly, pull out quickly
+};
+let camZoom = 1;   // the framing's zoom; camera.zoom is this times the zoom punch
+let camCut = false;   // the next update cuts instead of easing (a round starts: the fighters are back on their spawns)
+const standCache = new WeakMap();
+// a rig's standing height (floor to the top of the head, idle stance) and head height, per body
+function standOf(rig) {
+  let c = standCache.get(rig);
+  if (!c || c.body !== rig.body || c.scale !== rig.scale) {
+    const j = rig._solve(RIG_KIT.STANCE);
+    c = { body: rig.body, scale: rig.scale, h: rig.y - (j.head.y - rig.radius), head: 2 * rig.radius };
+    standCache.set(rig, c);
+  }
+  return c;
+}
+// where a body will be drawn this frame, head and limb ends included. The drawing (frameDraw: last frame's pose
+// with the turnaround, snap fade and smoothing offset applied) can lag the real pose: the snap fade lands between
+// where it was drawn (moved with the root) and the real pose, and an air move's catch-up (drawOffset) moves at most
+// HEAD_STEP px a frame toward it. During that catch-up the real pose is left out, because it runs ahead on fast moves
+// (the vault's drop, an air jab from far out) and following it lurches the camera ahead of the body.
+const camRoot = new WeakMap();
+function extentOf(u) {
+  const r = u.rig.radius, raw = u.rig.joints, o = drawnOff.get(u) || NO_OFF, ds = drawState.get(u);
+  // the snap fade is kept relative to the root, so while one runs the drawing also moves with the root
+  const lastRoot = camRoot.get(u), ps = poseState.get(u), fading = !!(ps && ps.fadeT > 0 && lastRoot);
+  let sx = fading ? u.rig.x - lastRoot.x : 0, sy = fading ? u.rig.y - lastRoot.y : 0;
+  if (Math.hypot(sx, sy) > SNAP_MAX) sx = sy = 0;   // a change of floor, not a move
+  camRoot.set(u, { x: u.rig.x, y: u.rig.y });
+  let dj = drawnJ.get(u);
+  // a drawing farther off than the snap fade ever spans is stale (a goon respawned at a door, a body set down elsewhere)
+  if (dj && dj.hip && raw.hip && Math.hypot(dj.hip.x + o.x - raw.hip.x, dj.hip.y + o.y - raw.hip.y) > SNAP_MAX + 40) dj = null;
+  const catchUp = !!(dj && ds && ds.on);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  const add = (x, y) => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
+  for (const k in raw) {
+    const p = raw[k], d = dj && dj[k];
+    if (!catchUp || !d) add(p.x, p.y);
+    if (!d) continue;
+    const dx = d.x + o.x, dy = d.y + o.y;
+    add(dx, dy); add(dx + sx, dy + sy);
+    if (catchUp) add(dx + Math.max(-HEAD_STEP, Math.min(HEAD_STEP, p.x - dx)), dy + Math.max(-HEAD_STEP, Math.min(HEAD_STEP, p.y - dy)));
+  }
+  if (!(x1 >= x0)) return { x0: u.x - 40, x1: u.x + 40, y0: u.y - 140, y1: u.y };
+  return { x0: x0 - r, x1: x1 + r, y0: y0 - r, y1: y1 + 0.5 * r };
+}
+const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)));
+// the bodies the camera frames: the hero and the goon he is on, plus (horde) any other goon close enough to matter
+function camLive() {
   const a = sim.units[0], b = sim.focus;
   const live = [a, b].filter(u => u && !u.hidden);
-  // where each body is on screen: a tumbling (point-simulated) or vaulting body is wherever its hip
+  for (const u of sim.units) if (u !== a && u !== b && !u.hidden && Math.abs(u.x - a.x) < CAM.engage) live.push(u);
+  return live;
+}
+// How far the touch controls (the stick on the left, the button cluster on the right) reach into the stage, in
+// canvas px. On a phone held sideways the gutters beside the 16:9 stage are narrow and the controls sit over it,
+// so the camera keeps the bodies between them. Zero wherever the controls aren't over the stage (desktop, a pad,
+// portrait, where they sit under it). Read from the layout twice a second, never every frame.
+let insetAt = -1e9, insetL = 0, insetR = 0;
+function touchInsets() {
+  const now = performance.now();
+  if (now - insetAt < 500) return;
+  insetAt = now; insetL = insetR = 0;
+  if (!touchUI()) return;
+  const st = document.getElementById('stage'), cl = document.querySelector('.tc-cluster'), base = document.querySelector('.tc-base');
+  if (!st) return;
+  const S = st.getBoundingClientRect(), k = W / Math.max(1, S.width);
+  const over = (r) => r.width > 0 && r.height > 0 && r.top < S.bottom && r.bottom > S.top;
+  if (cl) { const r = cl.getBoundingClientRect(); if (over(r)) insetR = Math.min(W * 0.25, Math.max(0, S.right - r.left) * k); }
+  if (base) { const r = base.getBoundingClientRect(); if (over(r)) insetL = Math.min(W * 0.25, Math.max(0, r.right - S.left) * k); }
+}
+// The last word, once frameDraw has placed this frame's drawing: whatever the prediction in updateCamera missed
+// (a contact snap, a fade that outran it), the drawn bodies stay inside the frame and under the HUD strip.
+function fitCameraToDrawn() {
+  if (sim.hitstopActive > 0) return;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const u of camLive()) {
+    const j = drawnJ.get(u) || u.rig.joints, o = drawnOff.get(u) || NO_OFF, r = u.rig.radius;
+    for (const k in j) { const px = j[k].x + o.x, py = j[k].y + o.y; if (px - r < x0) x0 = px - r; if (px + r > x1) x1 = px + r; if (py - r < y0) y0 = py - r; if (py + 0.5 * r > y1) y1 = py + 0.5 * r; }
+  }
+  if (!(x1 >= x0)) return;
+  const sx0 = CAM.padX + insetL, sx1 = W - CAM.padX - insetR;   // the screen span bodies keep to
+  const zf = Math.min((H - CAM.padTop - CAM.padBot) / Math.max(1, y1 - y0), (sx1 - sx0) / Math.max(1, x1 - x0));
+  if (camera.zoom > zf && zf >= 0.85) { camZoom = Math.min(camZoom, zf); camera.zoom = zf; }
+  const z = camera.zoom, hh = H / 2 / z;
+  camera.x = clamp(camera.x, x1 - (sx1 - W / 2) / z, x0 - (sx0 - W / 2) / z);
+  camera.y = clamp(camera.y, y1 + CAM.padBot / z - hh, y0 - CAM.padTop / z + hh);
+}
+function updateCamera(dt, snap = false) {
+  if (sim.hitstopActive > 0) { camera.shakeX = 0; camera.shakeY = 0; return; }
+  if (camCut) { snap = true; camCut = false; }
+  const live = camLive();
+  touchInsets();
+  const sx0 = CAM.padX + insetL, sx1 = W - CAM.padX - insetR;   // the screen span bodies keep to (the touch controls narrow it)
+  // where each body is on the floor: a tumbling (point-simulated) or vaulting body is wherever its hip
   // is, not its floor line (a body falling down the stairwell already belongs to the floor below)
   const at = (u) => {
     const h = u.rig && u.rig.joints && u.rig.joints.hip;
     return (u.rag || u.state === 'vault') && h ? { x: h.x, y: h.y + 58 } : { x: u.x, y: u.y };
   };
   const P = live.map(at);
-  const mx = P.reduce((s, p) => s + p.x, 0) / Math.max(1, P.length);
-  const my = P.reduce((s, p) => s + p.y, 0) / Math.max(1, P.length) - 120;
-  const dist = P.length > 1 ? Math.abs(P[0].x - P[1].x) : 0, dy = P.length > 1 ? Math.abs(P[0].y - P[1].y) : 0;
-  // tight on the pair: 1.55 when they're in each other's face, backing off to 1.0 by about 520px
-  // apart; two floors apart (a floor break, the follow-down) it pulls back so both stay in frame
-  let zt = Math.max(1.0, Math.min(1.55, 1.75 - dist / 700));
-  // whatever the zoom, both heads (about 200 over the floor line) and both feet stay in frame,
-  // so a jump or a launch at close range eases the zoom instead of cropping a head
-  if (P.length) {
-    const top = Math.min(...P.map(p => p.y)) - 215, bot = Math.max(...P.map(p => p.y)) + 25;
-    const reach = Math.max(my - top, bot - my);
-    zt = Math.min(zt, Math.max(1.0, H / 2 / reach));
+  if (!P.length) return;
+  const dy = P.length > 1 ? Math.abs(P[0].y - P[1].y) : 0;
+  let xa = Infinity, xb = -Infinity, ex0 = Infinity, ex1 = -Infinity, ey0 = Infinity, ey1 = -Infinity, tall = null;
+  for (const p of P) { xa = Math.min(xa, p.x); xb = Math.max(xb, p.x); }
+  for (const u of live) {
+    const e = extentOf(u); ex0 = Math.min(ex0, e.x0); ex1 = Math.max(ex1, e.x1); ey0 = Math.min(ey0, e.y0); ey1 = Math.max(ey1, e.y1);
+    const st = standOf(u.rig); if (!tall || st.h > tall.h) tall = st;
   }
-  if (dy > 120) zt = Math.max(0.85, Math.min(zt, H / (dy + 330)));
-  if (sim.koSlow > 0) zt += sim.finisher ? 0.18 : 0.1;
+  const head = tall.head, standH = tall.h;
+  // close range: the taller body plus 4 heads over it and 1 under, filling the frame's height
+  const zClose = H / (standH + (CAM.headroom + CAM.footroom) * head);
+  // apart: both roots plus a leg's reach each side, and every drawn limb, across the frame's width
+  const needW = Math.max(xb - xa + 2 * CAM.reachK * standH, ex1 - ex0);
+  let zt = Math.min(zClose, Math.max(CAM.wide, (sx1 - sx0) / needW));
+  // every live body fits (a launch, a jump, two floors apart), with a soft margin so the zoom eases out before
+  // fitCameraToDrawn has to force it; below the wide framing only when it must
+  const fitZ = (s) => Math.min((H - CAM.padTop - CAM.padBot - 2 * s) / Math.max(1, ey1 - ey0), (sx1 - sx0 - 2 * s) / Math.max(1, ex1 - ex0));
+  const zFit = fitZ(0);
+  zt = Math.min(zt, Math.max(fitZ(CAM.soft), Math.min(zFit, CAM.wide)));
+  if (dy > 120 || zFit < CAM.wide) zt = Math.max(0.85, zt);   // two floors apart (a floor break, the follow-down)
+  else zt = Math.max(CAM.wide, zt);
+  // the KO slow-mo leans in (as a share, so it reads the same at any zoom), never so far it crops
+  if (sim.koSlow > 0) zt = Math.max(zt, Math.min(zt * (sim.finisher ? 1.12 : 1.065), zFit));
+  camZoom = snap ? zt : camZoom + (zt - camZoom) * (1 - Math.exp(-dt * (zt < camZoom ? CAM.zoomOut : CAM.zoomIn)));
+  // the zoom punch on a heavy hit's release lands on top, as a share of the framing (never past the fit)
   shake.zoomPunch *= Math.exp(-dt * 14);
-  zt += shake.zoomPunch;
-  camera.zoom += (zt - camera.zoom) * (1 - Math.exp(-dt * (shake.zoomPunch > 0.01 ? 40 : 5)));
-  const z = camera.zoom, hw = W / 2 / z, hh = H / 2 / z;
-  // the view may run 120px past either wall (the exterior is painted), so a body thrown
-  // into the corner lands on screen
-  const x0 = sim.bounds.x0 - 120 + hw, x1 = sim.bounds.x1 + 120 - hw;
-  const tx = x1 > x0 ? Math.max(x0, Math.min(x1, mx)) : (x0 + x1) / 2;
-  // a flying body is followed hard; otherwise the camera eases
+  if (shake.zoomPunch < 0.002) shake.zoomPunch = 0;
+  camera.zoom = Math.min(camZoom * (1 + shake.zoomPunch), Math.max(camZoom, zFit));
+  // the framing goes by camZoom; the hard fit by the zoom actually on screen, punch included
+  const z = camZoom, hw = W / 2 / z, hh = H / 2 / z, ze = camera.zoom, hhe = H / 2 / ze;
+  // horizontal: centered on the bodies; the view may run 120px past either wall (the exterior is painted),
+  // so a body thrown into the corner lands on screen
+  const wx0 = sim.bounds.x0 - 120 + hw, wx1 = sim.bounds.x1 + 120 - hw;
+  const fitX = (v, s = 0) => clamp(v, ex1 - (sx1 - s - W / 2) / ze, ex0 - (sx0 + s - W / 2) / ze);
+  const mid = (xa + xb) / 2 - ((sx0 + sx1) / 2 - W / 2) / z;   // the pair's middle on the middle of that span
+  const tx = fitX(wx1 > wx0 ? Math.max(wx0, Math.min(wx1, mid)) : (wx0 + wx1) / 2, CAM.soft);
+  // vertical: close in, the feet sit 1 head over the bottom edge; at the wide framing the old center
+  // (the floor line less 120); in between, a blend by zoom. Never past the lowest floor (plus a little
+  // ground) or far above the highest one, and never cropping a body or putting a head under the HUD.
+  const yF = Math.max(...P.map(p => p.y)), yMid = P.reduce((s, p) => s + p.y, 0) / P.length;
+  const k = Math.max(0, Math.min(1, (z - CAM.wide) / Math.max(0.01, zClose - CAM.wide)));
+  const fl = sim.floors;
+  const yMax = Math.max(...fl.map(f => f.y)) + 80, yMin = Math.min(...fl.map(f => f.y)) - 440;
+  const fitY = (v, s = 0) => clamp(v, ey1 + (CAM.padBot + s) / ze - hhe, ey0 - (CAM.padTop + s) / ze + hhe);
+  let ty = (yMid - 120) * (1 - k) + (yF + CAM.footroom * head - hh) * k;
+  ty = fitY(yMax - hh < yMin + hh ? yMax - hh : Math.max(yMin + hh, Math.min(yMax - hh, ty)), CAM.soft);
+  // a flying body is followed hard; otherwise the camera eases. These are targets from the predicted drawing;
+  // fitCameraToDrawn makes the guarantee on the real one, so a pose that jumps ahead of its drawing never pops the frame
   const flying = sim.units.some(u => !u.hidden && !u.grounded && (u.state === 'knockdown' || u.state === 'ko'));
   const falling = sim.units.some(u => !u.hidden && (u.falling || u.state === 'vault'));
   const followX = flying ? 22 : 8, followY = falling ? 10 : 6;
-  // vertical: center on the fighters, but never show past the arena's lowest floor
-  // (plus a little ground) or far above its highest one
-  const fl = sim.floors;
-  const yMax = Math.max(...fl.map(f => f.y)) + 80, yMin = Math.min(...fl.map(f => f.y)) - 440;
-  const ty = yMax - hh < yMin + hh ? yMax - hh : Math.max(yMin + hh, Math.min(yMax - hh, my));
-  camera.x += (tx - camera.x) * (1 - Math.exp(-dt * followX));
-  camera.y += (ty - camera.y) * (1 - Math.exp(-dt * followY));
+  camera.x = snap ? tx : camera.x + (tx - camera.x) * (1 - Math.exp(-dt * followX));
+  camera.y = snap ? ty : camera.y + (ty - camera.y) * (1 - Math.exp(-dt * followY));
   shake.trauma = Math.max(0, shake.trauma - dt * 2.4);
   // the kick snaps back to center (it was leaving a lurch); trauma jitters around zero
-  const k = Math.exp(-dt * 32);
-  shake.kickX *= k; shake.kickY *= k;
+  const kk = Math.exp(-dt * 32);
+  shake.kickX *= kk; shake.kickY *= kk;
   if (Math.abs(shake.kickX) < 0.5) shake.kickX = 0;
   if (Math.abs(shake.kickY) < 0.5) shake.kickY = 0;
-  const amp = shake.trauma * shake.trauma * 20;
-  camera.shakeX = shake.kickX + (amp ? (shakeRng() * 2 - 1) * amp : 0);
-  camera.shakeY = shake.kickY + (amp ? (shakeRng() * 2 - 1) * amp * 0.8 : 0);
+  // shake is in world px: scale it with the zoom so it reads the same size on screen as it did at the old framing
+  const amp = shake.trauma * shake.trauma * 20, sk = 1.3 / Math.max(1, z);
+  camera.shakeX = (shake.kickX + (amp ? (shakeRng() * 2 - 1) * amp : 0)) * sk;
+  camera.shakeY = (shake.kickY + (amp ? (shakeRng() * 2 - 1) * amp * 0.8 : 0)) * sk;
 }
 
 // ---- frame ----------------------------------------------------------------------------------
@@ -933,6 +1055,10 @@ const drawOffsetNow = (u) => drawnOff.get(u) || NO_OFF;
 
 function render() {
   syncMirror();   // the guest's view flips on when his match starts and off when it ends, however it ends
+  // this frame's drawing first (the turnaround, snap fade and air catch-up), so the camera can make sure it's all in frame
+  const drawnNow = new Map();
+  for (const u of sim.units) if (!u.hidden) drawnNow.set(u, frameDraw(u));
+  fitCameraToDrawn();
   const ctxs = {};
   const haveBodies = !arena.bodiesInBackground && arena.bodies && arena.bodies.length > 0;
   if (fx.skip) { fx.skip.far = false; fx.skip.bodies = !haveBodies && !bodiesDrawn; }
@@ -961,7 +1087,7 @@ function render() {
   const order = [...sim.units].sort((p, q) => (p.state === 'attack') - (q.state === 'attack') || q.id - p.id);
   for (const u of order) {
     if (u.hidden) continue;
-    const { off, joints: smoothJ } = frameDraw(u);
+    const { off, joints: smoothJ } = drawnNow.get(u);
     const joints = life.apply(u, smoothJ, sim, lifeDt);   // the life layer on top, drawn only
     const realJ = u.rig.joints; u.rig.joints = joints;   // the turnaround and snap fade, drawn only (put back below)
     ctxs.figures.save(); ctxs.figures.translate(off.x, off.y);
@@ -1043,7 +1169,8 @@ function drawnPoints(u) {
   const j = drawnJ.get(u) || (u.rig && u.rig.joints), off = drawnOff.get(u) || NO_OFF;
   if (!j || !j.head) return null;
   const at = (p) => ({ x: p.x + off.x, y: p.y + off.y });
-  return { head: at(j.head), hip: at(j.hip) };
+  const all = {}; for (const k in j) all[k] = at(j[k]);
+  return { head: at(j.head), hip: at(j.hip), all };
 }
 
 // ---- draw smoothing on the ground: the turnaround and the snap fade (visual only) ----------------
@@ -1248,7 +1375,7 @@ window.__gauntlet = {
 };
 window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
   // measurement hooks: a frame stepped without drawing (the draw smoothing still runs), and where a body is drawn
-  stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); },
+  stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); fitCameraToDrawn(); },
   drawn: (u) => drawnPoints(u), poseState, life };
 // no load race for captures: fonts first, then one real rendered frame, then ready
 // the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
