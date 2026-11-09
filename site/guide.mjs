@@ -73,6 +73,7 @@ export function rulesPage({ FIGHT, MENUS, FACE, PILL }) {
         <div><dt>STOMP</dt><dd>Down and a kick over a fighter on the floor stomps them for real damage. Land it and you have time to guard their wake-up strike. Whiff it, when they roll or strike up through it, and you're the one wide open.</dd></div>
         <div><dt>AIR RECOVERY</dt><dd>Juggled or launched, press a button once the hits stop and you flip upright and land on your feet. Press right as the window opens and you come out with a jab. Press too early and you're locked out, so mashing never saves you.</dd></div>
         <div><dt>STRINGS</dt><dd>Press in rhythm, as the last hit finishes, and the hits chain: 1, 2, 3, 4 is the Neon Tornado. Mashing doesn't chain. Every fighter's strings are on their page.</dd></div>
+        <div><dt>ROUNDS AND TIME</dt><dd>A match is best of three rounds of 99 seconds. Change either one from the mode select or the pause menu: best of 1, 3 or 5, and 30, 60 or 99 seconds or no limit. In the last 10 seconds the clock turns pink and pulses. When time runs out, whoever has more health left takes the round.</dd></div>
         <div><dt>SOUND</dt><dd>Browsers keep a page quiet until you touch it, so the first click, tap or key turns the sound on. M turns the music off and on, N skips a track.</dd></div>
       </dl>
     </div>

@@ -18,7 +18,8 @@ const JUMP_VY = 500, GRAVITY = 2000;
 const BODY_SEP = 64, WALL_PAD = 26;   // 64: the rigs lean 30-50px into a punch; closer and the torsos cross
 const BUFFER_STEPS = 16;            // 133ms input buffer
 const FLASH_STEPS = 6;              // 3 frames of tint at 60fps; the body stays readable under it
-const ROUND_TIME = 60;
+const ROUND_TIME = 99;               // the default round, in seconds (sim.roundTime: 0 is no limit; src/flow/rules.js)
+const WINS_NEEDED = 2;               // best of 3 (sim.winsNeeded)
 const INTRO_TIME = 1.4, KO_HOLD = 0.35, MATCH_HOLD = 1.8;
 const STUMBLE_FRICTION = 0.95;      // hitstun slide; victim keeps stumbling until slow
 const CHASE_FRICTION = 0.975;       // the attacker's ride after a launch: he follows the body across the room
@@ -205,7 +206,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   const calibrated = new Set([TEMP_ID]);
 
   const sim = {
-    units: [], bounds, get floors() { return floorsNow(); }, phase: 'intro', phaseTimer: 0, stepCount: 0, round: 1, timer: ROUND_TIME,
+    units: [], bounds, get floors() { return floorsNow(); }, phase: 'intro', phaseTimer: 0, stepCount: 0, round: 1, timer: ROUND_TIME, roundTime: ROUND_TIME, winsNeeded: WINS_NEEDED, roundClock: 0,
     wins: [0, 0], winner: -1, banner: '', bannerT: 0, difficulty: 0.6, rng: mulberry32(1), reach, reachOf, reachSeen,
     accumulator: 0, hitstopActive: 0, koSlow: 0, finisher: false, startHealth: 100, introTime: INTRO_TIME, seed: 1, horde: null, card: null,
     callouts: [], log: [],
@@ -330,7 +331,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     syncRig(u); u.rig.play('idle'); rigUpd(u, 0); u.rig.events.length = 0;
   }
   sim.startRound = (n, { skipIntro = false } = {}) => {
-    sim.round = n; sim.floor = 0; sim.floorBroken = false; refreshBounds(); sim.timer = ROUND_TIME; sim.winner = -1; sim.koSlow = 0; sim.finisher = false; sim.callouts.length = 0;
+    sim.round = n; sim.floor = 0; sim.floorBroken = false; refreshBounds(); sim.timer = sim.roundTime; sim.roundClock = 0; sim.winner = -1; sim.koSlow = 0; sim.finisher = false; sim.callouts.length = 0;
     sim.units.forEach(spawn);
     if (skipIntro) { sim.phase = 'fight'; sim.phaseTimer = 0; sim.banner = ''; }
     else { sim.phase = 'intro'; sim.phaseTimer = sim.introTime; sim.banner = `ROUND ${n}`; }
@@ -414,7 +415,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (!H.wave) H.wave = { size: 5 + Math.min(3, H.floorsCleared), spawned: 1, downed: 0 };   // a goon downed before any wave began
     H.wave.downed++;
     p.health = Math.min(p.maxHealth || sim.startHealth, p.health + H.heal);
-    sim.winner = -1; sim.timer = ROUND_TIME;
+    sim.winner = -1; sim.timer = sim.roundTime;
     if (H.wave.downed >= H.wave.size) { g.hidden = true; floorClear(); return; }
     if (H.wave.spawned < H.wave.size) freshGoon(g); else g.hidden = true;
     if (H.wave.downed >= 2 && H.wave.spawned < H.wave.size && goonsLive().length < 2 && makeRig) {
@@ -2337,8 +2338,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (sim.phaseTimer <= 0) { sim.phase = 'fight'; sim.banner = ''; }
         break;
       case 'fight':
-        sim.timer = Math.max(0, sim.timer - DT);
-        if (sim.timer <= 0) {
+        sim.roundClock += DT;   // seconds fought this round (the demo AI paces itself by it)
+        if (sim.roundTime > 0) sim.timer = Math.max(0, sim.timer - DT);   // no limit: the clock never runs out
+        if (sim.roundTime > 0 && sim.timer <= 0) {
           // characters with different health compare what's left of each bar
           const same = !!sim.horde || (a.maxHealth || 100) === (b.maxHealth || 100), ha = same ? a.health : a.health / a.maxHealth, hb = same ? b.health : b.health / b.maxHealth;
           const w = ha === hb ? -1 : (ha > hb ? 0 : 1);
@@ -2354,7 +2356,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         sim.phaseTimer -= DT;
         if (sim.phaseTimer > 0) break;
         if (sim.winner >= 0) sim.wins[sim.winner]++;
-        if (sim.horde || sim.wins[0] >= 2 || sim.wins[1] >= 2 || (sim.winner < 0 && sim.round >= 3)) {
+        const need = sim.winsNeeded || WINS_NEEDED;   // best of 2n-1: the last round drawn ends it too
+        if (sim.horde || sim.wins[0] >= need || sim.wins[1] >= need || (sim.winner < 0 && sim.round >= 2 * need - 1)) {
           sim.phase = 'match'; sim.phaseTimer = MATCH_HOLD;
           sim.banner = sim.horde ? `${sim.horde.count} GOONS` + (sim.horde.floorsCleared ? `  ${sim.horde.floorsCleared} FLOORS` : '') : sim.wins[0] === sim.wins[1] ? 'DRAW' : `${sim.units[sim.wins[0] > sim.wins[1] ? 0 : 1].name} WINS`;
           onEvent({ type: 'match', winner: sim.winner });

@@ -44,6 +44,7 @@ import * as S from './scores.js';
 import { createMenuInput } from './menuInput.js';
 import { createUI, el, button } from './ui.js';
 import { techniques, botchEnabled, setBotchEnabled } from './techniques.js';
+import { roundTime, bestOf, cycleRoundTime, cycleBestOf, timeLabel } from './rules.js';
 import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './netApi.js';
 import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
 import { profile, setName as saveName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
@@ -332,7 +333,9 @@ export function createFlow(ctx) {
   }
   function roundBonus() {
     if (mode !== 'arcade' || sim.winner !== 0) return;
-    const secs = Math.floor(sim.timer), perfect = sim.units[0].health >= sim.startHealth;
+    // the time bonus counts the share of the clock left, on the old 60-second scale, so a 99s round pays what a
+    // 60s one did and a 30s one no more; no time limit, no time bonus
+    const secs = sim.roundTime > 0 ? Math.floor(sim.timer * 60 / sim.roundTime) : 0, perfect = sim.units[0].health >= sim.startHealth;
     const pts = S.POINTS.roundWin + secs * S.POINTS.timeBonus + (perfect ? S.POINTS.perfect : 0);
     add(pts, perfect ? 'PERFECT' : 'ROUND');
   }
@@ -566,11 +569,24 @@ export function createFlow(ctx) {
         mk('HORDE', 'FLOOR BY FLOOR, AS MANY AS YOU CAN', () => toSelect('horde'), 'fl-amber'),
         mk('TRAINING', 'A DUMMY THAT NEVER HITS BACK', () => toSelect('training'), 'fl-violet'),
       ];
+      for (const b of rulesButtons('fl-slim')) { list.appendChild(b.el); items.push(b); }
       const back = button('BACK', () => go('attract'), 'fl-violet fl-slim');
       list.appendChild(back.el); items.push(back);
       root.appendChild(list);
       return { items, back: () => go('attract') };
     });
+  }
+  // the match rules (src/flow/rules.js): ROUNDS cycles best of 1, 3, 5 and TIME cycles 30, 60, 99 and no
+  // limit, each press stepping to the next and remembering it; they take effect from the next fight
+  function rulesButtons(cls, note = '') {
+    const rounds = button('', () => { cycleBestOf(); paint(); }, cls), time = button('', () => { cycleRoundTime(); paint(); }, cls);
+    const paint = () => {
+      rounds.el.firstChild.textContent = `ROUNDS: BEST OF ${bestOf()}`;
+      time.el.firstChild.textContent = `TIME: ${timeLabel(roundTime())}`;
+    };
+    for (const b of [rounds, time]) { b.el.textContent = ''; b.el.appendChild(document.createTextNode('')); if (note) b.el.appendChild(el('small', '', note)); }
+    paint();
+    return [rounds, time];
   }
   function pips(root, st) {
     const p = el('div', 'fl-pips');
@@ -758,6 +774,7 @@ export function createFlow(ctx) {
       const sw = button(label(), () => { setBotchEnabled(!botchEnabled()); sw.el.firstChild.textContent = label(); }, 'fl-amber');
       sw.el.appendChild(el('small', '', 'FROM THE NEXT FIGHT'));
       items.push(sw);
+      if (mode !== 'horde') items.push(...rulesButtons('fl-amber', 'FROM THE NEXT FIGHT'));   // horde has no rounds and resets the clock per goon
       // the right panel: the book of happy accidents, or the controls (keyboard and gamepad)
       const panel = el('div', 'fl-tech');
       const view = button('', () => { pauseView = pauseView === 'tech' ? 'controls' : 'tech'; paint(); });

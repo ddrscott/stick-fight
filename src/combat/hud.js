@@ -14,6 +14,7 @@ import { canUse } from '../characters/registry.js';
 export const NEON = { pink: '#ff2bd6', cyan: '#2ef2ff', amber: '#ffb02e', violet: '#a66bff', white: '#fff4fd', ink: '#0a0414' };
 const DISPLAY = "'Bungee', 'Arial Black', Impact, system-ui, sans-serif";
 const LABEL = "'Teko', 'Arial Narrow', 'Helvetica Neue', system-ui, sans-serif";
+const TIMER = { cy: 40, r: 33, size: 38 };   // the round clock: a ring between the bars, ROUND n under it (the tally under that)
 const BAR_W = 420, BAR_H = 18, BAR_Y = 16, SKEW = 12, STRIP_H = 96, ST_H = 5;   // STRIP_H: the bars plus the name and hint lines under them
 const SIDE = [NEON.cyan, NEON.pink];
 const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a' };
@@ -132,7 +133,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       const H = sim.horde, wv = H.wave || { downed: 0, size: 0 };
       plainText(who === 0 ? `FLOOR ${H.floorsCleared + 1}   ${H.count} DOWN` : `WAVE ${wv.downed}/${wv.size}`, side === 0 ? x + BAR_W : x, ly, 24, NEON.amber, { align: side === 0 ? 'right' : 'left' });
     } else {
-      for (let k = 0; k < 2; k++) {
+      for (let k = 0; k < (sim.winsNeeded || 2); k++) {   // a pip per round win the match needs
         const px = side === 0 ? x + BAR_W - 8 - k * 20 : x + 8 + k * 20, py = ly;
         ctx.save(); ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2);
         const won = sim.wins[i] > k;
@@ -347,25 +348,35 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   function tally(t, boxes, taken) {
     if (!t || typeof t !== 'object' || t.you == null) return;
     const text = `YOU ${t.you}\u2013${t.rival ?? 0} RIVAL${t.draw ? `  (${t.draw} DRAW${t.draw > 1 ? 'S' : ''})` : ''}`;
-    const y = 34 + 26 + 33, w = measure(text, 20, LABEL, 600) + 12, r = { x0: width / 2 - w / 2, x1: width / 2 + w / 2, y0: y - 12, y1: y + 12 };
+    const y = TIMER.cy + TIMER.r + 33, w = measure(text, 20, LABEL, 600) + 12, r = { x0: width / 2 - w / 2, x1: width / 2 + w / 2, y0: y - 12, y1: y + 12 };
     ctx.save(); ctx.globalAlpha = overlaps(r, boxes) ? 0.18 : 0.95;
     plainText(text, width / 2, y, 20, NEON.amber, { align: 'center' });
     ctx.restore();
     taken.push(r);
   }
 
+  // The round clock. The ring drains with the time left (sim.roundTime; 0 is no limit, drawn as ∞ with a full
+  // ring). In the last 10 seconds it turns pink and pulses once a second: it swells and flares the moment the
+  // number ticks over and settles before the next one, on the sim's own clock (so it holds in a pause or hitstop).
   function timer(sim) {
-    const cx = width / 2, cy = 34, r = 26;
+    const cx = width / 2, { cy, r, size } = TIMER, limit = sim.roundTime > 0;
+    const secs = Math.ceil(sim.timer), hurry = limit && secs <= 10;
+    // the number changes as the clock crosses a whole second; age is the time since it last did
+    const age = 1 - (sim.timer - Math.floor(sim.timer));
+    const pulse = hurry && sim.timer > 0 && sim.phase === 'fight' ? Math.exp(-age * 5) : 0;
+    const s = 1 + 0.28 * pulse;
     ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(14,4,30,0.75)'; ctx.fill();
-    ctx.shadowColor = NEON.violet; ctx.shadowBlur = 16; ctx.lineWidth = 3; ctx.strokeStyle = NEON.violet; ctx.stroke();
-    // the ring drains with the clock
-    const f = Math.max(0, Math.min(1, sim.timer / 60));
-    ctx.shadowBlur = 8; ctx.lineWidth = 2; ctx.strokeStyle = sim.timer < 10 ? NEON.pink : '#e6d6ff';
-    ctx.beginPath(); ctx.arc(cx, cy, r - 5, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+    ctx.translate(cx, cy); ctx.scale(s, s);
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fillStyle = hurry ? `rgba(${40 + 50 * pulse | 0},4,40,0.82)` : 'rgba(14,4,30,0.78)'; ctx.fill();
+    ctx.shadowColor = hurry ? NEON.pink : NEON.violet; ctx.shadowBlur = 16 + 26 * pulse; ctx.lineWidth = 3 + 2 * pulse; ctx.strokeStyle = hurry ? NEON.pink : NEON.violet; ctx.stroke();
+    const f = limit ? Math.max(0, Math.min(1, sim.timer / sim.roundTime)) : 1;
+    ctx.shadowBlur = 8; ctx.lineWidth = 2.5; ctx.strokeStyle = hurry ? NEON.pink : '#e6d6ff';
+    ctx.beginPath(); ctx.arc(0, 0, r - 6, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+    const text = limit ? String(secs).padStart(2, '0') : '∞';
+    if (hurry) neonText(text, 0, 2, size, NEON.pink, { glow: 0.35 + pulse });
+    else plainText(text, 0, 2, limit ? size : size + 4, NEON.white, { font: DISPLAY, align: 'center', weight: '' });
     ctx.restore();
-    plainText(String(Math.ceil(sim.timer)).padStart(2, '0'), cx, cy + 1, 28, sim.timer < 10 ? NEON.pink : NEON.white, { font: DISPLAY, align: 'center', weight: '' });
-    plainText(`ROUND ${sim.round}`, cx, cy + r + 11, 20, NEON.violet, { align: 'center' });
+    plainText(`ROUND ${sim.round}`, cx, cy + r + 12, 21, NEON.violet, { align: 'center' });
   }
 
   // screen boxes of the live fighters (and the fresh pile isn't covered either: it lies on the floor, below every slot)

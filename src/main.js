@@ -15,7 +15,8 @@ import { createOnline } from './net/online.js';   // online play: rooms, lockste
 import { createFlow } from './flow/index.js';     // the arcade flow: title, menus, ladder, continue, scores (src/flow/)
 import { setNet, adaptOnline } from './flow/netApi.js';
 import { roster, getCharacter, TEMP_ID } from './characters/index.js';   // registers every character before the sim is made
-import { botchEnabled, discover, techniques } from './flow/techniques.js';   // the botch switch and the happy accidents found (src/combat/botch.js)
+import { botchEnabled, discover, techniques } from './flow/techniques.js';
+import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
 import { ACCIDENTS } from './combat/botch.js';
 
 const W = 1280, H = 720;
@@ -162,7 +163,7 @@ gameAudio.attach(sim);   // audio
 // online: net.host()/join(code)/openLobby(); a match runs as the 'online' scene, stepped by online.advance
 // endMatch goes to the flow (its VERSUS ONLINE end screen) when the flow is running, and only
 // falls back to the demo for a ?scene= page; online.js's own "rival left" panel is closed in favor of it
-const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), botchSetting: () => botchEnabled(),
+const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()) }),
   endMatch: (reason) => { if (flow && flow.on) { flow.netEnded(reason); setTimeout(() => online.closeLobby(), 0); } else setScene('attract'); } });
 
 // ---- scenes ---------------------------------------------------------------------------
@@ -765,6 +766,8 @@ function pickChars(name, opts) {
   }
   return [urlChars[0] || TEMP_ID, urlChars[1] || TEMP_ID];
 }
+// the scenes the flow starts for a player's own fight: they run on the player's round time and best-of
+const PICKED_RULES = new Set(['arcade', 'horde', 'dummy']);
 function setScene(name, opts) {
   if (!scenes[name]) name = 'play';
   sceneName = name;
@@ -783,6 +786,12 @@ function setScene(name, opts) {
   camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camera.shakeX = camera.shakeY = 0;
   // botches on or off (the pause menu's switch, ?botch=0); online, the host's setting from the start message
   sim.botchOn = name === 'online' && opts && opts.lockstep ? opts.botch !== false : botchEnabled();
+  // the round time and best-of: online the host's (the start message), in the flow's own fights the player's
+  // (src/flow/rules.js, the pause menu), and everywhere else (the demo, ?scene= tests) the defaults
+  const picked = PICKED_RULES.has(name) && flow && flow.on;
+  const rules = name === 'online' && opts && opts.lockstep && opts.rules ? opts.rules
+    : picked ? { roundTime: roundTime(), winsNeeded: winsFor(bestOf()) } : { roundTime: DEFAULT_ROUND_TIME, winsNeeded: winsFor(DEFAULT_BEST_OF) };
+  sim.roundTime = rules.roundTime; sim.winsNeeded = rules.winsNeeded;
   scenes[name](opts || {});
   updateCamera(1);
 }

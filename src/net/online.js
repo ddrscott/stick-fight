@@ -13,8 +13,9 @@
 //   net.active                  a match is running (main.js steps it through net.advance)
 //
 // Once both players are linked (peer to peer, or the relay after RTC_TIMEOUT_MS), the host
-// picks a seed and sends {t:'start', seed, chars, botch}; both call startMatch({ seed, localIndex, lockstep, chars, botch }),
-// botch being the host's botch setting (game.botchSetting(), src/combat/botch.js), so both sims play the same rules;
+// picks a seed and sends {t:'start', seed, chars, botch, rules}; both call startMatch({ seed, localIndex, lockstep, chars, botch, rules }),
+// botch being the host's botch setting (game.botchSetting(), src/combat/botch.js) and rules the host's round time and
+// round wins ({ roundTime, winsNeeded }, game.rulesSetting(), src/flow/rules.js), so both sims play the same rules;
 // chars being [host's character, guest's character] (each side's pick rides its {t:'ready'} message;
 // net.setCharacter(id) sets this side's, TEMP if it never picks),
 // which main.js turns into the 'online' scene: unit 0 is the host, unit 1 the guest, each
@@ -46,13 +47,14 @@
 // reliable socket and are only delayed). Set it on both pages: ?netsim=30,5,2 on each is about
 // 60 ms of round trip with 2% loss. ?relay=1 forces the relay.
 
+import { ROUND_TIMES, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF, winsFor } from '../flow/rules.js';
 import { track } from '../analytics.js';
 import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
 import { legend, watchDevice } from '../flow/controls.js';
 
-export const NET_VERSION = 12;   // bump when the sim or the netcode changes in a way old builds can't play against (12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
+export const NET_VERSION = 13;   // bump when the sim or the netcode changes in a way old builds can't play against (13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
 const PID_KEY = 'stick-fight-pid', RIVALS_KEY = 'stick-fight-rivals';   // this browser's random id, and the all-time record per rival id
@@ -80,11 +82,15 @@ function addRivalResult(pid, res) {
     localStorage.setItem(RIVALS_KEY, JSON.stringify(Object.fromEntries(keep)));
   } catch { /* storage off */ }
 }
+const cleanRules = (r) => ({
+  roundTime: r && ROUND_TIMES.includes(r.roundTime) ? r.roundTime : DEFAULT_ROUND_TIME,
+  winsNeeded: r && [1, 2, 3].includes(r.winsNeeded) ? r.winsNeeded : winsFor(DEFAULT_BEST_OF),
+});
 const freshTally = () => ({ host: 0, guest: 0, draw: 0, rounds: [0, 0] });
 
 /**
- * @param {{ sim: any, input: any, startMatch: (o: { seed: number, localIndex: number, lockstep: any, chars?: string[], botch?: boolean }) => void,
- *           endMatch: (reason: string) => void, stage?: HTMLElement | null, botchSetting?: () => boolean }} game
+ * @param {{ sim: any, input: any, startMatch: (o: { seed: number, localIndex: number, lockstep: any, chars?: string[], botch?: boolean, rules?: { roundTime: number, winsNeeded: number } }) => void,
+ *           endMatch: (reason: string) => void, stage?: HTMLElement | null, botchSetting?: () => boolean, rulesSetting?: () => { roundTime: number, winsNeeded: number } }} game
  */
 export function createOnline(game) {
   /** @type {Record<string, Function[]>} */
@@ -148,7 +154,7 @@ export function createOnline(game) {
         if (m <= n) return;   // a start we already played
         if (lockstep) lockstep = null;   // still finishing the match before (a stall): the host has it confirmed, its tally counts
         if (msg.tally) adoptTally(msg.tally);
-        begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar], msg.botch !== false, m);
+        begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar], msg.botch !== false, m, cleanRules(msg.rules));
       } else onSession(msg);
     });
     l.on('packet', (buf) => { heardAt = now(); if (lockstep) lockstep.onPacket(buf); else if (drain) drain.onPacket(buf); });
@@ -165,11 +171,14 @@ export function createOnline(game) {
     const seed = crypto.getRandomValues(new Uint32Array(1))[0];
     const chars = [localChar, remoteChar];   // the host is P1
     const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;   // the host's rules for both
-    link.sendControl({ t: 'start', seed, chars, botch, n: 1, tally });
-    begin(seed, chars, botch, 1);
+    const rules = hostRules();
+    link.sendControl({ t: 'start', seed, chars, botch, rules, n: 1, tally });
+    begin(seed, chars, botch, 1, rules);
   }
 
-  function begin(seed, chars = ['temp', 'temp'], botch = true, m = 1) {
+  // the host's round time and round wins (src/flow/rules.js); a guest takes only values it knows
+  function hostRules() { return cleanRules(typeof game.rulesSetting === 'function' ? game.rulesSetting() : null); }
+  function begin(seed, chars = ['temp', 'temp'], botch = true, m = 1, rules = cleanRules(null)) {
     const localIndex = role === 'host' ? 0 : 1;
     n = m; drain = null; stopTimer(); autoHalt = false;
     localChar = chars[localIndex] || localChar; remoteChar = chars[1 - localIndex] || remoteChar;
@@ -186,7 +195,7 @@ export function createOnline(game) {
     try { game.input.swallowHeld(); } catch { /* old input */ }
     document.documentElement.classList.add('online');
     emit('connected', { mode: link.mode, role, code });
-    game.startMatch({ seed, localIndex, lockstep, chars, botch });
+    game.startMatch({ seed, localIndex, lockstep, chars, botch, rules });
     if (localIndex === 0) track('online_match', [chars[0] || '', chars[1] || '', crewMode ? 'crew' : 'quick'], m);   // the host counts it once
     emit('start', { seed, localIndex, chars, botch, n: m });
     readout.show(true);
@@ -299,9 +308,9 @@ export function createOnline(game) {
     const seed = crypto.getRandomValues(new Uint32Array(1))[0];
     const chars = [localChar, remoteChar];
     const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;
-    const m = n + 1;
-    link.sendControl({ t: 'start', seed, chars, botch, n: m, tally });
-    begin(seed, chars, botch, m);
+    const m = n + 1, rules = hostRules();
+    link.sendControl({ t: 'start', seed, chars, botch, rules, n: m, tally });
+    begin(seed, chars, botch, m, rules);
   }
   function startTimer() {
     stopTimer();

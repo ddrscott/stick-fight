@@ -13,7 +13,8 @@
 // inputs) and everything outside the sim (particles, lights, camera, sound).
 
 const SIM_SCALARS = ['phase', 'phaseTimer', 'stepCount', 'round', 'timer', 'winner', 'banner', 'bannerT', 'difficulty', 'botchOn',
-  'accumulator', 'hitstopActive', 'koSlow', 'finisher', 'startHealth', 'introTime', 'seed', 'floor', 'floorBroken', 'combo', 'hordeCfg'];
+  'accumulator', 'hitstopActive', 'koSlow', 'finisher', 'startHealth', 'introTime', 'seed', 'floor', 'floorBroken', 'combo', 'hordeCfg',
+  'roundTime', 'winsNeeded', 'roundClock'];
 
 function copyPoints(src, dst) {
   if (!src) return null;

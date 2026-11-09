@@ -133,7 +133,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   function well(me, sim) {
     const sw = sim.stairwell;
     if (!sw || sw.toFloor == null || sim.floorBroken || sim.horde || (me.floor || 0) !== 0) return null;
-    if (show && sim.timer > 46) return null;   // the demo saves the floor break for later in the round
+    if (show && (sim.roundClock || 0) < 14) return null;   // the demo saves the floor break for later in the round
     return { sw, cx: (sw.x0 + sw.x1) / 2 };
   }
   // he's near the opening and it lies beyond him (my push sends him toward it)

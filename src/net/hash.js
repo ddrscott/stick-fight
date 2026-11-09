@@ -27,7 +27,7 @@ function mixValue(h, v) {
 /** A 32-bit FNV-1a style hash of the sim state, as 8 hex digits. */
 export function hashSim(sim) {
   let h = 0x811c9dc5;
-  for (const v of [sim.stepCount, sim.phase, sim.round, sim.timer, sim.phaseTimer, sim.wins[0], sim.wins[1], sim.floor, sim.floorBroken, sim.koSlow]) h = mixValue(h, v);
+  for (const v of [sim.stepCount, sim.phase, sim.round, sim.timer, sim.phaseTimer, sim.wins[0], sim.wins[1], sim.floor, sim.floorBroken, sim.koSlow, sim.roundClock, sim.roundTime, sim.winsNeeded]) h = mixValue(h, v);
   for (const u of sim.units) {
     for (const k of UNIT_FIELDS) h = mixValue(h, u[k]);
     const j = u.rig.joints;
@@ -46,7 +46,7 @@ export function dumpSim(sim) {
     else out[k] = String(v);
   };
   put('stepCount', sim.stepCount); put('phase', sim.phase); put('round', sim.round); put('timer', sim.timer);
-  put('phaseTimer', sim.phaseTimer); put('wins', sim.wins.join('-')); put('floor', sim.floor); put('koSlow', sim.koSlow);
+  put('phaseTimer', sim.phaseTimer); put('wins', sim.wins.join('-')); put('floor', sim.floor); put('koSlow', sim.koSlow); put('roundClock', sim.roundClock); put('rules', `${sim.roundTime}s/${sim.winsNeeded}`);
   sim.units.forEach((u, i) => {
     for (const k of UNIT_FIELDS) put(`u${i}.${k}`, u[k]);
     const j = u.rig.joints;
