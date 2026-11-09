@@ -37,7 +37,7 @@
 // scheme (one for every screen) is in controls.js. "MAIN MENU" always means modeSelect.
 
 import { track } from '../analytics.js';   // cookieless game analytics (README, Analytics)
-import { LADDER, buildLadder, secretStage } from './ladder.js';
+import { LADDER, buildLadder, secretStage, retryDifficulty } from './ladder.js';
 import { openSelect } from './select.js';
 import { roster, getCharacter, characterOr, TEMP_ID } from '../characters/index.js';
 import * as S from './scores.js';
@@ -129,7 +129,7 @@ export function createFlow(ctx) {
   let t = 0;   // seconds in this state (flow time: advances with the game's frames)
   let idle = 0;   // ms since the last key, touch, click or pad input
   let mode = null;
-  const run = { stage: 0, score: 0, stageStart: 0, continues: 0, floors: 0, goons: 0 };
+  const run = { stage: 0, score: 0, stageStart: 0, continues: 0, stageContinues: 0, floors: 0, goons: 0 };
   let bonus = { text: '', t: 0 };
   let resumeTo = 'fighting';
   let demoKO = false;
@@ -243,7 +243,7 @@ export function createFlow(ctx) {
   // ---- the scene behind --------------------------------------------------------------------------
   function demo() { demoKO = false; ctx.scene('attract'); }
   function ensureDemo() { if (ctx.sceneName() !== 'attract') demo(); }
-  function newRun(m) { mode = m; run.stage = 0; run.score = 0; run.stageStart = 0; run.continues = 0; run.floors = 0; run.goons = 0; bonus = { text: '', t: 0 }; }
+  function newRun(m) { mode = m; run.stage = 0; run.score = 0; run.stageStart = 0; run.continues = 0; run.stageContinues = 0; run.floors = 0; run.goons = 0; bonus = { text: '', t: 0 }; }
   function add(points, label = '') {
     if (!points) return;
     run.score += Math.round(points);
@@ -358,7 +358,7 @@ export function createFlow(ctx) {
     if (secret) run.ladder = [...ladder(), secret];
     if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR' }; track('arcade_end', [sel.player, 'clear'], ladder().length); go('ending'); return; }
     track('stage', [sel.player], run.stage + 2);   // reached the next stage
-    run.stage++;
+    run.stage++; run.stageContinues = 0;
     go('stageIntro');
   }
   function afterGame() {
@@ -602,7 +602,8 @@ export function createFlow(ctx) {
     const st = ladder()[run.stage];
     run.stageStart = run.score;
     for (const u of sim.units) hp.delete(u);
-    ctx.scene('arcade', { stage: st, chars: [sel.player, st.char || TEMP_ID] });
+    // each continue on this stage eases its CPU (src/flow/ladder.js retryDifficulty)
+    ctx.scene('arcade', { stage: { ...st, difficulty: retryDifficulty(st.difficulty, run.stageContinues) }, chars: [sel.player, st.char || TEMP_ID] });
     ui.show('fl-stage', (root) => {
       root.append(el('div', 'fl-label', st.boss ? 'FINAL STAGE' : `STAGE ${st.n} OF ${ladder().length}`));
       const vs = el('div', 'fl-vs');
@@ -646,7 +647,7 @@ export function createFlow(ctx) {
       countEl = el('div', 'fl-count', '10');
       root.appendChild(countEl);
       root.appendChild(el('div', 'fl-label', `RETRY STAGE ${ladder()[run.stage].n}  ·  ${ladder()[run.stage].name}`));
-      const yes = button('YES', () => { if (t < 0.4 || state !== 'continue') return; run.score = run.stageStart; run.continues++; go('stageIntro'); }, 'fl-pink');
+      const yes = button('YES', () => { if (t < 0.4 || state !== 'continue') return; run.score = run.stageStart; run.continues++; run.stageContinues++; go('stageIntro'); }, 'fl-pink');
       const no = button('NO', () => { if (t < 0.4) return; go('gameOver'); });
       // no back: NO is a choice, not a way out, and B is the kick a player who just lost is mashing
       return { items: btnRow(root, [yes, no], '18cqw'), legend: [MOVE, SELECT] };
