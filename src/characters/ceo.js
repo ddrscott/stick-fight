@@ -69,7 +69,19 @@ function suitAndWatch(ctx, J, o) {
   ctx.fillStyle = '#fff3b0'; ctx.beginPath(); ctx.arc(wx, wy, 1.1 * s, 0, Math.PI * 2); ctx.fill();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Make it rain: both hands flick bills up and out, over and over, the chin up the whole time.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -12, la: [60, 110], ra: [40, 90] }, 160, 'in'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: -4, bend: -4, head: -16, la: [130, 190], ra: [40, 90] }, 120, 'snap'),
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -12, la: [60, 110], ra: [40, 90] }, 160, 'in'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: -4, bend: -4, head: -16, la: [60, 110], ra: [120, 180] }, 120, 'snap'),
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -12, la: [60, 110], ra: [40, 90] }, 160, 'in'),
+  K({ ...F(0, HIP + 2, LF, RF), torso: -6, bend: -5, head: -18, la: [150, 200], ra: [140, 190] }, 160, 'snap'),
+  K({ ...F(0, HIP + 2, LF, RF), torso: -6, bend: -5, head: -18, la: [152, 204], ra: [142, 192] }, 300, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'ceo',
   name: 'THE CEO',
   tagline: 'THE BOARD HAS DECIDED YOU’RE A COST',

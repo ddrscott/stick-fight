@@ -98,7 +98,20 @@ function lanyardAndClipboard(ctx, J, o) {
 // on notice: half stamina regen for three seconds (the sim's `status` hook; the HUD shows WRITTEN UP)
 const WRITTEN_UP = { regen: 0.5, ms: 3000, tag: 'WRITTEN UP' };
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Noted: a quick scribble on the clipboard, a satisfied nod, and two thumbs up.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF, RF), torso: 6, bend: 2, head: 16, la: [50, 100], ra: [40, 120] }, 140, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 6, bend: 2, head: 16, la: [50, 100], ra: [46, 112] }, 100, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 6, bend: 2, head: 16, la: [50, 100], ra: [40, 120] }, 100, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 6, bend: 2, head: 16, la: [50, 100], ra: [46, 112] }, 100, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, bend: 0, head: 2, la: [50, 100], ra: [40, 120] }, 200, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, bend: 0, head: 12, la: [50, 100], ra: [40, 120] }, 200, 'inOut'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: -2, bend: -2, head: -6, la: [70, 170], ra: [60, 168] }, 180, 'out'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: -2, bend: -2, head: -6, la: [72, 172], ra: [62, 170] }, 420, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'hrRep',
   name: 'HR REP',
   tagline: 'THIS IS GOING IN YOUR FILE',

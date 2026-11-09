@@ -442,6 +442,7 @@ export function sheetOf(c) {
     body: bodyOf(c),
     mechanics: mechanicsOf(c, names),
     moveList: c.moveList || [],
+    dance: c.dance || null,   // the celebration clip (registry `dance`), played by the match winner
     moves,
     strings: stringsOf(c),
     basics: basicsOf(c),

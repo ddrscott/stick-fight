@@ -103,7 +103,20 @@ const wallGap = (u, sim) => Math.min(u.x - sim.bounds.x0, sim.bounds.x1 - u.x);
 // he's meeting the jump: an anti-air on its way up, or ducked under it waiting
 const reads = (o) => (o.grounded && o.state === 'attack' && o.phase !== 'recovery') || (o.crouch && o.state !== 'attack');
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Wax on: both hands circling flat on an invisible pane, the hips swaying with them, then a wipe of the brow.
+const dance = { keys: [
+  K({ ...F(-6, HIP - 2, LF, RF), torso: 2, head: -6, la: [70, 110], ra: [140, 170] }, 170, 'sine'),
+  K({ ...F(0, HIP - 6, LF, RF), torso: 8, head: -2, la: [120, 160], ra: [90, 100] }, 170, 'sine'),
+  K({ ...F(6, HIP - 2, LF, RF), torso: 2, head: -6, la: [140, 170], ra: [70, 110] }, 170, 'sine'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: -2, head: -10, la: [90, 100], ra: [120, 160] }, 170, 'sine'),
+  K({ ...F(-6, HIP - 2, LF, RF), torso: 2, head: -6, la: [70, 110], ra: [140, 170] }, 170, 'sine'),
+  K({ ...F(0, HIP - 6, LF, RF), torso: 8, head: -2, la: [120, 160], ra: [90, 100] }, 170, 'sine'),
+  K({ ...F(6, HIP - 2, LF, RF), torso: 2, head: -6, la: [140, 170], ra: [70, 110] }, 170, 'sine'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: -2, head: -10, la: [90, 100], ra: [120, 160] }, 170, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'windowWasher',
   name: 'WINDOW WASHER',
   tagline: 'DOES FLOOR 37 FROM OUTSIDE',

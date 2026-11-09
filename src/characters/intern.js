@@ -90,7 +90,23 @@ function lanyard(ctx, J, o) {
   ctx.fillRect(bx + 1.4 * s, by + bh * 0.68, bw - 2.8 * s, 1.2 * s);
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Unpaid and over the moon: a crouch, a star jump with both arms up, a hop that turns all the way round,
+// and arms going everywhere.
+const dance = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4, la: [50, 120], ra: [30, 120] }, 120, 'inOut'),
+  K({ ...F(0, HIP - 9, LF, RF), torso: 18, bend: 5, head: 8, la: [26, 60], ra: [14, 46] }, 140, 'in'),
+  K({ ...F(0, HIP + 4, LF + 8, RF - 8), torso: -4, bend: -3, head: -20, la: [168, 190], ra: [150, 172], air: 24 }, 170, 'out'),
+  K({ ...F(0, HIP - 7, LF, RF), torso: 14, bend: 4, head: 4, la: [70, 96], ra: [50, 80] }, 130, 'in'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: 4, head: -10, la: [130, 170], ra: [-50, -20], spin: 180, air: 16 }, 170, 'linear'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 8, head: -6, la: [96, 110], ra: [-70, -80], spin: 360 }, 140, 'out'),
+  K({ ...F(0, HIP - 2, LF, RF, 6, 0), torso: 2, bend: -2, head: -14, la: [150, 210], ra: [40, 20], spin: 360 }, 120, 'sine'),
+  K({ ...F(0, HIP - 2, LF, RF, 0, 6), torso: 2, bend: -2, head: -14, la: [60, 30], ra: [150, 210], spin: 360 }, 120, 'sine'),
+  K({ ...F(0, HIP - 2, LF, RF, 6, 0), torso: 2, bend: -2, head: -14, la: [150, 210], ra: [40, 20], spin: 360 }, 120, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4, la: [50, 120], ra: [30, 120], spin: 360 }, 0, 'inOut'),
+] };
+
 export default {
+  dance,
   id: 'intern',
   name: 'INTERN',
   tagline: 'UNPAID, AND SWINGING LIKE IT',

@@ -45,7 +45,16 @@ function cap(ctx, J, o) {
   ctx.beginPath(); ctx.moveTo(bx - fx * r * 0.3, by - fy * r * 0.3); ctx.lineTo(bx + fx * r * 0.75 - ux * r * 0.12, by + fy * r * 0.75 - uy * r * 0.12); ctx.stroke();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): The running man: a knee comes up as the other foot slides back, on the spot, arms pumping.
+const dance = { keys: [
+  K({ ...F(0, HIP - 6, LF + 4, RF - 22), rl: [96, 20], torso: 12, bend: 3, head: -6, la: [-40, 40], ra: [80, 160] }, 150, 'out'),
+  K({ ...F(0, HIP - 2, LF - 22, RF), torso: 10, head: -4, la: [20, 100], ra: [30, 110] }, 150, 'in'),
+  K({ ...F(0, HIP - 6, LF - 22, RF + 4), ll: [96, 20], torso: 12, bend: 3, head: -6, la: [80, 160], ra: [-40, 40] }, 150, 'out'),
+  K({ ...F(0, HIP - 2, LF, RF - 22), torso: 10, head: -4, la: [30, 110], ra: [20, 100] }, 150, 'in'),
+] };
+
 export default {
+  dance,
   id: 'courier',
   name: 'COURIER',
   tagline: 'DELIVERS IN THIRTY SECONDS OR LESS',

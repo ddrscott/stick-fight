@@ -43,6 +43,9 @@ export function registerCharacter(def) {
     }
     if (m.frame) frames[n] = m.frame;
   }
+  // the celebration dance (a looping clip the match winner plays under the WINS banner, sim.js 'match'):
+  // a clip only, no frame data, so nothing can press it
+  if (def.dance) { c.dance = `${id}_dance`; rigs[c.dance] = { blend: 180, ...def.dance, loop: true }; }
   addMoves(rigs);
   addFrameData(frames, id);
   c.ownMoves = Object.keys(frames);

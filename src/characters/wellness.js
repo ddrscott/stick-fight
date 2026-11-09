@@ -95,7 +95,16 @@ function headbandAndMat(ctx, J, o) {
 // the tree's buttons: 4 the crane kick, 3 the sweep, 2 a step out; let go of 1 and she steps out too
 const TREE_STANCE = { moves: { 2: 'wellness_exhale', 3: 'wellness_rootSweep', 4: 'wellness_craneKick' }, hold: '1', min: 380, exit: 'wellness_exhale' };
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Namaste: tree pose with the palms together at the chest, the arms rising overhead, and a slow bow.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF - 8, RF), rl: [40, -60], torso: 0, bend: -1, head: -4, la: [40, 160], ra: [44, 164] }, 600, 'sine'),
+  K({ ...F(0, HIP, LF - 8, RF), rl: [42, -58], torso: -2, bend: -2, head: -12, la: [170, 182], ra: [172, 184] }, 700, 'sine'),
+  K({ ...F(0, HIP, LF - 8, RF), rl: [40, -60], torso: 0, bend: -1, head: -4, la: [40, 160], ra: [44, 164] }, 500, 'sine'),
+  K({ ...F(-2, HIP - 2, LF, RF), torso: 30, bend: 6, head: 14, la: [40, 160], ra: [44, 164] }, 600, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'wellness',
   name: 'WELLNESS COACH',
   tagline: 'BREATHE IN. NOW BREATHE THROUGH THE FLOOR',

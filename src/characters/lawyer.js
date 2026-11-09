@@ -83,7 +83,18 @@ function glassesAndBriefcase(ctx, J, o) {
   ctx.fillStyle = o.color; ctx.beginPath(); ctx.arc(c0x + dx * 4 * s, c0y + dy * 4 * s, 1.6 * s, 0, Math.PI * 2); ctx.fill();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Objection sustained: a point at the jury, then a slow strut with the lapels held.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -8, tw: -6, la: [100, 100], ra: [20, 60] }, 200, 'snap'),
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -8, tw: -6, la: [102, 102], ra: [20, 60] }, 360, 'sine'),
+  K({ ...F(0, HIP - 2, LF, RF, 0, 8), torso: -4, bend: -4, head: -10, la: [40, 170], ra: [36, 168] }, 260, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: -6, bend: -4, head: -12, la: [40, 170], ra: [36, 168] }, 260, 'inOut'),
+  K({ ...F(0, HIP - 2, LF, RF, 8, 0), torso: -4, bend: -4, head: -10, la: [40, 170], ra: [36, 168] }, 260, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: -6, bend: -4, head: -12, la: [40, 170], ra: [36, 168] }, 260, 'inOut'),
+] };
+
 export default {
+  dance,
   id: 'lawyer',
   name: 'LAWYER',
   tagline: 'OBJECTION. ALSO, YOU’RE ON THE FLOOR',

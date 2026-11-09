@@ -89,7 +89,18 @@ function tieAndPhone(ctx, J, o) {
   ctx.fillStyle = '#9ff8ff'; rect(0.82); ctx.fill();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Closed the deal: finger guns, left, right, both, with a little shoulder roll and a wink of the head.
+const dance = { keys: [
+  K({ ...F(-2, HIP - 2, LF, RF), torso: 4, head: -6, tw: 6, la: [96, 96], ra: [30, 140] }, 160, 'snap'),
+  K({ ...F(-2, HIP - 2, LF, RF), torso: 4, head: 6, tw: 6, la: [104, 110], ra: [30, 140] }, 160, 'out'),
+  K({ ...F(2, HIP - 2, LF, RF), torso: 4, head: -6, tw: -6, la: [50, 140], ra: [96, 96] }, 160, 'snap'),
+  K({ ...F(2, HIP - 2, LF, RF), torso: 4, head: 6, tw: -6, la: [50, 140], ra: [104, 110] }, 160, 'out'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 2, head: -8, la: [96, 96], ra: [90, 90] }, 160, 'snap'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 2, head: 4, la: [104, 110], ra: [98, 104] }, 300, 'out'),
+] };
+
 export default {
+  dance,
   id: 'salesRep',
   name: 'SALES REP',
   tagline: 'HAVE YOU GOT A MINUTE? GREAT',

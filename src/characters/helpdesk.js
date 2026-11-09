@@ -81,7 +81,21 @@ function headset(ctx, J, o) {
   ctx.fillStyle = o.color; ctx.beginPath(); ctx.arc(mx, my, 2.3 * s, 0, Math.PI * 2); ctx.fill();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): The robot: stiff right angles at the elbows, the head ticking side to side, a reboot slump and back.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF, RF), torso: 0, head: 0, la: [90, 180], ra: [0, 90] }, 180, 'snap'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, head: 0, la: [90, 180], ra: [0, 90] }, 120, 'linear'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, head: 10, la: [0, 90], ra: [90, 180] }, 180, 'snap'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, head: 10, la: [0, 90], ra: [90, 180] }, 120, 'linear'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 0, head: -10, la: [90, 90], ra: [90, 90] }, 180, 'snap'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 0, head: -10, la: [90, 90], ra: [90, 90] }, 120, 'linear'),
+  K({ ...F(0, HIP - 12, LF, RF), torso: 24, bend: 10, head: 30, la: [10, 4], ra: [6, 0] }, 300, 'in'),
+  K({ ...F(0, HIP - 12, LF, RF), torso: 24, bend: 10, head: 30, la: [10, 4], ra: [6, 0] }, 260, 'linear'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, head: 0, la: [90, 180], ra: [0, 90] }, 0, 'snap'),
+] };
+
 export default {
+  dance,
   id: 'helpdesk',
   name: 'HELPDESK',
   tagline: 'HAVE YOU TRIED BLOCKING?',

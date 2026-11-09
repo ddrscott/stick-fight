@@ -2,6 +2,10 @@
 // unique moves, no stats off 1, no body changes. TEMP vs TEMP plays exactly as the game did before
 // characters existed (the regression scenes in the README give the same results). It's also what a
 // ladder stage falls back to when its character isn't in the game yet.
+import { RIG_KIT } from '../fighter/index.js';
+
+const { K, F, LF, RF, HIP } = RIG_KIT;
+
 // a lanyard with a visitor badge: the cord from the back of the neck down the front of the shirt, the badge in
 // the accent with a dark edge. It's his prop, so the life layer swings the badge (o.sway); at rest it hangs on
 // the chest. The first day, in one object.
@@ -26,7 +30,20 @@ function lanyard(ctx, J, o) {
   ctx.restore();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): first day, and
+// somehow still standing. A stunned beat, a crouch, two hopping fist pumps, a wipe of the brow.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: -2, la: [18, 36], ra: [8, 26] }, 260, 'inOut'),
+  K({ ...F(0, HIP - 7, LF, RF), torso: 14, bend: 4, head: 8, la: [44, 120], ra: [30, 112] }, 170, 'in'),
+  K({ ...F(0, HIP + 3, LF, RF), torso: -3, bend: -2, head: -16, la: [162, 178], ra: [34, 150], air: 12 }, 150, 'out'),
+  K({ ...F(0, HIP - 5, LF, RF), torso: 9, bend: 2, head: 2, la: [112, 164], ra: [32, 146] }, 140, 'in'),
+  K({ ...F(0, HIP + 3, LF, RF), torso: -3, bend: -2, head: -16, la: [166, 180], ra: [34, 150], air: 12 }, 150, 'out'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 10, bend: 3, head: 10, la: [126, 236], ra: [14, 30] }, 300, 'inOut'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 8, bend: 2, head: 6, la: [118, 250], ra: [12, 28] }, 260, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'temp',
   name: 'TEMP',
   tagline: 'FIRST DAY. KNOWS THE BASICS',

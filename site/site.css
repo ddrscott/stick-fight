@@ -375,3 +375,5 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
   .s-pillar-n { grid-row: auto; font-size: 32px; margin-bottom: 6px; }
 }
 .s-story p:not(.s-lede) + p { margin-top: 14px; }
+.s-dance { grid-template-columns: 1fr; max-width: 360px; }
+.s-dance .s-move-rig { height: 260px; }

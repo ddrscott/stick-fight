@@ -1067,6 +1067,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         }
         break;
       }
+      case 'celebrate':   // the winner's dance (see the 'match' phase): stand and loop it
+        u.vx = 0;
+        break;
       case 'block':
         u.vx = 0;
         if (u.faint > 0) { setState(u, 'idle'); break; }
@@ -2389,7 +2392,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (u.hidden || !opp) continue;
       // the winner stays live through the KO and WINS cards; the loser is done
       const live = sim.phase === 'fight' || ((sim.phase === 'ko' || sim.phase === 'match') && u.id === sim.winner);
-      const inp = (live && u.controller) ? u.controller(u, opp, sim) : EMPTY_INPUT;
+      // the match is won: the winner, standing free on the ground, breaks into the character's celebration
+      // dance (registry `dance`, a looping clip) and holds it through the WINS card; nothing cancels it
+      if (sim.phase === 'match' && u.id === sim.winner && !sim.horde && u.char && u.char.dance && u.grounded && !u.rag && /^(idle|walk|run|block|crouch)$/.test(u.state)) {
+        u.vx = 0; u.running = false; setState(u, 'celebrate', u.char.dance);
+      }
+      const inp = (live && u.controller && u.state !== 'celebrate') ? u.controller(u, opp, sim) : EMPTY_INPUT;
       const e = edges(u, inp);
       // botches (botch.js): a tangled body loses its presses until it's back; a mistimed press botches
       // (or, in a technique's window, comes out as a happy accident) instead of waiting in the buffer

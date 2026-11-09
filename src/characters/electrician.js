@@ -87,7 +87,20 @@ function hardHatAndBelt(ctx, J, o) {
   ctx.beginPath(); ctx.moveTo(bx - fx * r * 1.15, by - fy * r * 1.15); ctx.lineTo(bx + fx * r * 1.55, by + fy * r * 1.55); ctx.stroke();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): The electric boogaloo: a wave of current runs out one arm, through the shoulders and out the other, popping.
+const dance = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 90], ra: [-90, -90] }, 140, 'snap'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 130], ra: [-90, -90] }, 120, 'snap'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: -10, tw: 6, la: [70, 150], ra: [-90, -90] }, 120, 'snap'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 0, head: 6, tw: -6, la: [90, 90], ra: [-70, -150] }, 120, 'snap'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 90], ra: [-90, -130] }, 120, 'snap'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 90], ra: [-90, -90] }, 160, 'snap'),
+  K({ ...F(0, HIP - 6, LF, RF), torso: 10, bend: 4, head: 10, la: [40, 120], ra: [30, 120] }, 140, 'snap'),
+  K({ ...F(0, HIP - 6, LF, RF), torso: 12, bend: 4, head: 12, la: [42, 124], ra: [32, 122] }, 160, 'linear'),
+] };
+
 export default {
+  dance,
   id: 'electrician',
   name: 'ELECTRICIAN',
   tagline: 'DID YOU TRY TURNING YOURSELF OFF AND ON',

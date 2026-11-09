@@ -89,7 +89,19 @@ function toqueAndApron(ctx, J, o) {
   ctx.beginPath(); ctx.moveTo(bx - fx * r * 0.92, by - fy * r * 0.92); ctx.lineTo(bx + fx * r * 0.92, by + fy * r * 0.92); ctx.stroke();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Chef's kiss: fingers to the lips and flung open, then a big stir of the pot with both hands.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF, RF), torso: 2, bend: -1, head: -6, la: [120, 240], ra: [20, 40] }, 220, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -14, la: [130, 150], ra: [20, 40] }, 160, 'snap'),
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -14, la: [132, 154], ra: [20, 40] }, 240, 'sine'),
+  K({ ...F(-2, HIP - 4, LF, RF), torso: 18, bend: 4, head: 6, la: [70, 50], ra: [60, 40] }, 200, 'sine'),
+  K({ ...F(2, HIP - 4, LF, RF), torso: 20, bend: 4, head: 6, la: [50, 70], ra: [70, 80] }, 200, 'sine'),
+  K({ ...F(-2, HIP - 4, LF, RF), torso: 18, bend: 4, head: 6, la: [70, 50], ra: [60, 40] }, 200, 'sine'),
+  K({ ...F(2, HIP - 4, LF, RF), torso: 20, bend: 4, head: 6, la: [50, 70], ra: [70, 80] }, 200, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'chef',
   name: 'CHEF',
   tagline: 'THE SPECIAL TODAY IS YOU',

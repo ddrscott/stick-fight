@@ -87,7 +87,20 @@ function tie(ctx, J, o) {
 // standing in hitstun; the last hit is the move itself, the knockdown and the callout
 const PR_RUSH = { damage: 4, kb: { x: 0, y: 0 }, hitstun: 30, blockstun: 10, hitstop: 5, knockdown: false, ender: false, callout: null, flashR: 28 };
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Management: straighten the tie, a slow golf clap, then the finger point that says you're done here.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -2, head: 6, la: [40, 160], ra: [30, 170] }, 260, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: -2, bend: -2, head: 8, la: [36, 172], ra: [30, 170] }, 200, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -2, head: -4, la: [50, 110], ra: [40, 130] }, 220, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -2, head: -4, la: [54, 124], ra: [44, 122] }, 220, 'in'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -2, head: -4, la: [50, 110], ra: [40, 130] }, 220, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -2, head: -4, la: [54, 124], ra: [44, 122] }, 220, 'in'),
+  K({ ...F(2, HIP, LF + 4, RF), torso: -4, bend: -4, head: -8, tw: -8, la: [92, 92], ra: [-20, 30] }, 200, 'snap'),
+  K({ ...F(2, HIP, LF + 4, RF), torso: -4, bend: -4, head: -8, tw: -8, la: [94, 94], ra: [-20, 30] }, 520, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'manager',
   name: 'THE MANAGER',
   tagline: 'YOUR PERFORMANCE REVIEW IS NOW',

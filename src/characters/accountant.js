@@ -80,7 +80,20 @@ function glasses(ctx, J, o) {
   }
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Balanced books: a tidy tap of one finger on the other palm, counting it up, then a small precise fist pump.
+const dance = { keys: [
+  K({ ...F(0, HIP, LF, RF), torso: 4, bend: 2, head: 14, la: [40, 120], ra: [50, 110] }, 220, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 4, bend: 2, head: 14, la: [44, 104], ra: [50, 110] }, 150, 'in'),
+  K({ ...F(0, HIP, LF, RF), torso: 4, bend: 2, head: 14, la: [40, 120], ra: [50, 110] }, 150, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 4, bend: 2, head: 14, la: [44, 104], ra: [50, 110] }, 150, 'in'),
+  K({ ...F(0, HIP, LF, RF), torso: 4, bend: 2, head: 14, la: [40, 120], ra: [50, 110] }, 220, 'out'),
+  K({ ...F(0, HIP - 3, LF, RF), torso: 2, bend: 0, head: -4, la: [60, 170], ra: [20, 40] }, 160, 'out'),
+  K({ ...F(0, HIP - 5, LF, RF), torso: 8, bend: 2, head: 4, la: [30, 150], ra: [20, 40] }, 160, 'snap'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, bend: 1, head: 6, la: [30, 150], ra: [20, 40] }, 300, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'accountant',
   name: 'ACCOUNTANT',
   tagline: 'READ THE FINE PRINT. THEN THE OVERHEAD',

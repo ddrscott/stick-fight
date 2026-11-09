@@ -67,7 +67,17 @@ function shadesAndEarpiece(ctx, J, o) {
   ctx.stroke();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Heavy and planted: arms fold across the chest, a slow nod, then both arms come up in a double flex.
+const dance = { keys: [
+  K({ ...F(0, HIP - 1, LF + 4, RF - 4), torso: -2, bend: -2, head: -6, la: [40, 150], ra: [60, 170] }, 420, 'inOut'),
+  K({ ...F(0, HIP - 2, LF + 4, RF - 4), torso: 0, bend: -2, head: 10, la: [40, 150], ra: [60, 170] }, 360, 'inOut'),
+  K({ ...F(0, HIP - 1, LF + 4, RF - 4), torso: -2, bend: -2, head: -6, la: [40, 150], ra: [60, 170] }, 300, 'inOut'),
+  K({ ...F(0, HIP - 6, LF + 8, RF - 8), torso: 2, bend: -4, head: -10, tw: 10, la: [100, 200], ra: [-100, -200] }, 360, 'out'),
+  K({ ...F(0, HIP - 6, LF + 8, RF - 8), torso: 2, bend: -5, head: -12, tw: 12, la: [96, 206], ra: [-96, -206] }, 420, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'security',
   name: 'SECURITY',
   tagline: 'WILL ESCORT YOU OUT. THROUGH THE RAILING',

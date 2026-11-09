@@ -92,7 +92,16 @@ function headsetAndPhone(ctx, J, o) {
   ctx.beginPath(); ctx.arc(px + qx * hl + dx * 1.5 * s, py + qy * hl + dy * 1.5 * s, 2.6 * s, 0, Math.PI * 2); ctx.fill();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): A phone at the ear with the free hand on the hip, the hips swinging side to side: please hold, forever.
+const dance = { keys: [
+  K({ ...F(-9, HIP - 4, LF, RF), torso: -6, bend: -4, head: -12, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
+  K({ ...F(9, HIP - 1, LF, RF, 0, 4), torso: 10, bend: 2, head: 2, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
+  K({ ...F(-9, HIP - 4, LF, RF), torso: -6, bend: -4, head: -12, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
+  K({ ...F(9, HIP - 1, LF, RF, 4, 0), torso: 10, bend: 2, head: 2, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'receptionist',
   name: 'RECEPTIONIST',
   tagline: 'PLEASE HOLD. YOUR BEATING IS IMPORTANT TO US',

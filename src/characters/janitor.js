@@ -75,7 +75,19 @@ function bucketHat(ctx, J, o) {
   ctx.beginPath(); ctx.arc(cx, cy, r * 0.98, a + 1.1, a + 1.45); ctx.stroke();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): A mop shuffle: side to side with the hands low as if pushing the mop, then a twirl of it overhead.
+const dance = { keys: [
+  K({ ...F(-6, HIP - 6, LF - 6, RF - 6), torso: 22, bend: 4, head: -6, la: [60, 60], ra: [40, 40] }, 220, 'inOut'),
+  K({ ...F(6, HIP - 4, LF + 6, RF + 6, 0, 6), torso: 22, bend: 4, head: -6, la: [80, 70], ra: [60, 54] }, 220, 'inOut'),
+  K({ ...F(-6, HIP - 6, LF - 6, RF - 6), torso: 22, bend: 4, head: -6, la: [60, 60], ra: [40, 40] }, 220, 'inOut'),
+  K({ ...F(6, HIP - 4, LF + 6, RF + 6, 0, 6), torso: 22, bend: 4, head: -6, la: [80, 70], ra: [60, 54] }, 220, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [160, 150], ra: [170, 200] }, 200, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [200, 220], ra: [130, 120] }, 200, 'sine'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [160, 150], ra: [170, 200] }, 220, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'janitor',
   name: 'JANITOR',
   tagline: 'WORKS THE LOWER FLOOR. MOPS WITH JUMP-INS',

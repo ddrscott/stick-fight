@@ -288,7 +288,15 @@ ${topbar(root)}
     </div>` : `<p class="s-lede">${esc(s.name)} has no unique moves. Every shared move and every shared string, exactly as the game started: the baseline every other fighter is measured against.</p>`}
   </section>
 
-  <section class="s-section" id="strings">
+${s.dance ? `<section class="s-section" id="celebration">
+    <h2 class="s-h2">CELEBRATION</h2>
+    <p class="s-note">Win the match and ${esc(s.name)} breaks into this under the WINS banner.</p>
+    <article class="s-move s-dance">
+      <canvas class="s-rig s-move-rig" data-char="${s.id}" data-mode="move" data-seq="${esc(s.dance)}" aria-label="${esc(s.name)} celebration dance"></canvas>
+    </article>
+  </section>
+
+  ` : ''}<section class="s-section" id="strings">
     <h2 class="s-h2">STRINGS AND ENDERS</h2>
     <p class="s-note">Press in rhythm: each press goes in during the last hit's recovery. Damage is for the whole string landing on TEMP, with combo decay. Stamina is the bar it spends, out of 100.</p>
     ${stringsTable(s)}

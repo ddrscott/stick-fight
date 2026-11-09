@@ -81,7 +81,20 @@ function apronAndCup(ctx, J, o) {
   ctx.restore();
 }
 
+// The celebration (registry `dance`, played by the match winner under the WINS banner): Shaking the order: both hands pump a shaker at the shoulder, bouncing on the toes, then serve it out.
+const dance = { keys: [
+  K({ ...F(0, HIP - 4, LF, RF), torso: 4, head: -4, la: [120, 210], ra: [110, 200] }, 100, 'sine'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: 2, head: -8, la: [150, 230], ra: [140, 220], air: 4 }, 100, 'sine'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 4, head: -4, la: [120, 210], ra: [110, 200] }, 100, 'sine'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: 2, head: -8, la: [150, 230], ra: [140, 220], air: 4 }, 100, 'sine'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 4, head: -4, la: [120, 210], ra: [110, 200] }, 100, 'sine'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: 2, head: -8, la: [150, 230], ra: [140, 220], air: 4 }, 100, 'sine'),
+  K({ ...F(4, HIP - 2, LF + 6, RF), torso: 14, bend: 3, head: 4, la: [86, 92], ra: [30, 60] }, 200, 'out'),
+  K({ ...F(4, HIP - 2, LF + 6, RF), torso: 16, bend: 4, head: 8, la: [88, 94], ra: [30, 60] }, 300, 'sine'),
+] };
+
 export default {
+  dance,
   id: 'barista',
   name: 'BARISTA',
   tagline: 'ORDER UP. THE ORDER IS PAIN',
