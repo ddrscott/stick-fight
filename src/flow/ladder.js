@@ -1,6 +1,8 @@
 // The arcade ladder: six stages up the building, each a named opponent with a rising CPU
 // difficulty, a personality (an opt-in AI style, src/combat/ai.js) and a look (an fx preset,
 // the fighter's color, and which floor the fight starts on). The last one is the boss.
+// The difficulties climb in even steps (0.2 0.32 0.44 0.55 0.66 0.8), and each continue eases the
+// retried stage (retryDifficulty).
 
 /**
  * @typedef {object} Stage
@@ -20,11 +22,11 @@
 /** @type {Stage[]} */
 export const LADDER = [
   { n: 1, char: 'intern', name: 'INTERN', tagline: 'UNPAID, AND SWINGING LIKE IT', difficulty: 0.2, style: null, color: '#ffb02e', preset: 'night-rain', floor: 0, seed: 11 },
-  { n: 2, char: 'helpdesk', name: 'HELPDESK', tagline: 'HAVE YOU TRIED BLOCKING?', difficulty: 0.4, style: 'turtle', color: '#2ef2ff', preset: 'night', floor: 0, seed: 23 },
-  { n: 3, char: 'courier', name: 'COURIER', tagline: 'DELIVERS IN THIRTY SECONDS OR LESS', difficulty: 0.55, style: 'rushdown', color: '#ff2bd6', preset: 'neon', floor: 0, seed: 37 },
-  { n: 4, char: 'security', name: 'SECURITY', tagline: 'WILL ESCORT YOU OUT. THROUGH THE RAILING', difficulty: 0.7, style: 'grappler', color: '#5dff8a', preset: 'night-rain', floor: 0, seed: 41 },
-  { n: 5, char: 'janitor', name: 'JANITOR', tagline: 'WORKS THE LOWER FLOOR. MOPS WITH JUMP-INS', difficulty: 0.85, style: 'aerial', color: '#a66bff', preset: 'night', floor: 1, seed: 53 },
-  { n: 6, char: 'manager', name: 'THE MANAGER', tagline: 'YOUR PERFORMANCE REVIEW IS NOW', difficulty: 1.0, style: 'showcase', color: '#ff3b3b', preset: 'neon-rain', floor: 0, seed: 67, boss: true },
+  { n: 2, char: 'helpdesk', name: 'HELPDESK', tagline: 'HAVE YOU TRIED BLOCKING?', difficulty: 0.32, style: 'turtle', color: '#2ef2ff', preset: 'night', floor: 0, seed: 23 },
+  { n: 3, char: 'courier', name: 'COURIER', tagline: 'DELIVERS IN THIRTY SECONDS OR LESS', difficulty: 0.44, style: 'rushdown', color: '#ff2bd6', preset: 'neon', floor: 0, seed: 37 },
+  { n: 4, char: 'security', name: 'SECURITY', tagline: 'WILL ESCORT YOU OUT. THROUGH THE RAILING', difficulty: 0.55, style: 'grappler', color: '#5dff8a', preset: 'night-rain', floor: 0, seed: 41 },
+  { n: 5, char: 'janitor', name: 'JANITOR', tagline: 'WORKS THE LOWER FLOOR. MOPS WITH JUMP-INS', difficulty: 0.66, style: 'aerial', color: '#a66bff', preset: 'night', floor: 1, seed: 53 },
+  { n: 6, char: 'manager', name: 'THE MANAGER', tagline: 'YOUR PERFORMANCE REVIEW IS NOW', difficulty: 0.8, style: 'showcase', color: '#ff3b3b', preset: 'neon-rain', floor: 0, seed: 67, boss: true },
 ];
 
 // The roster's two characters that aren't on the default ladder step in for the player's own pick (you
@@ -36,7 +38,14 @@ export const EXTRAS = [
 // THE MANAGER is the boss; a player who picked him fights this one at the top instead
 export const SUB_BOSS = { char: 'security', name: 'HEAD OF SECURITY', tagline: 'NOBODY GETS PAST THE FRONT DESK', color: '#5dff8a', style: 'grappler' };
 // THE CEO: a secret seventh stage, only for a run that beat the boss without a continue (and didn't pick him)
-export const SECRET_BOSS = { n: 7, char: 'ceo', name: 'THE CEO', tagline: 'THE BOARD HAS DECIDED YOU’RE A COST', difficulty: 1.0, style: 'showcase', color: '#ffd84f', preset: 'neon-rain', floor: 0, seed: 79, boss: true, secret: true };
+export const SECRET_BOSS = { n: 7, char: 'ceo', name: 'THE CEO', tagline: 'THE BOARD HAS DECIDED YOU’RE A COST', difficulty: 0.9, style: 'showcase', color: '#ffd84f', preset: 'neon-rain', floor: 0, seed: 79, boss: true, secret: true };
+// Each continue on a stage takes 0.1 off its CPU, stacking, never under 0.15; the next stage starts fresh.
+export const CONTINUE_EASE = 0.1, EASE_FLOOR = 0.15;
+/** @param {number} difficulty @param {number} continues  continues used on this stage */
+export function retryDifficulty(difficulty, continues) {
+  return continues > 0 ? Math.max(EASE_FLOOR, Math.round((difficulty - CONTINUE_EASE * continues) * 100) / 100) : difficulty;
+}
+
 /**
  * The stage after the last one, or null: THE CEO when the run used no continues, he's built, and the player isn't him.
  * @param {Stage[]} ladder @param {number} continues @param {string} playerId @param {(id: string) => any} getChar

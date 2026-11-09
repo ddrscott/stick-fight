@@ -28,6 +28,14 @@
 // on the normal CPU: 'turtle' guards more, waits at range and punishes whiffs; 'rushdown' runs in,
 // swings more and never backs off; 'grappler' throws up close and hunts the wall and the stairwell;
 // 'aerial' jumps in from further out and much more often.
+//
+// Human-paced (see perceive below): every reflex that answers the opponent (the startup guard, duck and
+// parry, the whiff and botch punishes, the anti-air reads, the wake-up answer, the hitstun swing-back,
+// the reflex specials) sees him as he was `lag` sim steps ago, a person's 180-330 ms to notice a move.
+// A strike whose startup is shorter lands before it's seen, so up close the CPU holds a guard on a hunch
+// now and then (the habit guard) instead of blocking everything on sight. After a combo of 3+ hits, or
+// while it leads by 30% of the bar, it takes a breath (0.4-0.7 s of walking, guarding and spacing).
+// All of it runs on sim step counts and the sim's rng, so a scene replays identically.
 
 import { EMPTY_INPUT } from './input.js';
 import { matchStrings } from './strings.js';
@@ -48,14 +56,38 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   const turtle = style === 'turtle', rush = style === 'rushdown', grap = style === 'grappler', aerial = style === 'aerial';
   let queue = [];            // plan: acts run in order
   let act = null;
+  let counterFor = -1, counterAt = 0;   // the hit of his I may swing back at, and the step I notice it
   let nextThink = 0, lastReactedTo = -1, lastFollowed = -1, lastCounter = -1, lastBlockedId = -1, lastHitBlocked = false, blockedStreak = 0, mixupTurn = 0;
   let seenAttackId = -1, lastAttackStep = -9999, lastStale = -9999, myRun = 0, lastHitTakenId = -1;
   let plannedLaunch = -1, blockedClasses = new Set(), stringPick = null, lastPunish = -1, lastFaintPunish = -1;
   const mixLog = []; let lastStep = 0;
   // anti-air reads: the chance to read a jump-in at takeoff (0 at difficulty 0.3 and below), the
   // jump last looked at and the one being answered
-  const aaReadChance = () => (show ? 0.85 : Math.max(0.12, Math.min(0.8, (difficulty - 0.3) * 1.1 + (aerial ? 0.15 : 0))));   // a 12% floor: even the INTERN sometimes swats a jump-in
+  const aaReadChance = () => (show ? 0.75 : Math.max(0.12, Math.min(0.65, (difficulty - 0.3) * 0.9 + (aerial ? 0.15 : 0))));   // a 12% floor: even the INTERN sometimes swats a jump-in
   let aaSeen = -1, aaFor = -1;
+  // perception: the reflexes see him as he was `lag` steps ago (330 ms at difficulty 0.2 down to 180 ms at
+  // 1.0, the showcase 20 ms quicker, never under 160), give or take a fifth, re-rolled after each reaction.
+  // A ring of shallow copies of him, one a step; a new opponent or a step count that went back (a new
+  // round or match) starts it over. Scalars are his past; nested objects (the rig) are his present.
+  const SEEN_N = 64, seenRing = Array.from({ length: SEEN_N }, () => ({})), seenStep = new Array(SEEN_N).fill(-1);
+  let seenHead = -1, seenOpp = null;
+  const baseLag = () => Math.round(Math.max(160, 330 - 150 * (Math.max(0.2, Math.min(1, difficulty)) - 0.2) / 0.8 - (show ? 20 : 0)) * 0.12);
+  let lag = baseLag();
+  const relag = () => { const b = baseLag(); lag = b + irnd(Math.max(1, Math.round(b * 0.2))); };
+  function perceive(opp, step) {
+    if (opp !== seenOpp || (seenHead >= 0 && step < seenStep[seenHead])) { seenStep.fill(-1); seenHead = -1; seenOpp = opp; }
+    seenHead = (seenHead + 1) % SEEN_N; Object.assign(seenRing[seenHead], opp); seenStep[seenHead] = step;
+    let best = seenHead;   // the newest record at least `lag` steps old, else the oldest kept
+    for (let i = 1; i < SEEN_N; i++) { const k = (seenHead - i + SEEN_N) % SEEN_N; if (seenStep[k] < 0 || step - seenStep[best] >= lag) break; best = k; }
+    return seenRing[best];
+  }
+  // what I saw is still what he's doing: the same strike in the same phase (a reaction to a strike that
+  // has already landed or ended is too late to matter, and is dropped)
+  const still = (saw, opp) => saw.state === opp.state && (saw.state !== 'attack' || (saw.attackId === opp.attackId && saw.phase === opp.phase));
+  // breathing room: after a combo of 3+ hits or while well ahead, hold back for 0.4-0.7 s before pressing again;
+  // the top of the ladder skips it more often (the showcase most)
+  let comboRun = 0, breatheUntil = -1, breatheTry = -9999, oppSwungAt = -9999, seenOppAid = -1;
+  const breathe = (step) => { breatheTry = step; if (chance(show ? 0.4 : 1 - 1.5 * Math.max(0, difficulty - 0.7))) breatheUntil = step + 48 + irnd(36); };
   // botches (src/combat/botch.js): a CPU mostly waits for a clean press; the lower its difficulty the more
   // often it lets a mistimed one go (and mashes on its own now and then), so the bottom of the ladder
   // shows the system off; the showcase never botches but now and then lands a happy accident
@@ -245,7 +277,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const pokeAt = reach('jab') - 4;
     if (aerial && k < 0.55 && dist < 330) return jumpIn(toward, chance(0.5) ? 'sweep' : 'jab');
     if (rush && k < 0.6) return [move(toward, closer(reach('jab') + 6), true), press(pick(['1', '1', '2', 'd1', '3']))];
-    if (grap && k < 0.45) return [move(toward, closer(80), true), attack('throw')];
+    if (grap && k < 0.2 + 0.2 * difficulty) return [move(toward, closer(80), true), attack('throw')];
     if (k < 0.3) return [move(toward, closer(reach('jab') + 6), true), attack(chance(0.6) ? 'cross' : 'jab')];   // dash-in to the pocket
     if (k < 0.45 && dist < 280) return jumpIn(toward, chance(0.5) ? 'sweep' : 'jab');                                      // jump-in
     if (k < 0.75) return [move(toward, closer(pokeAt), dist > 200), attack('jab')];                                       // walk and poke
@@ -280,10 +312,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     return dist < reach(low) ? [...beat, attack(low)] : [move(toward, closer(reach(low) - 6), true), attack(low)];
   }
 
-  function decide(me, opp, sim, dist, toward) {
+  function decide(me, opp, sim, dist, toward, saw) {
     const r = (m) => reach(m);
     const cornered = me.x - sim.bounds.x0 < 70 || sim.bounds.x1 - me.x < 70;
-    const recovering = (opp.state === 'attack' && opp.phase === 'recovery') || opp.state === 'botch';   // a botch is as open as a whiff
+    // open, as I saw him and still: a whiff's recovery, or a botch (as open as a whiff)
+    const recovering = ((saw.state === 'attack' && saw.phase === 'recovery') || saw.state === 'botch') && still(saw, opp);
 
     if (HIT_STATES.has(opp.state) && me.state !== 'attack') {
       if (opp.state === 'blockstun' && blockedStreak >= 2) return mixup(dist, toward, opp);
@@ -299,8 +332,17 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const free = !DOWN_STATES.has(opp.state) && opp.state !== 'attack' && !HIT_STATES.has(opp.state) && me.stamina > 45;   // the jump, the air attack and a string after it
     if (free && opp.crouch && dist > 100 && dist < 240 && chance(0.6)) return jumpIn(toward, 'jab');
     if (free && dist > 110 && dist < (aerial ? 300 : 230) && chance(show ? 0.3 : aerial ? 0.55 : 0.12 + 0.12 * difficulty)) return jumpIn(toward, 'jab');
-    if (recovering && dist < r('roundhouse') + 8 && me.stamina > 26 && chance((opp.hitConfirmed ? 0.3 : 0.4) + 0.6 * difficulty)) {
+    if (recovering && dist < r('roundhouse') + 8 && me.stamina > 26 && chance((opp.hitConfirmed ? 0.2 : 0.3) + 0.45 * difficulty)) {
       return [attack(dist < r('cross') - 5 ? 'cross' : 'roundhouse')];
+    }
+    // breathing room: walk off, stand, or drift, with no swing of my own (an opening above is still taken). It's
+    // room for him, so a guard is rare and short (a wall of guard would be the opposite)
+    if (sim.stepCount < breatheUntil) {
+      const k = rng();
+      if (k < 0.55 && dist < 200 && !cornered && !wellBehindMe(well(me, sim), me, opp)) return [move(-toward, 14 + irnd(10))];
+      if (k < 0.85) return [move(0, 10 + irnd(10))];
+      if (k < 0.92) return [blockFor(10)];
+      return [move(chance(0.5) ? toward : -toward, 8 + irnd(8))];
     }
     if ((opp.state === 'block' || opp.state === 'blockstun') && dist < r('sweep')) {
       return chance(0.35 + 0.5 * difficulty) ? mixup(dist, toward, opp) : [move(-toward, 5)];
@@ -344,12 +386,19 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       return [move(0, 20 + irnd(16))];
     }
     const losing = !rush && me.health < 0.3 * (sim.horde ? sim.startHealth : me.maxHealth || sim.startHealth) && me.health < opp.health;
-    if (grap && dist < 95 && !opp.crouch && me.stamina > 30 && chance(0.4)) return [move(toward, closer(78)), attack('throw')];
+    if (grap && dist < 95 && !opp.crouch && me.stamina > 30 && chance(0.1 + 0.27 * difficulty)) return [move(toward, closer(78)), attack('throw')];   // 0.25 at SECURITY's 0.55 (was a flat 0.4)
     if (losing && dist < 170 && !cornered && !wellBehindMe(well(me, sim), me, opp) && chance(0.4)) return [move(-toward, 10, chance(0.3))];
     if (dist > (show ? 230 : turtle ? 140 : 175)) return approach(me, opp, dist, toward);
     const aggression = Math.max(0.1, Math.min(0.95, 0.3 + 0.5 * difficulty + (rush ? 0.3 : turtle ? -0.2 : 0)));
     // spent: stay out and let the meter come back (it refills in about two seconds)
     if (me.stamina < (show ? 28 : 30) || me.faint > 0) return dist < 200 && !cornered && !wellBehindMe(well(me, sim), me, opp) ? [move(-toward, 10)] : [blockFor(10)];
+    // the habit guard: his jab is faster than anyone sees, so inside his reach, with him swinging lately, a
+    // person holds a guard on a hunch now and then (a height guessed: a third of the time low). Rolled every
+    // think (several a second), so the odds per roll are small
+    const oppReach = sim.reachOf ? sim.reachOf(opp, 'cross') : r('cross');
+    if (dist < oppReach + 20 && sim.stepCount - oppSwungAt < 150 && opp.state !== 'attack' && chance(show ? 0.1 : 0.03 + 0.06 * difficulty + (turtle ? 0.05 : 0))) {
+      return [{ ...(chance(0.33) ? lowGuard(14 + irnd(14)) : blockFor(14 + irnd(14))), habit: true }];
+    }
     // the stairwell: send him over the railing when he's by it; never back up into it myself
     const w = well(me, sim);
     if (wellBeyond(w, me, opp) && me.stamina > 40 && chance(0.35 + 0.45 * difficulty + (grap ? 0.3 : 0))) {
@@ -415,7 +464,10 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const toward = Math.sign(opp.x - me.x) || me.facing;
     const dist = Math.abs(opp.x - me.x);
     if (me.attackId !== seenAttackId) { seenAttackId = me.attackId; lastAttackStep = step; }
-    if (me.state === 'hitstun' && opp.attackId !== lastHitTakenId) { lastHitTakenId = opp.attackId; myRun = 0; }
+    if (me.state === 'hitstun' && opp.attackId !== lastHitTakenId) { lastHitTakenId = opp.attackId; myRun = 0; counterFor = opp.attackId; counterAt = step + lag; }
+    // what I can see of him: as he was `lag` steps ago
+    const saw = perceive(opp, step), sawDist = Math.abs(saw.x - me.x);
+    if (saw.state === 'attack' && saw.attackId !== seenOppAid) { seenOppAid = saw.attackId; oppSwungAt = step; }
 
     // bookkeeping: was my last attack blocked or did it land? (decided the tick it connects)
     if (me.state === 'attack' && me.hitConfirmed && me.attackId !== lastBlockedId) {
@@ -424,8 +476,13 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // on block a string may keep going (a mixup of its own), less often and never into a blocked ender
       if (lastHitBlocked && me.seq && chance(0.3 * difficulty)) { const st = chooseString(me, opp, sim, true); if (st && !FRAME_DATA[st.moves[me.seq.length]].ender) { queue = [press(st.keys[me.seq.length])]; act = null; lastFollowed = me.attackId; } }
       if (lastHitBlocked) { blockedStreak++; blockedClasses.add(CLASS[me.move] || 'punch'); }
-      else { blockedStreak = 0; blockedClasses = new Set(); myRun++; }
+      else { blockedStreak = 0; blockedClasses = new Set(); myRun++; comboRun++; }
     }
+    // breathing room: a combo of mine ended (he's out of hitstun and off the air) after 3+ hits, or I lead by
+    // 30% of the bar (a breath tried every 1 to 1.5 s while it lasts)
+    if (comboRun && opp.state !== 'hitstun' && opp.state !== 'knockdown' && opp.state !== 'grabbed' && me.state !== 'attack') { if (comboRun >= 3) breathe(step); comboRun = 0; }
+    const share = (u) => u.health / (u.maxHealth || sim.startHealth || 100);
+    if (step >= breatheUntil && step - breatheTry > 120 + (breatheTry & 63) && share(me) - share(opp) >= 0.3 && !sim.horde && sim.phase === 'fight') breathe(step);
     // reflex: I just launched him: the plan is made now, not when he lands. Run to the spot
     // he will land (stand 60px short), and press the stomp so it is active at touchdown.
     if (opp.state === 'knockdown' && !opp.grounded && !opp.juggle && !opp.rag && opp.launchedBy === me.id && opp.launchStep !== plannedLaunch) {
@@ -457,7 +514,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // reflex: he fainted (out of stamina, no guard for about a second and a half): get there and
     // open a string on him; the follow-up reflex carries it on. Once per faint; the better the CPU
     // the more often it sees it.
-    if (opp.faint > 0 && opp.faintAt !== lastFaintPunish && opp.state === 'idle' && opp.grounded && /^(idle|walk|block|crouch|run)$/.test(me.state) && me.stamina > 40) {
+    if (saw.faint > 0 && opp.faint > 0 && opp.faintAt !== lastFaintPunish && opp.state === 'idle' && opp.grounded && /^(idle|walk|block|crouch|run)$/.test(me.state) && me.stamina > 40) {
       lastFaintPunish = opp.faintAt;
       if (chance(show ? 1 : 0.35 + 0.65 * difficulty)) {
         const tok = me.stamina > 80 ? pick(['1', '1', '2', '3']) : '1';
@@ -467,16 +524,19 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     // reflex: block or counter a visible startup, once per opponent attack
     // (an air attack from a jump-in I've read is left to the anti-air below)
-    const readingJump = aaFor === opp.jumpAt && !opp.grounded && FRAME_DATA[opp.move] && FRAME_DATA[opp.move].air;
-    if (opp.state === 'attack' && opp.phase === 'startup' && opp.attackId !== lastReactedTo && !readingJump && dist < reach(opp.move) + (show ? 90 : 30)) {
-      lastReactedTo = opp.attackId;
+    // seen late: by the time his startup shows, a fast strike has already landed (still() fails) and only a
+    // guard that was already up (the habit guard) stopped it
+    const readingJump = aaFor === saw.jumpAt && !saw.grounded && FRAME_DATA[saw.move] && FRAME_DATA[saw.move].air;
+    if (saw.state === 'attack' && saw.phase === 'startup' && saw.attackId !== lastReactedTo && !readingJump && sawDist < reach(saw.move) + (show ? 90 : 30)
+      && (lastReactedTo = saw.attackId, still(saw, opp)) && !HIT_STATES.has(me.state)) {
+      relag();
       // read the height: duck a high (and rise into a launcher), down-back a low, stand guard a mid;
       // a misread guesses, so mixups work on the AI too
       const h = heightOf(opp.move), read = chance(show ? 0.8 : 0.25 + 0.5 * difficulty);
       const guess = read ? h : pick(['high', 'mid', 'low']);
       // the universal parry, only from difficulty 0.55 up (0.4 of strikes at the top, 0.3 for the showcase): wait
       // until the strike is about to go live, then tap toward him (down-forward for a low); throws can't be parried
-      const parryP = show ? 0.3 : Math.max(0, difficulty - 0.55) * 0.9, pfd = FRAME_DATA[opp.move];
+      const parryP = show ? 0.3 : Math.max(0, difficulty - 0.55) * 0.7, pfd = FRAME_DATA[opp.move];
       if (parryP > 0 && pfd && !pfd.throw && h !== 'throw' && /^(idle|walk|crouch|block)$/.test(me.state) && me.grounded && chance(parryP)) {
         const low = h === 'low';
         queue = [{ ...move(0, (m, o) => o.state !== 'attack' || !(sim.toLive(o) > 3)), down: low }, { ...move(toward, 2), down: low, ok: true }, move(0, 4)];
@@ -484,7 +544,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       } else
       // showcase: at the tip of his reach, step back so it whiffs (the punish reflex takes it from there)
       if (show && dist > reach(opp.move) - 20 && opp.move !== 'throw' && chance(0.45)) { queue = [move(-toward, 10 + irnd(6))]; act = null; }
-      else if (chance(show ? 0.85 : 0.1 + 0.65 * difficulty + (turtle ? 0.25 : rush ? -0.1 : 0))) {
+      else if (chance(show ? 0.7 : 0.1 + 0.5 * difficulty + (turtle ? 0.15 : rush ? -0.1 : 0))) {
         if (guess === 'high' || guess === 'throw') queue = dist < reach('risingKnee') + 10 && chance(0.6) ? [duck(16 + irnd(6)), { ...press(chance(0.5) ? '4' : '2'), ok: true }] : [duck(18 + irnd(8))];
         else if (guess === 'low') queue = [lowGuard(18 + irnd(10))];
         else queue = [blockFor(18 + irnd(10))];
@@ -496,16 +556,16 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // starter or the launcher up close, the lunge from further, Comet Cross from a dash
     // reflex: he botched (tangled up, open): punish it, the better the CPU the more often (only ever
     // reached when botches are on and one happened, so it changes nothing otherwise)
-    if (opp.state === 'botch' && opp.botchAt !== lastBotchSeen && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 26 && dist < 300) {
-      lastBotchSeen = opp.botchAt;
-      if (chance(show ? 0.9 : 0.25 + 0.6 * difficulty)) {
+    if (saw.state === 'botch' && opp.state === 'botch' && opp.botchAt !== lastBotchSeen && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 26 && dist < 300) {
+      lastBotchSeen = opp.botchAt; relag();
+      if (chance(show ? 0.8 : 0.2 + 0.5 * difficulty)) {
         queue = dist < reach('cross') + 6 ? [{ ...press(dist < reach('jab') - 12 ? pick(['2', '1', 'd2']) : '2'), ok: true }] : [move(toward, closer(reach('cross')), true), { ...press('2'), ok: true }];
         act = null;
       }
     }
-    if ((show || turtle) && opp.state === 'attack' && opp.phase === 'recovery' && !opp.hitConfirmed && opp.attackId !== lastPunish && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 26) {
-      lastPunish = opp.attackId;
-      if (chance(0.85)) {
+    if ((show || turtle) && saw.state === 'attack' && saw.phase === 'recovery' && !saw.hitConfirmed && saw.attackId !== lastPunish && still(saw, opp) && /^(idle|walk|block|crouch)$/.test(me.state) && me.stamina > 26) {
+      lastPunish = saw.attackId; relag();
+      if (chance(show ? 0.75 : 0.45 + 0.3 * difficulty)) {
         if (dist < reach('jab') - 12) queue = [press(pick(['d2', '2', '1']))];
         else if (dist < reach('cross') + 6) queue = [press('2')];
         else if (dist < reach('lungeCross') + 6) queue = [attack('lungeCross')];
@@ -517,15 +577,16 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // bottom of the ladder, so INTERN still gets jumped on) drops its plan, stands its ground and
     // meets him: the uppercut as he comes into its reach (a counter hit that launches), or a jab if
     // he is already on top of it with a strike out. Decided once per jump, at takeoff.
-    const oppAir = !opp.grounded && (opp.state === 'jump' || (opp.state === 'attack' && FRAME_DATA[opp.move] && FRAME_DATA[opp.move].air));
-    if (oppAir && !opp.rag && opp.jumpAt !== aaSeen && Math.sign(opp.vx || -toward) === -toward && dist < 380 && /^(idle|walk|block|crouch|run)$/.test(me.state)) {
-      aaSeen = opp.jumpAt;
-      if (chance(aaReadChance())) { aaFor = opp.jumpAt; me.aaJump = opp.jumpAt; queue = antiAir(); act = null; }
+    // (seen late too: the takeoff shows `lag` steps after it happened, and he must still be in the air)
+    const oppAir = !saw.grounded && (saw.state === 'jump' || (saw.state === 'attack' && FRAME_DATA[saw.move] && FRAME_DATA[saw.move].air)) && !opp.grounded && opp.jumpAt === saw.jumpAt;
+    if (oppAir && !saw.rag && saw.jumpAt !== aaSeen && Math.sign(saw.vx || -toward) === -toward && sawDist < 380 && /^(idle|walk|block|crouch|run)$/.test(me.state)) {
+      aaSeen = saw.jumpAt; relag();
+      if (chance(aaReadChance())) { aaFor = saw.jumpAt; me.aaJump = saw.jumpAt; queue = antiAir(); act = null; }
     }
     // the old reflex: an uppercut on the way in now and then (once per jump)
-    if (oppAir && opp.vy > (show ? -260 : -120) && dist < (show ? 140 : 125) && Math.sign(opp.vx || -toward) === -toward && me.aaJump !== opp.jumpAt && /^(idle|walk|block|crouch)$/.test(me.state)) {
-      me.aaJump = opp.jumpAt;
-      if (chance(show ? 0.7 : 0.15 + 0.65 * difficulty)) { queue = [{ ...press('d2'), ok: true }]; act = null; }
+    if (oppAir && saw.vy > (show ? -260 : -120) && sawDist < (show ? 140 : 125) && Math.sign(saw.vx || -toward) === -toward && me.aaJump !== saw.jumpAt && /^(idle|walk|block|crouch)$/.test(me.state)) {
+      me.aaJump = saw.jumpAt;
+      if (chance(show ? 0.6 : 0.1 + 0.5 * difficulty)) { queue = [{ ...press('d2'), ok: true }]; act = null; }
       else if (show) { queue = [blockFor(24)]; act = null; }   // air attacks are overheads: a standing guard
     }
     // reflex: grabbed: break with 1+3 (or 2+4) after a human-ish delay, decided once per grab
@@ -539,12 +600,17 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       const cornered = me.x - sim.bounds.x0 < 90 || sim.bounds.x1 - me.x < 90 || wellBehindMe(well(me, sim), me, opp);
       queue = opp.state === 'attack' && dist < 200 ? [blockFor(14)] : cornered ? [blockFor(16)] : [move(-toward, 12 + irnd(10))]; act = null;
     }
-    // reflex: swing back on the way out of hitstun instead of resetting to range
-    // (once per opponent attack; the jab is the fast one and his extended arm is in its reach)
-    if (me.state === 'hitstun' && Math.abs(me.vx) < 420 && dist < reach('cross') + 20 && opp.attackId !== lastCounter) {
-      lastCounter = opp.attackId;
-      if (me.stamina > 26 && chance(show ? 0.2 : 0.55 + 0.6 * difficulty)) { queue = [attack(dist < reach('jab') + 45 ? 'jab' : 'cross')]; act = null; }
-      else if (show && chance(0.6)) { queue = [blockFor(14)]; act = null; }   // respect his advantage
+    // reflex: swing back on the way out of hitstun instead of resetting to range, decided `lag` steps after
+    // his last hit landed (a person takes that long to answer being hit), once per hit of his; the jab is the
+    // fast one and his extended arm is in its reach. At most 40% at the top of the ladder, much less below it;
+    // otherwise it eats it and resets: a guard, or a step back out of range.
+    if (counterFor !== lastCounter && step >= counterAt && /^(hitstun|idle|walk|block|crouch)$/.test(me.state)) {
+      lastCounter = counterFor;
+      if (Math.abs(me.vx) < 420 && dist < reach('cross') + 20) {
+        relag();
+        if (me.stamina > 26 && step >= breatheUntil && chance(show ? 0.2 : Math.min(0.4, 0.03 + 0.4 * difficulty * difficulty))) { queue = [attack(dist < reach('jab') + 45 ? 'jab' : 'cross')]; act = null; }
+        else if (chance(show ? 0.6 : 0.5)) { queue = chance(show ? 0.6 : 0.35) ? [blockFor(14)] : [move(-toward, 12 + irnd(8))]; act = null; }   // respect his advantage
+      }
     }
     // my stomp landed: he's pinned for about my recovery, then a wake-up strike can come: guard it
     if (me.state === 'attack' && me.move === 'stomp' && me.hitConfirmed && me.attackId !== stompGuard) {
@@ -555,11 +621,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     if (me.state === 'down' && me.touchStep !== downFor) { downFor = me.touchStep; queue = wakePlan(me, opp); act = null; }
     // floored with him striking at the body, or open over it: rise through it with a wake-up strike (invulnerable
     // until live) or roll away; once per strike of his
-    if (me.state === 'down' && opp.state === 'attack' && opp.attackId !== downSeen) {
-      const hip = me.rig.joints.hip.x, d = Math.abs(opp.x - hip);
-      const coming = opp.phase === 'startup' && d < 200, open = opp.phase === 'recovery' && d < 175;
+    if (me.state === 'down' && saw.state === 'attack' && saw.attackId !== downSeen && still(saw, opp)) {
+      const hip = me.rig.joints.hip.x, d = Math.abs(saw.x - hip);
+      const coming = saw.phase === 'startup' && d < 200, open = saw.phase === 'recovery' && d < 175;
       if (coming || open) {
-        downSeen = opp.attackId;
+        downSeen = saw.attackId; relag();
         if (chance(show ? 0.8 : 0.1 + 0.6 * difficulty)) {
           queue = open || chance(0.6) ? [attack(chance(0.6) ? 'wakeKick' : 'wakeSweep')] : [{ ...move(-(Math.sign(opp.x - hip) || 1), 3), roll: true }];
           act = null;
@@ -569,22 +635,26 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // reflex: in range and nobody has swung for a while: swing
     // (a plan in progress, like a jump-in or a step into kick range, is left alone)
     const staleGap = show ? 60 : turtle ? 48 : 24;
-    if (dist < 120 && me.stamina > 32 && step - lastAttackStep > staleGap && step - lastStale > staleGap && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'attack' && !DOWN_STATES.has(opp.state)) {
+    if (dist < 120 && me.stamina > 32 && step >= breatheUntil && step - lastAttackStep > staleGap && step - lastStale > staleGap && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'attack' && !DOWN_STATES.has(opp.state)) {
       lastStale = step;
       queue = (opp.state === 'block' || blockedStreak >= 1) ? mixup(dist, toward, opp) : show ? [opener(opp, dist)] : [attack(dist < reach('jab') + 10 ? 'jab' : 'cross')]; act = null;
     }
-    if (act && act.block && typeof act.until === 'number' && act.until > 4 && opp.state !== 'attack' && !HIT_STATES.has(opp.state)) act.until = 4;
+    if (act && act.block && !act.habit && typeof act.until === 'number' && act.until > 4 && opp.state !== 'attack' && !HIT_STATES.has(opp.state)) act.until = 4;
     // reflex: a character's own reflex specials (ai.specials with reflex: true: LAWYER's Objection at a grab starting up,
     // THE CEO's Golden Parachute at a strike), looked at every step instead of only when deciding
-    if (/^(idle|walk|block|crouch|blockstun)$/.test(me.state)) { const rx = special(me, opp, sim, dist, toward, true); if (rx) { queue = rx; act = null; } }
+    if (/^(idle|walk|block|crouch|blockstun)$/.test(me.state) && still(saw, opp)) { const rx = special(me, saw, sim, sawDist, toward, true); if (rx) { queue = rx; act = null; } }
 
+    // stunned: the first plan after it waits half a reaction, a beat to take stock
+    if (HIT_STATES.has(me.state)) nextThink = Math.max(nextThink, step + (lag >> 1));
     const done =!act || (typeof act.until === 'function' ? act.until(me, opp) : act.until <= 0);
     if (done) {
       if (queue.length) { act = queue.shift(); if (act.onlyIf && !act.onlyIf(me, opp)) act = null; }
       // no re-deciding during my own attack (each new plan would overwrite the buffered press);
       // over a downed body it is allowed, for the meaty cancel out of the stomp
-      else if (step >= nextThink && me.state !== 'down' && (me.state !== 'attack' || DOWN_STATES.has(opp.state))) {
-        queue = decide(me, opp, sim, dist, toward); act = queue.shift();
+      // no deciding in hit- or blockstun either: a strike picked there was buffered and came out on the first free
+      // frame, an instant counter on every hit (the swing-back reflex above is the one, rationed, way out)
+      else if (step >= nextThink && me.state !== 'down' && !HIT_STATES.has(me.state) && (me.state !== 'attack' || DOWN_STATES.has(opp.state))) {
+        queue = decide(me, opp, sim, dist, toward, saw); act = queue.shift();
         // against a guard, think again fast so there is never a still beat
         const guarding = opp.state === 'block' || opp.state === 'blockstun';
         nextThink = step + (guarding ? 2 : Math.max(2, 4 + Math.round(6 * (1 - difficulty)) + irnd(3) - (rush ? 2 : 0)));
@@ -688,7 +758,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     return out;
   }
   think.debug = () => ({ mixLog, blockedStreak, lastBlockedId, queue: queue.map(a => a.attack || (a.jump ? 'jump' : 'move')), act: act && (act.attack || (act.block ? 'block' : 'move')) });
-  think.setDifficulty = (d) => { difficulty = Math.max(0, Math.min(1, d)); };
+  think.setDifficulty = (d) => { difficulty = Math.max(0, Math.min(1, d)); lag = baseLag(); };
   think.getDifficulty = () => difficulty;
   think.style = style;
   return think;
