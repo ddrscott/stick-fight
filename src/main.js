@@ -4,7 +4,7 @@ import { camera } from './camera.js';
 import { createFighter, MOVES, MOVE_DATA, RIG_KIT } from './fighter/index.js';
 import { createLife } from './fighter/life.js';   // the life layer: eyeline, springs and props, fatigue (drawn only; ?life=0 turns it off)
 import { createFX } from './fx/index.js';
-import { createStatusFX } from './fx/status.js';   // state read off the bodies: stun halo, guard shimmer, dizzy stars, breath
+import { createStatusFX, hitWeight } from './fx/status.js';   // state read off the bodies: stun halo, guard shimmer, dizzy stars, breath
 import { createArena, drawJoints } from './arena/index.js';
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
@@ -72,6 +72,7 @@ if (arena.rainRegion && typeof fx.weather === 'function') fx.weather('rain', { r
 // ---- effects state owned by the glue -------------------------------------------------
 const lights = [];                     // dynamic point lights with a ttl
 const shake = { trauma: 0, kickX: 0, kickY: 0, zoomPunch: 0 };
+let lastHitWeight = 2;   // hitWeight of the last hit (a counter a step heavier), for the shake on its release
 let shakeRng = mulberry32(7);
 const trailPrev = [null, null];
 const blockSparks = [];                // hard glyphs at a blocked contact, drawn on the emissive layer
@@ -91,19 +92,31 @@ function onEvent(ev) {
     case 'hit':
       // the FX burst is small and sits on the striking limb; the camera does nothing until
       // release. A body hit sheds no crate chunks.
-      fx.hit({ x: ev.x, y: ev.y, strength: ev.ko ? 1.0 : ev.counter ? 0.9 : 0.3 + 0.4 * ev.strength, dir: ev.dir, flashR: (ev.flashR || 36) * (ev.counter ? 1.3 : 1), debris: 'none',
-        flashColor: (FRAME_DATA[ev.move] && FRAME_DATA[ev.move].flashColor) || undefined });   // a move's own flash color (CHEF's Flambé)
-      // a counter hit gets its own flash (magenta), drawn behind the fighters
-      if (ev.counter && typeof fx.counterFlash === 'function') fx.counterFlash({ x: ev.x, y: ev.y });
-      light(ev.x, ev.y, 120 + 140 * ev.strength, ev.counter ? [1.0, 0.25, 0.75] : [1.0, 0.62, 0.3], 0.8 + 0.5 * ev.strength, ev.ko ? 0.5 : 0.22);
+      // Effects scale with the hit's weight (hitWeight): a light hit (jab, low jab, a light kick) gets a
+      // few sparks and the contact flash, a medium one (cross, body blow) a few more, and only a heavy
+      // one (ender, launcher, knockdown, splat, KO) the amber shockwave ring. A counter reads a step heavier.
+      {
+        const w = hitWeight(ev), cw = Math.min(2, w + (ev.counter ? 1 : 0));
+        lastHitWeight = cw;
+        const fxs = ev.ko ? 1.0 : w === 2 ? (ev.counter ? 0.9 : 0.3 + 0.4 * ev.strength) : cw === 2 ? 0.55 : cw === 1 ? 0.42 : 0.28;
+        fx.hit({ x: ev.x, y: ev.y, strength: fxs, dir: ev.dir, flashR: (ev.flashR || 36) * (ev.counter ? 1.15 : 1), debris: 'none', ring: w === 2,
+          flashColor: (FRAME_DATA[ev.move] && FRAME_DATA[ev.move].flashColor) || undefined });   // a move's own flash color (CHEF's Flambé)
+        // a counter hit gets its own cyan double ring (a signal, so it shows on any weight), sized by the hit
+        if (ev.counter && typeof fx.counterFlash === 'function') fx.counterFlash({ x: ev.x, y: ev.y, scale: w === 2 ? 1 : w === 1 ? 0.7 : 0.5 });
+        light(ev.x, ev.y, [90, 130, 120 + 140 * ev.strength][cw], ev.counter ? [1.0, 0.25, 0.75] : [1.0, 0.62, 0.3], [0.5, 0.75, 0.8 + 0.5 * ev.strength][cw], ev.ko ? 0.5 : 0.22);
+      }
       if (ev.knockdown || ev.ko) fx.dust({ x: ev.defender.x, y: ev.defender.y, dir: ev.dir });
       break;
     case 'release':
       // the freeze lets go: shake, a directional kick (with a real vertical component), and
       // a zoom punch all land on this frame
-      shake.trauma = Math.min(1, shake.trauma + (ev.ko ? 0.9 : 0.3 + 0.5 * ev.strength));
-      shake.kickX = ev.dir * (12 + 14 * ev.strength); shake.kickY = -(13 + 10 * ev.strength);
-      shake.zoomPunch = 0.04 + 0.04 * ev.strength;
+      // scaled by the weight of the hit it releases (lastHitWeight): a jab barely nudges the frame
+      {
+        const k = ev.ko ? 1 : [0.25, 0.55, 1][lastHitWeight];
+        shake.trauma = Math.min(1, shake.trauma + (ev.ko ? 0.9 : (0.3 + 0.5 * ev.strength) * k * k));
+        shake.kickX = ev.dir * (12 + 14 * ev.strength) * k; shake.kickY = -(13 + 10 * ev.strength) * k;
+        shake.zoomPunch = (0.04 + 0.04 * ev.strength) * (0.4 + 0.6 * k);
+      }
       break;
     case 'block':
       blockSparks.push({ x: ev.x, y: ev.y, dir: ev.dir, ttl: 0.1, max: 0.1 });

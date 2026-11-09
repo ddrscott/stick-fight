@@ -16,13 +16,14 @@
 //   fx.ground = y, fx.floors = [{x0,x1,y}]   where debris lands
 //   fx.seed(n)  reseed the particle RNG (deterministic captures)
 //   fx.clear()  clear all layer canvases (callers may also clear their own)
-//   fx.hit({ x, y, strength, dir, flashR, color, debris: 'crate'|'dust'|'none' })
+//   fx.hit({ x, y, strength, dir, flashR, color, debris: 'crate'|'dust'|'none', ring })
+//       ring (default true): the amber shockwave ring; main.js passes it for heavy hits only
 //       debris defaults to 'none' (a body hit sheds nothing). 'crate' chunks live 6 to 10s and
 //       fade; at most tune.maxDebris are alive at once. 'dust' is a few short-lived dark specks.
 //   fx.wallImpact({ x, y, side, strength })   wall splat / wall bounce: a vertical shock line on the wall at
 //       (x, y), dust and grit rolling off it, a small jolt toward the wall and a pink-white flash. side is
 //       where the wall is relative to the contact: -1 left, +1 right. strength 0.2..2 (1 = a splat).
-//   fx.counterFlash({ x, y })  counter hit: a cyan and magenta double ring with eight short spokes and a cyan
+//   fx.counterFlash({ x, y, scale })  counter hit (scale 1 heavy, about 0.5 on a jab): a cyan and magenta double ring with eight short spokes and a cyan
 //       flash, distinct from the amber hit ring. Call it alongside fx.hit for the same contact.
 //   fx.shake    { x, y } computed every update() whether or not options.shake is on. With
 //       options.shake = true the compositor applies it and copies it into camera.shakeX/Y.
@@ -360,7 +361,8 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     },
     counterFlash(ev) {
       if (fx.options.particles) particles.counterFlash(ev);
-      flash.a = 0.45; flash.x = ev.x; flash.y = ev.y; flash.r = 90; flash.col = [0.45, 0.95, 1.0];
+      const k = Math.max(0.3, Math.min(1, ev.scale ?? 1));
+      flash.a = 0.25 + 0.2 * k; flash.x = ev.x; flash.y = ev.y; flash.r = 90 * k; flash.col = [0.45, 0.95, 1.0];
     },
     dust(ev) { if (fx.options.particles) particles.dust(ev); },
     trail(prev, now, color, alpha) { if (fx.options.particles) particles.trail(prev, now, color, alpha); },

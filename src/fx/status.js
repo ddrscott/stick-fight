@@ -3,7 +3,8 @@
 // wherever a fighter is (its dilated protect mask, owner requirement 5), so these sit behind the
 // fighters and show as rims, halos and glints around them, never over them. It only reads the sim.
 //
-//   hitstun      a red halo and a red light on the chest, fading as the stun drains
+//   hitstun      a red halo and a red light on the chest, fading as the stun drains; thin and faint
+//                after a light hit, full after a heavy one or a counter (hitWeight)
 //   guard        a cyan shimmer arc in front of the guard (brighter in blockstun)
 //   faint        three stars circling over the head and a wobbling violet halo ring
 //   armor        an amber halo while Security's shoulder check still has its armor
@@ -22,16 +23,37 @@ import { drawJoints } from '../arena/index.js';
 const RED = '#ff2b4a', CYAN = '#2ef2ff', VIOLET = '#a66bff', AMBER = '#ffb02e', GOLD = '#ffd84a', WHITE = '#fff4fd';
 const FAINT_MAX = 1.5 * 120;   // STAMINA.faintTime in sim steps (src/combat/sim.js FAINT_STEPS)
 
+/** How heavy a hit event looks: 0 light (jab, low jab, the light kicks), 1 medium (cross, body blow,
+ * 9+ damage that doesn't knock down), 2 heavy (enders, launchers, knockdowns, splats, KOs). The hit's
+ * effects (sparks, the ring, the halo, shake) all scale off this, so a jab only sparks. Reads the
+ * event and the frame data, never the sim. */
+export function hitWeight(ev) {
+  const fd = (ev && FRAME_DATA[ev.move]) || {};
+  if (ev.ko || ev.knockdown || fd.ender || fd.juggle || fd.splat || fd.groundBounce) return 2;
+  return (ev.strength ?? 0) >= 0.6 ? 1 : 0;
+}
+
+// the hitstun halo by hit weight: line width, pulse alpha, the alpha floor, the outer pass, the chest light
+const HITSTUN_HALO = [
+  { width: 8, alpha: 0.2, floor: 0.04, outer: false, light: [80, 0.18] },    // light: a jab
+  { width: 12, alpha: 0.32, floor: 0.06, outer: false, light: [100, 0.35] }, // medium: a cross, a body blow
+  { width: 16, alpha: 0.45, floor: 0.08, outer: true, light: [120, 0.55] },  // heavy (or a counter)
+];
+
 export function createStatusFX() {
-  const per = new WeakMap();   // unit -> { stunMax, puffT, sweatT, airUsed, counter, armorHit, parryHit }
+  const per = new WeakMap();   // unit -> { stunMax, puffT, sweatT, airUsed, counter, armorHit, parryHit, weight }
   const bits = [];             // puffs, sweat, steam, rings and glints: { kind, x, y, vx, vy, t, max, ... }
   let clock = 0;
-  const st = (u) => { let s = per.get(u); if (!s) { s = { stunMax: 1, lastStun: 0, puffT: 0.4, sweatT: 0, airUsed: 0, counter: 0, armorHit: 0, parryHit: 0 }; per.set(u, s); } return s; };
+  const st = (u) => { let s = per.get(u); if (!s) { s = { stunMax: 1, lastStun: 0, puffT: 0.4, sweatT: 0, airUsed: 0, counter: 0, armorHit: 0, parryHit: 0, weight: 0 }; per.set(u, s); } return s; };
 
   // the sim's events (main.js forwards them): a counter hit, an armored absorb, a parry, an accident
   function event(ev) {
     if (ev.type === 'hit' && ev.defender) {
-      if (ev.counter) st(ev.defender).counter = 0.22;
+      const d = st(ev.defender);
+      // the halo's weight: the hit that put him in stun (a counter reads one step heavier)
+      d.weight = Math.min(2, hitWeight(ev) + (ev.counter ? 1 : 0));
+      // the white counter flash: a beat on a light counter, the full flash on a heavier one
+      if (ev.counter) d.counter = d.weight >= 2 ? 0.22 : 0.15;
       if (ev.armor) st(ev.defender).armorHit = 0.25;
     } else if (ev.type === 'block' && ev.parry && ev.defender) {
       st(ev.defender).parryHit = 0.3;
@@ -104,12 +126,15 @@ export function createStatusFX() {
       const chest = { x: (j.neck.x + j.hip.x) / 2 + off.x, y: (j.neck.y + j.hip.y) / 2 + off.y };
       const fd = u.state === 'attack' && u.move ? FRAME_DATA[u.move] : null;
 
-      if (s.counter > 0) halo(ctx, u, WHITE, 0.8 * s.counter / 0.22, 18, 1);
+      if (s.counter > 0) halo(ctx, u, WHITE, 0.8 * s.counter / 0.22, s.weight >= 2 ? 18 : 12, 1);
       else if (u.state === 'hitstun') {
+        // still readable as a status, but scaled by the hit: a thin faint rim on a jab, the full
+        // pulsing halo and red light on a heavy one (or deep in a combo)
         const k = Math.max(0, Math.min(1, u.stun / s.stunMax));
         const pulse = 0.75 + 0.25 * Math.sin(clock * 28);
-        halo(ctx, u, RED, 0.45 * k * pulse + 0.08, 16, tier);
-        lights.push({ x: chest.x, y: chest.y, radius: 120, color: [1, 0.15, 0.25], intensity: 0.55 * k + 0.1 });
+        const H = HITSTUN_HALO[Math.max(s.weight, u.combo >= 3 ? 1 : 0)];
+        halo(ctx, u, RED, H.alpha * k * pulse + H.floor, H.width, H.outer ? tier : 1);
+        lights.push({ x: chest.x, y: chest.y, radius: H.light[0], color: [1, 0.15, 0.25], intensity: H.light[1] * k + 0.05 });
       }
       // shocked (frame data shock): crackling arcs jumping between the joints, re-drawn every few frames
       if (u.shockT > 0 && u.state === 'hitstun') crackle(ctx, j, tier, lights, chest);
