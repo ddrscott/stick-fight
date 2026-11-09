@@ -31,7 +31,7 @@
 
 import { EMPTY_INPUT } from './input.js';
 import { matchStrings } from './strings.js';
-import { FRAME_DATA } from './frameData.js';
+import { FRAME_DATA, AIR_TECH } from './frameData.js';
 
 const DOWN_STATES = new Set(['knockdown', 'down', 'getup', 'ko']);
 const HIT_STATES = new Set(['hitstun', 'blockstun']);
@@ -75,6 +75,21 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // a button press by token ('1'..'4', 'd' prefix = down): strings go through the sim's table
   const press = (tok, extra) => ({ dx: 0, run: false, block: false, attack: null, jump: false, until: 2, press: tok, ...(extra || {}) });
   let pickedString = null;
+  // knocked down: when to get up and how (stand, roll, a wake-up strike, or lie there until the clock stands
+  // him up), picked once per knockdown; a strike coming at the body or a whiff over it can change the plan
+  let downFor = -1, downSeen = -1, stompGuard = -1;
+  // falling: the air recovery out of a juggle (once per hit, the step to press it), a second jab on the way
+  // down after a whiffed air attack (once per jump), an air attack out of the vault's drop (once per vault)
+  let techFor = -1, techAt = -1, fallFor = -1, vaultFor = -1;
+  function wakePlan(me, opp) {
+    const hip = me.rig.joints.hip.x, away = -(Math.sign(opp.x - hip) || 1), near = Math.abs(opp.x - hip) < 175 && opp.grounded;
+    const k = rng(), wait = 10 + irnd(show ? 60 : 12 + Math.round(70 * difficulty));
+    if (k < 0.05 + 0.35 * (1 - difficulty) && !show) return [];   // lie there: the clock stands him up
+    const r = rng();
+    if (near && r < 0.18 + 0.27 * difficulty) return [move(0, wait), attack(chance(0.55) ? 'wakeKick' : 'wakeSweep')];
+    if (r < 0.72) return [move(0, wait), { ...move(0, (m) => m.state !== 'down'), jump: true }];   // up: stand in place
+    return [move(0, wait), { ...move(chance(0.65) ? away : -away, 3), roll: true }];
+  }
   // the string table of the character this CPU plays (src/characters/), the shared one for TEMP
   const strs = (me) => (me.char && me.char.strings) || undefined;
   // A character's specials (its definition's ai.specials): { move, min, max, chance, when, run, cooldown }.
@@ -297,8 +312,13 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // or hover with movement, and a meaty timed so the active frames arrive as he stands
       const floored = opp.state === 'down';
       if (dist > 100) return [move(toward, closer(90), true)];
-      // stomp: the body lies past its root, so close to within 40px of the root first
-      if (floored && !opp.otgHit && chance(0.5 + 0.4 * difficulty)) return dist < 40 ? [attack('sweep')] : [move(toward, closer(36), true), attack('sweep')];
+      // a ground hit, once per knockdown: the stomp (real damage, but a body that rises through it punishes the
+      // whiff) when it reaches, now and then the old low poke at the feet; otherwise wait over him, guard up
+      if (floored && !opp.otgHit) {
+        if (sim.stompOK && sim.stompOK(me) && me.stamina > 30 && chance(0.3 + 0.35 * difficulty)) return [attack('stomp')];
+        if (chance(0.25)) return dist < 40 ? [attack('sweep')] : [move(toward, closer(36), true), attack('sweep')];
+        if (chance(0.25 + 0.4 * difficulty)) return [blockFor(10 + irnd(10))];
+      }
       const mid = (sim.bounds.x0 + sim.bounds.x1) / 2;
       const bodyBetweenMeAndCenter = Math.sign(mid - me.x) === toward && Math.abs(mid - me.x) > 160;
       if (floored && bodyBetweenMeAndCenter && chance(0.5)) return [move(toward, (m, o) => (o.x - m.x) * toward < -46), move(0, 4)];   // step over it
@@ -450,6 +470,14 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // a misread guesses, so mixups work on the AI too
       const h = heightOf(opp.move), read = chance(show ? 0.8 : 0.25 + 0.5 * difficulty);
       const guess = read ? h : pick(['high', 'mid', 'low']);
+      // the universal parry, only from difficulty 0.55 up (0.4 of strikes at the top, 0.3 for the showcase): wait
+      // until the strike is about to go live, then tap toward him (down-forward for a low); throws can't be parried
+      const parryP = show ? 0.3 : Math.max(0, difficulty - 0.55) * 0.9, pfd = FRAME_DATA[opp.move];
+      if (parryP > 0 && pfd && !pfd.throw && h !== 'throw' && /^(idle|walk|crouch|block)$/.test(me.state) && me.grounded && chance(parryP)) {
+        const low = h === 'low';
+        queue = [{ ...move(0, (m, o) => o.state !== 'attack' || !(sim.toLive(o) > 3)), down: low }, { ...move(toward, 2), down: low, ok: true }, move(0, 4)];
+        act = null;
+      } else
       // showcase: at the tip of his reach, step back so it whiffs (the punish reflex takes it from there)
       if (show && dist > reach(opp.move) - 20 && opp.move !== 'throw' && chance(0.45)) { queue = [move(-toward, 10 + irnd(6))]; act = null; }
       else if (chance(show ? 0.85 : 0.1 + 0.65 * difficulty + (turtle ? 0.25 : rush ? -0.1 : 0))) {
@@ -514,11 +542,25 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (me.stamina > 26 && chance(show ? 0.2 : 0.55 + 0.6 * difficulty)) { queue = [attack(dist < reach('jab') + 45 ? 'jab' : 'cross')]; act = null; }
       else if (show && chance(0.6)) { queue = [blockFor(14)]; act = null; }   // respect his advantage
     }
-    // reflex: floored with him standing over me: roll away (once per knockdown)
-    // (an escape from the stomp, so only before a ground hit has landed)
-    if (me.state === 'down' && !me.otgHit && dist < 110 && me.rollId !== opp.attackId) {
-      me.rollId = opp.attackId;
-      if (chance(0.06 + 0.12 * difficulty)) { queue = [{ ...move(-toward, 3), roll: true }]; act = null; }
+    // my stomp landed: he's pinned for about my recovery, then a wake-up strike can come: guard it
+    if (me.state === 'attack' && me.move === 'stomp' && me.hitConfirmed && me.attackId !== stompGuard) {
+      stompGuard = me.attackId;
+      if (chance(show ? 0.9 : 0.2 + 0.6 * difficulty)) { queue = [blockFor(40 + irnd(20))]; act = null; }
+    }
+    // knocked down: the getup plan, once per knockdown (sim.js 'down')
+    if (me.state === 'down' && me.touchStep !== downFor) { downFor = me.touchStep; queue = wakePlan(me, opp); act = null; }
+    // floored with him striking at the body, or open over it: rise through it with a wake-up strike (invulnerable
+    // until live) or roll away; once per strike of his
+    if (me.state === 'down' && opp.state === 'attack' && opp.attackId !== downSeen) {
+      const hip = me.rig.joints.hip.x, d = Math.abs(opp.x - hip);
+      const coming = opp.phase === 'startup' && d < 200, open = opp.phase === 'recovery' && d < 175;
+      if (coming || open) {
+        downSeen = opp.attackId;
+        if (chance(show ? 0.8 : 0.1 + 0.6 * difficulty)) {
+          queue = open || chance(0.6) ? [attack(chance(0.6) ? 'wakeKick' : 'wakeSweep')] : [{ ...move(-(Math.sign(opp.x - hip) || 1), 3), roll: true }];
+          act = null;
+        }
+      }
     }
     // reflex: in range and nobody has swung for a while: swing
     // (a plan in progress, like a jump-in or a step into kick range, is left alone)
@@ -537,7 +579,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (queue.length) { act = queue.shift(); if (act.onlyIf && !act.onlyIf(me, opp)) act = null; }
       // no re-deciding during my own attack (each new plan would overwrite the buffered press);
       // over a downed body it is allowed, for the meaty cancel out of the stomp
-      else if (step >= nextThink && (me.state !== 'attack' || DOWN_STATES.has(opp.state))) {
+      else if (step >= nextThink && me.state !== 'down' && (me.state !== 'attack' || DOWN_STATES.has(opp.state))) {
         queue = decide(me, opp, sim, dist, toward); act = queue.shift();
         // against a guard, think again fast so there is never a still beat
         const guarding = opp.state === 'block' || opp.state === 'blockstun';
@@ -566,6 +608,22 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       }
     }
     const out = { ...EMPTY_INPUT };
+    // juggled: recover in the air, more often and closer to the perfect window the better the CPU (never mashing)
+    if (me.state === 'knockdown' && !me.grounded && me.launchStep !== techFor && me.launchStep != null) {
+      techFor = me.launchStep; techAt = -1;
+      if (chance(show ? 0.7 : Math.max(0, 0.75 * difficulty - 0.1))) techAt = me.launchStep + AIR_TECH.min + (chance(show ? 0.6 : 0.5 * difficulty) ? irnd(AIR_TECH.perfect) : AIR_TECH.perfect + irnd(24));
+    }
+    if (me.state === 'knockdown' && step === techAt) out.lp = true;
+    // a whiffed air attack, on the way down with him close: the second jab
+    if (me.state === 'attack' && !me.grounded && FRAME_DATA[me.move] && FRAME_DATA[me.move].air && me.rig.current.done && !me.hitConfirmed && (me.airUsed || 0) < 2 && me.vy > 0 && dist < 120 && fallFor !== me.jumpAt) {
+      fallFor = me.jumpAt;
+      if (chance(0.25 + 0.5 * difficulty)) out.lp = true;
+    }
+    // dropping off the vault after a floor break, with him below: an air attack on the way down
+    if (me.state === 'vault' && me.vaultPhase === 'clip' && me.rig.current.t > 0.5 && me.rig.current.t < 0.7 && vaultFor !== me.vaultAt) {
+      vaultFor = me.vaultAt;
+      if (dist < 260 && chance(0.25 + 0.45 * difficulty)) out[chance(0.5) ? 'rk' : 'lk'] = true;
+    }
     if (!act && dist < 140 && (opp.state === 'block' || opp.state === 'blockstun') && /^(idle|walk)$/.test(me.state)) {
       out.dx = (Math.floor(step / 6) % 2) ? toward : -toward;   // a shuffle between thinks, not a stand
     }
@@ -595,6 +653,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       else if (act.until(me, opp)) act = null;
       if (act && (act.attack || act.jump || act.press) && typeof act.until === 'number' && act.until <= 0) act = null;
     }
+    // launched or juggled: no buttons but the planned air recovery (a stray press would lock it out)
+    if (me.state === 'knockdown') { for (const k in out) if (k === 'lp' || k === 'rp' || k === 'lk' || k === 'rk' || FRAME_DATA[k]) out[k] = false; if (step === techAt) out.lp = true; }
     // botches on: the low end of the ladder mashes a button in the middle of its own strike now and then
     // (decided once per strike, pressed a few steps in), and the showcase sometimes presses into a happy
     // accident's window (decided once per strike, the first step a window is open)

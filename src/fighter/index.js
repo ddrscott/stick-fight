@@ -776,6 +776,70 @@ Object.assign(MOVE_DEFS, {
     K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4 }, 0, 'sine'),
   ] },
 });
+// ---- wake-up strikes: from the knockdown rest pose (lying on the back, feet toward the facing), the body
+// springs forward along the floor behind a kick (the hip scoots up to 40px: a lying body's feet are well
+// short of anyone standing at its feet), then rocks forward onto its feet through the getup's own stand-up
+// keys, moved along by the scoot and played a little faster. `stand` marks the first stand-up key (the sim
+// treats the body as lying until then), and `shift` puts the root where the body stands, like the getup.
+const REST = { hx: -128, torso: -92, bend: -2, head: 20, la: [-120, -96], ra: [90, 104], ll: [98, 76], rl: [140, 50] };
+function standUp(fromHx, rate) {
+  const g = MOVE_DEFS.getup.keys, from = g.findIndex(k => k.p.torso === 18), d = fromHx - g[from].p.hx;
+  return g.slice(from).map((k, i) => ({ ...k, d: Math.round(k.d * rate), ev: i === 0 ? 'stand' : k.ev === 'recover' ? null : k.ev, p: { ...k.p, hx: k.p.hx + d } }));
+}
+function wakeClip(lead, keys, standHx) {
+  const up = standUp(standHx, 0.62);
+  const last = up[up.length - 1].p.hx;
+  return { blend: 20, limb: lead, adapt: 'none', shift: last, keys: [...keys.map(k => ({ ...k, p: P({ ...REST, ...k.p0 }) })), ...up] };
+}
+const WK = (p0, d, ease, ev = null) => ({ p0, d, ease, ev });
+Object.assign(MOVE_DEFS, {
+  // 1 or 3 from the floor: the knees curl to the chest, then the body springs forward and up onto the
+  // shoulders behind the rear leg, a straight kick rising through the shins and knees of anyone standing
+  // over the feet. Mid. Contact about 10 frames after the press.
+  wakeKick: wakeClip('rFoot', [
+    WK({ hx: -131, torso: -104, bend: -6, head: 26, ll: [146, 70], rl: [168, 80], la: [-150, -120], ra: [-130, -100] }, 120, 'in'),
+    WK({ hx: -100, torso: -78, bend: 4, head: 20, ll: [112, 70], rl: [136, 118], la: [-110, -80], ra: [-100, -70] }, 60, 'linear'),
+    WK({ hx: -72, torso: -58, bend: 8, head: 16, ll: [96, 64], rl: [114, 112], la: [-80, -60], ra: [-70, -40] }, 40, 'out', 'active'),
+    WK({ hx: -70, torso: -56, bend: 8, head: 16, ll: [96, 64], rl: [115, 113], la: [-80, -60], ra: [-70, -40] }, 70, 'inOut'),
+    WK({ hx: -72, torso: -40, bend: 10, head: 18, ll: [104, 30], rl: [96, 20], la: [-60, -40], ra: [-50, -30] }, 90, 'out', 'recover'),
+    WK({ hx: -72, torso: -12, head: 14, la: [-36, -16], ra: [56, 60], ll: [80, -66], rl: [72, -74] }, 70, 'out'),
+  ], -72),
+  // 2 or 4 (or down and any button) from the floor: he rolls onto his hip, propped on an elbow, and the
+  // lead leg scythes out flat along the floor at ankle height. Low. Slower than the kick, and longer.
+  wakeSweep: wakeClip('lFoot', [
+    WK({ hx: -126, torso: -76, bend: 6, head: 22, ll: [136, 40], rl: [120, 30], la: [-96, -70], ra: [-150, -150] }, 150, 'in'),
+    WK({ hx: -104, torso: -62, bend: 8, head: 18, ll: [104, 70], rl: [100, 20], la: [-80, -60], ra: [-130, -130] }, 60, 'linear'),
+    WK({ hx: -80, torso: -54, bend: 10, head: 16, ll: [93, 92], rl: [86, 0], la: [-70, -50], ra: [-120, -120] }, 40, 'out', 'active'),
+    WK({ hx: -78, torso: -52, bend: 10, head: 16, ll: [93, 92], rl: [86, 0], la: [-70, -50], ra: [-120, -120] }, 80, 'inOut'),
+    WK({ hx: -80, torso: -34, bend: 8, head: 16, ll: [116, -10], rl: [100, -20], la: [-50, -30], ra: [-40, -20] }, 90, 'out', 'recover'),
+    WK({ hx: -80, torso: -12, head: 14, la: [-36, -16], ra: [56, 60], ll: [80, -66], rl: [72, -74] }, 70, 'out'),
+  ], -80),
+});
+// Air recovery: out of a juggle the body snaps into a tuck (knees to the chest, arms wrapped), rolls upright
+// and opens into the jump's falling pose, feet under it, and holds there until the sim lands it (airLand).
+MOVE_DEFS.airTech = { blend: 50, blendEase: 'out', keys: [
+  K({ hx: -2, torso: 46, bend: 12, head: 14, ll: [120, -10], rl: [110, -20], la: [110, 30], ra: [90, 20], air: 4 }, 70, 'out'),
+  K({ hx: 2, torso: 18, bend: 4, head: -2, ll: [70, -40], rl: [56, -56], la: [130, 160], ra: [110, 150], air: 4 }, 80, 'out'),
+  K({ hx: 4, torso: 10, head: -4, ll: [24, 4], rl: [-10, -16], la: [110, 120], ra: [90, 100], air: 0 }, 90, 'out'),
+  K({ hx: 4, torso: 8, head: -4, ll: [22, 2], rl: [-10, -14], la: [100, 120], ra: [84, 100], air: 0 }, 0, 'sine'),
+] };
+// Stomp (down and a kick over a body on the floor): the rear knee comes up to the chest, then the heel
+// drives down onto the body as he steps through, the weight following it down; it sticks there a beat (the
+// sim pins the body under it) and the leg has to come back out before he's guarding again. A long recovery
+// on purpose: a body that rises through it with a wake-up strike gets a free hit.
+Object.assign(MOVE_DEFS, {
+  stomp: { blend: 40, limb: 'rFoot', adapt: 'none', keys: [
+    K({ ll: L(2, HIP, LF), hx: 2, rl: [70, -10], torso: 2, head: -4, la: [40, 140], ra: [10, 90] }, 70, 'in'),
+    K({ hx: 6, ll: L(6, HIP + 3, LF), rl: [112, 20], torso: -8, bend: -4, head: 4, la: [70, 170], ra: [-20, 60] }, 70, 'out'),
+    K({ hx: 18, ll: L(18, HIP - 2, LF), rl: [92, 40], torso: 6, bend: 2, head: -2, la: [60, 130], ra: [10, 50] }, 40, 'linear'),
+    K({ ...F(30, 44, LF, 72), torso: 22, bend: 6, head: -10, la: [20, 70], ra: [-40, -10] }, 40, 'out', 'active'),
+    K({ ...F(31, 43, LF, 72), torso: 24, bend: 7, head: -10, la: [18, 66], ra: [-42, -12] }, 60, 'inOut'),
+    K({ ...F(30, 44, LF, 72), torso: 22, bend: 6, head: -8, la: [24, 80], ra: [-36, 0] }, 100, 'in', 'recover'),
+    K({ ...F(16, 50, LF, 44, 0, 14), torso: 12, bend: 3, head: -6, la: [40, 120], ra: [0, 60] }, 90, 'out'),
+    K({ ...F(4, HIP - 1, LF, RF, 0, 8), torso: 7, head: -4, la: [52, 144], ra: [28, 160] }, 90, 'inOut', 'footstep'),
+    K({}, 0, 'sine'),
+  ] },
+});
 // Lows stay crouched: the low kick is thrown from the crouch (rear foot planted, lead leg whipping
 // along the floor) and both it and the sweep end back in the crouch pose, so d+1, d+1, d+3 chains.
 MOVE_DEFS.lowKick = { blend: 40, limb: 'lFoot', keys: [
@@ -912,6 +976,7 @@ const META = {
   overhead: ['mid'], risingUppercut: ['mid', 'launch'], crescent: ['mid', 'knockdown'], neonTornado: ['mid', 'launch'], spinHeel: ['high', 'splat'],
   cometCross: ['mid', 'splat'], wallSlam: ['throw', 'splat'], throw: ['throw', 'knockdown'],
   jumpJab: ['mid'], jumpCross: ['mid'], flyingKick: ['mid'], airRoundhouse: ['mid', 'knockdown'], diveKick: ['mid'],
+  wakeKick: ['mid', 'knockdown'], wakeSweep: ['low', 'knockdown'], stomp: ['low'],
 };
 for (const n in META) { MOVE_DEFS[n].height = META[n][0]; MOVE_DEFS[n].effect = META[n][1] || null; }
 // Every strike can retarget its reach (play(name, { reach }) / { target }): punches lean, kicks

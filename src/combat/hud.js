@@ -208,6 +208,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (u.state === 'hitstun') return { text: 'STUN', color: '#ff3d6e', bar: stunK, barColor: '#ff2b4a' };
     if (u.state === 'blockstun') return { text: 'GUARD', color: NEON.cyan, bar: stunK, barColor: NEON.cyan };
     if (u.state === 'block' || (u.state === 'crouch' && u.backHeld)) return { text: u.crouch ? 'LOW GUARD' : 'GUARD', color: NEON.cyan, dim: true };
+    // lying there: the bar is the second left before he stands up by himself
+    if (u.state === 'down' && u.downTimer > 0) return { text: u.botchKind === 'air' ? 'TANGLED' : 'DOWN', color: NEON.violet, bar: Math.min(1, u.downTimer / 120), barColor: NEON.violet, fill: true };
     if (u.state === 'knockdown' || u.state === 'splat' || u.state === 'down' || u.state === 'roll') return { text: u.botchKind === 'air' ? 'TANGLED' : 'DOWN', color: NEON.violet };
     if (u.state === 'getup') return { text: 'GET UP', color: NEON.violet, bar: Math.min(1, (u.rig && u.rig.current && u.rig.current.t) || 0), barColor: NEON.violet, fill: true };
     if (u.state === 'botch') return { text: 'BOTCH', color: '#ff6a3d' };
@@ -577,7 +579,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const line1 = padUI
       ? 'X Y A B = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   STICK MOVES, BACK OR L1 WALKS BACK AND GUARDS A STRIKE THAT\'S COMING   DOWN CROUCH, DOWN-BACK GUARDS LOWS   UP JUMP   R1 THROW   R2 RUN   START PAUSE'
       : 'U I J K = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   A D MOVE, HOLD BACK TO STEP BACK (IT GUARDS A STRIKE THAT\'S COMING)   S CROUCH (DOWN-FORWARD CREEPS, DOWN-BACK GUARDS LOWS)   W JUMP   SHIFT RUN';
-    const line2 = 'AIR 1 2 3 4, d+4 DIVE   d1 d1 d3 LOW RUSH   1124 FLASH ROUNDHOUSE   1234 NEON TORNADO   214 SPIN HEEL   334 CRESCENT   d3 d3 4 GROUND RUSH   d2 1 2 4 SKY SPIKE   f,f+2 COMET   1+3 / 2+4 THROW';
+    const line2 = 'AIR 1 2 3 4, d+4 DIVE   d1 d1 d3 LOW RUSH   1124 FLASH ROUNDHOUSE   1234 NEON TORNADO   214 SPIN HEEL   334 CRESCENT   d3 d3 4 GROUND RUSH   d2 1 2 4 SKY SPIKE   f,f+2 COMET   1+3 / 2+4 THROW   TAP TOWARD PARRY   d3/d4 STOMP';
     neonText(line1, width / 2, y0 + 12, 17, NEON.cyan, { font: LABEL, weight: 500, glow: 0.4, core: false });
     neonText(line2, width / 2, y0 + 31, 17, NEON.pink, { font: LABEL, weight: 500, glow: 0.4, core: false });
     if (extra) neonText('FOUND   ' + foundTech.map(t => `${t.input} ${t.name}`).join('   '), width / 2, y0 + 50, 17, KIND_COLOR.accident, { font: LABEL, weight: 500, glow: 0.4, core: false });

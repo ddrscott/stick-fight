@@ -228,6 +228,7 @@ function timeline(phases, o = {}) {
       if (Math.abs(d) > 82) out.dx = Math.sign(d); else if (t % 24 === 0) Object.assign(out, clean(me, { lp: true }));
     }
     for (const [at, inp] of ph.p1) if (t >= at && t < at + 3) Object.assign(out, typeof inp === 'function' ? inp(me) : inp);
+    if (ph.p1f) { const r = ph.p1f(me, opp, t) || {}; Object.assign(out, r); if (r.back) out.dx = me.x > opp.rig.joints.hip.x ? 1 : -1; }   // a per-step script (the getup and ground scenes); back: away from his body
     if (++t > ph.dur) { if (o.only != null) { t = ph.dur; return EMPTY_INPUT; } k = (k + 1) % phases.length; sim.phaseName = ''; t = 0; }
     return out;
   };
@@ -256,7 +257,79 @@ const ACC_FROM = { scissorKick: B('lk'), supermanPunch: B('rk'), pivotBackfist: 
 // where each technique lands: the backfist and the helicopter on a guard that held the first strike
 const ACC_AT = { flyingTackle: [300, 430], flashKick: [580, 650], springUppercut: [580, 650], pivotBackfist: [570, 650] };
 const ACC_P2 = { pivotBackfist: (me, o) => (o.move === 'roundhouse' ? { back: true } : {}), helicopter: { back: true, down: true } };
+// getup-test: P1 sweeps P2 down, walks up to stand at his feet (as close as a standing body may), and P2
+// picks a getup option; `over(...)` adds what P1 does once he's there
+const hipOf = (u) => u.rig.joints.hip.x;
+const over = (then) => (me, o, t) => {
+  if (t >= 40 && t < 112 && o.state === 'down') return Math.abs(hipOf(o) - me.x) > 150 ? { dx: Math.sign(hipOf(o) - me.x) } : {};
+  return t >= 112 && then ? then(me, o, t) : {};
+};
+const isWakeOf = (u) => u.state === 'attack' && sim.FRAME_DATA[u.move] && sim.FRAME_DATA[u.move].wake;
+// punish a wake-up strike's stand-up: walk in, cross when it reaches
+const punishRise = (guard) => (me, o) => {
+  if (isWakeOf(o) && o.phase !== 'recovery') return guard;
+  if ((isWakeOf(o) && o.phase === 'recovery') || (o.state === 'idle' && me.state === 'idle' && o.stoodAt == null)) {
+    const d = Math.abs(o.x - me.x);
+    return d > sim.reachOf(me, 'cross') - 12 ? { dx: Math.sign(o.x - me.x) } : clean(me, { rp: true });
+  }
+  return me.state === 'blockstun' ? guard : {};
+};
+const techAt = (k) => (me) => (me.state === 'knockdown' && me.launchStep != null && sim.stepCount - me.launchStep >= k && sim.stepCount - me.launchStep < k + 2 ? { lp: true } : {});
+// parry-test: P2 strikes, P1 taps toward him (sim.toLive: steps until the strike can hit) and punishes a parry with the cross
+const towardOf = (me, o) => Math.sign(o.x - me.x) || me.facing;
+const tapAt = (k, low = false) => (me, o, t) => {
+  if (o.state === 'hitstun' && sim.log.some(r => r.type === 'parry')) return Math.abs(o.x - me.x) > sim.reachOf(me, 'cross') - 8 ? { dx: towardOf(me, o) } : clean(me, { rp: true });   // the punish
+  const live = sim.toLive(o);
+  if (o.state === 'attack' && live <= k && live > k - 2) return { dx: towardOf(me, o), down: low };
+  return low && o.state === 'attack' ? { down: true } : {};
+};
+const wakeAt = (inp, at = 120) => (me, o, t) => (me.state === 'down' && t >= at && t < at + 3 ? (typeof inp === 'function' ? inp(me, o) : inp) : {});
 const PHASES = {
+  getup: [
+    { name: 'no input: he lies there, then stands up by himself after 1s', p1: [[10, D('rk')]], p1f: over(), dur: 300 },
+    { name: 'up: he stands in place at once', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ jump: true }), dur: 240 },
+    { name: 'a fresh left or right: he rolls away', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt((me, o) => ({ dx: -Math.sign(o.x - hipOf(me)) })), dur: 260 },
+    { name: 'WAKE KICK (1 or 3) into him standing at the feet: knockdown', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ lk: true }), dur: 260 },
+    { name: 'WAKE SWEEP (2 or 4) along the floor: knockdown', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ rk: true }), dur: 260 },
+    { name: 'WAKE KICK blocked standing: the rise is punished', p1: [[10, D('rk')]], p1f: over(punishRise({ back: true })), p2: wakeAt({ lk: true }), dur: 300 },
+    { name: 'WAKE SWEEP blocked down-back: the rise is punished', p1: [[10, D('rk')]], p1f: over(punishRise({ back: true, down: true })), p2: wakeAt({ rk: true }), dur: 300 },
+  ],
+  // stomp-test: the same knockdown, then P1 stomps (d+4) over the body; P2 stays down, rises through it, or waits it out
+  stomp: [
+    { name: 'STOMP d+4 on a body that stays down: 9 damage, pinned under the heel', p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), dur: 320 },
+    { name: 'a greedy STOMP: the wake kick rises through its startup and punishes it (counter)', p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: wakeAt({ lk: true }, 121), dur: 300 },
+    { name: 'STOMP whiffs on a roll: open for the whole recovery', p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: wakeAt({ dx: 1 }, 118), dur: 300 },
+    { name: 'STOMP lands, he wakes kicking at once: the stomper guards it', p1: [[10, D('rk')], [124, D('rk')]], p1f: over((me, o, t) => (t > 160 ? { back: true } : {})), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
+    { name: "STOMP lands, the stomper doesn't guard: the wake kick punishes", p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
+    { name: 'one ground hit per knockdown: a second stomp passes over him', p1: [[10, D('rk')], [124, D('rk')], [210, D('rk')]], p1f: over(), dur: 340 },
+  ],
+  // air-recovery-test: P1 launches P2 (d+2); P2 presses k steps after the last hit (techAt), or mashes. Then the
+  // falling attacks: a second jab after a whiffed air attack, a press mid-swing tangling up, an attack off the vault
+  airRecovery: [
+    { name: 'launched, no press: he lands on his back', at: () => [580, 650], p1: [[10, D('rp')]], dur: 200 },
+    { name: 'a press too early (12 frames in): locked out, he lands on his back', at: () => [580, 650], p1: [[10, D('rp')]], p2: techAt(24), dur: 200 },
+    { name: 'a press as the window opens: he flips upright with a jab', at: () => [580, 650], p1: [[10, D('rp')]], p2: techAt(38), dur: 200 },
+    { name: 'a later press: he flips upright and lands, no jab', at: () => [580, 650], p1: [[10, D('rp')]], p2: techAt(56), dur: 200 },
+    { name: 'mashing never recovers (each early press keeps it locked)', at: () => [580, 650], p1: [[10, D('rp')]], p2: (me, o, t) => (me.state === 'knockdown' && t % 6 < 2 ? { lp: true } : {}), dur: 220 },
+    { name: 'a real juggle still connects: the jab lands before the window opens', at: () => [580, 650], p1: [[10, D('rp')], [34, B('lp')]], p2: techAt(38), dur: 220 },
+    { name: 'SECOND AIR ATTACK: a jump kick whiffs, he runs in under it, the jab on the way down hits', at: () => [470, 760], p1: [[2, (me) => ({ jump: true, dx: me.facing })], [6, B('lk')], [46, B('lp')]],
+      p2: (me, o, t) => (t >= 5 && t < 50 ? { dx: Math.sign(o.x - me.x), run: true } : {}), dur: 200 },
+    { name: 'a second press while the kick still swings: TANGLED', at: () => [400, 900], p1: [[2, (me) => ({ jump: true, dx: me.facing })], [10, B('lk')], [22, B('lp')]], dur: 260 },
+    { name: 'FALL ATTACK: an air roundhouse out of the vault after a floor break (he is still down, so it lands short)', at: () => [500, 590], p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]],
+      p1f: (me) => (me.state === 'vault' && me.vaultPhase === 'clip' && me.rig.current.t > 0.55 && me.rig.current.t < 0.6 ? { rk: true } : {}), dur: 420 },
+  ],
+  // parry-test: the universal parry, P1 against P2's strikes
+  parry: [
+    { name: 'PARRY: a tap forward just before his jab lands, then the cross punishes', p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true } : {}), p1: [], p1f: tapAt(3), dur: 160 },
+    { name: 'PARRY a mid (snap kick) the same way', p2: (me, o, t) => (t >= 20 && t < 23 ? { lk: true } : {}), p1: [], p1f: tapAt(3), dur: 160 },
+    { name: 'a tap 8 frames early: the window has closed, he is hit', p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true } : {}), p1: [[4, (me) => ({ dx: me.facing })]], dur: 140 },
+    { name: 'holding forward is no tap: he is hit', p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true } : {}), p1: [], hold1: { dx: 1 }, dur: 140 },
+    { name: 'a low (sweep) against a standing tap: hit', p2: (me, o, t) => (t >= 20 && t < 23 ? { rk: true, down: true } : {}), p1: [], p1f: tapAt(3), dur: 160 },
+    { name: 'down-forward PARRIES the low sweep', p2: (me, o, t) => (t >= 20 && t < 23 ? { rk: true, down: true } : {}), p1: [], p1f: tapAt(3, true), dur: 180 },
+    { name: 'a jump-in air attack, PARRIED standing', at: () => [560, 720], p2: (me, o, t) => (t >= 10 && t < 13 ? { jump: true, dx: -1 } : t >= 26 && t < 29 ? { lk: true } : {}), p1: [], p1f: tapAt(3), dur: 200 },
+    { name: "a throw can't be parried", at: () => [560, 640], p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true, lk: true } : {}), p1: [[21, (me) => ({ dx: me.facing })]], dur: 160 },
+    { name: 'mashing forward never parries (each tap keeps the lockout running)', p2: (me, o, t) => (t >= 30 && t < 33 ? { lp: true } : {}), p1: [], p1f: (me, o, t) => (t % 8 < 4 ? { dx: me.facing } : {}), dur: 160 },
+  ],
   mixup: [
     { name: 'high vs crouch (ducks)', p2: { down: true }, p1: [[20, B('lp')]], dur: 90 },
     { name: 'low vs standing guard (hits)', p2: { back: true }, at: () => [578, 650], p1: [[20, D('lk')]], dur: 100 },
@@ -549,6 +622,10 @@ const scenes = {
   'horde-ai'(o) { sim.setAI(0, 1.0); sim.setAI(1, 0.1); sim.resetMatch({ seed: seedOf(o, 5), skipIntro: true, horde: { goonHealth: 10, goonDifficulty: 0.05, heal: 45 } }); },
   // Two aggressive AIs on short health: each round ends in a few hits, so a full
   // best-of-3 and its body pile fit in a capture.
+  'getup-test'(o) { timeline(PHASES.getup, o); },
+  'stomp-test'(o) { timeline(PHASES.stomp, o); },
+  'air-recovery-test'(o) { timeline(PHASES.airRecovery, o); },
+  'parry-test'(o) { timeline(PHASES.parry, o); },
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
   'stamina-test'(o) { timeline(PHASES.stamina, o); },
   'string-ender-test'(o) { timeline(PHASES.strings, o); },

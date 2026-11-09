@@ -68,19 +68,34 @@ Object.assign(FRAME_DATA, {
   airRoundhouse: { limb: 'foot', damage: 13, kb: { x: 420, y: 240 }, hitstun: 0,  blockstun: 14, hitstop: 8, knockdown: true,  air: true, cancels: [], reach: 95, flashR: 34, anims: ['airRoundhouse', 'roundhouse'] },
   diveKick:      { limb: 'foot', damage: 11, kb: { x: 0, y: 0 },     hitstun: 36, blockstun: 12, hitstop: 7, knockdown: false, air: true, dive: true, cancels: [], reach: 90, flashR: 32, anims: ['diveKick', 'overhead', 'roundhouse'] },
 });
+// Wake-up strikes, from the floor (shared by every character; sim.js 'down'). `wake`: started only from
+// lying down, invulnerable until the strike is live, lying until the clip's 'stand' key (a hit there puts
+// him back down), and a press in the middle of one is lost rather than botched (there's no body to botch).
+// Both knock down on hit and are badly minus on block: the stand-up is the punish.
+Object.assign(FRAME_DATA, {
+  wakeKick:  { limb: 'foot', damage: 8, kb: { x: 320, y: 220 }, hitstun: 0, blockstun: 10, hitstop: 7, knockdown: true, wake: true, cancels: [], reach: 100, flashR: 28 },
+  wakeSweep: { limb: 'foot', damage: 7, kb: { x: 220, y: 170 }, hitstun: 0, blockstun: 6,  hitstop: 6, knockdown: true, wake: true, cancels: [], reach: 110, flashR: 26 },
+});
+// The stomp (down + 3 or 4 with the opponent on the floor near you): a ground hit for real damage (`otg`:
+// it lands on a floored body, once per knockdown like every ground hit), a step in behind it (`travel`) so
+// it reaches a body you're standing at the feet of, and no cancel: on hit the body is pinned under the heel
+// for `pin` frames, about until the stomper can guard again, and on a whiff (a roll, a wake-up strike rising
+// through it, a body already standing) the long recovery is a free punish.
+FRAME_DATA.stomp = { limb: 'foot', damage: 9, kb: { x: 0, y: 0 }, hitstun: 18, blockstun: 6, hitstop: 6, knockdown: false, otg: true, pin: 22,
+  travel: { vx: 260, at: 90, ms: 110 }, cancels: [], reach: 95, flashR: 26 };
 FRAME_DATA.wallSlam = { ...FRAME_DATA.throw, damage: 14, kb: { x: 760, y: 160 }, splat: true, anims: ['wallSlam', 'cross'], anim: undefined };
 FRAME_DATA.uppercut.kb = { x: 90, y: 420 };   // a launcher: the body flies at jab height on the rig's point simulation
 
 // heights (Tekken): high is ducked by a croucher, low beats standing guard, mid beats crouch
 const HEIGHT = { jab: 'high', cross: 'high', roundhouse: 'high', flashRoundhouse: 'high', spinKick: 'high', spinHeel: 'high', crescent: 'mid',
-  sweep: 'low', lowKick: 'low', lowJab: 'low', throw: 'throw', wallSlam: 'throw' };
+  sweep: 'low', lowKick: 'low', lowJab: 'low', throw: 'throw', wallSlam: 'throw', wakeSweep: 'low', stomp: 'low' };
 for (const [m, fd] of Object.entries(FRAME_DATA)) { fd.height = HEIGHT[m] || 'mid'; fd.low = fd.height === 'low'; }
 for (const m of ['sweep', 'lowKick']) FRAME_DATA[m].tc = true;
 
 // Stamina costs. A fighter has 100 and faints at 0 (sim.js), so the costs are the attack budget:
 // plain jabs faint you on the 6th press, crosses and kicks on the 5th, and a full four-hit string
 // with its ender (1,1,2,4 is 85, 1,2,3,4 is 90, Sky Spike 92) fits from full but leaves you low.
-const COST = { jab: 17, lowJab: 15, cross: 21, bodyBlow: 19, lungeCross: 22, lowKick: 18, uppercut: 24, risingUppercut: 24, risingKnee: 24, throw: 22, wallSlam: 22 };
+const COST = { wakeKick: 12, wakeSweep: 12, stomp: 18, jab: 17, lowJab: 15, cross: 21, bodyBlow: 19, lungeCross: 22, lowKick: 18, uppercut: 24, risingUppercut: 24, risingKnee: 24, throw: 22, wallSlam: 22 };
 const AIR_COST = { jumpJab: 12, jumpCross: 15, flyingKick: 16, airRoundhouse: 18, diveKick: 16 };
 Object.assign(COST, AIR_COST);
 for (const [m, fd] of Object.entries(FRAME_DATA)) fd.cost = fd.ender ? 30 : COST[m] != null ? COST[m] : fd.limb === 'foot' ? 22 : 19;
@@ -97,6 +112,15 @@ export const STAMINA = { max: 100, regen: 90, regenBlock: 36, delay: 0.3, run: 1
 // Combo decay, by the hit's place in the combo (1st, 2nd, ...; the last entry repeats). Hitstun
 // shrinks from the 3rd hit so a repeated loop drops and the defender can act; damage from the 4th,
 // and past COMBO_SOFTCAP damage in one combo the rest counts COMBO_OVERCAP as much.
+// Air recovery (sim.js airRecover): a button once `min` steps (120Hz) have passed since the last hit flips a
+// juggled or launched body upright; inside the first `perfect` steps of that it comes with a jab; a press before
+// `min` locks it out for `lock` steps (a press while locked keeps it locked). The juggle's next hit restarts the wait.
+export const AIR_TECH = { min: 36, perfect: 10, lock: 24 };
+// The universal parry (sim.js uParry): a fresh tap toward the opponent (down-forward for a low) within `win`
+// steps (120Hz) before a strike lands catches it: no damage, the striker reels `stun` frames. A tap starts a
+// `lock` of steps in which another tap doesn't count (and keeps it locked), so mashing forward never parries, and
+// a tap within `quiet` steps of a button press doesn't count either, so mashing buttons never parries.
+export const PARRY = { win: 12, lock: 40, stun: 16, quiet: 24 };
 export const COMBO_STUN = [1, 1, 0.85, 0.65, 0.45, 0.3];
 export const COMBO_DMG = [1, 1, 1, 0.8, 0.65, 0.5];
 export const COMBO_SOFTCAP = 30, COMBO_OVERCAP = 0.25;

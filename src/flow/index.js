@@ -546,7 +546,8 @@ export function createFlow(ctx) {
       root.append(el('h1', 'fl-h2', 'CONTROLS'));
       const row = el('div', 'fl-row fl-ctlrow');
       const right = el('div', 'fl-ctlcol');
-      right.append(controlsTable(MENUS, 'MENUS'), el('div', 'fl-small fl-ctlnote', 'ON A TOUCH SCREEN THE LEFT THUMB STEERS, THE BUTTONS STRIKE AND GUARD, AND MENUS ARE TAPPED. F1 SHOWS THE MOVE LIST IN A FIGHT.'));
+      right.append(controlsTable(MENUS, 'MENUS'), el('div', 'fl-small fl-ctlnote', 'ON A TOUCH SCREEN THE LEFT THUMB STEERS, THE BUTTONS STRIKE AND GUARD, AND MENUS ARE TAPPED. F1 SHOWS THE MOVE LIST IN A FIGHT.'),
+        el('div', 'fl-small fl-ctlnote', 'PARRY: TAP TOWARD HIM JUST BEFORE A HIT LANDS (DOWN-FORWARD FOR A LOW). KNOCKED DOWN: UP STANDS, LEFT OR RIGHT ROLLS, A BUTTON STRIKES FROM THE FLOOR. OVER HIM ON THE FLOOR: DOWN + KICK STOMPS. JUGGLED: A BUTTON AT THE RIGHT MOMENT LANDS YOU ON YOUR FEET.'));
       row.append(controlsTable(FIGHT, 'FIGHT'), right);
       root.appendChild(row);
       const items = btnRow(root, [button('MAIN MENU', () => go('modeSelect'), 'fl-pink'), button('BACK', () => go('attract'), 'fl-violet')]);
