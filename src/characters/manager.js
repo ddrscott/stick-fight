@@ -55,7 +55,7 @@ const downsizing = { blend: 50, limb: 'lFoot', shift: 30, keys: [
 ] };
 
 // a necktie: the knot at the collar, the blade down the front of the shirt, in the accent neon with a dark
-// edge so it reads on the red body; it swings a little with the torso
+// edge so it reads on the red body. It's his prop (below), so the life layer swings the blade's tip (o.sway)
 function tie(ctx, J, o) {
   const n = J.neck, c = J.chest, s = o.scale;
   let dx = c.x - n.x, dy = c.y - n.y; const L0 = Math.hypot(dx, dy) || 1; dx /= L0; dy /= L0;
@@ -63,7 +63,8 @@ function tie(ctx, J, o) {
   const off = 3.6 * s;
   const kx = n.x + dx * 4 * s + fx * off, ky = n.y + dy * 4 * s + fy * off;
   const len = L0 * 1.05;
-  const tx = kx + dx * len + fx * 2.5 * s, ty = ky + dy * len + fy * 2.5 * s;
+  const sw = o.sway || { x: 0, y: 0 };
+  const tx = kx + dx * len + fx * 2.5 * s + sw.x, ty = ky + dy * len + fy * 2.5 * s + sw.y;
   const w = 3.2 * s;
   const path = () => {
     ctx.beginPath();
@@ -94,7 +95,9 @@ export default {
   altColor: '#ffd84f',
   accent: '#ffd84f',
   stats: { health: 104, walk: 0.88, backWalk: 0.88, run: 0.9, jump: 0.9, dash: 0.92, weight: 1.15, stamina: 1, regen: 0.95, damage: 1.04 },
-  body: { scale: 1.06, headR: 14.5, upperArm: 23, lowerArm: 21.5, upperLeg: 29.5, lowerLeg: 29, lowerTorso: 17.5, upperTorso: 19.5, limbW: 11.5, limbTip: 9, torsoW: 17.5, hipW: 12.5, lean: 3, stance: 2, accessory: tie },
+  body: { scale: 1.06, headR: 14.5, upperArm: 23, lowerArm: 21.5, upperLeg: 29.5, lowerLeg: 29, lowerTorso: 17.5, upperTorso: 19.5, limbW: 11.5, limbTip: 9, torsoW: 17.5, hipW: 12.5, lean: 3, stance: 2 },
+  // drawn over the chest; its tip swings on the life layer's spring (src/fighter/life.js)
+  prop: { draw: tie, at: 0.1, len: 21, hz: 1.8, damping: 0.25 },
   moves: {
     performanceReview: { rig: performanceReview, frame: { limb: 'hand', damage: 10, kb: { x: 520, y: 300 }, hitstun: 0, blockstun: 14, hitstop: 10, knockdown: true, ender: true, height: 'mid',
       hits: 4, rush: PR_RUSH, travel: { vx: 300, at: 40, ms: 150 }, cost: 26, reach: 80, flashR: 42, callout: 'PERFORMANCE REVIEW' } },

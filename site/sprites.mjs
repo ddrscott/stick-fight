@@ -21,6 +21,7 @@ function makeRig(c) {
   rig.pants = c.id === TEMP_ID ? null : c.pants || null;
   rig.setBody(c.body, { accent: c.accent });
   rig.speedLines = false;
+  rig.charDef = c;   // its prop (a lanyard, a tie) hangs at rest: the life layer is the game's only
   return rig;
 }
 

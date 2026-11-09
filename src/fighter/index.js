@@ -1635,6 +1635,10 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     ctx.fill();
     // a character's accessory (a cap, a hard hat, a headset): a few strokes on the head, lit like the body
     if (accessory) { ctx.save(); try { accessory(ctx, J, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s, pose: f.pose }); } catch (e) { /* a bad accessory never breaks the frame */ } ctx.restore(); }
+    // a character's prop (src/characters/: `prop`, a lanyard, a tie): drawn over the chest, its free end shifted by
+    // f.sway, which only the life layer sets (src/fighter/life.js, draw-only; null hangs it at rest)
+    const prop = f.charDef && f.charDef.prop;
+    if (prop && prop.draw) { ctx.save(); try { prop.draw(ctx, J, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s, pose: f.pose, sway: f.sway || { x: 0, y: 0 }, at: prop.at || 0.15, len: (prop.len || 22) * s }); } catch (e) { /* a bad prop never breaks the frame */ } ctx.restore(); }
     if (pants) ctx.fillStyle = pants;
     limb(ctx, J.hip, J.rKnee, J.rFoot, w, tip);
     if (pants) ctx.fillStyle = f.color;

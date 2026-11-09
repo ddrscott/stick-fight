@@ -20,6 +20,7 @@ function makeRig(c, color = c.color, pants = c.pants || null) {
   rig.pants = c.id === TEMP_ID ? null : pants;
   rig.setBody(c.body, { accent: c.accent });
   rig.speedLines = false;
+  rig.charDef = c;   // its prop (a lanyard, a tie) hangs at rest: the life layer is the game's only
   return rig;
 }
 function safePlay(rig, name, opt) { try { rig.play(name, opt); return true; } catch { return false; } }

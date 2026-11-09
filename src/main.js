@@ -2,6 +2,7 @@
 // events to effects and camera, draws the HUD, and exposes window.__gauntlet.
 import { camera } from './camera.js';
 import { createFighter, MOVES, MOVE_DATA } from './fighter/index.js';
+import { createLife } from './fighter/life.js';   // the life layer: eyeline, springs and props, fatigue (drawn only; ?life=0 turns it off)
 import { createFX } from './fx/index.js';
 import { createStatusFX } from './fx/status.js';   // state read off the bodies: stun halo, guard shimmer, dizzy stars, breath
 import { createArena, drawJoints } from './arena/index.js';
@@ -75,6 +76,9 @@ let shakeRng = mulberry32(7);
 const trailPrev = [null, null];
 const blockSparks = [];                // hard glyphs at a blocked contact, drawn on the emissive layer
 let debug = false, paused = false, driven = false, sceneName = 'play', help = false;
+// The life layer (src/fighter/life.js): a puppeteer's touches on the drawn pose, never the sim's
+const life = createLife(); life.setFrameData(FRAME_DATA);
+let lifeStep = -1;
 let toast = null;   // TECHNIQUE FOUND 3/8, for a couple of seconds after a happy accident
 let attract = false;                   // the attract mode's demo bout is on (see ---- attract mode)
 let flow = null;                       // the arcade flow (see ---- arcade flow); null until it's made, off for ?scene= URLs
@@ -133,7 +137,7 @@ function onEvent(ev) {
       fx.dust({ x: ev.x, y: ev.y, dir: -ev.dir });
       break;
     case 'round':
-      poseState.clear();   // spawns face each other: no turnaround out of the last round's facing
+      poseState.clear(); life.reset();   // spawns face each other: no turnaround out of the last round's facing
       if (look.floor) startOnFloor(look.floor);   // an arcade stage fought downstairs: every round starts there
       arena.liveColors = [sim.units[0].color || P1_COLOR, sim.units[1].color || P2_COLOR];
       syncArenaToFx();
@@ -782,7 +786,7 @@ function setScene(name, opts) {
   shakeRng = mulberry32(7);
   shake.trauma = 0; shake.kickX = shake.kickY = 0; shake.zoomPunch = 0;
   lights.length = 0; blockSparks.length = 0; paused = false; statusFX.reset();
-  ghosts.length = 0; poseState.clear();   // the draw smoothing starts fresh (no turnaround out of the last scene's facing)
+  ghosts.length = 0; poseState.clear(); life.reset();   // the draw smoothing starts fresh (no turnaround out of the last scene's facing)
   camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camera.shakeX = camera.shakeY = 0;
   // botches on or off (the pause menu's switch, ?botch=0); online, the host's setting from the start message
   sim.botchOn = name === 'online' && opts && opts.lockstep ? opts.botch !== false : botchEnabled();
@@ -926,6 +930,7 @@ function drawBlockSpark(s, ctx) {
 let farDrawnW = 0, bodiesDrawn = true;
 const drawnOff = new Map(), NO_OFF = { x: 0, y: 0 };   // this frame's draw-smoothing offsets, for the status effects
 const drawOffsetNow = (u) => drawnOff.get(u) || NO_OFF;
+
 function render() {
   syncMirror();   // the guest's view flips on when his match starts and off when it ends, however it ends
   const ctxs = {};
@@ -951,10 +956,13 @@ function render() {
   // the pile goes on the FX bodies layer (lit like the room, so corpses take the scene's color),
   // under the live fighters; older FX without that layer get it on the figures layer
   if (!arena.bodiesInBackground && arena.drawBodies && !(fx.skip && fx.skip.bodies)) arena.drawBodies(ctxs.bodies || ctxs.figures);
+  // the life layer runs on real time, and not at all while the sim stands still (paused, a menu over the fight)
+  const lifeDt = sim.stepCount !== lifeStep ? Math.min(0.05, lastFrameMs / 1000) : 0; lifeStep = sim.stepCount;
   const order = [...sim.units].sort((p, q) => (p.state === 'attack') - (q.state === 'attack') || q.id - p.id);
   for (const u of order) {
     if (u.hidden) continue;
-    const { off, joints } = frameDraw(u);
+    const { off, joints: smoothJ } = frameDraw(u);
+    const joints = life.apply(u, smoothJ, sim, lifeDt);   // the life layer on top, drawn only
     const realJ = u.rig.joints; u.rig.joints = joints;   // the turnaround and snap fade, drawn only (put back below)
     ctxs.figures.save(); ctxs.figures.translate(off.x, off.y);
     u.rig.draw(ctxs.figures);
@@ -963,7 +971,7 @@ function render() {
     // a knocked-down body reads as down: 30% darker while it is on the floor
     else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);
     ctxs.figures.restore();
-    u.rig.joints = realJ;
+    u.rig.joints = realJ; u.rig.sway = null;
   }
   drawGhosts(ctxs.figures, ctxs.emissive);
   // ragdolls: KO'd horde goons still in the air after their unit respawned
@@ -1241,7 +1249,7 @@ window.__gauntlet = {
 window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
   // measurement hooks: a frame stepped without drawing (the draw smoothing still runs), and where a body is drawn
   stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); },
-  drawn: (u) => drawnPoints(u), poseState };
+  drawn: (u) => drawnPoints(u), poseState, life };
 // no load race for captures: fonts first, then one real rendered frame, then ready
 // the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
 // loads on its own); offline, the system fallbacks are used after a short wait
