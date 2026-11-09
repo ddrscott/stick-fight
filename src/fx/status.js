@@ -5,7 +5,8 @@
 //
 //   hitstun      a red halo and a red light on the chest, fading as the stun drains; thin and faint
 //                after a light hit, full after a heavy one or a counter (hitWeight)
-//   guard        a cyan shimmer arc in front of the guard (brighter in blockstun)
+//   guard        nothing while a guard is just held; a blocked strike puts a brief thin cyan glint on
+//                the guard side of the contact, sized by the blocked strike (blockWeight)
 //   faint        three stars circling over the head and a wobbling violet halo ring
 //   armor        an amber halo while Security's shoulder check still has its armor
 //   parry stance a white-cyan shield ring in front of Helpdesk's stance; a burst when it catches
@@ -33,6 +34,22 @@ export function hitWeight(ev) {
   return (ev.strength ?? 0) >= 0.6 ? 1 : 0;
 }
 
+/** How heavy a blocked strike looks, on the same 0..2 scale as hitWeight: a blocked event carries no
+ * knockdown or KO, so the frame data decides. Enders, launchers, splats and 14+ damage are heavy; 9+
+ * damage or a knockdown (the sweep) medium; jabs and light kicks light. Reads the event and the frame data. */
+export function blockWeight(ev) {
+  const fd = (ev && FRAME_DATA[ev.move]) || {};
+  if (fd.ender || fd.juggle || fd.splat || fd.groundBounce || (fd.damage || 0) >= 14) return 2;
+  return (fd.damage || 0) >= 9 || fd.knockdown ? 1 : 0;
+}
+
+// the guard glint by block weight: seconds, arc radius, arc span (rad), line width, alpha, light [radius, intensity]
+const GUARD_GLINT = [
+  { t: 0.08, r: 14, span: 1.0, width: 1.5, alpha: 0.6, light: [40, 0.14] },   // light: a jab
+  { t: 0.11, r: 19, span: 1.3, width: 2, alpha: 0.75, light: [55, 0.22] },    // medium: a cross, a sweep
+  { t: 0.15, r: 26, span: 1.7, width: 2.5, alpha: 0.9, light: [75, 0.35] },   // heavy: an ender
+];
+
 // the hitstun halo by hit weight: line width, pulse alpha, the alpha floor, the outer pass, the chest light
 const HITSTUN_HALO = [
   { width: 8, alpha: 0.2, floor: 0.04, outer: false, light: [80, 0.18] },    // light: a jab
@@ -58,6 +75,10 @@ export function createStatusFX() {
     } else if (ev.type === 'block' && ev.parry && ev.defender) {
       st(ev.defender).parryHit = 0.3;
       bits.push({ kind: 'ring', x: ev.x, y: ev.y, t: 0.3, max: 0.3, r0: 10, r1: 70, color: WHITE, flat: 1 });
+    } else if (ev.type === 'block' && ev.defender && ev.move !== 'throw') {
+      // a blocked strike: a quick thin glint on the guard side of the contact, sized by the strike
+      const d = st(ev.defender), w = blockWeight(ev);
+      d.guard = { t: GUARD_GLINT[w].t, w, x: ev.x, y: ev.y, dir: ev.dir || 1 };
     } else if (ev.type === 'accident') {
       // over the head, toward the opponent: the body itself would hide it (owner requirement 5)
       const h = ev.unit && ev.unit.rig && ev.unit.rig.joints && ev.unit.rig.joints.head;
@@ -144,18 +165,22 @@ export function createStatusFX() {
         for (const f of [j.lFoot, j.rFoot]) { ctx.beginPath(); ctx.ellipse(f.x, u.y + 2, 14, 4, 0, 0, Math.PI * 2); ctx.stroke(); }
         ctx.restore();
       }
-      // guard up: a shimmer arc in front of the guard, over the head and chest (crouched: the shins)
-      const guarding = u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld);
-      if (guarding && !(u.faint > 0)) {
-        const low = !!u.crouch, hot = u.state === 'blockstun';
-        const gx = u.x + u.facing * 40, top = u.y - (low ? 74 : 132), bot = u.y - (low ? 6 : 50);
-        ctx.save();
-        ctx.strokeStyle = CYAN; ctx.lineWidth = hot ? 3.5 : 2.5; ctx.lineCap = 'butt';
-        ctx.setLineDash([7, 6]); ctx.lineDashOffset = -clock * 60;
-        ctx.globalAlpha = hot ? 0.9 : 0.5 + 0.15 * Math.sin(clock * 9);
-        ctx.beginPath(); ctx.ellipse(u.x + u.facing * 12, (top + bot) / 2, 36, (bot - top) / 2 + 6, 0, -Math.PI / 2, Math.PI / 2, u.facing < 0); ctx.stroke();
-        ctx.restore();
-        lights.push({ x: gx, y: (top + bot) / 2, radius: 90, color: [0.2, 0.9, 1], intensity: hot ? 0.55 : 0.22 });
+      // a blocked strike: a thin glint arc bracketing the contact on the guard side, gone in a few
+      // frames. A held guard with nothing coming draws nothing here (main.js's guard mark reads it).
+      if (s.guard && s.guard.t > 0) {
+        const g = s.guard, G = GUARD_GLINT[g.w];
+        g.t -= dt;
+        if (!(u.faint > 0) && g.t > 0) {
+          const k = g.t / G.t, grow = 0.8 + 0.2 * (1 - k);
+          const cx = g.x - off.x + g.dir * G.r * 0.7, a0 = g.dir > 0 ? Math.PI : 0;   // the world contact (undo the body offset)
+          ctx.save();
+          ctx.strokeStyle = WHITE; ctx.lineWidth = G.width; ctx.lineCap = 'round'; ctx.globalAlpha = G.alpha * k;
+          ctx.beginPath(); ctx.arc(cx, g.y - off.y, G.r * grow, a0 - G.span / 2, a0 + G.span / 2); ctx.stroke();
+          ctx.strokeStyle = CYAN; ctx.lineWidth = G.width * 2.2; ctx.globalAlpha = G.alpha * k * 0.35;
+          ctx.stroke();
+          ctx.restore();
+          lights.push({ x: g.x, y: g.y, radius: G.light[0], color: [0.4, 0.85, 1], intensity: G.light[1] * k });
+        }
       }
       // armor: the shoulder check still has its armor (it absorbs the next hit)
       if (fd && fd.armor && u.armorLeft > 0 && u.phase !== 'recovery') {

@@ -25,6 +25,8 @@
 //       where the wall is relative to the contact: -1 left, +1 right. strength 0.2..2 (1 = a splat).
 //   fx.counterFlash({ x, y, scale })  counter hit (scale 1 heavy, about 0.5 on a jab): a cyan and magenta double ring with eight short spokes and a cyan
 //       flash, distinct from the amber hit ring. Call it alongside fx.hit for the same contact.
+//   fx.guardSpark({ x, y, dir, weight })  a blocked strike: a tiny cool-white core and 4 to 10 short, slow sparks
+//       kicked toward dir (the attacker); weight 0..2 (blockWeight in status.js). No ring, no shake of its own.
 //   fx.shake    { x, y } computed every update() whether or not options.shake is on. With
 //       options.shake = true the compositor applies it and copies it into camera.shakeX/Y.
 //       With options.shake = false it applies nothing and writes nothing: the caller reads
@@ -364,6 +366,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       const k = Math.max(0.3, Math.min(1, ev.scale ?? 1));
       flash.a = 0.25 + 0.2 * k; flash.x = ev.x; flash.y = ev.y; flash.r = 90 * k; flash.col = [0.45, 0.95, 1.0];
     },
+    guardSpark(ev) { if (fx.options.particles) particles.guardSpark(ev); },
     dust(ev) { if (fx.options.particles) particles.dust(ev); },
     trail(prev, now, color, alpha) { if (fx.options.particles) particles.trail(prev, now, color, alpha); },
     addTrauma(t) { trauma = Math.min(1, trauma + t); },
