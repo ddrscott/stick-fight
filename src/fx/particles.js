@@ -43,7 +43,7 @@ export function createParticles() {
     setMotes(n) { moteTarget = n; },
     push(p) { if (parts.length < MAX_PARTICLES) parts.push(p); },
 
-    hit({ x, y, strength = 1, dir = 1, color = null, flashR = 36, debris, maxDebris = 60 }) {
+    hit({ x, y, strength = 1, dir = 1, color = null, flashR = 36, debris, maxDebris = 60, ring = true }) {
       const s = Math.max(0.15, Math.min(2, strength));
       const style = debris || 'none'; // chunks only when a caller asks for them: a body hit sheds nothing
       const ss = Math.max(0, Math.min(1, (s - 0.55) / 0.45)); const smokeK = ss * ss * (3 - 2 * ss); // 0 below a heavy hit, 1 at a KO
@@ -60,18 +60,21 @@ export function createParticles() {
       // The smoke disc scales with strength: subtle on a jab, a real dark disc on a heavy hit.
       // Capped at 30%: the backdrop never drops below ~70% of its rest value, so a KO is not a black hole.
       if (smokeK > 0.02) sys.push({ kind: 'smoke', x, y, vx: 0, vy: 0, life: 0.4, age: 0, size: 30 * s, shape: SHAPE.DISC + BEHIND, color: [0.06, 0.03, 0.1], alpha: 0.3 * smokeK, emissive: false, grow: 70 * s });
-      // One thin flat ring, invisible on the jolt frame, expanding to ~300px then gone.
-      sys.push({ kind: 'shock', x, y, vx: 0, vy: 0, life: 0.22, age: 0, delay: 0.02, size: 40 * s, shape: SHAPE.RING + BEHIND, ringPx: 5, color: [1, 0.78, 0.38], alpha: 0.6, emissive: true, grow: 170 * s });
-      // Sparks: 20 to 40 short hot streaks per hit (white, yellow, orange) that stay within ~250px of the
-      // contact point, like the Stick Fight shots. A burst of overlapping hits never fills the screen:
-      // at most MAX_SPARKS are alive, the oldest go first.
-      const n = Math.round(20 + 20 * Math.min(1, (s - 0.15) / 1.0));
+      // One thin flat ring, invisible on the jolt frame, expanding to a radius of ~210px on a KO then gone.
+      // Heavy hits only: a caller passes ring: false for light and medium contact (a jab just sparks).
+      if (ring) sys.push({ kind: 'shock', x, y, vx: 0, vy: 0, life: 0.22, age: 0, delay: 0.02, size: 40 * s, shape: SHAPE.RING + BEHIND, ringPx: 5, color: [1, 0.78, 0.38], alpha: 0.6, emissive: true, grow: 170 * s });
+      // Sparks: short hot streaks (white, yellow, orange), about 11 on a jab, 17 on a cross and 40 on a KO.
+      // A light hit's sparks are slower too, so they stay close to the contact; none goes past ~250px.
+      // A burst of overlapping hits never fills the screen: at most MAX_SPARKS are alive, the oldest go first.
+      const sk = Math.max(0, Math.min(1, (s - 0.15) / 0.85));
+      const n = Math.round(6 + 34 * sk);
+      const reach = 0.55 + 0.45 * sk;
       const live = parts.filter(p => p.kind === 'spark').sort((a, b) => a.age - b.age);
       for (let i = live.length + n - MAX_SPARKS; i > 0; i--) { const old = live.pop(); if (old) old.life = old.age; }
       for (let i = 0; i < n; i++) {
         const back = rnd() < 0.3;
         const a = base + (rnd() - 0.5) * (back ? 3.0 : 2.0) + (back ? Math.PI : 0);
-        const sp = (160 + rnd() * 340) * (0.75 + 0.25 * Math.min(1, s));
+        const sp = (160 + rnd() * 340) * reach;
         const cc = rnd();
         const col = cc < 0.45 ? [1, 1, 0.92] : cc < 0.75 ? [1, 0.85, 0.35] : [1, 0.5, 0.12];
         sys.push({ kind: 'spark', x, y, ox: x, oy: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120 * rnd(), age: 0,
@@ -101,7 +104,7 @@ export function createParticles() {
         }
       }
       // Smoke/dust puff around the impact, drifting with the hit.
-      const np = Math.round(5 + 5 * s);
+      const np = Math.round(1 + 9 * s);
       for (let i = 0; i < np; i++) {
         const a = base + (rnd() - 0.5) * 2.8;
         const sp = 40 + rnd() * 140 * s;
@@ -133,13 +136,15 @@ export function createParticles() {
     },
 
     // Counter hit: a cyan double ring (two thick rings a beat apart) and eight short spokes, so it
-    // reads apart from the normal amber hit ring. Small (~120px) and behind the bodies.
-    counterFlash({ x, y }) {
-      sys.push({ kind: 'shock', x, y, vx: 0, vy: 0, life: 0.2, age: 0, delay: 0, size: 18, shape: SHAPE.RING + BEHIND, ringPx: 7, color: [0.45, 0.95, 1.0], alpha: 0.9, emissive: true, grow: 100 });
-      sys.push({ kind: 'shock', x, y, vx: 0, vy: 0, life: 0.24, age: 0, delay: 0.06, size: 14, shape: SHAPE.RING + BEHIND, ringPx: 4, color: [1.0, 0.45, 0.9], alpha: 0.8, emissive: true, grow: 130 });
+    // reads apart from the normal amber hit ring. Behind the bodies. scale 1 (a heavy counter) reaches a
+    // radius of ~140px; a jab counter passes about 0.5, a ring about the size of a head and shoulders.
+    counterFlash({ x, y, scale = 1 }) {
+      const k = Math.max(0.3, Math.min(1, scale));
+      sys.push({ kind: 'shock', x, y, vx: 0, vy: 0, life: 0.2, age: 0, delay: 0, size: 18 * k, shape: SHAPE.RING + BEHIND, ringPx: 3 + 4 * k, color: [0.45, 0.95, 1.0], alpha: 0.9, emissive: true, grow: 100 * k });
+      sys.push({ kind: 'shock', x, y, vx: 0, vy: 0, life: 0.24, age: 0, delay: 0.06, size: 14 * k, shape: SHAPE.RING + BEHIND, ringPx: 2 + 2 * k, color: [1.0, 0.45, 0.9], alpha: 0.8, emissive: true, grow: 130 * k });
       for (let i = 0; i < 8; i++) {
         const a = i * Math.PI / 4 + Math.PI / 8;
-        sys.push({ kind: 'spoke', x, y, ox: x, oy: y, vx: Math.cos(a) * 420, vy: Math.sin(a) * 420, life: 0.16, age: 0, size: 1.6, len: 14, shape: SHAPE.STREAK + BEHIND, color: [0.75, 1.0, 1.0], alpha: 1, emissive: true, drag: 6 });
+        sys.push({ kind: 'spoke', x, y, ox: x, oy: y, vx: Math.cos(a) * 420 * k, vy: Math.sin(a) * 420 * k, life: 0.16, age: 0, size: 1.6, len: 14 * k, shape: SHAPE.STREAK + BEHIND, color: [0.75, 1.0, 1.0], alpha: 1, emissive: true, drag: 6 });
       }
     },
 
