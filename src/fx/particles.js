@@ -113,6 +113,20 @@ export function createParticles() {
       }
     },
 
+    // A blocked strike: a tiny cool-white core and a few short, slow sparks kicked back toward the
+    // attacker (dir), gone in a fifth of a second. weight 0..2 (blockWeight): 4 sparks on a jab, 10 on an ender.
+    guardSpark({ x, y, dir = -1, weight = 0 }) {
+      const w = Math.max(0, Math.min(2, weight | 0));
+      sys.push({ kind: 'flash', x, y, vx: 0, vy: 0, life: 0.07 + 0.02 * w, age: 0, size: 4 + 2 * w, shape: SHAPE.SOFT, color: [0.85, 0.95, 1], alpha: 0.6, emissive: true, grow: 3 + 2 * w });
+      const n = [4, 6, 10][w], reach = [0.35, 0.45, 0.6][w];
+      for (let i = 0; i < n; i++) {
+        const a = (dir < 0 ? Math.PI : 0) + (rnd() - 0.5) * 1.8;
+        const sp = (160 + rnd() * 280) * reach;
+        sys.push({ kind: 'spark', x, y, ox: x, oy: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60 * rnd(), age: 0,
+          size: 0.9 + rnd() * 0.8, shape: SHAPE.STREAK + BEHIND, color: rnd() < 0.6 ? [0.9, 0.97, 1] : [0.55, 0.9, 1], alpha: 1, emissive: true, gravity: 900, drag: 2.5, life: 0.12 + rnd() * 0.12 });
+      }
+    },
+
     // Wall splat / wall bounce: a vertical shock line along the wall at the contact point (a hot core
     // and a wider soft glow that stretch up and down and fade), grit and dust rolling off the wall
     // away from it. side: -1 = a wall on the left of the contact, +1 = on the right. Behind the bodies.

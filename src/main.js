@@ -4,7 +4,7 @@ import { camera } from './camera.js';
 import { createFighter, MOVES, MOVE_DATA, RIG_KIT } from './fighter/index.js';
 import { createLife } from './fighter/life.js';   // the life layer: eyeline, springs and props, fatigue (drawn only; ?life=0 turns it off)
 import { createFX } from './fx/index.js';
-import { createStatusFX, hitWeight } from './fx/status.js';   // state read off the bodies: stun halo, guard shimmer, dizzy stars, breath
+import { createStatusFX, hitWeight, blockWeight } from './fx/status.js';   // state read off the bodies: stun halo, guard glint, dizzy stars, breath
 import { createArena, drawJoints } from './arena/index.js';
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
@@ -76,6 +76,12 @@ let lastHitWeight = 2;   // hitWeight of the last hit (a counter a step heavier)
 let shakeRng = mulberry32(7);
 const trailPrev = [null, null];
 const blockSparks = [];                // hard glyphs at a blocked contact, drawn on the emissive layer
+// the block's glue effects by blockWeight: the chevron's size, life and spark lines, the light, the shake
+const BLOCK_FX = [
+  { scale: 0.55, ttl: 0.07, lines: 2, light: [45, 0.22], shake: 0.015 },   // light: a jab, a light kick
+  { scale: 0.75, ttl: 0.09, lines: 3, light: [65, 0.32], shake: 0.03 },    // medium: a cross, a sweep
+  { scale: 1, ttl: 0.1, lines: 3, light: [90, 0.5], shake: 0.06 },          // heavy: an ender (and a parry, as before)
+];
 let debug = false, paused = false, driven = false, sceneName = 'play', help = false;
 // The life layer (src/fighter/life.js): a puppeteer's touches on the drawn pose, never the sim's
 const life = createLife(); life.setFrameData(FRAME_DATA);
@@ -119,9 +125,16 @@ function onEvent(ev) {
       }
       break;
     case 'block':
-      blockSparks.push({ x: ev.x, y: ev.y, dir: ev.dir, ttl: 0.1, max: 0.1 });
-      light(ev.x, ev.y, 90, [0.6, 0.75, 1.0], 0.5, 0.1);
-      shake.trauma = Math.min(1, shake.trauma + 0.06);
+      // An ordinary block is common, so it reads small and quick, scaled by the blocked strike
+      // (blockWeight): a jab gets a small chevron, a few cool sparks and a faint light; an ender a bit
+      // more. A parry (its own PARRY flash in status.js) and a broken throw keep the full glyph.
+      {
+        const w = ev.parry || ev.move === 'throw' ? 2 : blockWeight(ev), B = BLOCK_FX[w];
+        blockSparks.push({ x: ev.x, y: ev.y, dir: ev.dir, ttl: B.ttl, max: B.ttl, scale: B.scale, lines: B.lines });
+        if (!ev.parry && ev.move !== 'throw' && typeof fx.guardSpark === 'function') fx.guardSpark({ x: ev.x, y: ev.y, dir: -ev.dir, weight: w });
+        light(ev.x, ev.y, B.light[0], [0.6, 0.75, 1.0], B.light[1], B.ttl);
+        shake.trauma = Math.min(1, shake.trauma + B.shake);
+      }
       break;
     case 'thud':
       fx.dust({ x: ev.x - 10, y: ev.y, dir: -1 }); fx.dust({ x: ev.x + 10, y: ev.y, dir: 1 });
@@ -513,6 +526,10 @@ const PHASES = {
     { name: 'low kick at a standing back-holder: hits', at: () => [560, 650], p2: { back: true }, p1: [[4, D('lk')]], dur: 120 },
     { name: 'low kick at down-back: blocked', at: () => [560, 650], p2: { back: true, down: true }, p1: [[4, D('lk')]], dur: 120 },
     { name: 'throw at a back-holder: the throw wins', at: () => [560, 640], p2: { back: true }, p1: [[4, { lp: true, lk: true }]], dur: 150 },
+    // the block effects by weight (README, Effects): a blocked jab, a sweep into down-back, a blocked ender
+    { name: 'jab (high) at a back-holder: blocked, a small guard spark', at: () => [560, 650], p2: { back: true }, p1: [[4, B('lp')]], dur: 100 },
+    { name: 'sweep (low) at down-back: blocked low', at: () => [560, 650], p2: { back: true, down: true }, p1: [[4, D('rk')]], dur: 120 },
+    { name: 'FLASH ROUNDHOUSE 1,1,2,4 into a guard: the ender blocked', p2: { back: true }, p1: [[10, B('lp')], [26, B('lp')], [42, B('rp')], [62, B('rk')]], dur: 200 },
   ],
   throws: [
     { name: 'throw lands', at: () => [560, 632], p1: [[10, { lp: true, lk: true }]], dur: 150 },
@@ -1048,13 +1065,14 @@ function drawGuard(u, ctx) {
 // Block read: a hard chevron at the forearms pointing back at the attacker plus three
 // short static spark lines. No burst, no ring: it should not look like a hit.
 function drawBlockSpark(s, ctx) {
-  const k = s.ttl / s.max, d = s.dir;
+  const k = s.ttl / s.max, d = s.dir, z = s.scale || 1;
   ctx.save();
+  ctx.translate(s.x, s.y); ctx.scale(z, z); ctx.translate(-s.x, -s.y);   // sized by the blocked strike (BLOCK_FX)
   ctx.globalAlpha = Math.min(1, k * 1.6);
   ctx.strokeStyle = '#e6f2ff'; ctx.lineWidth = 3.5; ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
   ctx.beginPath(); ctx.moveTo(s.x - d * 12, s.y - 16); ctx.lineTo(s.x + d * 2, s.y); ctx.lineTo(s.x - d * 12, s.y + 16); ctx.stroke();
   ctx.lineWidth = 2;
-  for (const [ax, ay, len] of [[-0.9, -0.5, 16], [-1, 0.1, 20], [-0.8, 0.6, 14]]) {
+  for (const [ax, ay, len] of [[-0.9, -0.5, 16], [-1, 0.1, 20], [-0.8, 0.6, 14]].slice(0, s.lines || 3)) {
     ctx.beginPath(); ctx.moveTo(s.x - d * 14 + d * ax * 4, s.y + ay * 4); ctx.lineTo(s.x - d * 14 + d * ax * (4 + len), s.y + ay * (4 + len)); ctx.stroke();
   }
   ctx.restore();
