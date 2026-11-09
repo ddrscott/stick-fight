@@ -208,6 +208,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (u.state === 'hitstun') return { text: 'STUN', color: '#ff3d6e', bar: stunK, barColor: '#ff2b4a' };
     if (u.state === 'blockstun') return { text: 'GUARD', color: NEON.cyan, bar: stunK, barColor: NEON.cyan };
     if (u.state === 'block' || (u.state === 'crouch' && u.backHeld)) return { text: u.crouch ? 'LOW GUARD' : 'GUARD', color: NEON.cyan, dim: true };
+    // lying there: the bar is the second left before he stands up by himself
+    if (u.state === 'down' && u.downTimer > 0) return { text: u.botchKind === 'air' ? 'TANGLED' : 'DOWN', color: NEON.violet, bar: Math.min(1, u.downTimer / 120), barColor: NEON.violet, fill: true };
     if (u.state === 'knockdown' || u.state === 'splat' || u.state === 'down' || u.state === 'roll') return { text: u.botchKind === 'air' ? 'TANGLED' : 'DOWN', color: NEON.violet };
     if (u.state === 'getup') return { text: 'GET UP', color: NEON.violet, bar: Math.min(1, (u.rig && u.rig.current && u.rig.current.t) || 0), barColor: NEON.violet, fill: true };
     if (u.state === 'botch') return { text: 'BOTCH', color: '#ff6a3d' };

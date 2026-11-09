@@ -228,6 +228,7 @@ function timeline(phases, o = {}) {
       if (Math.abs(d) > 82) out.dx = Math.sign(d); else if (t % 24 === 0) Object.assign(out, clean(me, { lp: true }));
     }
     for (const [at, inp] of ph.p1) if (t >= at && t < at + 3) Object.assign(out, typeof inp === 'function' ? inp(me) : inp);
+    if (ph.p1f) { const r = ph.p1f(me, opp, t) || {}; Object.assign(out, r); if (r.back) out.dx = me.x > opp.rig.joints.hip.x ? 1 : -1; }   // a per-step script (the getup and ground scenes); back: away from his body
     if (++t > ph.dur) { if (o.only != null) { t = ph.dur; return EMPTY_INPUT; } k = (k + 1) % phases.length; sim.phaseName = ''; t = 0; }
     return out;
   };
@@ -256,7 +257,34 @@ const ACC_FROM = { scissorKick: B('lk'), supermanPunch: B('rk'), pivotBackfist: 
 // where each technique lands: the backfist and the helicopter on a guard that held the first strike
 const ACC_AT = { flyingTackle: [300, 430], flashKick: [580, 650], springUppercut: [580, 650], pivotBackfist: [570, 650] };
 const ACC_P2 = { pivotBackfist: (me, o) => (o.move === 'roundhouse' ? { back: true } : {}), helicopter: { back: true, down: true } };
+// getup-test: P1 sweeps P2 down, walks up to stand at his feet (as close as a standing body may), and P2
+// picks a getup option; `over(...)` adds what P1 does once he's there
+const hipOf = (u) => u.rig.joints.hip.x;
+const over = (then) => (me, o, t) => {
+  if (t >= 40 && t < 112 && o.state === 'down') return Math.abs(hipOf(o) - me.x) > 150 ? { dx: Math.sign(hipOf(o) - me.x) } : {};
+  return t >= 112 && then ? then(me, o, t) : {};
+};
+const isWakeOf = (u) => u.state === 'attack' && sim.FRAME_DATA[u.move] && sim.FRAME_DATA[u.move].wake;
+// punish a wake-up strike's stand-up: walk in, cross when it reaches
+const punishRise = (guard) => (me, o) => {
+  if (isWakeOf(o) && o.phase !== 'recovery') return guard;
+  if ((isWakeOf(o) && o.phase === 'recovery') || (o.state === 'idle' && me.state === 'idle' && o.stoodAt == null)) {
+    const d = Math.abs(o.x - me.x);
+    return d > sim.reachOf(me, 'cross') - 12 ? { dx: Math.sign(o.x - me.x) } : clean(me, { rp: true });
+  }
+  return me.state === 'blockstun' ? guard : {};
+};
+const wakeAt = (inp, at = 120) => (me, o, t) => (me.state === 'down' && t >= at && t < at + 3 ? (typeof inp === 'function' ? inp(me, o) : inp) : {});
 const PHASES = {
+  getup: [
+    { name: 'no input: he lies there, then stands up by himself after 1s', p1: [[10, D('rk')]], p1f: over(), dur: 300 },
+    { name: 'up: he stands in place at once', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ jump: true }), dur: 240 },
+    { name: 'a fresh left or right: he rolls away', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt((me, o) => ({ dx: -Math.sign(o.x - hipOf(me)) })), dur: 260 },
+    { name: 'WAKE KICK (1 or 3) into him standing at the feet: knockdown', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ lk: true }), dur: 260 },
+    { name: 'WAKE SWEEP (2 or 4) along the floor: knockdown', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ rk: true }), dur: 260 },
+    { name: 'WAKE KICK blocked standing: the rise is punished', p1: [[10, D('rk')]], p1f: over(punishRise({ back: true })), p2: wakeAt({ lk: true }), dur: 300 },
+    { name: 'WAKE SWEEP blocked down-back: the rise is punished', p1: [[10, D('rk')]], p1f: over(punishRise({ back: true, down: true })), p2: wakeAt({ rk: true }), dur: 300 },
+  ],
   mixup: [
     { name: 'high vs crouch (ducks)', p2: { down: true }, p1: [[20, B('lp')]], dur: 90 },
     { name: 'low vs standing guard (hits)', p2: { back: true }, at: () => [578, 650], p1: [[20, D('lk')]], dur: 100 },
@@ -549,6 +577,7 @@ const scenes = {
   'horde-ai'(o) { sim.setAI(0, 1.0); sim.setAI(1, 0.1); sim.resetMatch({ seed: seedOf(o, 5), skipIntro: true, horde: { goonHealth: 10, goonDifficulty: 0.05, heal: 45 } }); },
   // Two aggressive AIs on short health: each round ends in a few hits, so a full
   // best-of-3 and its body pile fit in a capture.
+  'getup-test'(o) { timeline(PHASES.getup, o); },
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
   'stamina-test'(o) { timeline(PHASES.stamina, o); },
   'string-ender-test'(o) { timeline(PHASES.strings, o); },

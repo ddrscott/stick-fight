@@ -75,6 +75,18 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // a button press by token ('1'..'4', 'd' prefix = down): strings go through the sim's table
   const press = (tok, extra) => ({ dx: 0, run: false, block: false, attack: null, jump: false, until: 2, press: tok, ...(extra || {}) });
   let pickedString = null;
+  // knocked down: when to get up and how (stand, roll, a wake-up strike, or lie there until the clock stands
+  // him up), picked once per knockdown; a strike coming at the body or a whiff over it can change the plan
+  let downFor = -1, downSeen = -1;
+  function wakePlan(me, opp) {
+    const hip = me.rig.joints.hip.x, away = -(Math.sign(opp.x - hip) || 1), near = Math.abs(opp.x - hip) < 175 && opp.grounded;
+    const k = rng(), wait = 10 + irnd(show ? 60 : 12 + Math.round(70 * difficulty));
+    if (k < 0.05 + 0.35 * (1 - difficulty) && !show) return [];   // lie there: the clock stands him up
+    const r = rng();
+    if (near && r < 0.18 + 0.27 * difficulty) return [move(0, wait), attack(chance(0.55) ? 'wakeKick' : 'wakeSweep')];
+    if (r < 0.72) return [move(0, wait), { ...move(0, (m) => m.state !== 'down'), jump: true }];   // up: stand in place
+    return [move(0, wait), { ...move(chance(0.65) ? away : -away, 3), roll: true }];
+  }
   // the string table of the character this CPU plays (src/characters/), the shared one for TEMP
   const strs = (me) => (me.char && me.char.strings) || undefined;
   // A character's specials (its definition's ai.specials): { move, min, max, chance, when, run, cooldown }.
@@ -514,11 +526,20 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (me.stamina > 26 && chance(show ? 0.2 : 0.55 + 0.6 * difficulty)) { queue = [attack(dist < reach('jab') + 45 ? 'jab' : 'cross')]; act = null; }
       else if (show && chance(0.6)) { queue = [blockFor(14)]; act = null; }   // respect his advantage
     }
-    // reflex: floored with him standing over me: roll away (once per knockdown)
-    // (an escape from the stomp, so only before a ground hit has landed)
-    if (me.state === 'down' && !me.otgHit && dist < 110 && me.rollId !== opp.attackId) {
-      me.rollId = opp.attackId;
-      if (chance(0.06 + 0.12 * difficulty)) { queue = [{ ...move(-toward, 3), roll: true }]; act = null; }
+    // knocked down: the getup plan, once per knockdown (sim.js 'down')
+    if (me.state === 'down' && me.touchStep !== downFor) { downFor = me.touchStep; queue = wakePlan(me, opp); act = null; }
+    // floored with him striking at the body, or open over it: rise through it with a wake-up strike (invulnerable
+    // until live) or roll away; once per strike of his
+    if (me.state === 'down' && opp.state === 'attack' && opp.attackId !== downSeen) {
+      const hip = me.rig.joints.hip.x, d = Math.abs(opp.x - hip);
+      const coming = opp.phase === 'startup' && d < 200, open = opp.phase === 'recovery' && d < 175;
+      if (coming || open) {
+        downSeen = opp.attackId;
+        if (chance(show ? 0.8 : 0.1 + 0.6 * difficulty)) {
+          queue = open || chance(0.6) ? [attack(chance(0.6) ? 'wakeKick' : 'wakeSweep')] : [{ ...move(-(Math.sign(opp.x - hip) || 1), 3), roll: true }];
+          act = null;
+        }
+      }
     }
     // reflex: in range and nobody has swung for a while: swing
     // (a plan in progress, like a jump-in or a step into kick range, is left alone)
@@ -537,7 +558,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (queue.length) { act = queue.shift(); if (act.onlyIf && !act.onlyIf(me, opp)) act = null; }
       // no re-deciding during my own attack (each new plan would overwrite the buffered press);
       // over a downed body it is allowed, for the meaty cancel out of the stomp
-      else if (step >= nextThink && (me.state !== 'attack' || DOWN_STATES.has(opp.state))) {
+      else if (step >= nextThink && me.state !== 'down' && (me.state !== 'attack' || DOWN_STATES.has(opp.state))) {
         queue = decide(me, opp, sim, dist, toward); act = queue.shift();
         // against a guard, think again fast so there is never a still beat
         const guarding = opp.state === 'block' || opp.state === 'blockstun';

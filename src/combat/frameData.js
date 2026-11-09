@@ -68,19 +68,27 @@ Object.assign(FRAME_DATA, {
   airRoundhouse: { limb: 'foot', damage: 13, kb: { x: 420, y: 240 }, hitstun: 0,  blockstun: 14, hitstop: 8, knockdown: true,  air: true, cancels: [], reach: 95, flashR: 34, anims: ['airRoundhouse', 'roundhouse'] },
   diveKick:      { limb: 'foot', damage: 11, kb: { x: 0, y: 0 },     hitstun: 36, blockstun: 12, hitstop: 7, knockdown: false, air: true, dive: true, cancels: [], reach: 90, flashR: 32, anims: ['diveKick', 'overhead', 'roundhouse'] },
 });
-FRAME_DATA.wallSlam = { ...FRAME_DATA.throw, damage: 14, kb: { x: 760, y: 160 }, splat: true, anims: ['wallSlam', 'cross'], anim: undefined };
+// Wake-up strikes, from the floor (shared by every character; sim.js 'down'). `wake`: started only from
+// lying down, invulnerable until the strike is live, lying until the clip's 'stand' key (a hit there puts
+// him back down), and a press in the middle of one is lost rather than botched (there's no body to botch).
+// Both knock down on hit and are badly minus on block: the stand-up is the punish.
+Object.assign(FRAME_DATA, {
+  wakeKick:  { limb: 'foot', damage: 8, kb: { x: 320, y: 220 }, hitstun: 0, blockstun: 10, hitstop: 7, knockdown: true, wake: true, cancels: [], reach: 100, flashR: 28 },
+  wakeSweep: { limb: 'foot', damage: 7, kb: { x: 220, y: 170 }, hitstun: 0, blockstun: 6,  hitstop: 6, knockdown: true, wake: true, cancels: [], reach: 110, flashR: 26 },
+});
+FRAME_DATA.wallSlam ={ ...FRAME_DATA.throw, damage: 14, kb: { x: 760, y: 160 }, splat: true, anims: ['wallSlam', 'cross'], anim: undefined };
 FRAME_DATA.uppercut.kb = { x: 90, y: 420 };   // a launcher: the body flies at jab height on the rig's point simulation
 
 // heights (Tekken): high is ducked by a croucher, low beats standing guard, mid beats crouch
 const HEIGHT = { jab: 'high', cross: 'high', roundhouse: 'high', flashRoundhouse: 'high', spinKick: 'high', spinHeel: 'high', crescent: 'mid',
-  sweep: 'low', lowKick: 'low', lowJab: 'low', throw: 'throw', wallSlam: 'throw' };
+  sweep: 'low', lowKick: 'low', lowJab: 'low', throw: 'throw', wallSlam: 'throw', wakeSweep: 'low' };
 for (const [m, fd] of Object.entries(FRAME_DATA)) { fd.height = HEIGHT[m] || 'mid'; fd.low = fd.height === 'low'; }
 for (const m of ['sweep', 'lowKick']) FRAME_DATA[m].tc = true;
 
 // Stamina costs. A fighter has 100 and faints at 0 (sim.js), so the costs are the attack budget:
 // plain jabs faint you on the 6th press, crosses and kicks on the 5th, and a full four-hit string
 // with its ender (1,1,2,4 is 85, 1,2,3,4 is 90, Sky Spike 92) fits from full but leaves you low.
-const COST = { jab: 17, lowJab: 15, cross: 21, bodyBlow: 19, lungeCross: 22, lowKick: 18, uppercut: 24, risingUppercut: 24, risingKnee: 24, throw: 22, wallSlam: 22 };
+const COST = { wakeKick: 12, wakeSweep: 12, jab: 17, lowJab: 15, cross: 21, bodyBlow: 19, lungeCross: 22, lowKick: 18, uppercut: 24, risingUppercut: 24, risingKnee: 24, throw: 22, wallSlam: 22 };
 const AIR_COST = { jumpJab: 12, jumpCross: 15, flyingKick: 16, airRoundhouse: 18, diveKick: 16 };
 Object.assign(COST, AIR_COST);
 for (const [m, fd] of Object.entries(FRAME_DATA)) fd.cost = fd.ender ? 30 : COST[m] != null ? COST[m] : fd.limb === 'foot' ? 22 : 19;
