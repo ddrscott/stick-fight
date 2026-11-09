@@ -62,13 +62,13 @@ export function watchDevice() {
 
 // ---- glyphs ---------------------------------------------------------------------------------------------
 // the face buttons in the standard mapping, by index: Xbox letter and color, PlayStation shape and color
-const FACE = {
+export const FACE = {
   0: { x: 'A', ps: '✕', c: '#3ddc5a', pc: '#5b9dff' },
   1: { x: 'B', ps: '○', c: '#ff4a4a', pc: '#ff4a6a' },
   2: { x: 'X', ps: '□', c: '#3d8dff', pc: '#ff6bd5' },
   3: { x: 'Y', ps: '△', c: '#ffd23d', pc: '#3ddcb0' },
 };
-const PILL = { start: { x: 'START', ps: 'OPTIONS' }, select: { x: 'SELECT', ps: 'SHARE' } };
+export const PILL = { start: { x: 'START', ps: 'OPTIONS' }, select: { x: 'SELECT', ps: 'SHARE' } };
 const KEY = { move: 'ARROWS', confirm: 'ENTER', back: 'ESC', del: 'BACKSPACE', type: 'A-Z' };
 const PAD = { confirm: 0, back: 1, del: 2 };
 

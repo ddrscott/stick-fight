@@ -1242,9 +1242,18 @@ try {
 } catch (e) { /* no font API */ }
 render();
 await new Promise(r => requestAnimationFrame(r));
+// Embedded in the homepage (an iframe), the page tells the game when its frame scrolls off screen
+// ({ type: 'sf:visible', visible }); while it's hidden, the demo and menus stop simulating and drawing
+// so the page around it scrolls smoothly. A match (and anything online) never pauses this way.
+let embedHidden = false;
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || !e.data || e.data.type !== 'sf:visible') return;
+  embedHidden = !e.data.visible;
+});
 function frame(now) {
   const ms = Math.min(100, now - last); last = now;
-  if (!driven) { lastFrameMs = ms; advance(ms); render(); }
+  const idle = embedHidden && !online.active && flow && flow.on && flow.demo;
+  if (!driven && !idle) { lastFrameMs = ms; advance(ms); render(); }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

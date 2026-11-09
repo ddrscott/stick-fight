@@ -7,3 +7,9 @@ const doc = typeof document !== 'undefined' ? document : null;
 export const ROOT = new URL((doc && doc.documentElement.dataset.root) || './', doc ? doc.baseURI : 'http://localhost/');
 /** a URL under the app's root, e.g. rootUrl('api/e') */
 export const rootUrl = (path) => new URL(path, ROOT);
+
+// Running inside another page's iframe (the homepage embeds the game, README "Site"). Reading
+// window.top can throw for a cross-origin parent, which also means embedded.
+let embedded = false;
+try { embedded = typeof window !== 'undefined' && window.top !== window; } catch { embedded = true; }
+export const EMBEDDED = embedded;

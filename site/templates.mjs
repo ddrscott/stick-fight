@@ -3,6 +3,9 @@
 // the way back to /stick-fight/ from it), so the pages work at the subpath, on the dev server and in
 // `vite preview`. Absolute URLs appear only where they have to: canonical and Open Graph tags.
 
+import { FRAMES, W, H } from './sprites.mjs';
+const SPRITE = { FRAMES, W, H };
+
 export const SITE = 'https://askscottpierce.com/stick-fight/';
 export const REPO = 'https://github.com/ddrscott/stick-fight';
 
@@ -41,40 +44,85 @@ export function head({ root, title, description, path, page }) {
 </head>`;
 }
 
+// the site header, the same on every page; the homepage's index.html carries a copy (keep the two together)
 export function topbar(root) {
   return `<header class="s-top">
   <a class="s-logo" href="${root}"><span>NEON</span> STICK FIGHT</a>
-  <nav class="s-nav">
+  <nav class="s-nav" aria-label="Site">
     <a href="${root}fighters/">FIGHTERS</a>
     <a href="${root}#how">HOW TO PLAY</a>
-    <a class="s-btn s-btn-play" href="${root}play/">PLAY</a>
+    <a href="${root}#online">ONLINE</a>
+    <a href="${root}#about">ABOUT</a>
+    <a href="${REPO}">GITHUB</a>
   </nav>
+  <a class="s-btn s-btn-play s-top-play" href="${root}play/">PLAY</a>
 </header>`;
 }
 
 export function footer(root) {
   return `<footer class="s-foot">
-  <p><a class="s-logo" href="${root}"><span>NEON</span> STICK FIGHT</a></p>
-  <p>Free and open source under the GNU AGPL v3. <a href="${REPO}">Source on GitHub</a> · <a href="${REPO}#license-and-credits">Credits</a></p>
-  <p>Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL). Animation inspired by Xiao Xiao.</p>
-  <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>
+  <div class="s-foot-in">
+    <p><a class="s-logo" href="${root}"><span>NEON</span> STICK FIGHT</a></p>
+    <nav class="s-foot-nav" aria-label="Footer">
+      <a href="${root}play/">Play</a><a href="${root}fighters/">Fighters</a><a href="${root}#how">How to play</a><a href="${root}#online">Online</a><a href="${root}#about">About and credits</a><a href="${REPO}">GitHub</a>
+    </nav>
+    <p>Free and open source under the GNU AGPL v3. Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL).</p>
+    <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>
+  </div>
 </footer>`;
 }
 
 const script = (root) => `<script type="module" src="${root}site/site.js"></script>`;
 
 // ---- the roster grid (homepage and the roster index) ----------------------------------------------------
-export function rosterCards(sheets, hrefPrefix, { detail = false } = {}) {
-  return sheets.map((s) => {
+//   detail: the roster index's line of health and unique moves
+//   cast:   the homepage's cast: the fighter's colors and up to three signature moves from its moveList
+//   root:   the way back to the site's root from the page, for the idle sprites (site/sprites.mjs)
+export function rosterCards(sheets, hrefPrefix, { detail = false, cast = false, root = './' } = {}) {
+  return sheets.map((s, i) => {
+    const sp = (x) => `${root}sprites/${s.id}-idle${x}.webp`;
     const hp = s.stats.find((x) => x.key === 'health');
     const uniques = s.moves.filter((m) => m.listed).map((m) => m.name);
-    return `<a class="s-card" href="${hrefPrefix}${s.id}/" style="--c:${s.color}">
-    <canvas class="s-rig" data-char="${s.id}" data-mode="idle" aria-hidden="true"></canvas>
-    <b class="s-card-name${s.name.length > 10 ? ' s-long' : ''}">${esc(s.name)}</b>
+    const dots = [s.color, s.pants, s.accent].filter(Boolean).map((c) => `<i style="background:${c}"></i>`).join('');
+    const sig = s.moveList.slice(0, 3).map((m) => `<li><span class="s-in">${esc(m.input)}</span>${esc(m.name)}</li>`).join('');
+    return `<a class="s-card${cast ? ' s-card-cast' : ''}" href="${hrefPrefix}${s.id}/" style="--c:${s.color};--i:${(i * 3) % 5}">
+    <span class="s-sprite" aria-hidden="true"><img src="${sp('')}" srcset="${sp('')} 1x, ${sp('@2x')} 2x" width="${SPRITE.W * SPRITE.FRAMES}" height="${SPRITE.H}" loading="lazy" decoding="async" alt=""></span>
+    <b class="s-card-name${s.name.length > 10 ? ' s-long' : ''}">${esc(s.name)}</b>${cast ? `
+    <span class="s-card-dots" aria-hidden="true">${dots}</span>` : ''}
     <small class="s-card-tag">${esc(cap(s.tagline))}</small>${detail ? `
-    <span class="s-card-meta">${hp.value} HEALTH · ${uniques.length ? esc(uniques.join(' · ')) : 'EVERY SHARED MOVE'}</span>` : ''}
+    <span class="s-card-meta">${hp.value} HEALTH · ${uniques.length ? esc(uniques.join(' · ')) : 'EVERY SHARED MOVE'}</span>` : ''}${cast ? `
+    <ul class="s-card-sig">${sig || '<li>Every shared move, played straight</li>'}</ul>` : ''}
   </a>`;
   }).join('\n  ');
+}
+
+// ---- the homepage's controls table: the game's own fight table (FIGHT in src/flow/controls.js) ----------
+// The keyboard and gamepad columns come straight from it; the touch column is src/touch.js's layout,
+// keyed by the row's label (a row missing here shows a dash, so a new FIGHT row still shows up).
+const TOUCH = {
+  '1  LEFT PUNCH': 'button 1', '2  RIGHT PUNCH': 'button 2', '3  LEFT KICK': 'button 3', '4  RIGHT KICK': 'button 4',
+  MOVE: 'the floating stick, left thumb', 'JUMP / CROUCH': 'stick up / down', GUARD: 'stick away, or GUARD',
+  THROW: '1+3 or 2+4 together', RUN: 'push the stick all the way', PAUSE: 'the pause button',
+};
+const MENU_TOUCH = { MOVE: '—', SELECT: 'tap it', BACK: 'the BACK button' };
+export function controlsTable(FIGHT, MENUS, FACE, PILL) {
+  const pad = (p) => (typeof p === 'number' ? `${FACE[p].x} <span class="s-ps">/ ${FACE[p].ps}</span>` : PILL[p] ? `${PILL[p].x} <span class="s-ps">/ ${PILL[p].ps}</span>` : esc(p));
+  const what = (w) => { const m = /^(\d)\s+(.*)$/.exec(w); return m ? `<b class="s-limb">${m[1]}</b>${esc(m[2])}` : esc(w); };
+  const rows = (list, touch) => list.map(([w, key, p]) => `<tr><th scope="row">${what(w)}</th><td data-l="KEYBOARD"><kbd>${esc(key)}</kbd></td><td data-l="GAMEPAD">${pad(p)}</td><td data-l="TOUCH">${esc(touch[w] || '—')}</td></tr>`).join('\n          ');
+  return `<div class="s-table-wrap"><table class="s-table s-controls">
+        <caption>In a fight</caption>
+        <thead><tr><th>ACTION</th><th>KEYBOARD</th><th>GAMEPAD <small>XBOX / PS</small></th><th>TOUCH</th></tr></thead>
+        <tbody>
+          ${rows(FIGHT, TOUCH)}
+        </tbody>
+      </table></div>
+      <div class="s-table-wrap"><table class="s-table s-controls">
+        <caption>In the menus</caption>
+        <thead><tr><th>ACTION</th><th>KEYBOARD</th><th>GAMEPAD <small>XBOX / PS</small></th><th>TOUCH</th></tr></thead>
+        <tbody>
+          ${rows(MENUS, MENU_TOUCH)}
+        </tbody>
+      </table></div>`;
 }
 
 // ---- the roster index -------------------------------------------------------------------------------------
@@ -88,7 +136,7 @@ ${topbar(root)}
     <h1 class="s-h1">THE ROSTER</h1>
     <p class="s-lede">${sheets.length} office workers, one building. Every fighter keeps the shared basics (the four limbs, crouch and air attacks, throws) and brings their own stats, body, unique moves and strings. Pick one for the full move sheet.</p>
     <div class="s-grid s-grid-lg">
-  ${rosterCards(sheets, './', { detail: true })}
+  ${rosterCards(sheets, './', { detail: true, root: '/' /* a public-dir path: Vite checks it and writes it back relative (../sprites/) */ })}
     </div>
   </section>
 </main>

@@ -5,7 +5,9 @@
 //     Share > Add to Home Screen, so the title's INSTALL button opens a short how-to instead.
 //   Already installed (standalone): <html> gets .standalone and nothing is offered.
 // The service worker (public/sw.js) makes the installed app start fast and play offline.
-import { rootUrl } from './root.js';
+//   Embedded in the homepage's iframe: nothing is offered (the browser never fires beforeinstallprompt
+//     in a frame); the homepage around it offers the install instead. <html> gets .embedded.
+import { rootUrl, EMBEDDED } from './root.js';
 
 const nav = typeof navigator !== 'undefined' ? navigator : {};
 const standalone = typeof matchMedia === 'function' && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches) || nav.standalone === true;
@@ -20,7 +22,8 @@ const changed = () => { for (const f of listeners) { try { f(); } catch (e) { /*
 export const install = {
   get standalone() { return standalone; },
   /** 'prompt' (the browser can install), 'ios' (show the Add to Home Screen how-to) or null */
-  get kind() { return standalone ? null : deferred ? 'prompt' : iOSSafari ? 'ios' : null; },
+  get embedded() { return EMBEDDED; },
+  get kind() { return standalone || EMBEDDED ? null : deferred ? 'prompt' : iOSSafari ? 'ios' : null; },
   async prompt() {
     if (!deferred) return false;
     const e = deferred; deferred = null; changed();
@@ -31,6 +34,7 @@ export const install = {
 
 if (typeof window !== 'undefined') {
   if (standalone) document.documentElement.classList.add('standalone');
+  if (EMBEDDED) document.documentElement.classList.add('embedded');
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; changed(); });
   window.addEventListener('appinstalled', () => { deferred = null; changed(); });
   // the service worker only on a real deploy or the dev tunnel, never in the test harness (?scene=)

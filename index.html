@@ -6,7 +6,8 @@
 <script>
   // The game used to live at this address. Old links (a room ?room=, a crew ?crew=, a test ?scene=, the
   // sign-in email's #signin=...&code=...) and an app installed before the move go on to the game at
-  // play/, with the query and the hash intact (README, "Site").
+  // play/, with the query and the hash intact (README, "Site"). The iframe below loads play/ itself,
+  // so this never runs inside it.
   (function () {
     var q = new URLSearchParams(location.search);
     var game = ['room', 'crew', 'scene', 'pick', 'p1', 'p2', 'mirror', 'botch', 'tier', 'relay', 'ice', 'netsim', 'blend'];
@@ -15,7 +16,7 @@
   })();
 </script>
 <title>Neon Stick Fight · a free stick-figure fighting game in your browser</title>
-<meta name="description" content="A neon stick-figure fighting game you play in the browser, on a phone or a computer. 18 office workers, an arcade ladder with a secret boss, horde floors, and online versus with rollback netcode.">
+<meta name="description" content="A neon stick-figure fighting game you can play right on this page, on a phone or a computer. <!--@count--> office workers, an arcade ladder, horde floors, and online versus with rollback netcode.">
 <link rel="canonical" href="https://askscottpierce.com/stick-fight/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Neon Stick Fight">
@@ -25,6 +26,7 @@
 <meta property="og:image" content="https://askscottpierce.com/stick-fight/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="COURIER lands a string on a fainted SECURITY in a neon office hallway">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
@@ -38,67 +40,100 @@
 <script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
 </head>
 <body class="s-page s-home">
+<a class="s-skip" href="#main">Skip to the page</a>
+<!-- the same header as topbar() in site/templates.mjs; keep the two together -->
 <header class="s-top">
   <a class="s-logo" href="./"><span>NEON</span> STICK FIGHT</a>
-  <nav class="s-nav">
+  <nav class="s-nav" aria-label="Site">
     <a href="./fighters/">FIGHTERS</a>
     <a href="#how">HOW TO PLAY</a>
-    <a class="s-btn s-btn-play" href="./play/">PLAY</a>
+    <a href="#online">ONLINE</a>
+    <a href="#about">ABOUT</a>
+    <a href="https://github.com/ddrscott/stick-fight">GITHUB</a>
   </nav>
+  <a class="s-btn s-btn-play s-top-play" href="./play/">PLAY</a>
 </header>
 
-<main>
-  <section class="s-hero">
-    <canvas class="s-duel" data-mode="duel" aria-hidden="true"></canvas>
-    <div class="s-hero-copy">
-      <p class="s-kicker">FREE IN YOUR BROWSER · PHONE OR COMPUTER</p>
-      <h1 class="s-title">NEON<br>STICK FIGHT</h1>
-      <p class="s-hero-tag">Stick-figure kung fu in a neon office tower. <!--@count--> coworkers, one stairwell, no HR.</p>
-      <div class="s-cta">
-        <a class="s-btn s-btn-play s-btn-huge" href="./play/">PLAY NOW</a>
-        <a class="s-btn s-btn-ghost" href="./fighters/">MEET THE FIGHTERS</a>
+<main id="main">
+  <!-- the game itself, playable in a frame (README, "Site": the embedded game) -->
+  <section class="s-game" id="play" aria-labelledby="title">
+    <div class="s-game-head">
+      <h1 class="s-title" id="title">NEON STICK FIGHT</h1>
+      <p class="s-game-tag">A free stick-figure fighting game in a neon office tower. Play it right here, on your phone, or online against a friend.<span class="s-for-mouse"> Click the game, then press Enter.</span></p>
+    </div>
+    <div class="s-frame" data-frame>
+      <iframe id="game-frame" data-src="./play/" title="Neon Stick Fight: the game" allow="fullscreen; autoplay; gamepad" allowfullscreen></iframe>
+      <script>
+        // phones run the embedded game at the lightest graphics tier (the page around it has to scroll too),
+        // and the game pauses its demo while the frame is off screen (src/main.js, 'sf:visible')
+        (function () {
+          var f = document.getElementById('game-frame'), coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+          f.src = f.getAttribute('data-src') + (coarse ? '?tier=1' : '');
+          if ('IntersectionObserver' in window) new IntersectionObserver(function (es) {
+            var v = es[0].isIntersecting;
+            try { f.contentWindow.postMessage({ type: 'sf:visible', visible: v }, location.origin); } catch (e) {}
+          }, { threshold: 0.05 }).observe(f);
+          document.addEventListener('visibilitychange', function () {
+            try { f.contentWindow.postMessage({ type: 'sf:visible', visible: document.visibilityState === 'visible' }, location.origin); } catch (e) {}
+          });
+        })();
+      </script>
+      <!-- portrait phones only (site.css): the frame is too small for thumbs, so a tap on it opens the game's own page -->
+      <a class="s-frame-tap" href="./play/" aria-label="Play full screen"></a>
+    </div>
+    <div class="s-frame-bar">
+      <button type="button" class="s-quiet" data-fullscreen>FULL SCREEN</button>
+      <a class="s-quiet" href="./play/">OPEN IN ITS OWN PAGE</a>
+    </div>
+    <a class="s-btn s-btn-play s-btn-huge s-phone-play" href="./play/">PLAY FULL SCREEN</a>
+    <p class="s-install" data-install>
+      <span data-install-text><b>INSTALL IT:</b> on Android or desktop Chrome, choose Install app from the browser menu. On iPhone, tap Share, then Add to Home Screen. It opens full screen, like a native game.</span>
+      <button type="button" class="s-btn s-btn-ghost" data-install-button hidden>INSTALL THE APP</button>
+    </p>
+  </section>
+
+  <section class="s-section s-pitch" aria-labelledby="pitch">
+    <div class="s-pitch-cols">
+      <div>
+        <h2 class="s-h2" id="pitch">A FIGHTING GAME ABOUT TIMING</h2>
+        <p class="s-lede">Every fighter is a stick figure and every fight is a read. You get a direction and four buttons, one per limb, and no motion inputs to memorize. What wins is pressing the right button at the right moment: wait for the other player to commit, then make them pay for it.</p>
+        <p>Mashing loses. Every swing costs stamina, spending the last of it leaves you fainted and wide open, and a press thrown where it doesn't belong comes out as a stumble. The animation aims at Xiao Xiao, the old stick-figure fight cartoons, and the office tower is lit like a modern 2D game. It's free, it runs in your browser, and the source is on GitHub.</p>
       </div>
-      <p class="s-install" data-install>
-        <span data-install-text><b>INSTALL IT:</b> on Android or desktop Chrome, choose Install app from the browser menu. On iPhone, tap Share, then Add to Home Screen. It opens full screen, like a native game.</span>
-        <button type="button" class="s-btn s-btn-ghost" data-install-button hidden>INSTALL THE APP</button>
-      </p>
+      <figure class="s-shot">
+        <img src="./screenshot.jpg" width="1280" height="720" loading="lazy" alt="COURIER lands a string on a fainted SECURITY in the office hallway, both lit in neon, health bars and move hints across the top">
+        <figcaption>COURIER against a fainted SECURITY on the third floor.</figcaption>
+      </figure>
     </div>
   </section>
 
-  <section class="s-section" id="features">
-    <h2 class="s-h2">WHAT'S IN THE BOX</h2>
+  <section class="s-section" id="features" aria-labelledby="features-h">
+    <h2 class="s-h2" id="features-h">WHAT'S IN THE GAME</h2>
     <div class="s-features">
-      <article><h3 class="s-h3"><!--@count--> FIGHTERS</h3><p>From the TEMP on day one to the corner office. Every fighter has their own stats, body, unique moves and strings, and a full move sheet below.</p></article>
-      <article><h3 class="s-h3">ARCADE LADDER</h3><p>Six floors up the building, best of three, against CPUs that get tougher and fight their own way: the turtle, the rusher, the grappler. Beat the boss without a continue and someone is waiting upstairs.</p></article>
-      <article><h3 class="s-h3">HORDE MODE</h3><p>Wave after wave of goons through the office doors. Clear the floor, vault the stairwell railing, and do it again one floor down.</p></article>
-      <article><h3 class="s-h3">ONLINE VERSUS</h3><p>Send a friend a four-letter room code or a link. A crew room is a permanent link for your group, with standings, head to head records and winner stays on. Rematch in one press.</p></article>
-      <article><h3 class="s-h3">ROLLBACK NETCODE</h3><p>Both machines run the whole fight and quietly fix their guesses, the way the big fighting games do it, peer to peer whenever the two phones can reach each other.</p></article>
+      <article><h3 class="s-h3"><!--@count--> FIGHTERS</h3><p>From the TEMP on day one to the corner office. Every fighter has their own stats, body, unique moves and strings, with a full move sheet on their page.</p></article>
+      <article><h3 class="s-h3">ARCADE LADDER</h3><p><!--@stages--> stages up the building, best of three, against CPUs that each fight their own way: the turtle, the rusher, the grappler. Beat the boss without a continue and you'll find out who else is upstairs.</p></article>
+      <article><h3 class="s-h3">HORDE FLOORS</h3><p>Wave after wave of goons through the office doors. Clear the floor, vault the stairwell railing, and do it again one floor down. See how deep you get.</p></article>
+      <article><h3 class="s-h3">ONLINE VERSUS</h3><p>Send a friend a four-letter code or a link. A crew room is a permanent link for your group, with standings, head-to-head records and winner stays on. Rematch with one press.</p></article>
+      <article><h3 class="s-h3">ROLLBACK NETCODE</h3><p>Both machines run the whole fight and quietly fix their guesses when the other player's input arrives, the way the big fighting games do it. Peer to peer whenever the two devices can reach each other.</p></article>
       <article><h3 class="s-h3">BOTCHES AND SECRETS</h3><p>Mash and you'll mess up: overbalance, spin out, trip over your own feet. A few mistimed presses, in just the right window, come out as something much better. We're not saying which.</p></article>
-      <article><h3 class="s-h3">PHONES AND CONTROLLERS</h3><p>Touch controls with a floating stick and four arcade buttons, any standard gamepad (Xbox, PlayStation, 8BitDo), or the keyboard.</p></article>
-      <article><h3 class="s-h3">INSTALLABLE</h3><p>Add it to your home screen and it opens full screen in landscape, starts fast and plays offline. Updates show up on their own.</p></article>
+      <article><h3 class="s-h3">PHONES AND CONTROLLERS</h3><p>Touch controls with a floating stick and four arcade buttons, any standard gamepad (Xbox, PlayStation, 8BitDo), or the keyboard. The game switches its button hints to whatever you pick up.</p></article>
+      <article><h3 class="s-h3">INSTALLABLE</h3><p>Add it to your home screen and it opens full screen in landscape, starts fast and plays offline. New versions show up on their own.</p></article>
     </div>
   </section>
 
-  <section class="s-section s-shot">
-    <figure>
-      <img src="./screenshot.jpg" width="1280" height="720" loading="lazy" alt="COURIER lands a string on a fainted SECURITY in the office hallway, both lit in neon, health bars and move hints across the top">
-      <figcaption>The real thing: COURIER against a fainted SECURITY on the third floor.</figcaption>
-    </figure>
-  </section>
-
-  <section class="s-section" id="roster">
+  <section class="s-section" id="cast" aria-labelledby="cast-h">
     <div class="s-section-head">
-      <h2 class="s-h2">THE ROSTER</h2>
-      <a class="s-more" href="./fighters/">ALL MOVE SHEETS ›</a>
+      <h2 class="s-h2" id="cast-h">THE CAST</h2>
+      <a class="s-more" href="./fighters/">MEET THE CAST ›</a>
     </div>
-    <p class="s-note">Pick a fighter for their stats, unique moves, strings and frame data.</p>
-    <div class="s-grid">
+    <p class="s-note"><!--@count--> office workers, one building. Pick anyone for their stats, unique moves, strings and frame data.</p>
+    <div class="s-grid s-grid-cast">
   <!--@roster-->
     </div>
+    <div class="s-cta s-cta-center"><a class="s-btn s-btn-ghost s-btn-big" href="./fighters/">MEET THE WHOLE CAST</a></div>
   </section>
 
-  <section class="s-section s-howto" id="how">
-    <h2 class="s-h2">HOW TO PLAY</h2>
+  <section class="s-section s-howto" id="how" aria-labelledby="how-h">
+    <h2 class="s-h2" id="how-h">HOW TO PLAY</h2>
     <div class="s-how-cols">
       <div>
         <p class="s-lede">One button per limb, like Tekken, from your fighter's own point of view.</p>
@@ -108,25 +143,78 @@
           <div><b>3</b><span>LEFT KICK</span><small>snap kick · key J</small></div>
           <div><b>4</b><span>RIGHT KICK</span><small>roundhouse · key K</small></div>
         </div>
+        <p class="s-note s-pad-note">Add a direction for more: down and a button for the low attacks and the uppercut, toward and a button for the body blow, the lunge and the overhead.</p>
       </div>
       <dl class="s-rules">
-        <div><dt>MOVE</dt><dd>A and D or the arrows. W jumps, S crouches, Shift (or a double tap) runs.</dd></div>
-        <div><dt>GUARD</dt><dd>Hold back, away from the other fighter. Standing guard stops highs and mids; lows go under it, so crouch and hold back for those.</dd></div>
-        <div><dt>THROW</dt><dd>1+3 or 2+4. Throws beat a guard but whiff on a crouch. Press the same buttons while grabbed to break it.</dd></div>
-        <div><dt>STRINGS</dt><dd>Press in rhythm and the hits chain: 1, 2, 3, 4 is the Neon Tornado. Every fighter's strings are on their page.</dd></div>
-        <div><dt>STAMINA</dt><dd>The thin bar under health is your attack budget. Spend the last point and you faint for a beat. It refills fast when you stop swinging.</dd></div>
-        <div><dt>PAD AND TOUCH</dt><dd>On a gamepad X, Y, A, B are 1, 2, 3, 4, L1 guards and R1 throws. On a phone, a floating stick on the left and the four buttons on the right.</dd></div>
+        <div><dt>GUARD</dt><dd>Hold back, away from the other fighter. You walk back, and your guard snaps up on its own when an attack is coming that can reach you. Standing guard stops highs and mids. Lows go under it, so hold down and back for those.</dd></div>
+        <div><dt>THROWS</dt><dd>1+3 or 2+4 up close. A throw beats a guard but whiffs on someone crouching. Press the same two buttons while you're grabbed to break it.</dd></div>
+        <div><dt>STAMINA</dt><dd>The thin bar under your health is your attack budget. Every swing spends some, and it refills fast once you stop swinging.</dd></div>
+        <div><dt>FAINT</dt><dd>Spend the last point and you faint: out on your feet for a beat, no guard, wide open. Getting knocked down fills the bar back up.</dd></div>
+        <div><dt>STRINGS</dt><dd>Press in rhythm, as the last hit finishes, and the hits chain: 1, 2, 3, 4 is the Neon Tornado. Mashing doesn't chain. Every fighter's strings are on their page.</dd></div>
+        <div><dt>SOUND</dt><dd>Browsers keep a page quiet until you touch it, so the first click, tap or key turns the sound on. M turns the music off and on, N skips a track.</dd></div>
       </dl>
     </div>
-    <div class="s-cta s-cta-center"><a class="s-btn s-btn-play s-btn-big" href="./play/">PLAY NOW</a></div>
+    <h3 class="s-h3 s-controls-h">THE CONTROLS</h3>
+    <div class="s-controls-wrap">
+      <!--@controls-->
+    </div>
+  </section>
+
+  <section class="s-section" id="online" aria-labelledby="online-h">
+    <h2 class="s-h2" id="online-h">PLAY A FRIEND ONLINE</h2>
+    <p class="s-lede">No accounts and nothing to download. From the main menu pick VERSUS ONLINE, choose your fighter, and then one of these.</p>
+    <div class="s-steps">
+      <article>
+        <h3 class="s-h3">QUICK MATCH</h3>
+        <ol>
+          <li>One of you picks <b>HOST A GAME</b> and gets a four-letter room code and a link.</li>
+          <li>Send the link, or read the code out loud. Codes skip 0, O, 1, I and L so nobody mixes them up.</li>
+          <li>The other opens the link, or picks <b>JOIN A GAME</b> and types the code.</li>
+        </ol>
+        <p>When a match ends, <b>REMATCH</b> keeps the same fighters and <b>NEW CHARACTERS</b> goes back to the pick. The room keeps a running tally until somebody leaves.</p>
+      </article>
+      <article>
+        <h3 class="s-h3">CREW ROOMS</h3>
+        <ol>
+          <li>Pick <b>CREATE CREW ROOM</b> and name your crew. You get a link that stays good as long as people keep using it.</li>
+          <li>Drop it in the group chat. Everybody who opens it lands in the crew's lobby.</li>
+          <li>Press <b>PLAY</b> when you're ready. The next two ready players fight, and the winner stays on.</li>
+        </ol>
+        <p>The lobby keeps standings for the whole crew: wins, losses, your record against each person, and everyone's favorite fighter.</p>
+      </article>
+      <article>
+        <h3 class="s-h3">WHY IT FEELS LOCAL</h3>
+        <p>Online fights use rollback netcode. Each side plays its own input right away, guesses the other's, and quietly rewinds and replays the last few frames when the guess was wrong. The connection goes peer to peer when it can, and through Cloudflare when two phones can't reach each other.</p>
+        <p>Want to keep your crews on a new phone? <b>PROFILE</b> in the online menu saves them to your email.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="s-section s-about" id="about" aria-labelledby="about-h">
+    <h2 class="s-h2" id="about-h">ABOUT AND CREDITS</h2>
+    <div class="s-about-cols">
+      <div>
+        <p>Neon Stick Fight is a side project by <a href="https://askscottpierce.com/">Scott Pierce</a>. It's free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU Affero General Public License v3</a>, and the whole thing, from the rig to the netcode, is <a href="https://github.com/ddrscott/stick-fight">on GitHub</a>. If you serve a changed version to players, the AGPL asks you to share your source with them too.</p>
+        <p>Found a bug or have an idea? <a href="https://github.com/ddrscott/stick-fight/issues">Open an issue</a>.</p>
+      </div>
+      <ul class="s-credits">
+        <li><b>MUSIC ENGINE</b><span><a href="https://strudel.cc">Strudel</a> by the Strudel contributors, AGPL-3.0. Source at <a href="https://codeberg.org/uzu/strudel">codeberg.org/uzu/strudel</a>. The game's tracks are written as Strudel patterns.</span></li>
+        <li><b>FONTS</b><span><a href="https://fonts.google.com/specimen/Bungee">Bungee</a> by David Jonathan Ross and <a href="https://fonts.google.com/specimen/Teko">Teko</a> by the Indian Type Foundry, both SIL Open Font License.</span></li>
+        <li><b>INSPIRATION</b><span>Xiao Xiao, Zhu Zhiqiang's stick-figure fight series, set the bar for the animation. No art from it ships with the game.</span></li>
+      </ul>
+    </div>
   </section>
 </main>
 
 <footer class="s-foot">
-  <p><a class="s-logo" href="./"><span>NEON</span> STICK FIGHT</a></p>
-  <p>Free and open source under the GNU AGPL v3. <a href="https://github.com/ddrscott/stick-fight">Source on GitHub</a> · <a href="https://github.com/ddrscott/stick-fight#license-and-credits">Credits</a></p>
-  <p>Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL). Animation inspired by Xiao Xiao.</p>
-  <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>
+  <div class="s-foot-in">
+    <p><a class="s-logo" href="./"><span>NEON</span> STICK FIGHT</a></p>
+    <nav class="s-foot-nav" aria-label="Footer">
+      <a href="./play/">Play</a><a href="./fighters/">Fighters</a><a href="#how">How to play</a><a href="#online">Online</a><a href="#about">About and credits</a><a href="https://github.com/ddrscott/stick-fight">GitHub</a>
+    </nav>
+    <p>Free and open source under the GNU AGPL v3. Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL).</p>
+    <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>
+  </div>
 </footer>
 <script type="module" src="./site/site.js"></script>
 </body>
