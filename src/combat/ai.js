@@ -470,6 +470,14 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // a misread guesses, so mixups work on the AI too
       const h = heightOf(opp.move), read = chance(show ? 0.8 : 0.25 + 0.5 * difficulty);
       const guess = read ? h : pick(['high', 'mid', 'low']);
+      // the universal parry, only from difficulty 0.55 up (0.4 of strikes at the top, 0.3 for the showcase): wait
+      // until the strike is about to go live, then tap toward him (down-forward for a low); throws can't be parried
+      const parryP = show ? 0.3 : Math.max(0, difficulty - 0.55) * 0.9, pfd = FRAME_DATA[opp.move];
+      if (parryP > 0 && pfd && !pfd.throw && h !== 'throw' && /^(idle|walk|crouch|block)$/.test(me.state) && me.grounded && chance(parryP)) {
+        const low = h === 'low';
+        queue = [{ ...move(0, (m, o) => o.state !== 'attack' || !(sim.toLive(o) > 3)), down: low }, { ...move(toward, 2), down: low, ok: true }, move(0, 4)];
+        act = null;
+      } else
       // showcase: at the tip of his reach, step back so it whiffs (the punish reflex takes it from there)
       if (show && dist > reach(opp.move) - 20 && opp.move !== 'throw' && chance(0.45)) { queue = [move(-toward, 10 + irnd(6))]; act = null; }
       else if (chance(show ? 0.85 : 0.1 + 0.65 * difficulty + (turtle ? 0.25 : rush ? -0.1 : 0))) {
@@ -645,6 +653,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       else if (act.until(me, opp)) act = null;
       if (act && (act.attack || act.jump || act.press) && typeof act.until === 'number' && act.until <= 0) act = null;
     }
+    // launched or juggled: no buttons but the planned air recovery (a stray press would lock it out)
+    if (me.state === 'knockdown') { for (const k in out) if (k === 'lp' || k === 'rp' || k === 'lk' || k === 'rk' || FRAME_DATA[k]) out[k] = false; if (step === techAt) out.lp = true; }
     // botches on: the low end of the ladder mashes a button in the middle of its own strike now and then
     // (decided once per strike, pressed a few steps in), and the showcase sometimes presses into a happy
     // accident's window (decided once per strike, the first step a window is open)

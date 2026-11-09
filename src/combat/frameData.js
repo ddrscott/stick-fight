@@ -116,6 +116,10 @@ export const STAMINA = { max: 100, regen: 90, regenBlock: 36, delay: 0.3, run: 1
 // juggled or launched body upright; inside the first `perfect` steps of that it comes with a jab; a press before
 // `min` locks it out for `lock` steps (a press while locked keeps it locked). The juggle's next hit restarts the wait.
 export const AIR_TECH = { min: 36, perfect: 10, lock: 24 };
+// The universal parry (sim.js uParry): a fresh tap toward the opponent (down-forward for a low) within `win`
+// steps (120Hz) before a strike lands catches it: no damage, the striker reels `stun` frames. A tap starts a
+// `lock` of steps in which another tap doesn't count (and keeps it locked), so mashing forward never parries.
+export const PARRY = { win: 12, lock: 40, stun: 16 };
 export const COMBO_STUN = [1, 1, 0.85, 0.65, 0.45, 0.3];
 export const COMBO_DMG = [1, 1, 1, 0.8, 0.65, 0.5];
 export const COMBO_SOFTCAP = 30, COMBO_OVERCAP = 0.25;

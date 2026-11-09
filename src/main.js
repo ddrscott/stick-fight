@@ -275,6 +275,14 @@ const punishRise = (guard) => (me, o) => {
   return me.state === 'blockstun' ? guard : {};
 };
 const techAt = (k) => (me) => (me.state === 'knockdown' && me.launchStep != null && sim.stepCount - me.launchStep >= k && sim.stepCount - me.launchStep < k + 2 ? { lp: true } : {});
+// parry-test: P2 strikes, P1 taps toward him (sim.toLive: steps until the strike can hit) and punishes a parry with the cross
+const towardOf = (me, o) => Math.sign(o.x - me.x) || me.facing;
+const tapAt = (k, low = false) => (me, o, t) => {
+  if (o.state === 'hitstun' && sim.log.some(r => r.type === 'parry')) return Math.abs(o.x - me.x) > sim.reachOf(me, 'cross') - 8 ? { dx: towardOf(me, o) } : clean(me, { rp: true });   // the punish
+  const live = sim.toLive(o);
+  if (o.state === 'attack' && live <= k && live > k - 2) return { dx: towardOf(me, o), down: low };
+  return low && o.state === 'attack' ? { down: true } : {};
+};
 const wakeAt = (inp, at = 120) => (me, o, t) => (me.state === 'down' && t >= at && t < at + 3 ? (typeof inp === 'function' ? inp(me, o) : inp) : {});
 const PHASES = {
   getup: [
@@ -309,6 +317,18 @@ const PHASES = {
     { name: 'a second press while the kick still swings: TANGLED', at: () => [400, 900], p1: [[2, (me) => ({ jump: true, dx: me.facing })], [10, B('lk')], [22, B('lp')]], dur: 260 },
     { name: 'FALL ATTACK: an air roundhouse out of the vault after a floor break (he is still down, so it lands short)', at: () => [500, 590], p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]],
       p1f: (me) => (me.state === 'vault' && me.vaultPhase === 'clip' && me.rig.current.t > 0.55 && me.rig.current.t < 0.6 ? { rk: true } : {}), dur: 420 },
+  ],
+  // parry-test: the universal parry, P1 against P2's strikes
+  parry: [
+    { name: 'PARRY: a tap forward just before his jab lands, then the cross punishes', p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true } : {}), p1: [], p1f: tapAt(3), dur: 160 },
+    { name: 'PARRY a mid (snap kick) the same way', p2: (me, o, t) => (t >= 20 && t < 23 ? { lk: true } : {}), p1: [], p1f: tapAt(3), dur: 160 },
+    { name: 'a tap 8 frames early: the window has closed, he is hit', p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true } : {}), p1: [[4, (me) => ({ dx: me.facing })]], dur: 140 },
+    { name: 'holding forward is no tap: he is hit', p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true } : {}), p1: [], hold1: { dx: 1 }, dur: 140 },
+    { name: 'a low (sweep) against a standing tap: hit', p2: (me, o, t) => (t >= 20 && t < 23 ? { rk: true, down: true } : {}), p1: [], p1f: tapAt(3), dur: 160 },
+    { name: 'down-forward PARRIES the low sweep', p2: (me, o, t) => (t >= 20 && t < 23 ? { rk: true, down: true } : {}), p1: [], p1f: tapAt(3, true), dur: 180 },
+    { name: 'a jump-in air attack, PARRIED standing', at: () => [560, 720], p2: (me, o, t) => (t >= 10 && t < 13 ? { jump: true, dx: -1 } : t >= 26 && t < 29 ? { lk: true } : {}), p1: [], p1f: tapAt(3), dur: 200 },
+    { name: "a throw can't be parried", at: () => [560, 640], p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true, lk: true } : {}), p1: [[21, (me) => ({ dx: me.facing })]], dur: 160 },
+    { name: 'mashing forward never parries (each tap keeps the lockout running)', p2: (me, o, t) => (t >= 30 && t < 33 ? { lp: true } : {}), p1: [], p1f: (me, o, t) => (t % 8 < 4 ? { dx: me.facing } : {}), dur: 160 },
   ],
   mixup: [
     { name: 'high vs crouch (ducks)', p2: { down: true }, p1: [[20, B('lp')]], dur: 90 },
@@ -605,6 +625,7 @@ const scenes = {
   'getup-test'(o) { timeline(PHASES.getup, o); },
   'stomp-test'(o) { timeline(PHASES.stomp, o); },
   'air-recovery-test'(o) { timeline(PHASES.airRecovery, o); },
+  'parry-test'(o) { timeline(PHASES.parry, o); },
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
   'stamina-test'(o) { timeline(PHASES.stamina, o); },
   'string-ender-test'(o) { timeline(PHASES.strings, o); },

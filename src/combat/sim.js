@@ -2,7 +2,7 @@
 // physics, hit resolution with hitstop, rounds and KO. step(ms) is deterministic given
 // the same inputs and seed. Events for the glue (fx, camera) go through onEvent.
 
-import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
+import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PARRY, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
 import { matchStrings, MOVE_TOKEN } from './strings.js';
 import { buildHitboxes, buildHurtboxes, testHit } from './hitboxes.js';
 import { EMPTY_INPUT } from './input.js';
@@ -40,7 +40,8 @@ const DOWN_MAX = 120;
 // him upright to land on his feet; in the first TECH_PERFECT steps of that it comes with a jab; a press before
 // TECH_MIN locks it out for TECH_LOCK steps (and a press while locked keeps it locked), so mashing never techs
 const TECH_MIN = AIR_TECH.min, TECH_PERFECT = AIR_TECH.perfect, TECH_LOCK = AIR_TECH.lock;   // frameData.js
-const VAULT_FALL = [0.47, 0.76];    // the vault clip's drop (its t): a press there comes out as an air attack               // lying with no input: he stands up by himself after 1s, so nobody can stall
+const VAULT_FALL = [0.47, 0.76];
+const PARRY_STATES = new Set(['idle', 'walk', 'crouch', 'block']);   // a tap from here (and a hit landing here) can parry    // the vault clip's drop (its t): a press there comes out as an air attack               // lying with no input: he stands up by himself after 1s, so nobody can stall
 const ROLL_GETUP_STEPS = 8;         // the roll is still available for the first 4 frames of the getup
 const PREROLL = 0.05;               // an attack's first rendered frame is already 50ms into its anticipation (the rig's blend and dip are under 6px before that)
 const GRAB_PULL = 6;                // px a step a grabbed body is pulled in to the throw's hold (720 px/s)
@@ -238,6 +239,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
       downPin: 0,  // steps a stomped body is held on the floor
       techLock: -1, // air recovery locked out until this step (a press too early)
+      parryAt: -999, parryLow: false, parryLock: -1,   // the universal parry: the last counted tap toward him, with down or not, and its lockout
       wakeUp: 0,   // a wake-up strike from the floor: 1 lying, 2 rising (sim.js isWake)
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
       shockT: 0, shockUsed: false, rootT: 0,   // character hooks: shock (extra stun), root (no walk or jump)
@@ -314,7 +316,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
 u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
-    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1;
+    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1; u.parryAt = -999; u.parryLow = false; u.parryLock = -1;
     u.shockT = 0; u.shockUsed = false; u.rootT = 0;
     u.regenMul = 1; u.regenEnd = -1; u.regenLen = 0; u.regenTag = ''; u.speedMul = 1; u.speedEnd = -1; u.speedLen = 0; u.speedTag = '';
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
@@ -749,6 +751,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if ((t13 || t24) && !inStance(u)) e.attack = (u.grounded && commandMove(t13 ? 'throw13' : 'throw24', inp, u, sim.stepCount, false)) || 'throw';   // 1+3 or 2+4 (a character's command grab first; in a stance the buttons are read one by one)
     else for (const b of ['lp', 'rp', 'lk', 'rk']) if (press(b)) { Object.assign(e, resolvePress(u, b, inp)); break; }
     if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && !FRAME_DATA[m].botch && (!FRAME_DATA[m].owner || canUse(u.char, m))) { e.attack = m; break; }   // the AI names moves directly (its own character's)
+    // the universal parry: a fresh tap toward him (never a held direction), on his feet and free; a tap inside the
+    // last one's lockout doesn't count and keeps it locked (a double-tap dash never parries, nor does mashing)
+    if (e.dxPress && e.dxPress === u.facing && PARRY_STATES.has(u.state) && u.grounded && !(u.faint > 0)) {
+      if (sim.stepCount >= u.parryLock) { u.parryAt = sim.stepCount; u.parryLow = !!inp.down; }
+      u.parryLock = sim.stepCount + PARRY.lock;
+    }
     // double-tap run
     if (inp.dx && inp.dx !== prev.dx) {
       if (u.tapTimer > 0 && u.tapDir === inp.dx && !inp.touch) u.running = true;
@@ -846,6 +854,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     return n - Math.ceil((key - PREROLL * 1000) * 0.12 - 1e-6);
   }
   sim.stepsSince = stepsSince;
+  // steps until a strike out now can hit (its contact key, less the early window), for the CPU's parry
+  sim.toLive = (u) => (u.state === 'attack' && FRAME_DATA[u.move] ? (msToActive(u) - earlyMs(u)) * 0.12 : Infinity);
   // Is this press mistimed? Everything that legally carries on from the strike out now behaves as it
   // always has: a string's next press, a listed cancel, a throw replacing the first steps of a strike
   // (1, then 3 a frame late), any press after a launch or knockdown connected (its recovery is cut short
@@ -1855,6 +1865,19 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (def.glide) { def.glide.until += def.hitstop; if (def.glide.from != null) def.glide.from += def.hitstop; }   // the step-in waits out the parry's freeze
     }
   }
+  // caught by a timed tap: no damage, the striker reels PARRY.stun frames (his string and anything buffered
+  // end), both freeze for the flash, and the parrying side is free first: a small punish window
+  function uParry(att, def, pt, move) {
+    const dir = awayDir(def, att);
+    def.parryAt = -999;   // one strike per tap
+    att.state = 'hitstun'; att.stun = f60(PARRY.stun); att.phase = null; att.move = null; att.buffer = null; att.bufferKeys = null; att.seq = null; att.queued = null;
+    att.glide = null; att.vx = att.grounded ? 0 : -dir * 120; att.comboBy = -1; att.crouch = false; att.followThrough = false; att.wakeUp = 0;
+    if (att.rig.current.move !== 'airborne') { safePlay(att.rig, HAS_HITSTUN ? 'hitStun' : 'hitLight'); syncRig(att); rigUpd(att, 0.008); att.rig.events.length = 0; }
+    att.hitstop = def.hitstop = f60(8); def.flash = 2; def.vx = 0;
+    callout('PARRY', def.id, 'counter');
+    note({ type: 'parry', att: def.id, def: att.id, move, universal: true, low: !!def.parryLow });
+    onEvent({ type: 'block', x: pt.x, y: pt.y, dir: -dir, strength: 1, move, parry: true, attacker: att, defender: def });
+  }
   function applyHit(att, def, pt, { move = att.move, trade = false } = {}) {
     let fd = FRAME_DATA[move];
     // a string's chase step stops at contact: it closed the gap, and carrying on took him under the body
@@ -1964,6 +1987,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.6, move, limb: fd.limb, flashR: 30, ko, knockdown: true, attacker: att, defender: def });
       return;
     }
+    // the universal parry: tapped toward him in the last PARRY.win steps, standing for a high, a mid or an air
+    // attack, down-forward for a low; never a throw, a trade, or while fainted
+    if (!trade && !fd.throw && PARRY_STATES.has(def.state) && def.grounded && !(def.faint > 0) && sim.stepCount - def.parryAt <= PARRY.win &&
+      (fd.height === 'low') === !!def.parryLow) { uParry(att, def, pt, move); return; }
     const dfd = def.state === 'attack' && def.move && FRAME_DATA[def.move];
     if (dfd && dfd.parry && def.phase !== 'recovery' && !fd.throw && !fd.air && !(def.faint > 0) && (dfd.parry.heights || ['high', 'mid']).includes(fd.height)) { parry(att, def, pt, dfd); return; }
     if (dfd && dfd.armor && def.armorLeft > 0 && def.phase !== 'recovery' && !fd.throw) { absorb(att, def, pt, fd, dfd, dir, move); return; }
