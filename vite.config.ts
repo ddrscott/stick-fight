@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { defineConfig } from 'vite';
 import { execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';

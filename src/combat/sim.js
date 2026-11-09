@@ -239,7 +239,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
       downPin: 0,  // steps a stomped body is held on the floor
       techLock: -1, // air recovery locked out until this step (a press too early)
-      parryAt: -999, parryLow: false, parryLock: -1,   // the universal parry: the last counted tap toward him, with down or not, and its lockout
+      parryAt: -999, parryLow: false, parryLock: -1, pressAt: -999,   // the universal parry: the last counted tap toward him, with down or not, and its lockout
       wakeUp: 0,   // a wake-up strike from the floor: 1 lying, 2 rising (sim.js isWake)
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
       shockT: 0, shockUsed: false, rootT: 0,   // character hooks: shock (extra stun), root (no walk or jump)
@@ -316,7 +316,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
 u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
-    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1; u.parryAt = -999; u.parryLow = false; u.parryLock = -1;
+    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1; u.parryAt = -999; u.parryLow = false; u.parryLock = -1; u.pressAt = -999;
     u.shockT = 0; u.shockUsed = false; u.rootT = 0;
     u.regenMul = 1; u.regenEnd = -1; u.regenLen = 0; u.regenTag = ''; u.speedMul = 1; u.speedEnd = -1; u.speedLen = 0; u.speedTag = '';
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
@@ -753,8 +753,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && !FRAME_DATA[m].botch && (!FRAME_DATA[m].owner || canUse(u.char, m))) { e.attack = m; break; }   // the AI names moves directly (its own character's)
     // the universal parry: a fresh tap toward him (never a held direction), on his feet and free; a tap inside the
     // last one's lockout doesn't count and keeps it locked (a double-tap dash never parries, nor does mashing)
+    // (nor within PARRY.quiet steps of a button press: a hand mashing buttons never parries by accident)
     if (e.dxPress && e.dxPress === u.facing && PARRY_STATES.has(u.state) && u.grounded && !(u.faint > 0)) {
-      if (sim.stepCount >= u.parryLock) { u.parryAt = sim.stepCount; u.parryLow = !!inp.down; }
+      if (sim.stepCount >= u.parryLock && sim.stepCount - u.pressAt > PARRY.quiet) { u.parryAt = sim.stepCount; u.parryLow = !!inp.down; }
       u.parryLock = sim.stepCount + PARRY.lock;
     }
     // double-tap run
@@ -763,6 +764,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       u.tapDir = inp.dx; u.tapTimer = 0.25;
     }
     if (!inp.dx) u.running = false;
+    if (e.attack) u.pressAt = sim.stepCount;
     u.tapTimer = Math.max(0, u.tapTimer - DT);
     u.last = inp;
     return e;
