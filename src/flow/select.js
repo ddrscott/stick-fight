@@ -22,6 +22,7 @@ const clamp01 = (v) => Math.max(0.06, Math.min(1, v));
 // a rig drawn into its own canvas, glowing in the character's color
 function rigView(canvas, c, zoom) {
   const rig = createFighter({ color: c.color, x: 0, y: 0, facing: 1, body: c.body });
+  rig.pants = c.pants || null;
   rig.setBody(c.body, { accent: c.accent });
   rig.speedLines = false;
   const ctx = canvas.getContext('2d');

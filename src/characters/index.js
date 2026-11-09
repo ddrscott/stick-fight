@@ -13,8 +13,17 @@ import janitor from './janitor.js';
 import manager from './manager.js';
 import accountant from './accountant.js';
 import windowWasher from './windowWasher.js';
+import hrRep from './hrRep.js';
+import salesRep from './salesRep.js';
+import barista from './barista.js';
+import chef from './chef.js';
+import wellness from './wellness.js';
+import electrician from './electrician.js';
+import receptionist from './receptionist.js';
+import lawyer from './lawyer.js';
+import ceo from './ceo.js';
 
-for (const def of [temp, intern, helpdesk, courier, security, janitor, manager, accountant, windowWasher]) {
+for (const def of [temp, intern, helpdesk, courier, security, janitor, manager, accountant, windowWasher, hrRep, salesRep, barista, chef, wellness, electrician, receptionist, lawyer, ceo]) {
   if (!def) continue;
   try { registerCharacter(def); } catch (e) { console.error(`[characters] ${def.id || '?'} didn't register: ${e.message}`); }
 }

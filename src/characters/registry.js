@@ -115,3 +115,13 @@ function clash(a, b) {
   const dh = Math.min(Math.abs(x.h - y.h), 360 - Math.abs(x.h - y.h));
   return dh < 32;
 }
+
+// Pants: a character may set `pants` (and `altPants` for a mirror match) so its legs draw in a second
+// color. P2 takes altPants when both players picked the same fighter, or when both pants would read
+// as one color; null means legs in the body color.
+export function pantsFor(c, slot, other, otherPants = null) {
+  if (!c || c.id === TEMP_ID) return null;
+  let p = c.pants || null;
+  if (slot === 1 && other && ((other.id === c.id) || (p && otherPants && clash(p, otherPants)))) p = c.altPants || p;
+  return p;
+}

@@ -10,7 +10,7 @@ import { createAI } from './ai.js';
 import { mulberry32 } from './rng.js';
 import * as dm from './dmath.js';   // bit-identical hypot on every engine (online play)
 import { saveSim, loadSim } from './snapshot.js';
-import { characterOr, canUse, colorFor, TEMP_ID } from '../characters/registry.js';   // per-character stats, moves, strings (src/characters/)
+import { characterOr, canUse, colorFor, pantsFor, TEMP_ID } from '../characters/registry.js';   // per-character stats, moves, strings (src/characters/)
 import { BOTCH_GRACE, BOTCH_CALLOUT, ACCIDENTS, chooseBotch, botchCost, accidentFor, sideOf, isFoot } from './botch.js';   // mistimed presses (src/combat/botch.js)
 
 let WALK = 180, RUN = 380, CROUCH_WALK = 70;           // replaced by the rig's own stride speeds (MOVE_DATA) so planted feet don't skate
@@ -280,6 +280,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.staminaMax = STAMINA.max * ch.stats.stamina;
     const other = sim.units[1 - i];
     u.color = color || colorFor(ch, i, other && other.char); u.rig.color = u.color;
+    u.rig.pants = pantsFor(ch, i, other && other.char, other && other.rig ? other.rig.pants : null);
     if (!calibrated.has(ch.id)) {
       calibrated.add(ch.id);
       calibrate(u.rig, ch);

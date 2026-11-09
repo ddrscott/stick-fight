@@ -1540,16 +1540,29 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const w = R.limbW * s, tip = R.limbTip * s;
     // Far limbs, torso, head, near limbs.
     limb(ctx, J.lShoulder, J.lElbow, J.lHand, w, tip);
+    // legs in the character's pants color when it has one (src/characters/: `pants`), so fighters
+    // with close body colors still read apart; the hips get a band of it over the torso's base
+    const pants = f.pants || null;
+    if (pants) { ctx.fillStyle = pants; }
     limb(ctx, J.hip, J.lKnee, J.lFoot, w, tip);
+    if (pants) { ctx.fillStyle = f.color; }
     const midW = (R.hipW + R.torsoW) / 2 * s;
     taper(ctx, J.hip, J.chest, R.hipW * s, midW);
     taper(ctx, J.chest, J.neck, midW, R.torsoW * s);
+    if (pants) {
+      ctx.fillStyle = pants;
+      const wx = J.hip.x + (J.chest.x - J.hip.x) * 0.22, wy = J.hip.y + (J.chest.y - J.hip.y) * 0.22;
+      taper(ctx, J.hip, { x: wx, y: wy }, R.hipW * s, R.hipW * s * 1.02);
+      ctx.fillStyle = f.color;
+    }
     ctx.beginPath();
     ctx.arc(J.head.x, J.head.y, R.headR * s, 0, Math.PI * 2);
     ctx.fill();
     // a character's accessory (a cap, a hard hat, a headset): a few strokes on the head, lit like the body
     if (accessory) { ctx.save(); try { accessory(ctx, J, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s }); } catch (e) { /* a bad accessory never breaks the frame */ } ctx.restore(); }
+    if (pants) ctx.fillStyle = pants;
     limb(ctx, J.hip, J.rKnee, J.rFoot, w, tip);
+    if (pants) ctx.fillStyle = f.color;
     limb(ctx, J.rShoulder, J.rElbow, J.rHand, w, tip);
     if (f.speedLines && strikeTimer > 0 && strikeDir && move && move.limb) {
       speedLines(ctx, strikeDir, J[move.limb], strikeTimer / 110);
