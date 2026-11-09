@@ -12,6 +12,7 @@
 //                                               fight it pauses, in the pause menu it resumes,
 //                                               anywhere else it's confirm
 //   delete    Backspace (typing screens)        X / □ (the two keyboard screens)  DEL
+//   move list F1 (pause menu, character select)  Y / △ (same screens)             the MOVE LIST button
 //   nothing   -                                 X and Y elsewhere, bumpers, triggers, sticks
 //
 // A screen with nothing to back out to (the title, a stage card, stage clear, continue, game over,
@@ -23,9 +24,9 @@
 //   1 left punch U / X (□)    2 right punch I / Y (△)    3 left kick J / A (✕)    4 right kick K / B (○)
 //   move A D or arrows / stick or D-pad, jump W / up, crouch S / down, guard hold back or B / L1 L2,
 //   throw 1+3 or 2+4 / R1, run Shift / R2, pause P or Esc / Start or Select (online: leave
-//   confirm), move list F1 / pause menu CONTROLS.
+//   confirm), the quick move strip F1; the full MOVE LIST is in the pause menu (src/flow/movelist.js).
 
-/** @typedef {'move'|'confirm'|'back'|'start'|'del'|'type'} Action */
+/** @typedef {'move'|'confirm'|'back'|'start'|'del'|'type'|'moves'} Action */
 
 // ---- the device in use ------------------------------------------------------------------------------
 // <html> carries dev-key, dev-pad or dev-touch (and pad-ps for a PlayStation pad), so legends switch
@@ -69,8 +70,8 @@ export const FACE = {
   3: { x: 'Y', ps: '△', c: '#ffd23d', pc: '#3ddcb0' },
 };
 export const PILL = { start: { x: 'START', ps: 'OPTIONS' }, select: { x: 'SELECT', ps: 'SHARE' } };
-const KEY = { move: 'ARROWS', confirm: 'ENTER', back: 'ESC', del: 'BACKSPACE', type: 'A-Z' };
-const PAD = { confirm: 0, back: 1, del: 2 };
+const KEY = { move: 'ARROWS', confirm: 'ENTER', back: 'ESC', del: 'BACKSPACE', type: 'A-Z', moves: 'F1' };
+const PAD = { confirm: 0, back: 1, del: 2, moves: 3 };
 
 function span(cls, text) { const s = document.createElement('span'); s.className = cls; if (text != null) s.textContent = text; return s; }
 /** a round face button glyph (0 A, 1 B, 2 X, 3 Y), Xbox and PlayStation faces both drawn, CSS picks */

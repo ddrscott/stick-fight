@@ -3,7 +3,8 @@
 // shows off a unique move now and then, the name and tagline, stat bars and the unique move list.
 // Keys and the pad move the cursor by geometry (ui.js); Enter, Space or A on a card picks it, and so
 // does the PICK button. A tap focuses a card and a second tap picks it, so a stray touch never starts
-// a fight. B, Esc, Backspace, Select or the BACK button go back.
+// a fight. B, Esc, Backspace, Select or the BACK button go back. MOVE LIST (the button, F1 or pad Y; the flow
+// reads the key) opens the highlighted fighter's full move list (src/flow/movelist.js) over the screen.
 
 import { el, button } from './ui.js';
 import { techniqueCount } from './techniques.js';
@@ -50,10 +51,11 @@ function rigView(canvas, c, zoom) {
  * @param {{ title: string, sub: string, roster: any[], initial?: string, touch: boolean, pad: boolean,
  *           onPick: (id: string) => void, onBack: () => void, cls?: string,
  *           backLabel?: string, pickLabel?: string, status?: HTMLElement, extra?: any[],
- *           onHover?: (id: string) => void, onBackKey?: () => void, legend?: any[] }} o
+ *           onHover?: (id: string) => void, onBackKey?: () => void, legend?: any[], onMoves?: (c: any) => void }} o
  *   the online pick screen's extras: BACK's label (LEAVE ROOM), a status line under the subtitle,
  *   more footer buttons (the host's START), the card under the cursor as it moves (onHover), and a
- *   back key that does something other than the BACK button (un-ready, not leave)
+ *   back key that does something other than the BACK button (un-ready, not leave). onMoves adds the MOVE LIST
+ *   button, for the fighter under the cursor
  */
 export function openSelect(ui, o) {
   const views = [];
@@ -104,17 +106,21 @@ export function openSelect(ui, o) {
     const back = button(o.backLabel || 'BACK', o.onBack, 'fl-violet');
     const tc = techniqueCount();   // the happy accidents found on this browser (src/flow/techniques.js)
     // the keys and buttons are in the footer legend (ui.js); touch gets the one thing it can't guess
-    const extra = o.extra || [];
+    const extra = [...(o.extra || [])];
+    const moves = o.onMoves ? button('MOVE LIST', () => { if (bigChar) o.onMoves(bigChar); }, 'fl-amber') : null;
+    if (moves) extra.unshift(moves);
     foot.append(back.el, pick.el, ...extra.map((x) => x.el), el('div', 'fl-small fl-touchonly', 'TAP A FIGHTER, TAP AGAIN TO PICK'),
       el('div', 'fl-small fl-found', `TECHNIQUES FOUND ${tc.found}/${tc.total}`));
     root.appendChild(foot);
     items.push(back, pick, ...extra);
-    return { items, focus: start, back: o.onBackKey || o.onBack, onFocus: (k, it) => { if (it && it.char) { paint(it.char); if (o.onHover) o.onHover(it.char.id); } }, legend: o.legend || [['move'], ['confirm', 'PICK'], ['back', 'BACK']] };
+    return { items, focus: start, back: o.onBackKey || o.onBack, onFocus: (k, it) => { if (it && it.char) { paint(it.char); if (o.onHover) o.onHover(it.char.id); } }, legend: o.legend || [['move'], ['confirm', 'PICK'], ...(o.onMoves ? [['moves', 'MOVE LIST']] : []), ['back', 'BACK']] };
   });
   paint(roster[start]);
 
   let marked = '';
   return {
+    /** the fighter under the cursor (the sheet's) */
+    get current() { return bigChar; },
     /** tag a card (the rival's, online): label '' clears it */
     mark(id, label, cls = '') {
       const key = `${id}|${label}|${cls}`;

@@ -81,7 +81,7 @@ export function rulesPage({ FIGHT, MENUS, FACE, PILL }) {
 
   <section class="s-section" aria-labelledby="controls-h">
     <h2 class="s-h2" id="controls-h">THE CONTROLS</h2>
-    <p class="s-note">Keyboard, any standard gamepad (Xbox, PlayStation, 8BitDo) or the touch screen. The game switches its button hints to whatever you pick up. In a fight, F1 shows your move list.</p>
+    <p class="s-note">Keyboard, any standard gamepad (Xbox, PlayStation, 8BitDo) or the touch screen. The game switches its button hints to whatever you pick up. Pause and pick MOVE LIST (or press F1, or Y on a pad) for your fighter's full move list, with every string and a preview of each move; the character select has one for every fighter.</p>
     <div class="s-controls-wrap">
       ${controlsTable(FIGHT, MENUS, FACE, PILL)}
     </div>
