@@ -4,6 +4,16 @@ Live at https://askscottpierce.com/stick-fight
 
 A browser fighting game. Stick figures animated at Xiao Xiao quality, lit like a modern 2D game.
 
+## Design pillars
+
+Read these before adding a mechanic. When a change is a judgment call, these decide it.
+
+- **Timing, not speed.** Skill is pressing one thing at the right moment because you read what the other player committed to. It is never how many inputs you can enter a second. Nobody should win on fast, simple input, and nothing should need a reflex younger than its player.
+- **Give and take, like tai chi and aikido.** Wait for the other player to commit, then use their own force. The harder someone commits, the harder they fall when it's read. Every option has an answer, and every answer costs something when it's guessed wrong.
+- **Mashing loses.** A press thrown where it doesn't belong botches (Botches), every swing costs stamina, and the last point leaves you fainted and open. A new mechanic must not hand mashers a way back in: no defense that a held direction or a repeated button triggers by accident, no escape you mash out of.
+- **Simple bodies, deep systems.** The stick figures and their inputs are the easy part: a direction plus one button, no motion inputs, strings with a rhythm rather than a speed. The sophistication lives in the botch and technique system, where the same physics that tangles a mistimed press rewards an exactly timed one.
+- **Windows a person can learn.** A timing window can be generous if missing it, or using it when nothing was coming, is committal and punishable. Tight-and-free is a reflex test; wider-and-committal is a read.
+
 ## Run
 
 ```sh
