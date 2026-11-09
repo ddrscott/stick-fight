@@ -4,7 +4,7 @@
 //   fighters/<id>/index.html     one page per registered character
 //   .site/home.json              the homepage's fills: the cast grid, the controls table, the fighter
 //                                and ladder counts (site/vite-plugin.mjs puts each in its <!--@key--> marker)
-//   public/sprites/<id>-idle[@2x].webp   the roster cards' idle loops (site/sprites.mjs)
+//   public/sprites/<id>-idle[-2x].webp   the roster cards' idle loops (site/sprites.mjs)
 // All three are build products (gitignored). vite.config.ts runs this in a fresh Node process before
 // every build and dev start, and again in dev when a character file changes, so the registry is always
 // imported fresh. Run it by hand with `node site/generate.mjs`.

@@ -86,7 +86,7 @@ export function rosterCards(sheets, hrefPrefix, { detail = false, cast = false, 
     const dots = [s.color, s.pants, s.accent].filter(Boolean).map((c) => `<i style="background:${c}"></i>`).join('');
     const sig = s.moveList.slice(0, 3).map((m) => `<li><span class="s-in">${esc(m.input)}</span>${esc(m.name)}</li>`).join('');
     return `<a class="s-card${cast ? ' s-card-cast' : ''}" href="${hrefPrefix}${s.id}/" style="--c:${s.color};--i:${(i * 3) % 5}">
-    <span class="s-sprite" aria-hidden="true"><img src="${sp('')}" srcset="${sp('')} 1x, ${sp('@2x')} 2x" width="${SPRITE.W * SPRITE.FRAMES}" height="${SPRITE.H}" loading="lazy" decoding="async" alt=""></span>
+    <span class="s-sprite" aria-hidden="true"><img src="${sp('')}" srcset="${sp('')} 1x, ${sp('-2x')} 2x" width="${SPRITE.W * SPRITE.FRAMES}" height="${SPRITE.H}" loading="lazy" decoding="async" alt=""></span>
     <b class="s-card-name${s.name.length > 10 ? ' s-long' : ''}">${esc(s.name)}</b>${cast ? `
     <span class="s-card-dots" aria-hidden="true">${dots}</span>` : ''}
     <small class="s-card-tag">${esc(cap(s.tagline))}</small>${detail ? `

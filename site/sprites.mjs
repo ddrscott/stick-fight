@@ -2,7 +2,7 @@
 // slow on phones, so the build draws each fighter's idle loop with the game's own rig (createFighter +
 // draw, in its body, colors, pants and glow) into a sprite sheet, and the page plays it with CSS steps().
 // Runs in Node from site/generate.mjs, on @napi-rs/canvas (Skia, prebuilt for macOS and Linux, no
-// browser needed), writing public/sprites/<id>-idle.webp and <id>-idle@2x.webp. Vite copies public/
+// browser needed), writing public/sprites/<id>-idle.webp and <id>-idle-2x.webp (no @: Cloudflare redirects it to %40). Vite copies public/
 // into the build; the folder is a build product (gitignored).
 import { createCanvas } from '@napi-rs/canvas';
 import { mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
@@ -62,7 +62,7 @@ export function writeSprites(sheets, dir) {
   for (const s of sheets) {
     const c = getCharacter(s.id);
     if (!c || c.id !== s.id) throw new Error(`[sprites] no character for ${s.id}`);
-    for (const [scale, suffix] of [[1, ''], [2, '@2x']]) {
+    for (const [scale, suffix] of [[1, ''], [2, '-2x']]) {
       const name = `${s.id}-idle${suffix}.webp`;
       writeFileSync(join(dir, name), renderIdle(c, scale));
       want.add(name);
