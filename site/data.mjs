@@ -27,7 +27,8 @@ import { buildHitboxes } from '../src/combat/hitboxes.js';
 const PREROLL_MS = 50;   // src/combat/sim.js PREROLL
 const fr = (ms) => Math.round(ms * 0.06);
 
-// The shared button table, as resolveButton() in src/combat/sim.js reads a press (keep the two together).
+// The shared button table, as resolveButton() in src/combat/sim.js reads a press, plus the stomp (resolvePress)
+// and the wake-up strikes (wakeFor) (keep them together).
 export const SHARED_INPUTS = [
   { button: '1', motion: '', move: 'jab', name: 'JAB' },
   { button: '2', motion: '', move: 'cross', name: 'CROSS' },
@@ -50,6 +51,12 @@ export const SHARED_INPUTS = [
   { button: '3', motion: 'air', move: 'flyingKick', name: 'FLYING KICK' },
   { button: '4', motion: 'air', move: 'airRoundhouse', name: 'AIR ROUNDHOUSE' },
   { button: '4', motion: 'airDown', move: 'diveKick', name: 'DIVE KICK' },
+  // not in resolveButton: the stomp is resolvePress (stompOK), the wake-up strikes wakeFor. `fix` blanks what the
+  // standing measurement gets wrong: nobody blocks a stomp, and a wake-up strike springs from the floor (on block
+  // is getup-test's measurement, in the note)
+  { button: '3', motion: 'over', move: 'stomp', name: 'STOMP', note: 'or ↓4, the other fighter on the floor in front of you', fix: { onBlock: null } },
+  { button: '1', motion: 'floor', move: 'wakeKick', name: 'WAKE KICK', note: 'or 3, while knocked down; can\'t be hit until it swings; 17 to 24 frames minus on block', fix: { onBlock: null, reach: null } },
+  { button: '2', motion: 'floor', move: 'wakeSweep', name: 'WAKE SWEEP', note: 'or 4, or ↓ and any button, while knocked down; can\'t be hit until it swings; 17 to 24 frames minus on block', fix: { onBlock: null, reach: null } },
 ];
 
 // ---- notation: the game's glyphs (the HUD's move hints and the move lists) ---------------------------
@@ -57,6 +64,8 @@ export function inputFor(button, motion) {
   if (motion === 'air') return `${button} in air`;
   if (motion === 'airDown') return `↓${button} in air`;
   if (motion === 'rise') return `release ↓, ${button}`;
+  if (motion === 'over') return `↓${button} over them`;
+  if (motion === 'floor') return `${button} on the floor`;
   if (motion === 'd') return `↓${button}`;
   const g = { f: '→', b: '←', df: '↘', db: '↙', ff: '→→', run: '→→' }[motion];
   return g ? `${g} ${button}` : button;
@@ -418,7 +427,7 @@ function stringsOf(c) {
 function basicsOf(c) {
   return SHARED_INPUTS.map((x) => {
     const over = c.commands.find((k) => k.button === x.button && k.motion === x.motion);
-    return { ...x, input: inputFor(x.button, x.motion), row: frameRow(x.move, c), replacedBy: over ? nameOf(c, over.move) : null };
+    return { ...x, input: inputFor(x.button, x.motion), row: { ...frameRow(x.move, c), ...(x.fix || {}) }, replacedBy: over ? nameOf(c, over.move) : null };
   });
 }
 

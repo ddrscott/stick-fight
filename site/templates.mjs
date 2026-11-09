@@ -134,7 +134,7 @@ ${topbar(root)}
 <main class="s-main">
   <section class="s-section">
     <h1 class="s-h1">THE ROSTER</h1>
-    <p class="s-lede">${sheets.length} office workers, one building. Every fighter keeps the shared basics (the four limbs, crouch and air attacks, throws) and brings their own stats, body, unique moves and strings. Pick one for the full move sheet.</p>
+    <p class="s-lede">${sheets.length} office workers, one building. Every fighter keeps the shared basics (the four limbs, crouch and air attacks, throws, the stomp, the parry, getting up and recovering in the air) and brings their own stats, body, unique moves and strings. Pick one for the full move sheet.</p>
     <div class="s-grid s-grid-lg">
   ${rosterCards(sheets, './', { detail: true, root: '/' /* a public-dir path: Vite checks it and writes it back relative (../sprites/) */ })}
     </div>
@@ -299,6 +299,7 @@ ${topbar(root)}
       <summary><h2 class="s-h2">SHARED BASICS</h2><span>Every fighter has these. ${s.basics.filter((b) => b.replacedBy).length ? 'Struck through: replaced by a unique move.' : ''}</span></summary>
       <p class="s-note">→ is toward the other fighter. Reach is on ${esc(s.name)}'s body.</p>
       ${basicsTable(s)}
+      <p class="s-note">Also shared, with no button of their own: <b>parry</b>, a tap toward the other fighter just before a hit lands (↘ for a low), which costs nothing and leaves the striker reeling; <b>getting up</b>, where ↑ stands, ← or → rolls, and a button is a wake-up strike; and <b>air recovery</b>, a button at the right moment while juggled that lands you on your feet (right at the start of the window, with a jab).</p>
     </details>
   </section>
 
