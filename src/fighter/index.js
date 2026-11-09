@@ -815,6 +815,14 @@ Object.assign(MOVE_DEFS, {
     WK({ hx: -80, torso: -12, head: 14, la: [-36, -16], ra: [56, 60], ll: [80, -66], rl: [72, -74] }, 70, 'out'),
   ], -80),
 });
+// Air recovery: out of a juggle the body snaps into a tuck (knees to the chest, arms wrapped), rolls upright
+// and opens into the jump's falling pose, feet under it, and holds there until the sim lands it (airLand).
+MOVE_DEFS.airTech = { blend: 50, blendEase: 'out', keys: [
+  K({ hx: -2, torso: 46, bend: 12, head: 14, ll: [120, -10], rl: [110, -20], la: [110, 30], ra: [90, 20], air: 4 }, 70, 'out'),
+  K({ hx: 2, torso: 18, bend: 4, head: -2, ll: [70, -40], rl: [56, -56], la: [130, 160], ra: [110, 150], air: 4 }, 80, 'out'),
+  K({ hx: 4, torso: 10, head: -4, ll: [24, 4], rl: [-10, -16], la: [110, 120], ra: [90, 100], air: 0 }, 90, 'out'),
+  K({ hx: 4, torso: 8, head: -4, ll: [22, 2], rl: [-10, -14], la: [100, 120], ra: [84, 100], air: 0 }, 0, 'sine'),
+] };
 // Stomp (down and a kick over a body on the floor): the rear knee comes up to the chest, then the heel
 // drives down onto the body as he steps through, the weight following it down; it sticks there a beat (the
 // sim pins the body under it) and the leg has to come back out before he's guarding again. A long recovery

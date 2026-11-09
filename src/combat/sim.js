@@ -2,7 +2,7 @@
 // physics, hit resolution with hitstop, rounds and KO. step(ms) is deterministic given
 // the same inputs and seed. Events for the glue (fx, camera) go through onEvent.
 
-import { FRAME_DATA, ATTACKS, DT, f60, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
+import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
 import { matchStrings, MOVE_TOKEN } from './strings.js';
 import { buildHitboxes, buildHurtboxes, testHit } from './hitboxes.js';
 import { EMPTY_INPUT } from './input.js';
@@ -35,7 +35,12 @@ const OTG_MOVES = new Set(['sweep', 'cross', 'lowKick']);   // low enough to lan
 const OTG = { damage: 3, hitstop: 3, bounce: 4 };   // a flinch: 3-frame freeze, then a 2-frame 6px pop; the body stays down
 const ROLL_STEPS = 30, ROLL_SPEED = 340, GETUP_SPEED = 2;   // the rig's getup is 672ms at 1x; at 2x it is 336ms, about the old clip at 1.5x
 const SQUASH_STEPS = 10;            // 5 frames on the floor after touchdown before up or a wake-up strike is read (a roll goes at once)
-const DOWN_MAX = 120;               // lying with no input: he stands up by himself after 1s, so nobody can stall
+const DOWN_MAX = 120;
+// air recovery out of a juggle or a launch: a button once TECH_MIN steps have passed since the last hit flips
+// him upright to land on his feet; in the first TECH_PERFECT steps of that it comes with a jab; a press before
+// TECH_MIN locks it out for TECH_LOCK steps (and a press while locked keeps it locked), so mashing never techs
+const TECH_MIN = AIR_TECH.min, TECH_PERFECT = AIR_TECH.perfect, TECH_LOCK = AIR_TECH.lock;   // frameData.js
+const VAULT_FALL = [0.47, 0.76];    // the vault clip's drop (its t): a press there comes out as an air attack               // lying with no input: he stands up by himself after 1s, so nobody can stall
 const ROLL_GETUP_STEPS = 8;         // the roll is still available for the first 4 frames of the getup
 const PREROLL = 0.05;               // an attack's first rendered frame is already 50ms into its anticipation (the rig's blend and dip are under 6px before that)
 const GRAB_PULL = 6;                // px a step a grabbed body is pulled in to the throw's hold (720 px/s)
@@ -232,6 +237,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
       downPin: 0,  // steps a stomped body is held on the floor
+      techLock: -1, // air recovery locked out until this step (a press too early)
       wakeUp: 0,   // a wake-up strike from the floor: 1 lying, 2 rising (sim.js isWake)
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
       shockT: 0, shockUsed: false, rootT: 0,   // character hooks: shock (extra stun), root (no walk or jump)
@@ -308,7 +314,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
 u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
-    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0;
+    u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1;
     u.shockT = 0; u.shockUsed = false; u.rootT = 0;
     u.regenMul = 1; u.regenEnd = -1; u.regenLen = 0; u.regenTag = ''; u.speedMul = 1; u.speedEnd = -1; u.speedLen = 0; u.speedTag = '';
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
@@ -936,6 +942,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (kind === 'air') {
       // tangled in the air: the body goes to the point simulation with the jump's momentum and a twist,
       // and lands in a heap (the knockdown and getup flow)
+      u.techLock = sim.stepCount + 600;   // his own tangle: no air recovery out of it
       u.botchKind = 'air'; u.state = 'knockdown'; u.phase = null; u.move = null; u.juggle = false; u.landJoints = null; u.otgHit = false; u.rolled = false; u.breakOK = false;
       u.launchedBy = -1;
       if (!startRag(u, u.vx * 0.8, Math.min(u.vy, 120) - 60, { wall: 'stop', spin: (f.cur.side || 1) * (260 + 60 * sev) })) safePlay(u.rig, 'knockdown');
@@ -960,6 +967,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.botchKind === 'trip') {
       const fw = u.botchFwd > 0, sev = u.botchSev || 1;
       u.state = 'knockdown'; u.juggle = false; u.landJoints = null; u.otgHit = false; u.rolled = false; u.breakOK = false; u.launchedBy = -1;
+      u.techLock = sim.stepCount + 600;   // a trip: no air recovery out of it
       syncRig(u);
       if (!startRag(u, u.facing * (fw ? 110 + 30 * sev : -(90 + 30 * sev)), -140, { wall: 'stop', spin: fw ? -(320 + 60 * sev) : 300 + 60 * sev })) { safePlay(u.rig, 'knockdown'); u.vy = -150; u.grounded = false; }
       onEvent({ type: 'thud', x: u.x, y: u.y, dir: u.facing, strength: 0.3 });
@@ -1104,6 +1112,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
           // still rising leaves room for one more
           if (u.rig.current.done && !u.hitConfirmed && u.vy < 0 && u.airUsed === 1) u.airWhiffEarly = true;
           if (u.airWhiffEarly && u.rig.current.done && u.buffer && FRAME_DATA[u.buffer] && FRAME_DATA[u.buffer].air && !(u.faint > 0)) { u.airWhiffEarly = false; startAttack(u, u.buffer); }
+          // a second air attack: once the first has recovered without touching anything, a press on the way down is
+          // a quick jab (a press while it's still swinging tangles him up: pressVerdict)
+          else if (u.rig.current.done && !u.hitConfirmed && (u.airUsed || 0) < 2 && u.vy > 0 && u.buffer && FRAME_DATA[u.buffer] && FRAME_DATA[u.buffer].air && !(u.faint > 0)) {
+            startAttack(u, 'jumpJab'); note({ type: 'fallAttack', att: u.id, move: 'jumpJab', from: 'second' });
+          }
           break;
         }
         // pressure: while the victim is stumbling, the attacker may walk in during recovery
@@ -1449,6 +1462,46 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     e.keys = null; e.name = '';
     return e.down || tok[0] === 'd' || tok === '2' || tok === '4' ? 'wakeSweep' : 'wakeKick';
   }
+  // ---- falling ---------------------------------------------------------------------------
+  // the rig's air attacks ride the jump's arc: one thrown while falling continues a jump already on its way down
+  // (a fresh one would hop the hips up a jump's height first)
+  function fallArc(u) { u.rig.play('jump'); u.rig.update(0.47); u.rig.events.length = 0; }
+  const techOK = (u) => u.state === 'knockdown' && inAir(u) && !u.falling && !u.splatPending && !u.groundBounce && !u.wallBounce &&
+    u.botchKind !== 'air' && u.rig.current.move !== 'thrown' && u.health > 0;
+  function airRecover(u, opp) {
+    if (!techOK(u)) return;
+    const since = sim.stepCount - (u.launchStep != null ? u.launchStep : -999);
+    if (since < TECH_MIN || sim.stepCount < u.techLock) { u.techLock = sim.stepCount + TECH_LOCK; note({ type: 'techEarly', def: u.id, since }); return; }
+    const jab = since < TECH_MIN + TECH_PERFECT;
+    const j = u.rig.joints, hipX = j.hip.x, hipY = j.hip.y, sc = u.rig.scale || 1;
+    const floorY = u.rag ? u.ragFloor : floorUnder(u), b = bandOf(u);
+    const vx = u.vx || 0, vy = u.vy || 0;
+    u.rag = false; u.ragLanded = false; u.landJoints = null;
+    if (typeof u.rig.reset === 'function') u.rig.reset();
+    u.x = Math.max(b.x0, Math.min(b.x1, hipX)); u.y = Math.min(floorY - 2, hipY + 50 * sc);
+    u.grounded = false; u.vy = Math.min(0, vy * 0.3) - 160; u.vx = Math.max(-200, Math.min(200, vx * 0.4));
+    if (opp) u.facing = Math.sign(bodyX(opp) - u.x) || u.facing;
+    u.state = 'jump'; u.phase = null; u.move = null; u.jumpAt = sim.stepCount; u.jumpVx = u.vx; u.airUsed = 0; u.airWhiffEarly = false;
+    u.juggle = false; u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.gScale = 1; u.airHits = 0; u.launchedBy = -1;
+    u.buffer = null; u.bufferKeys = null; u.queued = null; u.seq = null;
+    syncRig(u); safePlay(u.rig, 'airTech'); rigUpd(u, 0);
+    callout(jab ? 'RECOVER · JAB' : 'RECOVER', u.id, 'tech');
+    note({ type: 'tech', def: u.id, since, jab });
+    onEvent({ type: 'tech', unit: u, x: u.x, y: u.y - 70, dir: u.facing, jab }); onEvent({ type: 'dust', x: u.x, y: u.y, dir: u.facing });
+    if (jab) { fallArc(u); startAttack(u, 'jumpJab'); }
+  }
+  // a press in the vault's drop: he lets go of the clip where the body is and throws an air attack on the way down
+  function vaultFall(u, e) {
+    const j = u.rig.joints, hipX = j.hip.x, feet = Math.max(j.lFoot.y, j.rFoot.y), to = u.vaultTo != null ? u.vaultTo : u.floor || 0;
+    const fy = floorInfo(to).y;
+    u.floor = to; u.vaultPhase = null; u.state = 'jump'; u.grounded = false; u.easeBand = true;
+    u.y = Math.min(fy - 4, feet); u.vy = 240; u.vx = u.facing * 60; u.jumpVx = u.vx; u.jumpAt = sim.stepCount; u.airUsed = 0; u.airWhiffEarly = false;
+    if (typeof u.rig.reset === 'function') u.rig.reset();
+    u.x = hipX; syncRig(u); fallArc(u);
+    const m = resolveButton(['lp', 'rp', 'lk', 'rk'].find(k => u.last[k]) || 'lp', { ...u.last, down: e.down }, u, sim.stepCount);
+    startAttack(u, FRAME_DATA[m] && FRAME_DATA[m].air ? m : 'jumpJab');
+    note({ type: 'fallAttack', att: u.id, move: u.move, from: 'vault' });
+  }
   function feetPlanted(u) {
     const j = u.rig.joints, y = u.rig.y;
     return j.lFoot.y >= y - 7 && j.rFoot.y >= y - 7;
@@ -1492,8 +1545,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // under a man standing over it, and it stood up on his other side.
     if ((u.state === 'getup' || isWake(u)) && u.grounded) { u.vx = 0; return finishPhysics(u, wasAir); }
     if (u.easeBand) {
-      if (u.x > bounds.x1) { u.x = Math.max(bounds.x1, u.x - 260 * DT); return; }
-      if (u.x < bounds.x0) { u.x = Math.min(bounds.x0, u.x + 260 * DT); return; }
+      // (a body still in the air eases in too, and still lands: an attack out of the vault's drop)
+      if (u.x > bounds.x1) { u.x = Math.max(bounds.x1, u.x - 260 * DT); if (wasAir) finishPhysics(u, wasAir); return; }
+      if (u.x < bounds.x0) { u.x = Math.min(bounds.x0, u.x + 260 * DT); if (wasAir) finishPhysics(u, wasAir); return; }
       u.easeBand = false;
     }
     // a body that came to rest closer to the wall than a lying body's length slides off it, never jumps
@@ -1513,7 +1567,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     } else if (fy > u.y + 1) { u.grounded = false; }
     if (wasAir && u.grounded && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air) airLanding(u);
     if (wasAir && u.grounded && u.state === 'vault' && u.vaultPhase === 'drop') { u.vaultPhase = null; u.vx = 0; setState(u, 'idle'); onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.6 }); }
-    if (wasAir && u.grounded && u.state === 'jump') { u.state = 'landing'; if (u.rig.current.done) { setState(u, 'idle'); tryAttack(u); } }
+    if (wasAir && u.grounded && u.state === 'jump' && u.rig.current.move === 'airTech') {   // out of an air recovery: a short absorb
+      u.state = 'landing'; u.landLag = 8; u.vx *= 0.3; safePlay(u.rig, ANIM.airLand || 'idle');
+      onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.4 });
+    } else if (wasAir && u.grounded && u.state === 'jump') { u.state = 'landing'; if (u.rig.current.done) { setState(u, 'idle'); tryAttack(u); } }
   }
   function wallHit(u) {
     const side = u.x < (bounds.x0 + bounds.x1) / 2 ? -1 : 1;
@@ -1530,7 +1587,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.state === 'knockdown' && !u.grounded && u.wallBounce) {
       u.wallBounce = false; u.vx = -u.vx * 0.45; u.vy = -360; u.juggle = true; u.airHits = Math.min(u.airHits, JUGGLE_MAX - 2);
       if (typeof u.rig.launch === 'function') { try { u.rig.launch({ vx: u.vx, vy: u.vy }); } catch (e) { /* keyframed knockdown carries it */ } }
-      callout('WALL BOUNCE', u.comboBy, 'trick');
+      callout('WALL BOUNCE', u.comboBy, 'trick'); u.launchStep = sim.stepCount;   // the relaunch restarts the air recovery's wait
       onEvent({ type: 'wallImpact', x: u.x + side * 10, y: u.y - 70, side, strength: 0.7, unit: u });
       return;
     }
@@ -1544,7 +1601,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // ground bounce: the spiked body pops back up for one more hit
       u.groundBounce = false; u.grounded = false; u.vy = -420; u.vx *= 0.5; u.juggle = true; u.airHits = Math.max(u.airHits, JUGGLE_MAX - 1); u.gScale = 1.2;
       if (typeof u.rig.groundBounce === 'function') { try { u.rig.groundBounce({ vy: u.vy }); } catch (e) { /* keyframes */ } }
-      callout('GROUND BOUNCE', u.comboBy, 'trick');
+      callout('GROUND BOUNCE', u.comboBy, 'trick'); u.launchStep = sim.stepCount;
       onEvent({ type: 'thud', x: u.x, y: u.y, dir: u.facing, strength: 0.9 });
       return;
     }
@@ -1585,7 +1642,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
       else if (ev.type === 'bounce' && u.rag) {
         u.ragLanded = false; u.groundBounce = false; u.juggle = true; u.airHits = Math.max(u.airHits, JUGGLE_MAX - 1);
-        callout('GROUND BOUNCE', u.comboBy, 'trick');
+        callout('GROUND BOUNCE', u.comboBy, 'trick'); u.launchStep = sim.stepCount;
         onEvent({ type: 'thud', x: u.x, y: u.ragFloor, dir: u.facing, strength: 0.9 });
       }
       else if (ev.type === 'wall' && u.rag && (u.state === 'knockdown' || u.state === 'ko')) {
@@ -1596,7 +1653,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
           onEvent({ type: 'wallImpact', x: u.x + side * 10, y: u.ragFloor - 80, side, strength: 1, unit: u });
         } else if (u.wallBounce) {
           u.wallBounce = false; u.juggle = true; u.airHits = Math.min(u.airHits, JUGGLE_MAX - 2);
-          callout('WALL BOUNCE', u.comboBy, 'trick');
+          callout('WALL BOUNCE', u.comboBy, 'trick'); u.launchStep = sim.stepCount;   // the relaunch restarts the air recovery's wait
           onEvent({ type: 'wallImpact', x: u.x + side * 10, y: u.ragFloor - 80, side, strength: 0.7, unit: u });
         } else onEvent({ type: 'wallImpact', x: u.x + side * 10, y: u.ragFloor - 70, side, strength: 0.3, unit: u });
       }
@@ -2310,6 +2367,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // a wake-up strike named anywhere else is nothing
       if (e.attack && u.state === 'down') e.attack = wakeFor(e);
       else if (e.attack && FRAME_DATA[e.attack] && FRAME_DATA[e.attack].wake) e.attack = null;
+      // juggled or launched: a button is the air recovery (or nothing, too early); dropping off the vault: an air attack
+      if (e.attack && live && u.state === 'knockdown') { airRecover(u, opp); e.attack = null; }
+      if (e.attack && live && u.state === 'vault' && u.vaultPhase === 'clip' && u.rig.current.move === 'vault' && u.rig.current.t > VAULT_FALL[0] && u.rig.current.t < VAULT_FALL[1] && !(u.faint > 0)) { vaultFall(u, e); e.attack = null; }
       const feint = e.attack && live ? feintOf(u, e.attack) : null;   // a designed cancel (frame data feint)
       if (feint) { e.attack = feint; e.keys = null; e.name = ''; e.feint = true; }
       if (e.attack && live && sim.botchOn) {

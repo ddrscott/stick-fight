@@ -31,7 +31,7 @@
 
 import { EMPTY_INPUT } from './input.js';
 import { matchStrings } from './strings.js';
-import { FRAME_DATA } from './frameData.js';
+import { FRAME_DATA, AIR_TECH } from './frameData.js';
 
 const DOWN_STATES = new Set(['knockdown', 'down', 'getup', 'ko']);
 const HIT_STATES = new Set(['hitstun', 'blockstun']);
@@ -78,6 +78,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // knocked down: when to get up and how (stand, roll, a wake-up strike, or lie there until the clock stands
   // him up), picked once per knockdown; a strike coming at the body or a whiff over it can change the plan
   let downFor = -1, downSeen = -1, stompGuard = -1;
+  // falling: the air recovery out of a juggle (once per hit, the step to press it), a second jab on the way
+  // down after a whiffed air attack (once per jump), an air attack out of the vault's drop (once per vault)
+  let techFor = -1, techAt = -1, fallFor = -1, vaultFor = -1;
   function wakePlan(me, opp) {
     const hip = me.rig.joints.hip.x, away = -(Math.sign(opp.x - hip) || 1), near = Math.abs(opp.x - hip) < 175 && opp.grounded;
     const k = rng(), wait = 10 + irnd(show ? 60 : 12 + Math.round(70 * difficulty));
@@ -597,6 +600,22 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       }
     }
     const out = { ...EMPTY_INPUT };
+    // juggled: recover in the air, more often and closer to the perfect window the better the CPU (never mashing)
+    if (me.state === 'knockdown' && !me.grounded && me.launchStep !== techFor && me.launchStep != null) {
+      techFor = me.launchStep; techAt = -1;
+      if (chance(show ? 0.7 : Math.max(0, 0.75 * difficulty - 0.1))) techAt = me.launchStep + AIR_TECH.min + (chance(show ? 0.6 : 0.5 * difficulty) ? irnd(AIR_TECH.perfect) : AIR_TECH.perfect + irnd(24));
+    }
+    if (me.state === 'knockdown' && step === techAt) out.lp = true;
+    // a whiffed air attack, on the way down with him close: the second jab
+    if (me.state === 'attack' && !me.grounded && FRAME_DATA[me.move] && FRAME_DATA[me.move].air && me.rig.current.done && !me.hitConfirmed && (me.airUsed || 0) < 2 && me.vy > 0 && dist < 120 && fallFor !== me.jumpAt) {
+      fallFor = me.jumpAt;
+      if (chance(0.25 + 0.5 * difficulty)) out.lp = true;
+    }
+    // dropping off the vault after a floor break, with him below: an air attack on the way down
+    if (me.state === 'vault' && me.vaultPhase === 'clip' && me.rig.current.t > 0.5 && me.rig.current.t < 0.7 && vaultFor !== me.vaultAt) {
+      vaultFor = me.vaultAt;
+      if (dist < 260 && chance(0.25 + 0.45 * difficulty)) out[chance(0.5) ? 'rk' : 'lk'] = true;
+    }
     if (!act && dist < 140 && (opp.state === 'block' || opp.state === 'blockstun') && /^(idle|walk)$/.test(me.state)) {
       out.dx = (Math.floor(step / 6) % 2) ? toward : -toward;   // a shuffle between thinks, not a stand
     }

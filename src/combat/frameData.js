@@ -112,6 +112,10 @@ export const STAMINA = { max: 100, regen: 90, regenBlock: 36, delay: 0.3, run: 1
 // Combo decay, by the hit's place in the combo (1st, 2nd, ...; the last entry repeats). Hitstun
 // shrinks from the 3rd hit so a repeated loop drops and the defender can act; damage from the 4th,
 // and past COMBO_SOFTCAP damage in one combo the rest counts COMBO_OVERCAP as much.
+// Air recovery (sim.js airRecover): a button once `min` steps (120Hz) have passed since the last hit flips a
+// juggled or launched body upright; inside the first `perfect` steps of that it comes with a jab; a press before
+// `min` locks it out for `lock` steps (a press while locked keeps it locked). The juggle's next hit restarts the wait.
+export const AIR_TECH = { min: 36, perfect: 10, lock: 24 };
 export const COMBO_STUN = [1, 1, 0.85, 0.65, 0.45, 0.3];
 export const COMBO_DMG = [1, 1, 1, 0.8, 0.65, 0.5];
 export const COMBO_SOFTCAP = 30, COMBO_OVERCAP = 0.25;

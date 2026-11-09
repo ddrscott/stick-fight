@@ -274,6 +274,7 @@ const punishRise = (guard) => (me, o) => {
   }
   return me.state === 'blockstun' ? guard : {};
 };
+const techAt = (k) => (me) => (me.state === 'knockdown' && me.launchStep != null && sim.stepCount - me.launchStep >= k && sim.stepCount - me.launchStep < k + 2 ? { lp: true } : {});
 const wakeAt = (inp, at = 120) => (me, o, t) => (me.state === 'down' && t >= at && t < at + 3 ? (typeof inp === 'function' ? inp(me, o) : inp) : {});
 const PHASES = {
   getup: [
@@ -293,6 +294,21 @@ const PHASES = {
     { name: 'STOMP lands, he wakes kicking at once: the stomper guards it', p1: [[10, D('rk')], [124, D('rk')]], p1f: over((me, o, t) => (t > 160 ? { back: true } : {})), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
     { name: "STOMP lands, the stomper doesn't guard: the wake kick punishes", p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
     { name: 'one ground hit per knockdown: a second stomp passes over him', p1: [[10, D('rk')], [124, D('rk')], [210, D('rk')]], p1f: over(), dur: 340 },
+  ],
+  // air-recovery-test: P1 launches P2 (d+2); P2 presses k steps after the last hit (techAt), or mashes. Then the
+  // falling attacks: a second jab after a whiffed air attack, a press mid-swing tangling up, an attack off the vault
+  airRecovery: [
+    { name: 'launched, no press: he lands on his back', at: () => [580, 650], p1: [[10, D('rp')]], dur: 200 },
+    { name: 'a press too early (12 frames in): locked out, he lands on his back', at: () => [580, 650], p1: [[10, D('rp')]], p2: techAt(24), dur: 200 },
+    { name: 'a press as the window opens: he flips upright with a jab', at: () => [580, 650], p1: [[10, D('rp')]], p2: techAt(38), dur: 200 },
+    { name: 'a later press: he flips upright and lands, no jab', at: () => [580, 650], p1: [[10, D('rp')]], p2: techAt(56), dur: 200 },
+    { name: 'mashing never recovers (each early press keeps it locked)', at: () => [580, 650], p1: [[10, D('rp')]], p2: (me, o, t) => (me.state === 'knockdown' && t % 6 < 2 ? { lp: true } : {}), dur: 220 },
+    { name: 'a real juggle still connects: the jab lands before the window opens', at: () => [580, 650], p1: [[10, D('rp')], [34, B('lp')]], p2: techAt(38), dur: 220 },
+    { name: 'SECOND AIR ATTACK: a jump kick whiffs, he runs in under it, the jab on the way down hits', at: () => [470, 760], p1: [[2, (me) => ({ jump: true, dx: me.facing })], [6, B('lk')], [46, B('lp')]],
+      p2: (me, o, t) => (t >= 5 && t < 50 ? { dx: Math.sign(o.x - me.x), run: true } : {}), dur: 200 },
+    { name: 'a second press while the kick still swings: TANGLED', at: () => [400, 900], p1: [[2, (me) => ({ jump: true, dx: me.facing })], [10, B('lk')], [22, B('lp')]], dur: 260 },
+    { name: 'FALL ATTACK: an air roundhouse out of the vault after a floor break (he is still down, so it lands short)', at: () => [500, 590], p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]],
+      p1f: (me) => (me.state === 'vault' && me.vaultPhase === 'clip' && me.rig.current.t > 0.55 && me.rig.current.t < 0.6 ? { rk: true } : {}), dur: 420 },
   ],
   mixup: [
     { name: 'high vs crouch (ducks)', p2: { down: true }, p1: [[20, B('lp')]], dur: 90 },
@@ -588,6 +604,7 @@ const scenes = {
   // best-of-3 and its body pile fit in a capture.
   'getup-test'(o) { timeline(PHASES.getup, o); },
   'stomp-test'(o) { timeline(PHASES.stomp, o); },
+  'air-recovery-test'(o) { timeline(PHASES.airRecovery, o); },
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
   'stamina-test'(o) { timeline(PHASES.stamina, o); },
   'string-ender-test'(o) { timeline(PHASES.strings, o); },
