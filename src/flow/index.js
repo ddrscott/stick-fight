@@ -118,6 +118,7 @@ const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
  */
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
+const ENDING_ROLL = 22;   // seconds the ending's roll takes to scroll by (the story and the credits); it moves on 3s after
 const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'install', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'crewLobby', 'crewLinking']);
 
 /** @param {FlowCtx} ctx */
@@ -273,7 +274,7 @@ export function createFlow(ctx) {
       case 'stageClear': if (t > 5) nextStage(); break;
       case 'continue': if (t >= 10) go('gameOver'); else tickContinue(); break;
       case 'gameOver': if (t > 6) afterGame(); break;
-      case 'ending': if (t > 17) afterGame(); break;
+      case 'ending': if (t > ENDING_ROLL + 3) afterGame(); break;
       case 'enterInitials': if (idle > IDLE_MS) submitInitials(); break;
     }
     if (state === 'onlineFighting') {
@@ -702,22 +703,41 @@ export function createFlow(ctx) {
     entry = null;
     go('highScores');
   }
+  // The ending tells the temp story (the homepage's FROM TEMP TO THE TOP): day one, how each coworker on this
+  // run's ladder was handled, the new title, then the credits. THE CEO is named only once he's been beaten.
+  const HANDLED = {
+    intern: 'SENT BACK FOR COFFEE', helpdesk: 'TICKET CLOSED', courier: 'SIGNED FOR', security: 'ESCORTED OUT',
+    janitor: 'MOPPED UP', manager: 'REVIEWED. NEEDS IMPROVEMENT', accountant: 'WRITTEN OFF', windowWasher: 'LEFT ON THE LEDGE',
+    ceo: 'THE BOARD ACCEPTS THE RESIGNATION',
+  };
   function screenEnding() {
     ui.show('fl-ending', (root) => {
-      const boss = ladder()[ladder().length - 1];
-      root.append(el('h1', 'fl-h1', 'CHAMPION'), el('div', 'fl-label', `${boss.name} IS DOWN. FINAL SCORE ${S.fmt(run.score)}`));
+      const lad = ladder(), boss = lad[lad.length - 1], me = characterOr(sel.player);
+      const top = !!boss.secret, wasManager = sel.player === 'manager';
+      const title = top ? 'CORNER OFFICE' : wasManager ? 'STILL THE MANAGER' : 'PROMOTED';
+      root.append(el('h1', 'fl-h1', title), el('div', 'fl-label', `${boss.name} IS DOWN. FINAL SCORE ${S.fmt(run.score)}`));
       const roll = el('div', 'fl-roll'), inner = el('div');
+      const job = top ? 'CHIEF EXECUTIVE, EFFECTIVE IMMEDIATELY'
+        : wasManager ? 'KEEPS THE OFFICE. FOR NOW'
+        : "THE MANAGER'S OFFICE, AND THE PARKING SPOT";
       const lines = [
+        ['DAY ONE', `${me.name}. A BORROWED BADGE, NO DESK, AND A BUILDING THAT GAVE THEM A WEEK`],
+        ...lad.map((st) => [st.name, HANDLED[st.wants] || 'HANDLED']),
+        ['NEW TITLE', job],
+        ['SECOND CHANCES', run.continues ? String(run.continues) : 'NEVER NEEDED ONE'],
+      ];
+      // the boss beaten with a continue: the top floor stays a rumor (src/flow/ladder.js secretStage)
+      if (!top && run.continues && !wasManager && sel.player !== 'ceo') lines.push(['THE TOP FLOOR', 'ONLY MEETS PEOPLE WHO NEVER NEEDED A SECOND CHANCE']);
+      lines.push(
         ['NEON STICK FIGHT', 'A GAME BY SCOTT PIERCE'],
         ['ANIMATION BAR', 'XIAO XIAO, BY ZHU ZHIQIANG'],
         ['MUSIC ENGINE', 'STRUDEL, BY THE STRUDEL CONTRIBUTORS'],
         ['FONTS', 'BUNGEE BY DAVID JONATHAN ROSS · TEKO BY THE INDIAN TYPE FOUNDRY'],
-        ['YOUR OPPONENTS', ladder().map(s => s.name).join(' · ')],
-        ['CONTINUES USED', String(run.continues)],
         ['SOURCE', 'GITHUB.COM/DDRSCOTT/STICK-FIGHT · AGPL-3.0'],
         ['THANK YOU FOR PLAYING', 'NOW GO HOME. IT IS 3 AM'],
-      ];
+      );
       for (const [h, p] of lines) { const q = el('p'); q.append(el('b', '', h), document.createTextNode(p)); inner.appendChild(q); }
+      inner.style.animationDuration = `${ENDING_ROLL}s`;
       roll.appendChild(inner); root.appendChild(roll);
       const items = btnRow(root, [button('CONTINUE', () => { if (t > 1.2) afterGame(); }, 'fl-amber'), mainMenuBtn(1.2)]);
       return { items, legend: [MOVE, SELECT] };
