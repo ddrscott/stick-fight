@@ -57,6 +57,7 @@ export function saveSim(sim, arena, into) {
   for (const k in arena.doorState) s.doors[k] = { t: arena.doorState[k].t, dur: arena.doorState[k].dur };
   s.bodies = arena.bodies ? arena.bodies.slice() : null;
   s.bodyT = arena.bodies ? arena.bodies.map((b) => b.t) : null;
+  s.bodyAge = arena.bodies ? arena.bodies.map((b) => b.age || 0) : null;
   return s;
 }
 
@@ -90,6 +91,6 @@ export function loadSim(sim, arena, s) {
   for (const k in s.doors) arena.doorState[k] = { t: s.doors[k].t, dur: s.doors[k].dur };
   if (s.bodies) {
     arena.bodies.length = 0;
-    for (let i = 0; i < s.bodies.length; i++) { const b = s.bodies[i]; b.t = s.bodyT[i]; arena.bodies.push(b); }
+    for (let i = 0; i < s.bodies.length; i++) { const b = s.bodies[i]; b.t = s.bodyT[i]; b.age = s.bodyAge ? s.bodyAge[i] : 0; arena.bodies.push(b); }
   }
 }

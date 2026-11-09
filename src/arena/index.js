@@ -5,7 +5,7 @@
 //   a.drawBackground(ctx, camera?)   unlit line art + fills, then the body pile
 //   a.drawForeground(ctx)            what stands in front of the section cut: the street lamp outside
 //   a.drawEmissive(ctx, camera?)     glowing cores for the FX emissive layer
-//   a.update(dt)                     bodies settle, lights flicker
+//   a.update(dt)                     bodies settle, then fade away; lights flicker
 //   a.addBody(snapshot)              a KO'd fighter joins the pile on the nearest floor
 //   a.reflectY, a.gloss              the wet floor plane for the compositor's mirror: { y, depth, x0, x1, gaps }
 //   a.walls                          { left, right } x of the wall faces at the main floor's ends
@@ -36,6 +36,9 @@ const SETTLE_SECONDS = 0.45;
 const BODY_LIFT = 9;       // how much each body underneath raises the next one
 const BODY_REACH = 70;     // bodies closer than this in x stack on each other
 const MAX_PILE = 6;        // never taller than this many bodies
+const BODY_LINGER = 10;    // seconds a body lies on the floor before it fades
+const BODY_FADE = 1.2;     // seconds the fade takes; then it's gone
+const MAX_BODIES = 8;      // more than this and the oldest start fading early
 const HUE_CLEARANCE = 30;  // degrees a body hue must keep from any live fighter
 
 // Saturated body colors that share no hue with the stage's purples.
@@ -293,7 +296,16 @@ export function createArena(name = 'building') {
     update(dt) {
       if (!(dt > 0)) return;
       arena.time += dt;
-      for (const b of arena.bodies) if (b.t < 1) b.t = Math.min(1, b.t + dt / SETTLE_SECONDS);
+      // bodies don't pile up forever: each lies there BODY_LINGER seconds, fades and is gone, and past
+      // MAX_BODIES the oldest start fading at once (stepped by the sim, so it's the same on both machines)
+      const over = arena.bodies.length - MAX_BODIES;
+      for (let i = arena.bodies.length - 1; i >= 0; i--) {
+        const b = arena.bodies[i];
+        if (b.t < 1) b.t = Math.min(1, b.t + dt / SETTLE_SECONDS);
+        if (i < over && b.age < BODY_LINGER) b.age = BODY_LINGER;
+        b.age += dt;
+        if (b.age >= BODY_LINGER + BODY_FADE) arena.bodies.splice(i, 1);
+      }
       for (const k in arena.doorState) arena.doorState[k].t -= dt;
       if (def.flicker) def.flicker(lights, arena.time);
     },
@@ -345,7 +357,7 @@ export function createArena(name = 'building') {
         rim: lighten(drawColor, 0.22), // a 1px lighter rim, so the silhouette and limb angles read on the floor
         radius: typeof snap.radius === 'number' ? snap.radius : 11,
         lineWidth: typeof snap.lineWidth === 'number' ? snap.lineWidth : 5,
-        from, to, t: 0,
+        from, to, t: 0, age: 0,
         joints: copyJoints(from),
       };
       arena.bodies.push(body);
@@ -388,6 +400,9 @@ function drawBodies(ctx, bodies, withRim) {
       j[n].x = b.from[n].x + (b.to[n].x - b.from[n].x) * k;
       j[n].y = b.from[n].y + (b.to[n].y - b.from[n].y) * k;
     }
+    const fade = b.age > BODY_LINGER ? Math.max(0, 1 - (b.age - BODY_LINGER) / BODY_FADE) : 1;
+    if (fade < 1) { ctx.save(); ctx.globalAlpha *= fade; }
     drawJoints(ctx, j, withRim ? b.drawColor : b.color, b.lineWidth, b.radius, withRim ? b.rim : null);
+    if (fade < 1) ctx.restore();
   }
 }
