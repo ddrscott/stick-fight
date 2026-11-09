@@ -88,6 +88,30 @@ export function canUse(c, move) {
 }
 /** a fighter's neon: TEMP keeps the old white (P1) and orange (P2); a mirror match gives P2 the alt color */
 export function colorFor(c, slot, other) {
-  if (!c || c.id === TEMP_ID) return slot === 0 ? '#f0f0f0' : '#E85D00';
-  return slot === 1 && other && other.id === c.id ? c.altColor : c.color;
+  const own = (x, s) => (!x || x.id === TEMP_ID ? (s === 0 ? '#f0f0f0' : '#E85D00') : x.color);
+  if (slot === 0 || !other) return own(c, slot);
+  // P2 changes color when P1 looks the same: the same fighter, or two colors close in hue (INTERN's
+  // amber next to ACCOUNTANT's yellow read as one color), then its alt, then a contrasting fallback
+  const theirs = own(other, 0);
+  let mine = own(c, 1);
+  if ((c && other.id === c.id && c.id !== TEMP_ID) || clash(mine, theirs)) mine = c && c.id !== TEMP_ID ? c.altColor : '#2ef2ff';
+  if (clash(mine, theirs)) mine = clash('#2ef2ff', theirs) ? '#ff2bd6' : '#2ef2ff';
+  return mine;
+}
+// two colors a player can't tell apart at a glance: both near-white, or close in hue and both vivid
+function hsl(hex) {
+  const n = parseInt(String(hex).replace('#', ''), 16), r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2;
+  const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: (h * 60 + 360) % 360, s: sat, l };
+}
+function clash(a, b) {
+  if (!a || !b) return false;
+  const x = hsl(a), y = hsl(b);
+  if (x.s < 0.25 && y.s < 0.25) return true;
+  if (x.s < 0.25 || y.s < 0.25) return false;
+  const dh = Math.min(Math.abs(x.h - y.h), 360 - Math.abs(x.h - y.h));
+  return dh < 32;
 }

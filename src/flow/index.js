@@ -468,6 +468,7 @@ export function createFlow(ctx) {
   }
   const mainMenuBtn = (guard = 0) => button('MAIN MENU', () => { if (t >= guard) mainMenu(); }, 'fl-violet');
   let startBtn = null;
+  let titleUpdWatch = null;
   function screenTitle() {
     ui.show('fl-title', (root) => {
       // START sits on the title card's prompt (frame() moves the group); HIGH SCORES and CONTROLS under it
@@ -486,11 +487,16 @@ export function createFlow(ctx) {
         instBtn = button('INSTALL', () => { if (inst.kind === 'prompt') inst.prompt().then(() => { if (state === 'attract') screenTitle(); }); else go('install'); }, 'fl-mini fl-amber');
         row.appendChild(instBtn.el);
       }
+      // UPDATE: a newer deploy is out (src/update.js); reloads into it
+      const upd = (typeof window !== 'undefined' && window.__update) || null;
+      let updBtn = null;
+      if (upd && upd.available) { updBtn = button('UPDATE', () => upd.apply(), 'fl-mini fl-pink'); row.appendChild(updBtn.el); }
+      if (upd && !titleUpdWatch) titleUpdWatch = upd.onChange(() => { if (state === 'attract') screenTitle(); });
       group.append(b.el, row);
       root.appendChild(group);
       startBtn = group;
       group.style.left = '50%'; group.style.top = '39%';
-      return { items: instBtn ? [b, scores, how, instBtn] : [b, scores, how], legend: [MOVE, SELECT, ['start', 'START']] };
+      return { items: [b, scores, how, instBtn, updBtn].filter(Boolean), legend: [MOVE, SELECT, ['start', 'START']] };
     }, { veil: false });
   }
   function screenScores(focus = 0) {
