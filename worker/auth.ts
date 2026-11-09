@@ -134,13 +134,13 @@ async function start(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const fragment = `#signin=${encodeURIComponent(email)}&code=${code}`;
   if (env.DEV_LOGIN_CODES === "1") {
-    // dev: the page shows the code; the link points at the page that asked (Vite serves it at /)
-    let page = `${url.origin}/stick-fight/`;
+    // dev: the page shows the code; the link points at the page that asked (Vite serves the game at /play/)
+    let page = `${url.origin}/stick-fight/play/`;
     try { const p = new URL(String(body.page || "")); if (p.protocol === "http:" || p.protocol === "https:") page = p.origin + p.pathname; } catch { /* default */ }
     console.log(`[dev] sign-in code for ${email}: ${code}`);
     return json({ ok: true, devCode: code, devLink: page + fragment });
   }
-  const link = `${url.origin}/stick-fight/${fragment}`;
+  const link = `${url.origin}/stick-fight/play/${fragment}`;   // the game; the homepage forwards an old #signin link there too
   try {
     await env.EMAIL.send({
       from: { email: env.EMAIL_FROM, name: "Neon Stick Fight" },

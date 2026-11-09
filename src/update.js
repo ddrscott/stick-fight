@@ -6,6 +6,8 @@
 // room. Updating asks the service worker for the new version and reloads.
 
 /* global __BUILD_ID__ */
+import { rootUrl } from './root.js';
+
 const BUILD = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev';
 const CHECK_MS = 5 * 60 * 1000;
 const listeners = new Set();
@@ -25,7 +27,7 @@ export const update = {
 async function check() {
   if (BUILD === 'dev' || latest) return;
   try {
-    const r = await fetch(`./version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const r = await fetch(rootUrl(`version.json?t=${Date.now()}`), { cache: 'no-store' });
     if (!r.ok) return;
     const v = await r.json();
     if (v && typeof v.build === 'string' && v.build !== BUILD) { latest = v.build; for (const f of listeners) { try { f(); } catch { /* ignore */ } } paint(); }

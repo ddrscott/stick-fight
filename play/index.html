@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Neon Stick Fight</title>
+<meta name="description" content="Play Neon Stick Fight in your browser: a stick-figure fighting game with an arcade ladder, horde floors and online versus.">
+<link rel="canonical" href="https://askscottpierce.com/stick-fight/play/">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="../icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<meta name="theme-color" content="#07020f">
+<!-- iPhone/iPad: launched from the home screen it runs full screen, under a see-through status bar -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Stick Fight">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Teko:wght@500;600&display=swap">
+<style>
+  html, body { margin: 0; height: 100%; background: #07020f; overflow: hidden; font-family: 'Teko', 'Arial Narrow', system-ui, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; }
+  #stage { position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }
+  #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { pointer-events: none; }
+  /* attract mode (the demo bout): no touch controls until a tap starts the game */
+  html.attract .tc-root { display: none; }
+  /* source and credits link, shown only on the attract screen, just above the DEMO tag */
+  #credits { display: none; position: absolute; right: 2.2%; bottom: 9%; font: 500 15px/1 'Teko', sans-serif; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-decoration: none; padding: 4px 6px; }
+  #credits:hover { color: #4df3ff; }
+  html.attract #credits { display: block; }
+  /* the arcade flow (src/flow/): touch controls only while fighting, no HORDE hotkey button (the
+     mode select has HORDE), and the credits link only on the title screen, above the flow's overlay */
+  html.flow-on:not(.fl-play) .tc-stickzone, html.flow-on:not(.fl-play) .tc-cluster { display: none !important; }
+  html.flow-on .tc-top [data-tap="KeyG"] { display: none; }
+  html.fl-attract #credits { display: block; z-index: 6; }</style>
+<script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+  <canvas id="hud"></canvas>
+  <a id="credits" href="https://github.com/ddrscott/stick-fight#license-and-credits" target="_blank" rel="noopener">SOURCE &amp; CREDITS</a>
+</div>
+<script type="module" src="../src/install.js"></script>
+<script type="module" src="../src/update.js"></script>
+<script type="module" src="../src/main.js"></script>
+<script type="module" src="../src/touch.js"></script>
+</body>
+</html>

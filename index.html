@@ -1,49 +1,133 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-root="./" data-page="home">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>Neon Stick Fight</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>
+  // The game used to live at this address. Old links (a room ?room=, a crew ?crew=, a test ?scene=, the
+  // sign-in email's #signin=...&code=...) and an app installed before the move go on to the game at
+  // play/, with the query and the hash intact (README, "Site").
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var game = ['room', 'crew', 'scene', 'pick', 'p1', 'p2', 'mirror', 'botch', 'tier', 'relay', 'ice', 'netsim', 'blend'];
+    var app = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+    if (app || game.some(function (k) { return q.has(k); }) || /[#&](signin|code)=/.test(location.hash)) location.replace('./play/' + location.search + location.hash);
+  })();
+</script>
+<title>Neon Stick Fight · a free stick-figure fighting game in your browser</title>
+<meta name="description" content="A neon stick-figure fighting game you play in the browser, on a phone or a computer. 18 office workers, an arcade ladder with a secret boss, horde floors, and online versus with rollback netcode.">
+<link rel="canonical" href="https://askscottpierce.com/stick-fight/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Neon Stick Fight">
+<meta property="og:title" content="Neon Stick Fight">
+<meta property="og:description" content="Stick-figure kung fu in a neon office tower. Free in your browser, on your phone, and online against a friend.">
+<meta property="og:url" content="https://askscottpierce.com/stick-fight/">
+<meta property="og:image" content="https://askscottpierce.com/stick-fight/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <meta name="theme-color" content="#07020f">
-<!-- iPhone/iPad: launched from the home screen it runs full screen, under a see-through status bar -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Stick Fight">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Teko:wght@500;600&display=swap">
-<style>
-  html, body { margin: 0; height: 100%; background: #07020f; overflow: hidden; font-family: 'Teko', 'Arial Narrow', system-ui, sans-serif; }
-  body { display: flex; align-items: center; justify-content: center; }
-  #stage { position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }
-  #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  #hud { pointer-events: none; }
-  /* attract mode (the demo bout): no touch controls until a tap starts the game */
-  html.attract .tc-root { display: none; }
-  /* source and credits link, shown only on the attract screen, just above the DEMO tag */
-  #credits { display: none; position: absolute; right: 2.2%; bottom: 9%; font: 500 15px/1 'Teko', sans-serif; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-decoration: none; padding: 4px 6px; }
-  #credits:hover { color: #4df3ff; }
-  html.attract #credits { display: block; }
-  /* the arcade flow (src/flow/): touch controls only while fighting, no HORDE hotkey button (the
-     mode select has HORDE), and the credits link only on the title screen, above the flow's overlay */
-  html.flow-on:not(.fl-play) .tc-stickzone, html.flow-on:not(.fl-play) .tc-cluster { display: none !important; }
-  html.flow-on .tc-top [data-tap="KeyG"] { display: none; }
-  html.fl-attract #credits { display: block; z-index: 6; }</style>
+<link rel="stylesheet" href="./site/site.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoGame","name":"Neon Stick Fight","url":"https://askscottpierce.com/stick-fight/","image":"https://askscottpierce.com/stick-fight/og.jpg","description":"A neon stick-figure fighting game in the browser: an arcade ladder, horde floors and online versus.","genre":["Fighting"],"gamePlatform":["Web browser","Android","iOS"],"applicationCategory":"Game","operatingSystem":"Any","playMode":["SinglePlayer","MultiPlayer"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Scott Pierce","url":"https://askscottpierce.com/"},"license":"https://www.gnu.org/licenses/agpl-3.0.html"}</script>
 <script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
 </head>
-<body>
-<div id="stage">
-  <canvas id="game"></canvas>
-  <canvas id="hud"></canvas>
-  <a id="credits" href="https://github.com/ddrscott/stick-fight#license-and-credits" target="_blank" rel="noopener">SOURCE &amp; CREDITS</a>
-</div>
-<script type="module" src="./src/install.js"></script>
-<script type="module" src="./src/update.js"></script>
-<script type="module" src="./src/main.js"></script>
-<script type="module" src="./src/touch.js"></script>
+<body class="s-page s-home">
+<header class="s-top">
+  <a class="s-logo" href="./"><span>NEON</span> STICK FIGHT</a>
+  <nav class="s-nav">
+    <a href="./fighters/">FIGHTERS</a>
+    <a href="#how">HOW TO PLAY</a>
+    <a class="s-btn s-btn-play" href="./play/">PLAY</a>
+  </nav>
+</header>
+
+<main>
+  <section class="s-hero">
+    <canvas class="s-duel" data-mode="duel" aria-hidden="true"></canvas>
+    <div class="s-hero-copy">
+      <p class="s-kicker">FREE IN YOUR BROWSER · PHONE OR COMPUTER</p>
+      <h1 class="s-title">NEON<br>STICK FIGHT</h1>
+      <p class="s-hero-tag">Stick-figure kung fu in a neon office tower. <!--@count--> coworkers, one stairwell, no HR.</p>
+      <div class="s-cta">
+        <a class="s-btn s-btn-play s-btn-huge" href="./play/">PLAY NOW</a>
+        <a class="s-btn s-btn-ghost" href="./fighters/">MEET THE FIGHTERS</a>
+      </div>
+      <p class="s-install" data-install>
+        <span data-install-text><b>INSTALL IT:</b> on Android or desktop Chrome, choose Install app from the browser menu. On iPhone, tap Share, then Add to Home Screen. It opens full screen, like a native game.</span>
+        <button type="button" class="s-btn s-btn-ghost" data-install-button hidden>INSTALL THE APP</button>
+      </p>
+    </div>
+  </section>
+
+  <section class="s-section" id="features">
+    <h2 class="s-h2">WHAT'S IN THE BOX</h2>
+    <div class="s-features">
+      <article><h3 class="s-h3"><!--@count--> FIGHTERS</h3><p>From the TEMP on day one to the corner office. Every fighter has their own stats, body, unique moves and strings, and a full move sheet below.</p></article>
+      <article><h3 class="s-h3">ARCADE LADDER</h3><p>Six floors up the building, best of three, against CPUs that get tougher and fight their own way: the turtle, the rusher, the grappler. Beat the boss without a continue and someone is waiting upstairs.</p></article>
+      <article><h3 class="s-h3">HORDE MODE</h3><p>Wave after wave of goons through the office doors. Clear the floor, vault the stairwell railing, and do it again one floor down.</p></article>
+      <article><h3 class="s-h3">ONLINE VERSUS</h3><p>Send a friend a four-letter room code or a link. A crew room is a permanent link for your group, with standings, head to head records and winner stays on. Rematch in one press.</p></article>
+      <article><h3 class="s-h3">ROLLBACK NETCODE</h3><p>Both machines run the whole fight and quietly fix their guesses, the way the big fighting games do it, peer to peer whenever the two phones can reach each other.</p></article>
+      <article><h3 class="s-h3">BOTCHES AND SECRETS</h3><p>Mash and you'll mess up: overbalance, spin out, trip over your own feet. A few mistimed presses, in just the right window, come out as something much better. We're not saying which.</p></article>
+      <article><h3 class="s-h3">PHONES AND CONTROLLERS</h3><p>Touch controls with a floating stick and four arcade buttons, any standard gamepad (Xbox, PlayStation, 8BitDo), or the keyboard.</p></article>
+      <article><h3 class="s-h3">INSTALLABLE</h3><p>Add it to your home screen and it opens full screen in landscape, starts fast and plays offline. Updates show up on their own.</p></article>
+    </div>
+  </section>
+
+  <section class="s-section s-shot">
+    <figure>
+      <img src="./screenshot.jpg" width="1280" height="720" loading="lazy" alt="COURIER lands a string on a fainted SECURITY in the office hallway, both lit in neon, health bars and move hints across the top">
+      <figcaption>The real thing: COURIER against a fainted SECURITY on the third floor.</figcaption>
+    </figure>
+  </section>
+
+  <section class="s-section" id="roster">
+    <div class="s-section-head">
+      <h2 class="s-h2">THE ROSTER</h2>
+      <a class="s-more" href="./fighters/">ALL MOVE SHEETS ›</a>
+    </div>
+    <p class="s-note">Pick a fighter for their stats, unique moves, strings and frame data.</p>
+    <div class="s-grid">
+  <!--@roster-->
+    </div>
+  </section>
+
+  <section class="s-section s-howto" id="how">
+    <h2 class="s-h2">HOW TO PLAY</h2>
+    <div class="s-how-cols">
+      <div>
+        <p class="s-lede">One button per limb, like Tekken, from your fighter's own point of view.</p>
+        <div class="s-pad" role="img" aria-label="The four limb buttons: 1 left punch, 2 right punch, 3 left kick, 4 right kick">
+          <div><b>1</b><span>LEFT PUNCH</span><small>jab · key U</small></div>
+          <div><b>2</b><span>RIGHT PUNCH</span><small>cross · key I</small></div>
+          <div><b>3</b><span>LEFT KICK</span><small>snap kick · key J</small></div>
+          <div><b>4</b><span>RIGHT KICK</span><small>roundhouse · key K</small></div>
+        </div>
+      </div>
+      <dl class="s-rules">
+        <div><dt>MOVE</dt><dd>A and D or the arrows. W jumps, S crouches, Shift (or a double tap) runs.</dd></div>
+        <div><dt>GUARD</dt><dd>Hold back, away from the other fighter. Standing guard stops highs and mids; lows go under it, so crouch and hold back for those.</dd></div>
+        <div><dt>THROW</dt><dd>1+3 or 2+4. Throws beat a guard but whiff on a crouch. Press the same buttons while grabbed to break it.</dd></div>
+        <div><dt>STRINGS</dt><dd>Press in rhythm and the hits chain: 1, 2, 3, 4 is the Neon Tornado. Every fighter's strings are on their page.</dd></div>
+        <div><dt>STAMINA</dt><dd>The thin bar under health is your attack budget. Spend the last point and you faint for a beat. It refills fast when you stop swinging.</dd></div>
+        <div><dt>PAD AND TOUCH</dt><dd>On a gamepad X, Y, A, B are 1, 2, 3, 4, L1 guards and R1 throws. On a phone, a floating stick on the left and the four buttons on the right.</dd></div>
+      </dl>
+    </div>
+    <div class="s-cta s-cta-center"><a class="s-btn s-btn-play s-btn-big" href="./play/">PLAY NOW</a></div>
+  </section>
+</main>
+
+<footer class="s-foot">
+  <p><a class="s-logo" href="./"><span>NEON</span> STICK FIGHT</a></p>
+  <p>Free and open source under the GNU AGPL v3. <a href="https://github.com/ddrscott/stick-fight">Source on GitHub</a> · <a href="https://github.com/ddrscott/stick-fight#license-and-credits">Credits</a></p>
+  <p>Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL). Animation inspired by Xiao Xiao.</p>
+  <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>
+</footer>
+<script type="module" src="./site/site.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Capture frames of a demo page for the critic.
 // Usage: node gauntlet/capture.mjs <page> <scene> <outdir> [--frames 24] [--interval 40] [--keys "ArrowRight,KeyJ"]
-//   <page>  path relative to repo root, e.g. demo/fighter.html
+//   <page>  path relative to repo root, e.g. demo/fighter.html, or the game: play/index.html (plus ?scene=, ?mirror=1...)
 //   <scene> name from window.__gauntlet.scenes
 // Writes <outdir>/<scene>_000.png ... and <outdir>/<scene>_sheet.png (contact sheet).
 import http from 'node:http';

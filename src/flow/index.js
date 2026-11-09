@@ -143,6 +143,8 @@ export function createFlow(ctx) {
   // the character select: which mode it's for, whether it's picking the player or (training) the dummy,
   // the picks (kept between runs, so the cursor starts on your last fighter), and the live screen
   const sel = { mode: null, step: 'player', player: TEMP_ID, dummy: TEMP_ID, join: false };
+  // ?pick=<id> (PLAY AS on a fighter's page, README "Site"): the select screen opens on that fighter
+  try { const want = new URLSearchParams(location.search).get('pick'); if (want && roster().some((c) => c.id === want)) sel.player = want; } catch { /* no location */ }
   let selCtl = null;
   const ladder = () => run.ladder || LADDER;
   const history = [];

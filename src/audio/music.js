@@ -12,10 +12,11 @@
 // (navigator.mediaSession, set up in index.js): Strudel's Web Audio alone doesn't count,
 // and Chrome ignores anything under five seconds as a blip.
 import { TRACKS, poolOf } from './tracks.js';
+import { rootUrl } from '../root.js';
 
 // Strudel ships as a prebuilt ESM bundle in public/vendor/, copied verbatim into the build, and
 // is imported at runtime by URL so Vite leaves it (and its own relative asset URLs) alone.
-const BUNDLE = new URL('vendor/strudel.mjs', document.baseURI).href;
+const BUNDLE = rootUrl('vendor/strudel.mjs').href;   // at the app's root (src/root.js), whatever page this is
 export const PLAYS = 2;
 
 export function createMusic({ tracks = TRACKS } = {}) {

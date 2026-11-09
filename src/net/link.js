@@ -15,6 +15,8 @@
 //   link.candidate          once p2p: the local ICE candidate type in use, 'host' | 'srflx' | 'relay'
 //   link.close()
 
+import { rootUrl } from '../root.js';
+
 const ICE_SERVERS = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 export const RTC_TIMEOUT_MS = 5000;
 const ICE_FETCH_MS = 2500;
@@ -30,9 +32,9 @@ export async function fetchIceServers() {
   return ICE_SERVERS;
 }
 
-/** The API base: relative to the page, so it works at /stick-fight/ and on the dev server. */
+/** The API base: under the app's root (src/root.js), so it works at /stick-fight/ and on the dev server. */
 export function apiUrl(path, ws = false) {
-  const u = new URL('api/' + path, location.href);
+  const u = rootUrl('api/' + path);
   if (ws) u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
   u.search = '';
   return u;

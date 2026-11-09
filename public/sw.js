@@ -1,9 +1,13 @@
 // Neon Stick Fight service worker: the installed app opens fast and plays offline.
-// Hashed build files (assets/*) never change, so they're cache-first; the page and everything else
-// is network-first with the cache as the fallback, so a deploy shows up on the next launch.
-// The API (rooms, ICE) and other origins (fonts, analytics) are left to the network.
-const CACHE = 'stick-fight-v1';
-const CORE = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
+// It sits at the app's root (/stick-fight/sw.js), so its scope covers every page: the homepage, the game
+// at play/ (where the installed app starts) and the fighter pages.
+// Hashed build files (assets/*) never change, so they're cache-first; pages and everything else are
+// network-first with the cache as the fallback, so a deploy shows up on the next launch. Offline, a page
+// that was never cached falls back to the game. The API (rooms, ICE) and other origins (fonts, analytics)
+// are left to the network.
+const CACHE = 'stick-fight-v2';
+const GAME = './play/';
+const CORE = [GAME, './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
@@ -22,6 +26,8 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; })));
     return;
   }
-  e.respondWith(fetch(req).then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; })
-    .catch(() => caches.match(req).then((hit) => hit || (req.mode === 'navigate' ? caches.match('./index.html') : Response.error()))));
+  // version.json is how a running game learns a new build is out: never answer it from the cache
+  if (url.pathname === scope + 'version.json') return;
+  e.respondWith(fetch(req).then((res) => { if (res.ok && !res.redirected) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; })
+    .catch(() => caches.match(req, { ignoreSearch: req.mode === 'navigate' }).then((hit) => hit || (req.mode === 'navigate' ? caches.match(GAME) : Response.error()))));
 });

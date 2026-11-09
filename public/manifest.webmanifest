@@ -3,7 +3,7 @@
   "short_name": "Stick Fight",
   "description": "A neon stick-figure fighting game. Arcade ladder, horde floors and online versus.",
   "id": "./",
-  "start_url": "./",
+  "start_url": "./play/",
   "scope": "./",
   "display": "fullscreen",
   "display_override": ["fullscreen", "standalone"],
