@@ -1,9 +1,9 @@
-// Experiment (branch limb-blend): two moves, one body.
+// Two moves, one body: how a botch mixes the move you were in with the one you mistimed.
 //
-// A botch today picks a template (whiff, over, spin) and tunes it with the forces the sim measured.
-// With ?blend=1 the whiff, overbalance and spin-out are mixed per limb instead:
+// A botch (src/combat/botch.js) picks a family (whiff, over, spin) from the forces the sim measured.
+// The whiff, overbalance and spin-out are then mixed per limb instead of played as a canned clip:
 //   - the body keeps doing what it was doing: for a whiff, the rest of the interrupted move's clip;
-//     for an overbalance or spin-out, that template's stumble (the sim measures its travel)
+//     for an overbalance or spin-out, that family's stumble (the sim measures its travel)
 //   - the limb the new press wanted plays the new move's own keys from the pose the body is in now,
 //     but only part of the way (55-85% by severity), its far segment trailing the near one, so an elbow
 //     or knee is still bent when it should have been straight
@@ -12,14 +12,7 @@
 // So a jab botched off a roundhouse looks like a roundhouse with a half-jab in it, not a canned whiff.
 //
 // It's a pure function of the clip state and the botch numbers, so it replays bit for bit under
-// rollback. The flag comes from the URL, so both players in an online match would need the same one:
-// keep it to local play.
-
-export const LIMB_BLEND = (() => {
-  try { return typeof location !== 'undefined' && new URLSearchParams(location.search).get('blend') === '1'; }
-  catch { return false; }
-})();
-
+// rollback and on every engine.
 import * as dm from '../combat/dmath.js';   // bit-identical trig, so a mixed botch replays the same on every engine
 
 const STEP = 20;   // ms between the resampled keys
@@ -33,7 +26,8 @@ const KEEP_EV = new Set(['footstep', 'land']);   // never carry the old strike's
 
 // b: the botch numbers from the sim ({ kind, sev, alt, limb, ... }).
 // h: { now (the pose this frame), sample (keys, t) -> pose, nd (the new move's def),
-//      tmpl (the template clip for over/spin, or null), cur: { keys, el } (the clip being interrupted) }
+//      tmpl (the template clip for over/spin, or null), cur: { keys, el } (the clip being interrupted),
+//      len (ms, the canned clip's length with its blend: the mixed one is fitted to it) }
 export function mixBotch(b, h) {
   const sev = clamp(b.sev || 1, 1, 3), alt = b.alt || 0, lk = limbKey(b.limb);
   const { now, sample, nd } = h;
@@ -82,5 +76,15 @@ export function mixBotch(b, h) {
   if (out.length) out[out.length - 1] = { ...out[out.length - 1], d: 140, ease: 'out' };
   out.push({ p: { ...last, spin: endSpin }, d: 0, ease: 'sine', ev: null });
 
+  // fit the clip to the canned one's length (h.len), so a botch is exactly as long, and exactly as
+  // punishable, as before: only the look changes, never the timing the sim and the CPU are tuned on
+  if (h.len > STEP) {
+    // whole ms, the rounding left on the settle, so the keys sum to exactly the old length (a float sum
+    // a hair over it would cost the botch one extra sim step)
+    const want = Math.round(h.len - STEP), k = want / total(out);
+    let sum = 0;
+    for (let i = 0; i < out.length - 2; i++) { out[i].d = Math.round(out[i].d * k); sum += out[i].d; }
+    if (out.length >= 2) out[out.length - 2].d = Math.max(0, want - sum);
+  }
   return { blend: STEP, blendEase: 'out', shift: h.tmpl ? h.tmpl.shift || 0 : 0, mixed: true, keys: out };
 }

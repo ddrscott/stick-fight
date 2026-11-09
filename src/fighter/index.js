@@ -12,7 +12,7 @@
 // legs and never float or sink.
 
 import * as dm from '../combat/dmath.js';   // bit-identical trig on every engine: online play runs this rig on both machines
-import { LIMB_BLEND, mixBotch } from './limbBlend.js';   // experiment: per-limb botch blending (?blend=1)
+import { mixBotch } from './limbBlend.js';   // a botch mixes the two moves per limb
 const DEG = Math.PI / 180;
 
 // Segment lengths, ~130px tall standing.
@@ -1067,11 +1067,11 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     // a botch (src/combat/botch.js) is built from the forces the sim measured and the pose the body is in now
     if (name === 'botch' && opt && opt.botch) {
       m = makeBotch(opt.botch, f.pose);
-      // experiment (?blend=1, src/fighter/limbBlend.js): mix the new press's limb into the body's motion
+      // two moves, one body (src/fighter/limbBlend.js): mix the new press's limb into the body's motion
       const b = opt.botch;
-      if (LIMB_BLEND && (b.kind === 'whiff' || b.kind === 'over' || b.kind === 'spin') && move && keys.length) {
+      if ((b.kind === 'whiff' || b.kind === 'over' || b.kind === 'spin') && move && keys.length) {
         const el = keys.slice(0, ki).reduce((s2, kk) => s2 + kk.d, 0) + kt;
-        m = mixBotch(b, { now: f.pose, sample: samplePose, nd: MOVE_DEFS[b.anim] || MOVE_DEFS.jab, tmpl: b.kind === 'whiff' ? null : m, cur: { keys, el } });
+        m = mixBotch(b, { len: m.blend + m.keys.reduce((s2, kk) => s2 + kk.d, 0), now: f.pose, sample: samplePose, nd: MOVE_DEFS[b.anim] || MOVE_DEFS.jab, tmpl: b.kind === 'whiff' ? null : m, cur: { keys, el } });
       }
     }
     if (name === 'flail' && opt && opt.botch) m = makeFlail(opt.botch);
