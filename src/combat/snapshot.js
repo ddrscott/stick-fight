@@ -24,6 +24,19 @@ function copyPoints(src, dst) {
 }
 const clone = (v) => (v == null || typeof v !== 'object' ? v : JSON.parse(JSON.stringify(v)));
 
+// The reach table (~190 entries) changes a few times a match, but copying it was half of every save. It carries
+// a version (__v, not enumerable, so hashes, keys and copies never see it) that touchReach() sets from one
+// sequence each time a value really changes; every snapshot of the same version shares one frozen copy.
+// Versions are never reused, so after a load puts an older one back, the next change gets a new number.
+let reachSeq = 0;
+const reachCopies = new WeakMap();
+const snapReach = new WeakMap();   // snapshot -> the reach version it holds (kept off the snapshot, so its content alone is the state)
+/** the reach table changed: give it a new version @param {any} reach */
+export function touchReach(reach) {
+  if (!Object.prototype.hasOwnProperty.call(reach, '__v')) Object.defineProperty(reach, '__v', { value: 0, writable: true, enumerable: false });
+  reach.__v = ++reachSeq;
+}
+
 /** @param {any} sim @param {any} arena @param {any} [into] */
 export function saveSim(sim, arena, into) {
   const s = into || { units: [], vals: [], rigs: [], prev: [] };
@@ -35,8 +48,11 @@ export function saveSim(sim, arena, into) {
   s.horde = sim.horde ? clone(sim.horde) : null;
   s.ragdolls = sim.ragdolls.length ? sim.ragdolls.map((r) => ({ ...r })) : null;
   s.log = sim.log.slice();
-  if (s.reach) for (const k in s.reach) if (!(k in sim.reachSeen)) delete s.reach[k];   // a reused snapshot mustn't keep a reach learned after this point
-  s.reach = Object.assign(s.reach || {}, sim.reachSeen);
+  const rs = sim.reachSeen;
+  if (!(rs.__v > 0)) touchReach(rs);
+  let rc = reachCopies.get(rs);
+  if (!rc || rc.v !== rs.__v) { rc = { v: rs.__v, obj: Object.freeze({ ...rs }) }; reachCopies.set(rs, rc); }
+  s.reach = rc.obj; snapReach.set(s, rc.v);
   s.bx0 = sim.bounds.x0; s.bx1 = sim.bounds.x1;
   s.rng = sim.rng; s.rngState = sim.rng.state;
   // units: every field by value (prevJoints is mutated in place by the sim, so its points are copied)
@@ -72,8 +88,13 @@ export function loadSim(sim, arena, s) {
   sim.ragdolls.length = 0; if (s.ragdolls) for (const r of s.ragdolls) sim.ragdolls.push({ ...r });
   sim.log.length = 0; for (const e of s.log) sim.log.push(e);
   const reach = sim.reachSeen;
-  for (const k in reach) if (!(k in s.reach)) delete reach[k];
-  Object.assign(reach, s.reach);
+  const sv = snapReach.get(s);
+  if (!(sv > 0) || reach.__v !== sv) {
+    for (const k in reach) if (!(k in s.reach)) delete reach[k];
+    Object.assign(reach, s.reach);
+    if (sv > 0) { reach.__v = sv; reachCopies.set(reach, { v: sv, obj: s.reach }); }
+    else touchReach(reach);   // a state from elsewhere (a resync's text): a version of its own
+  }
   sim.bounds.x0 = s.bx0; sim.bounds.x1 = s.bx1;
   sim.rng = s.rng; sim.rng.state = s.rngState;
   const n = s.units.length;

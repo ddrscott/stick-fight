@@ -9,7 +9,7 @@ import { EMPTY_INPUT } from './input.js';
 import { createAI } from './ai.js';
 import { mulberry32 } from './rng.js';
 import * as dm from './dmath.js';   // bit-identical hypot on every engine (online play)
-import { saveSim, loadSim } from './snapshot.js';
+import { saveSim, loadSim, touchReach } from './snapshot.js';
 import { characterOr, canUse, colorFor, pantsFor, TEMP_ID } from '../characters/registry.js';   // per-character stats, moves, strings (src/characters/)
 import { BOTCH_GRACE, BOTCH_CALLOUT, ACCIDENTS, chooseBotch, botchCost, accidentFor, sideOf, isFoot } from './botch.js';   // mistimed presses (src/combat/botch.js)
 
@@ -307,6 +307,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
         if (active) for (const h of buildHitboxes(rig, m, fc)) reachSeen[pre + m] = Math.max(reachSeen[pre + m] || 0, (h.x - rig.x) * fc + h.r);
       }
     }
+    touchReach(reachSeen);
     if (keep) rig.setState(keep);
     rig.x = x; rig.y = y; rig.facing = fc0; rig.play('idle'); rig.update(0); rig.events.length = 0;
   }
@@ -596,6 +597,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     });
     for (const k of Object.keys(reachSeen)) delete reachSeen[k];
     Object.assign(reachSeen, reachCalibrated);
+    touchReach(reachSeen);
     sim.log.length = 0; sim.callouts.length = 0; sim.hitstopActive = 0; sim.koSlow = 0; sim.finisher = false; sim.banner = ''; sim.bannerT = 0;
   }
 
@@ -1938,7 +1940,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     }
     const hits = buildHitboxes(att.rig, att.move, att.facing);
     const rk = reachKey(att, att.move);
-    for (const h of hits) reachSeen[rk] = Math.max(reachSeen[rk] || 0, (h.x - att.x) * att.facing + h.r);
+    for (const h of hits) { const r = Math.max(reachSeen[rk] || 0, (h.x - att.x) * att.facing + h.r); if (r !== reachSeen[rk]) { reachSeen[rk] = r; touchReach(reachSeen); } }
     const pt = testHit(hits, buildHurtboxes(def.rig));
     if (pt && dodging) return dodge();
     // an air strike from an air jump comes down on him from above, where seating can only slide him
@@ -2381,7 +2383,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function penetration(a, b) {
     const A = bodyShapes(a), B = bodyShapes(b);
     let worst = 0;
-    for (const [p, q, r] of A) for (const [s2, t, r2] of B) worst = Math.max(worst, r + r2 - segSeg(p, q, s2, t));
+    // index loops, not destructuring (an iterator per pair, 100 pairs a step); the same sums in the same order
+    for (let i = 0; i < A.length; i++) {
+      const sa = A[i];
+      for (let j = 0; j < B.length; j++) { const sb = B[j]; worst = Math.max(worst, sa[2] + sb[2] - segSeg(sa[0], sa[1], sb[0], sb[1])); }
+    }
     return worst;
   }
   // A lying (or rolling) body isn't solid to a standing one, who may stand over it, but neither one
@@ -2706,8 +2712,8 @@ function segDistPt(p, a, b) {
   return dm.hypot(p.x - a.x - abx * t, p.y - a.y - aby * t);
 }
 // closest distance between two segments (exact for non-crossing; crossing gives 0)
+function cross(o, p, q) { return (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x); }
 function segSeg(a, b, c, d) {
-  const cross = (o, p, q) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
   const d1 = cross(c, d, a), d2 = cross(c, d, b), d3 = cross(a, b, c), d4 = cross(a, b, d);
   if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return 0;
   return Math.min(segDistPt(a, c, d), segDistPt(b, c, d), segDistPt(c, a, b), segDistPt(d, a, b));
