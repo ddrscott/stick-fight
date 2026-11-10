@@ -622,9 +622,10 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const touchUI = !!cls && cls.contains('touch-ui') && !padUI;   // a pad hides the touch buttons, so the hints come back
     if (!touchUI && !help) {
       // the hint sits in the bottom corner, and steps aside for a fighter
-      const hint = { x0: width - 230, x1: width - 20, y0: height - 26, y1: height - 4 };
+      let hintText = flow ? flow.hint : padUI ? 'R3  HORDE     START  PAUSE' : 'F1  MOVES     G  HORDE';
+      if (hintText && !padUI && cls.contains('fs-ok')) hintText += '     F11  FULLSCREEN';   // src/fullscreen.js: only where F11 can do it
+      const hint = { x0: width - 34 - Math.max(196, hintText ? measure(hintText, 16, LABEL, 500) : 0), x1: width - 20, y0: height - 26, y1: height - 4 };
       ctx.save(); ctx.globalAlpha = overlaps(hint, boxes) ? 0.15 : 0.85;
-      const hintText = flow ? flow.hint : padUI ? 'R3  HORDE     START  PAUSE' : 'F1  MOVES     G  HORDE';
       if (hintText) neonText(hintText, width - 24, height - 14, 16, NEON.violet, { font: LABEL, align: 'right', weight: 500, glow: 0.4, core: false });
       ctx.restore();
     }
