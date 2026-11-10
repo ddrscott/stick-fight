@@ -8,6 +8,7 @@
 const UNIT_FIELDS = [
   'x', 'y', 'vx', 'vy', 'facing', 'grounded', 'state', 'move', 'phase', 'health', 'stamina', 'faint', 'faintPending',
   'hitstop', 'stun', 'downTimer', 'combo', 'floor', 'stair', 'attackId', 'hidden', 'rag', 'falling', 'airHits',
+  'home', 'rollT', 'otgHit',   // the sides a body on the floor rises on, a roll's progress, the knockdown's ground hit used
 ];
 
 const f64 = new Float64Array(1);

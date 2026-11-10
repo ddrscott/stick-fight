@@ -6,6 +6,7 @@
 //     two mashers, P1 against a CPU at each difficulty, `--matches` matches each:
 //       random  every 10 to 18 steps (120 Hz) a random button, the stick re-rolled every 40 steps
 //       one     walks in, then presses 1 every 12 steps
+//       down    (--kinds down) walks in holding down, a random button every 10 to 18 steps
 //   node gauntlet/measure.mjs cpu [--root DIR] [--matches 24] [--diff 0.7] [--pairs temp:courier,security:helpdesk]
 //     CPU vs CPU, sides swapped every match; rounds won per character
 //   node gauntlet/measure.mjs scene NAME     a timeline scene phase by phase: P1's stamina at each hit, block, botch, faint
@@ -53,6 +54,12 @@ async function match(o) {
       sim.setController(0, 'script', (me, opp) => {
         t++;
         const toward = Math.sign(opp.x - me.x) || 1, inp = { dx: 0, jump: false, block: false, down: false, run: false, lp: false, rp: false, lk: false, rk: false };
+        if (o.p1 === 'down') {   // walks in holding down, a random button every 10 to 18 steps (down + buttons over a body on the floor)
+          inp.down = true; inp.dx = Math.abs(opp.x - me.x) > 70 && t % 60 < 30 ? toward : 0;
+          if (t >= next) { btn = ['lp', 'rp', 'lk', 'rk'][Math.floor(rnd() * 4)]; hold = 2; next = t + 10 + Math.floor(rnd() * 9); }
+          if (hold > 0) { inp[btn] = true; hold--; }
+          return inp;
+        }
         if (o.p1 === 'one') {
           inp.dx = Math.abs(opp.x - me.x) > 110 ? toward : 0;
           if (t % 12 < 2) inp.lp = true;
@@ -66,7 +73,7 @@ async function match(o) {
       });
     }
     sim.setAI(1, o.diff2 != null ? o.diff2 : o.diff);
-    const st = [0, 1].map(() => ({ dmg: 0, best: 0, combos: [], open: 0, faints: 0, rounds: 0, botches: 0, hits: 0, blocks: 0, timeWins: 0 }));
+    const st = [0, 1].map(() => ({ dmg: 0, best: 0, combos: [], open: 0, faints: 0, rounds: 0, botches: 0, hits: 0, blocks: 0, timeWins: 0, ground: 0, groundDmg: 0, grazes: 0 }));
     let steps = 0, lastH = sim.units.map(u => u.health), lastFaint = sim.units.map(u => u.faintAt), curCombo = [0, 0], seen = new WeakSet(sim.log), lastPhase = sim.phase;
     const OPEN = /^(botch|knockdown|down|getup|roll|splat|grabbed)$/;
     for (let f = 0; f < 60 * 60 * 8 && sim.phase !== 'match'; f++) {
@@ -75,6 +82,9 @@ async function match(o) {
         if (seen.has(n)) continue; seen.add(n);
         if (n.type === 'botch' && n.att <= 1) st[n.att].botches++;
         if (n.type === 'hit' && n.att <= 1) st[n.att].hits++;
+        if (o.debug && n.type === 'hit' && n.att === 0) { (st[0].seq = st[0].seq || []).push(`${n.move}${n.otg ? '(g)' : ''}${n.combo ? '#' + n.combo : ''}${sim.units[1].faint > 0 ? 'F' : ''}`); if (st[0].seq.length > 40) st[0].seq.shift(); if ((n.combo || 0) >= 10) st[0].long = st[0].seq.slice(-18).join(' '); }
+        if (n.type === 'hit' && n.otg && n.att <= 1) { st[n.att].ground++; st[n.att].groundDmg += n.dmg || 3; }
+        if (n.type === 'graze' && n.att <= 1) st[n.att].grazes++;
         if (n.type === 'block' && n.att <= 1) st[n.att].blocks++;
       }
       if (lastPhase === 'fight' && sim.phase !== 'fight' && sim.banner === 'TIME' && sim.winner >= 0 && sim.winner <= 1) st[sim.winner].timeWins++;
@@ -182,9 +192,9 @@ if (mode === 'scene') {
   const N = +opt('--matches', 3), diffs = opt('--diffs', '0.3,0.7').split(',').map(Number), ch = opt('--char', 'temp');
   for (const kind of opt('--kinds', 'random,one').split(',')) for (const d of diffs) {
     const rows = [];
-    for (let m = 0; m < N; m++) { const r = await match({ p1: kind, diff: d, seed: 101 + m * 17, chars: [ch, 'temp'] }); rows.push({ ...r[0], cpuRounds: r[1].rounds }); }
+    for (let m = 0; m < N; m++) { const r = await match({ p1: kind, diff: d, seed: 101 + m * 17, chars: [ch, 'temp'], debug: !!process.env.DEBUG_COMBO }); rows.push({ ...r[0], cpuRounds: r[1].rounds }); if (r[0].long) process.stderr.write(`LONG seed ${101 + m * 17}: ${r[0].long}\n`); }
     const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
-    out[`${kind}@${d}`] = { rounds: sum('rounds'), dmg: Math.round(sum('dmg')), best: Math.max(...rows.map(r => r.best)), avgCombo: +(sum('avg') / N).toFixed(2), open: +(sum('open') / N * 100).toFixed(1), faints: sum('faints'), botches: sum('botches'), hits: sum('hits'), blocks: sum('blocks'), timeWins: sum('timeWins'), cpuRounds: rows.reduce((a, r) => a + r.cpuRounds, 0) };
+    out[`${kind}@${d}`] = { rounds: sum('rounds'), dmg: Math.round(sum('dmg')), best: Math.max(...rows.map(r => r.best)), avgCombo: +(sum('avg') / N).toFixed(2), open: +(sum('open') / N * 100).toFixed(1), faints: sum('faints'), botches: sum('botches'), hits: sum('hits'), blocks: sum('blocks'), timeWins: sum('timeWins'), ground: sum('ground'), groundDmg: sum('groundDmg'), grazes: sum('grazes'), cpuRounds: rows.reduce((a, r) => a + r.cpuRounds, 0) };
     process.stderr.write(`${kind}@${d} ${JSON.stringify(out[`${kind}@${d}`])}\n`);
   }
 } else {
