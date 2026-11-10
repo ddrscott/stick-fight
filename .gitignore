@@ -17,3 +17,4 @@ gauntlet/progress.html
 /.site/
 # drawn by site/sprites.mjs on every build and dev start
 /public/sprites/
+gauntlet/tmp/

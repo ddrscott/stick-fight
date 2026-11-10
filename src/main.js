@@ -121,6 +121,11 @@ function onEvent(ev) {
       }
       if (ev.knockdown || ev.ko) fx.dust({ x: ev.defender.x, y: ev.defender.y, dir: ev.dir });
       break;
+    case 'graze':
+      // a strike that touches a body on the floor without hitting it (sim graze): a small spark on the touch, no ring, no shake
+      fx.hit({ x: ev.x, y: ev.y, strength: 0.12, dir: ev.dir, flashR: 12, debris: 'none', ring: false });
+      light(ev.x, ev.y, 70, [1.0, 0.62, 0.3], 0.35, 0.12);
+      break;
     case 'release':
       // the freeze lets go: shake, a directional kick (with a real vertical component), and
       // a zoom punch all land on this frame
@@ -360,11 +365,42 @@ const refundCombo = () => (me, o, t) => {
   return {};
 };
 const wakeAt = (inp, at = 120) => (me, o, t) => (me.state === 'down' && t >= at && t < at + 3 ? (typeof inp === 'function' ? inp(me, o) : inp) : {});
+// a fresh press away from the opponent (-1) or toward him (1), by the side the body lies on (u.home)
+const rollWay = (k) => (me, o) => ({ dx: k * -(me.home || Math.sign(hipOf(me) - o.x) || 1) });
+// P1 keeps his distance from the body: walks to `d` px from its hip and stands there
+const standOff = (d) => (me, o, t) => (t >= 40 && t < 112 && o.state === 'down' && Math.abs(Math.abs(hipOf(o) - me.x) - d) > 8 ? { dx: Math.sign(hipOf(o) - me.x) * (Math.abs(hipOf(o) - me.x) > d ? 1 : -1) } : {});
+// ground-test: P1 sweeps him down, walks in until his low can reach the body (sim.segGap: the drawn limb against
+// the drawn body, measured on the press's contact pose is too much to ask here, so a fixed spot over the shins),
+// then presses `inp` twice; the first lands as the knockdown's ground hit, the second grazes
+// the low jab's fist is at crouch height, over the shins from the feet, so its scene stands P1 on the head side: a
+// body always lands feet toward whoever knocked it down, so he's placed there once it's down (a test setup, not a move)
+const overTop = (inp) => (me, o, t) => {
+  if (t === 100 && o.state === 'down') { const hx = hipOf(o), s = Math.sign(o.x - hx); place(0, hx - s * 46, s); me.home = -s; o.home = s; }
+  return (t >= 140 && t < 143) || (t >= 175 && t < 178) ? (typeof inp === 'function' ? inp(me) : inp) : {};
+};
+const lowTwice = (inp, at2 = 170, d = 190) => (me, o, t) => {
+  if (t >= 40 && t < 112) return standOff(d)(me, o, t);
+  return (t >= 112 && t < 115) || (t >= at2 && t < at2 + 3) ? (typeof inp === 'function' ? inp(me) : inp) : {};
+};
 const PHASES = {
+  // ground-test: each low on a floored body, the first one the ground hit (about half damage, counted in the combo),
+  // the second a graze (a flick, no damage); a mid that touches grazes; the stomp still the biggest
+  ground: [
+    { name: 'LOW JAB from the head side: a ground hit, then a graze', p1: [[10, D('rk')]], p1f: overTop(D('lp')), dur: 260 },
+    { name: 'LOW KICK (down+3) at the feet: a ground hit, then a graze', p1: [[10, D('rk')]], p1f: lowTwice(D('lk'), 170, 60), dur: 230 },
+    { name: 'STOMP (down+4), then a low kick: the stomp is the ground hit, the kick grazes', p1: [[10, D('rk')], [124, D('rk')]], p1f: (me, o, t) => (t >= 40 && t < 112 && o.state === 'down' && Math.abs(hipOf(o) - me.x) > 150 ? { dx: Math.sign(hipOf(o) - me.x) } : t >= 222 && t < 225 ? D('lk') : {}), dur: 260 },
+    { name: 'SWEEP from outside the stomp: it falls short of the feet, nothing', p1: [[10, D('rk')]], p1f: lowTwice(D('rk'), 300, 190), dur: 230 },
+    { name: 'a mid that touches the body (the axe kick, forward+4): a graze', p1: [[10, D('rk')]], p1f: lowTwice((me) => ({ rk: true, dx: me.facing }), 300, 100), dur: 230 },
+  ],
   getup: [
     { name: 'no input: he lies there, then stands up by himself after 1s', p1: [[10, D('rk')]], p1f: over(), dur: 300 },
     { name: 'up: he stands in place at once', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ jump: true }), dur: 240 },
-    { name: 'a fresh left or right: he rolls away', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt((me, o) => ({ dx: -Math.sign(o.x - hipOf(me)) })), dur: 260 },
+    { name: 'roll away with him over the body: back on his own side, facing him', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt(rollWay(-1)), dur: 260 },
+    { name: 'roll toward him standing over the body: crosses under him to his other side', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt(rollWay(1)), dur: 260 },
+    { name: 'roll toward him from across the room: a short roll that stops short, same side', p1: [[10, D('rk')]], p1f: standOff(330), p2: wakeAt(rollWay(1)), dur: 260 },
+    { name: 'roll away with nobody near: the same roll back', p1: [[10, D('rk')]], p1f: standOff(330), p2: wakeAt(rollWay(-1)), dur: 260 },
+    { name: 'roll away into the wall: a short roll in place, same side', at: () => [W1() - 230, W1() - 140], p1: [[10, D('rk')]], p1f: over(), p2: wakeAt(rollWay(-1)), dur: 260 },
+    { name: 'roll toward him with his back to the wall: no room past him, he stays on his side', at: () => [W1() - 30, W1() - 110], p1: [[10, { lp: true, lk: true }]], p1f: (me, o, t) => (t > 40 && o.state === 'down' ? walkTo(W1() + SCENE_SHIFT)(me) : {}), p2: wakeAt(rollWay(1), 150), dur: 300 },
     { name: 'WAKE KICK (1 or 3) into him standing at the feet: knockdown', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ lk: true }), dur: 260 },
     { name: 'WAKE SWEEP (2 or 4) along the floor: knockdown', p1: [[10, D('rk')]], p1f: over(), p2: wakeAt({ rk: true }), dur: 260 },
     { name: 'WAKE KICK blocked standing: the rise is punished', p1: [[10, D('rk')]], p1f: over(punishRise({ back: true })), p2: wakeAt({ lk: true }), dur: 300 },
@@ -377,7 +413,7 @@ const PHASES = {
     { name: 'STOMP whiffs on a roll: open for the whole recovery', p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: wakeAt({ dx: 1 }, 118), dur: 300 },
     { name: 'STOMP lands, he wakes kicking at once: the stomper guards it', p1: [[10, D('rk')], [124, D('rk')]], p1f: over((me, o, t) => (t > 160 ? { back: true } : {})), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
     { name: "STOMP lands, the stomper doesn't guard: the wake kick punishes", p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
-    { name: 'one ground hit per knockdown: a second stomp passes over him', p1: [[10, D('rk')], [124, D('rk')], [210, D('rk')]], p1f: over(), dur: 340 },
+    { name: 'one ground hit per knockdown: a second stomp only grazes him', p1: [[10, D('rk')], [124, D('rk')], [210, D('rk')]], p1f: over(), dur: 340 },
   ],
   // air-recovery-test: P1 launches P2 (d+2); P2 presses k steps after the last hit (techAt), or mashes. Then the
   // falling attacks: a second jab after a whiffed air attack, a press mid-swing tangling up, an attack off the vault
@@ -757,6 +793,7 @@ const scenes = {
   // best-of-3 and its body pile fit in a capture.
   'getup-test'(o) { timeline(PHASES.getup, o); },
   'stomp-test'(o) { timeline(PHASES.stomp, o); },
+  'ground-test'(o) { timeline(PHASES.ground, o); },
   'air-recovery-test'(o) { timeline(PHASES.airRecovery, o); },
   'parry-test'(o) { timeline(PHASES.parry, o); },
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
@@ -1408,7 +1445,7 @@ function drawnPoints(u) {
 // body draws raw, the jump and air moves keep drawOffset's catch-up, and a strike that connects draws
 // touching: both end on the contact frame, under the impact flash.
 const TURN_MS = 100, FADE_MS = 110, SNAP_PX = 18, SNAP_HEAD = 1e9, SNAP_MAX = 260;
-const UPRIGHT = new Set(['idle', 'walk', 'run', 'block', 'blockstun', 'crouch', 'attack', 'landing', 'hitstun', 'botch']);
+const UPRIGHT = new Set(['idle', 'walk', 'run', 'block', 'blockstun', 'crouch', 'attack', 'landing', 'hitstun', 'botch', 'getup']);   // getup: the turn to face him as a roll comes up (sim rollStep)
 const poseState = new Map(), drawnJ = new Map();
 const cloneJ = (j) => { const o = {}; for (const k in j) o[k] = { x: j[k].x, y: j[k].y }; return o; };
 function frameDraw(u) {

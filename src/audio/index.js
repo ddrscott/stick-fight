@@ -176,6 +176,7 @@ function createGameAudio() {
         if (count >= 2 && (!sim || sim.stepCount !== enderStep)) sfx.combo({ count, pan: p });
         break;
       }
+      case 'graze': sfx.hit({ heavy: false, strength: 0.12, pan: p, limb: ev.limb }); break;   // a touch on a body on the floor, no damage
       case 'block':
         sfx.block({ strength: ev.move === 'throw' ? 1 : ev.strength, pan: p });
         break;
