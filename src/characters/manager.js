@@ -6,7 +6,7 @@
 // unique string, TOP-DOWN (3, 2, 3), which ends in the axe kick. Drops TRIPLE JAB (he doesn't jab three
 // times when he could hit you once).
 import { RIG_KIT } from '../fighter/index.js';
-import { stoop, lift } from './perfectKit.js';
+import { stoop } from './perfectKit.js';
 import { ribbonPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP } = RIG_KIT;
@@ -86,7 +86,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a performance-review fling: he holds it up at eye level, shakes his head, winds the shoulders round and flings it sidearm at the camera, then straightens his tie and points.
-const perfect = { name: 'PERFORMANCE REVIEW FLING', stamp: 'NEEDS IMPROVEMENT', hand: 'lHand', hold: 'collar', fly: { spin: 1.5, arc: 50 }, keys: [
+const perfect = { name: 'PERFORMANCE REVIEW FLING', note: 'A performance-review fling: he holds it up at eye level, shakes his head, winds the shoulders round and flings it sidearm at the camera, then straightens his tie and points.', stamp: 'NEEDS IMPROVEMENT', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 50 }, keys: [
   ...stoop('lHand'),
   K({ ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -8, la: [130, 140], ra: [40, 110] }, 240, 'inOut'),
   K({ ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: 10, la: [130, 138], ra: [44, 112] }, 140, 'sine'),

@@ -2,7 +2,7 @@
 // physics, hit resolution with hitstop, rounds and KO. step(ms) is deterministic given
 // the same inputs and seed. Events for the glue (fx, camera) go through onEvent.
 
-import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PARRY, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
+import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PERFECT, PARRY, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
 import { matchStrings, MOVE_TOKEN } from './strings.js';
 import { buildHitboxes, buildHurtboxes, testHit } from './hitboxes.js';
 import { EMPTY_INPUT } from './input.js';
@@ -24,9 +24,10 @@ const INTRO_TIME = 1.4, KO_HOLD = 0.35, MATCH_HOLD = 1.8;
 // the perfect round finisher (README, Perfect rounds): how long the KO waits for the winner to be free, the
 // most the run to the body takes, how long the body is on the glass after the throw (src/fx/perfect.js plays
 // that part to the same clock), and how soon a press can skip it
-const PF_WAIT = 1.5, PF_RUN = 0.7, PF_AFTER = 2.15, PF_SKIP_MIN = 0.3, PF_CUT = 2.6;
+const PF_WAIT = 1.5, PF_RUN = 0.7, PF_SKIP_MIN = 0.3, PF_CUT = 2.6;
 const PF_FREE = new Set(['idle', 'walk', 'run', 'block', 'crouch', 'landing', 'attack', 'blockstun']);
 const PF_BUTTONS = ['lp', 'rp', 'lk', 'rk', 'jump', 'block'];
+const PF_MARKS = [['fly', 'perfectSplat'], ['slide', 'perfectSlide'], ['drop', 'perfectDrop']];
 const STUMBLE_FRICTION = 0.95;      // hitstun slide; victim keeps stumbling until slow
 const CHASE_FRICTION = 0.975;       // the attacker's ride after a launch: he follows the body across the room
 const MOVE_STATES = new Set(['idle', 'walk', 'run']);
@@ -2433,7 +2434,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     }
     // a clip that never released (or a winner knocked out of it) still ends it
     if (sim.perfectRel < 0 && (sim.perfectT > PF_CUT || !w || w.state !== 'perfect')) { if (w && w.state === 'perfect') perfectRelease(w); if (sim.perfectRel < 0) sim.perfectRel = sim.perfectT; }
-    const done = skip || (sim.perfectRel >= 0 && sim.perfectT >= sim.perfectRel + PF_AFTER);
+    // the marks on the glass (frameData PERFECT): the splat, the slide's start (the squeak), the peel off it
+    if (sim.perfectRel >= 0 && loser) {
+      const b = sim.perfectT - sim.perfectRel, a = b - DT;
+      for (const [k, type] of PF_MARKS) if (a < PERFECT[k] && b >= PERFECT[k]) onEvent({ type, x: loser.pfRel ? loser.pfRel.x : w.x, y: w.y, winner: sim.winner, char: w ? w.char.id : '' });
+    }
+    const done = skip || (sim.perfectRel >= 0 && sim.perfectT >= sim.perfectRel + PERFECT.after);
     if (!done) return true;
     // the body went out the bottom of the screen: it never joins the pile
     if (loser) { loser.hidden = true; loser.koDone = true; }

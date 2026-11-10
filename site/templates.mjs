@@ -296,6 +296,19 @@ ${s.dance ? `<section class="s-section" id="celebration">
     </article>
   </section>
 
+  ` : ''}${s.perfect ? `<section class="s-section" id="perfect">
+    <h2 class="s-h2">PERFECT</h2>
+    <p class="s-note">Win a round without taking a hit and ${esc(s.name)} ends it with ${esc(s.perfect.name)}: the beaten body goes into the camera, hits the glass and squeaks down it.</p>
+    <article class="s-move s-dance s-perfect">
+      <canvas class="s-rig s-move-rig" data-char="${s.id}" data-mode="move" data-seq="${esc(s.perfect.clip)}" aria-label="${esc(s.name)} perfect round finisher"></canvas>
+      <div class="s-move-body">
+        <h3 class="s-h3">${esc(s.perfect.name)}</h3>
+        <p class="s-desc">${esc(s.perfect.note)}</p>
+        ${s.perfect.stamp ? `<ul class="s-chips"><li>stamped on the glass: ${esc(s.perfect.stamp)}</li></ul>` : ''}
+      </div>
+    </article>
+  </section>
+
   ` : ''}<section class="s-section" id="strings">
     <h2 class="s-h2">STRINGS AND ENDERS</h2>
     <p class="s-note">Press in rhythm: each press goes in during the last hit's recovery. Damage is for the whole string landing on TEMP, with combo decay. Stamina is the bar it spends, out of 100.</p>

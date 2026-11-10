@@ -106,7 +106,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): Transfer, the long way: both hands on him, heaved up overhead, a beat, and thrown forward down at the camera; then the phone back at her ear and a hip sway.
-const perfect = { name: 'TRANSFER TO THE LENS', stamp: 'TRANSFERRED', hand: 'lHand', hold: 'carry', fly: { spin: 0.5, arc: 70 }, keys: [
+const perfect = { name: 'TRANSFER TO THE LENS', note: 'Transfer, the long way: both hands on him, heaved up overhead, a beat, and thrown forward down at the camera; then the phone back at her ear and a hip sway.', stamp: 'TRANSFERRED', hand: 'lHand', hold: 'carry', fly: { spin: 1, arc: 70 }, keys: [
   ...stoop('both'),
   lift('overhead', 'lHand', 260),
   K({ ...F(-2, HIP + 1, LF + 2, RF - 2), torso: -10, bend: -6, head: -14, la: [182, 192], ra: [176, 186] }, 200, 'sine'),

@@ -97,7 +97,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): the handshake: he takes it by the hand and pumps it three times, then closes the deal with the rising phone-hand uppercut that sends it at the camera; finger guns.
-const perfect = { name: 'CLOSE THE DEAL', stamp: 'SOLD!', hand: 'rHand', hold: 'collar', fly: { spin: 1, arc: 160 }, keys: [
+const perfect = { name: 'CLOSE THE DEAL', note: 'The handshake: he takes it by the hand and pumps it three times, then closes the deal with the rising phone-hand uppercut that sends it at the camera; finger guns.', stamp: 'SOLD!', hand: 'rHand', hold: 'collar', fly: { spin: 1, arc: 160 }, keys: [
   ...stoop('rHand'),
   lift('collar', 'rHand', 200),
   K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),

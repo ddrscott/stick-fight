@@ -478,7 +478,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
 
   // flow (src/flow/, null for a ?scene= URL): { bare, score, bonus, names, hint }. bare = a menu is
   // up over a dimmed scene, so no HUD at all. Returns { prompt } on the title (see attractCard).
-  function draw({ sim, camera, dt = 0, debug = false, scene = '', paused = false, help = false, attract = null, flow = null, toast = null, found = null }) {
+  function draw({ sim, camera, dt = 0, debug = false, scene = '', paused = false, help = false, attract = null, flow = null, toast = null, found = null, under = null, bannerUp = false }) {
     foundTech = found;
     clock += dt;
     layout = {};
@@ -487,6 +487,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
     if (flow && flow.bare) return layout;
+    // under: drawn first, in screen space, so the HUD reads over it (the perfect round finisher's glass, src/fx/perfect.js)
+    if (under) { ctx.save(); try { under(ctx); } catch (e) { /* never breaks the HUD */ } ctx.restore(); }
     // a soft violet fade behind the strip so the bars read over the bright sign row
     const g = ctx.createLinearGradient(0, 0, 0, STRIP_H + 30);   // down past the move-hint line under the bars
     g.addColorStop(0, 'rgba(10,2,24,0.62)'); g.addColorStop(0.7, 'rgba(10,2,24,0.32)'); g.addColorStop(1, 'rgba(10,2,24,0)');
@@ -500,7 +502,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const boxes = fighterBoxes(sim, camera), taken = [];
     if (flow && flow.tally) tally(flow.tally, boxes, taken);
     if (sim.banner !== lastBanner) { lastBanner = sim.banner; bannerAge = 0; } else bannerAge += dt;
-    if (sim.banner) banner(sim.banner, bannerAge, boxes, taken);
+    if (sim.banner) banner(sim.banner, bannerAge, boxes, bannerUp ? [{ x0: 0, x1: width, y0: 0, y1: height }] : taken);   // bannerUp: the perfect finisher fills the screen, so it goes in the strip
     if (attract) attractCard(attract, boxes, taken, dt);   // before the callouts, so they step around it
     tracks(sim, camera, dt, taken);   // the overhead status tracks; the callouts step around them too
 

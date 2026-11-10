@@ -317,7 +317,8 @@ export function sheetOf(c) {
     body: bodyOf(c),
     mechanics: mechanicsOf(c, names),
     moveList: c.moveList || [],
-    dance: c.dance || null,   // the celebration clip (registry `dance`), played by the match winner
+    dance: c.dance || null,
+    perfect: c.perfect ? { clip: c.perfect.clip, name: c.perfect.name, note: c.perfect.note, stamp: c.perfect.stamp } : null,   // the perfect round finisher (registry `perfect`)   // the celebration clip (registry `dance`), played by the match winner
     moves,
     strings: stringsOf(c),
     basics: basicsOf(c),

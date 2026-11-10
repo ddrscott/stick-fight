@@ -109,7 +109,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): he gets it up, it slips, he juggles it, and a panicked underhand lob sends it at the camera by accident; then both hands on his head.
-const perfect = { name: 'ACCIDENTAL LOB', stamp: 'OOPS', hand: 'lHand', hold: 'collar', fly: { spin: 1.5, arc: 220, wobble: 1 }, keys: [
+const perfect = { name: 'ACCIDENTAL LOB', note: 'He gets it up, it slips, he juggles it, and a panicked underhand lob sends it at the camera by accident; then both hands on his head.', stamp: 'OOPS', hand: 'lHand', hold: 'collar', fly: { spin: 2, arc: 220, wobble: 1 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
   K({ ...F(4, HIP - 10, LF + 6, RF), torso: 30, bend: 6, head: 12, la: [28, 20], ra: [60, 30] }, 150, 'in'),

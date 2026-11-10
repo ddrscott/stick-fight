@@ -7,7 +7,7 @@
 // (2, 1, 2), ending in a rear fist to the gut that splits up into an uppercut (two hits, the `hits` hook).
 // Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
-import { stoop, lift } from './perfectKit.js';
+import { stoop } from './perfectKit.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
 
@@ -82,7 +82,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): the golden-parachute shove: held out at arm's length, a bored backhand push at the camera (a gold parachute opens on the glass and floats it down); then he straightens the tie.
-const perfect = { name: 'GOLDEN PARACHUTE', stamp: 'LET GO', hand: 'lHand', hold: 'collar', fly: { spin: 0.3, arc: 30 }, slide: { chute: true, rate: 0.6 }, keys: [
+const perfect = { name: 'GOLDEN PARACHUTE', note: 'The golden-parachute shove: held out at arm\'s length, a bored backhand push at the camera (a gold parachute opens on the glass and floats it down); then he straightens the tie.', stamp: 'LET GO', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 30 }, slide: { chute: true, rate: 0.6 }, keys: [
   ...stoop('lHand'),
   K({ ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -10, la: [100, 100], ra: [30, 120] }, 220, 'inOut'),
   K({ ...F(2, HIP, LF + 4, RF), torso: -2, bend: -4, head: -12, la: [100, 98], ra: [110, 200] }, 220, 'inOut'),

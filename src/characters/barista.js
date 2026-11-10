@@ -117,7 +117,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a latte pour: the body across both hands like a pitcher, raised high and tipped, then a wiggling pour-flick at the camera; then the shaker shake.
-const perfect = { name: 'LATTE POUR', stamp: 'EXTRA SHOT', hand: 'lHand', hold: 'carry', fly: { spin: 0.5, arc: 200, wobble: 1.2 }, keys: [
+const perfect = { name: 'LATTE POUR', note: 'A latte pour: the body across both hands like a pitcher, raised high and tipped, then a wiggling pour-flick at the camera; then the shaker shake.', stamp: 'EXTRA SHOT', hand: 'lHand', hold: 'carry', fly: { spin: 0, arc: 200, wobble: 1.2 }, keys: [
   ...stoop('both'),
   lift('chest', 'lHand', 200),
   K({ ...F(-2, HIP + 2, LF, RF - 2), torso: -12, bend: -6, head: -16, la: [150, 166], ra: [142, 160] }, 240, 'inOut'),

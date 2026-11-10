@@ -50,11 +50,11 @@ export function registerCharacter(def) {
   // body. Its 'grab' key picks the body up in `hand`, its 'release' key throws it at the camera; the last key is
   // the pose he holds while it squeaks down the glass. hold: how the body hangs from the hand ('collar', 'ankle',
   // or 'carry', laid across it); fly: the flight's spin (turns), flip (pancake turns), arc (px up) and wobble;
-  // slide: { dx, rate, chute, squeegee, blink } how it goes down the glass; stamp: the word stamped on the glass
+  // (spin and flip are whole turns, so it lands upright); slide: { dx, rate, chute, squeegee, blink } how it goes down the glass; stamp: the word stamped on the glass
   if (def.perfect) {
     const pf = def.perfect;
-    c.perfect = { clip: `${id}_perfect`, name: pf.name || 'PERFECT', stamp: pf.stamp || '', hand: pf.hand || 'lHand', hold: pf.hold || 'collar',
-      fly: { spin: 0.6, flip: 0, arc: 60, wobble: 0, ...(pf.fly || {}) }, slide: { dx: 0, rate: 1, ...(pf.slide || {}) } };
+    c.perfect = { clip: `${id}_perfect`, name: pf.name || 'PERFECT', note: pf.note || '', stamp: pf.stamp || '', hand: pf.hand || 'lHand', hold: pf.hold || 'collar',
+      fly: { spin: 1, flip: 0, arc: 60, wobble: 0, ...(pf.fly || {}) }, slide: { dx: 0, rate: 1, ...(pf.slide || {}) } };
     rigs[c.perfect.clip] = { blend: 120, keys: pf.keys };
     const evs = pf.keys.map((k) => k.ev);
     if (!evs.includes('grab') || !evs.includes('release')) console.warn(`[characters] ${id}: perfect needs a 'grab' key and a 'release' key`);

@@ -117,7 +117,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): up by the collar, the presentation rise, and the Mandatory Training shove with both hands out long; then the clipboard scribble.
-const perfect = { name: 'MANDATORY OFFBOARDING', stamp: 'OFFBOARDED', hand: 'lHand', hold: 'collar', fly: { spin: 0.5, arc: 30, wobble: 0.5 }, keys: [
+const perfect = { name: 'MANDATORY OFFBOARDING', note: 'Up by the collar, the presentation rise, and the Mandatory Training shove with both hands out long; then the clipboard scribble.', stamp: 'OFFBOARDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 30, wobble: 0.5 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
   K({ ...F(0, HIP + 2, LF, RF), torso: -4, bend: -4, head: -10, la: [110, 116], ra: [70, 120] }, 220, 'inOut'),

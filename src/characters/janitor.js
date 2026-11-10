@@ -7,7 +7,7 @@
 // One unique string, AISLE 3 (3, 3, 3), ending in a long side kick that splats on the wall. Keeps
 // every shared string.
 import { RIG_KIT } from '../fighter/index.js';
-import { stoop, lift } from './perfectKit.js';
+import { stoop } from './perfectKit.js';
 
 const { K, F, L, LF, RF, HIP, CH } = RIG_KIT;
 
@@ -88,7 +88,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a mop-handle golf swing: he takes it by the ankle, addresses the ball, a full backswing and a drive at the camera, then holds the follow-through.
-const perfect = { name: 'MOP-HANDLE DRIVE', stamp: 'FORE!', hand: 'lHand', hold: 'ankle', fly: { spin: -2, arc: 140 }, keys: [
+const perfect = { name: 'MOP-HANDLE DRIVE', note: 'A mop-handle golf swing: he takes it by the ankle, addresses the ball, a full backswing and a drive at the camera, then holds the follow-through.', stamp: 'FORE!', hand: 'lHand', hold: 'ankle', fly: { spin: -2, arc: 140 }, keys: [
   ...stoop('both'),
   K({ ...F(-2, HIP - 8, LF + 6, RF - 6), torso: 24, bend: 4, head: 8, la: [10, 4], ra: [6, 0] }, 220, 'inOut'),
   K({ ...F(-4, HIP - 8, LF + 6, RF - 6), torso: 22, bend: 4, head: 10, tw: -10, la: [-120, -150], ra: [-110, -140] }, 300, 'inOut'),

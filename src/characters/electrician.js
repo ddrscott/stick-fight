@@ -109,7 +109,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): up by the collar while the tester hand gives it a few jolts (the body jitters), then a flick at the camera; the boogaloo wave after.
-const perfect = { name: 'LIVE CIRCUIT FLICK', stamp: 'GROUNDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 60, wobble: 1.5 }, keys: [
+const perfect = { name: 'LIVE CIRCUIT FLICK', note: 'Up by the collar while the tester hand gives it a few jolts (the body jitters), then a flick at the camera; the boogaloo wave after.', stamp: 'GROUNDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 60, wobble: 1.5 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
   K({ ...F(2, HIP - 3, LF + 4, RF), torso: 4, head: -6, la: [110, 118], ra: [80, 86] }, 50, 'linear'),

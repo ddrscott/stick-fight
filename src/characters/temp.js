@@ -3,7 +3,7 @@
 // characters existed (the regression scenes in the README give the same results). It's also what a
 // ladder stage falls back to when its character isn't in the game yet.
 import { RIG_KIT } from '../fighter/index.js';
-import { stoop, lift } from './perfectKit.js';
+import { stoop } from './perfectKit.js';
 import { chainPath } from '../fighter/cloth.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
@@ -41,7 +41,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a clumsy two-handed heave: he gets the body up by the collar, swings it back between his knees, heaves it up and over at the camera and staggers after it, then a stunned fist in the air.
-const perfect = { name: 'TWO-HANDED HEAVE', stamp: 'CONTRACT ENDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 90 }, keys: [
+const perfect = { name: 'TWO-HANDED HEAVE', note: 'A clumsy two-handed heave: he gets the body up by the collar, swings it back between his knees, heaves it up and over at the camera and staggers after it, then a stunned fist in the air.', stamp: 'CONTRACT ENDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 90 }, keys: [
   ...stoop('both'),
   K({ ...F(0, HIP - 6, LF, RF), torso: 4, bend: -2, head: -6, la: [84, 100], ra: [76, 96] }, 200, 'inOut'),
   K({ ...F(-4, HIP - 18, LF, RF), torso: 32, bend: 6, head: -10, la: [-24, -12], ra: [-32, -22] }, 240, 'inOut'),

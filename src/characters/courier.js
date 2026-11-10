@@ -55,7 +55,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): he picks it up like a parcel across both arms, tosses it up and drop-kicks it at the camera, then tips his cap.
-const perfect = { name: 'SAME-DAY DROP KICK', stamp: 'DELIVERED', hand: 'lHand', hold: 'carry', fly: { spin: 1, arc: 10 }, keys: [
+const perfect = { name: 'SAME-DAY DROP KICK', note: 'He picks it up like a parcel across both arms, tosses it up and drop-kicks it at the camera, then tips his cap.', stamp: 'DELIVERED', hand: 'lHand', hold: 'carry', fly: { spin: 1, arc: 10 }, keys: [
   ...stoop('both'),
   lift('chest', 'lHand', 200),
   K({ ...F(-2, HIP - 8, LF - 2, RF), torso: 10, bend: 2, head: -8, la: [74, 118], ra: [66, 112] }, 120, 'in'),

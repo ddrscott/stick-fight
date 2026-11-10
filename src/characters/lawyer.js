@@ -103,7 +103,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): up by the collar in the pointing hand, the briefcase wound back, and a full swing of it that sends the body at the camera; then the point and the lapel tug.
-const perfect = { name: 'CASE CLOSED', stamp: 'CASE CLOSED', hand: 'lHand', hold: 'collar', fly: { spin: 1.2, arc: 40 }, keys: [
+const perfect = { name: 'CASE CLOSED', note: 'Up by the collar in the pointing hand, the briefcase wound back, and a full swing of it that sends the body at the camera; then the point and the lapel tug.', stamp: 'CASE CLOSED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 40 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
   K({ ...F(-4, HIP - 6, LF, RF - 4), torso: 0, bend: -2, head: -6, tw: -14, la: [100, 108], ra: [-70, -50] }, 220, 'inOut'),

@@ -119,7 +119,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): lifted overhead and held there in tree pose, then a long pushing exhale that sends it up and out at the camera; then a bow.
-const perfect = { name: 'SALUTE TO THE LENS', stamp: 'NAMASTE', hand: 'lHand', hold: 'carry', fly: { spin: 0.5, arc: 120, wobble: 0.3 }, keys: [
+const perfect = { name: 'SALUTE TO THE LENS', note: 'Lifted overhead and held there in tree pose, then a long pushing exhale that sends it up and out at the camera; then a bow.', stamp: 'NAMASTE', hand: 'lHand', hold: 'carry', fly: { spin: 0, arc: 120, wobble: 0.3 }, keys: [
   ...stoop('both'),
   lift('overhead', 'lHand', 240),
   K({ hx: -6, rl: [1, -1], ll: [64, -58], torso: 0, bend: -4, head: -10, la: [172, 180], ra: [166, 176] }, 220, 'inOut'),

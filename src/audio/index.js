@@ -14,6 +14,7 @@
 import { camera } from '../camera.js';
 import { FRAME_DATA } from '../combat/frameData.js';
 import { createSfx } from './sfx.js';
+import { PERFECT } from '../combat/frameData.js';
 import { createMusic } from './music.js';
 import { createSoundUI } from './ui.js';
 
@@ -180,6 +181,13 @@ function createGameAudio() {
         sfx.block({ strength: ev.move === 'throw' ? 1 : ev.strength, pan: p });
         break;
       case 'grab': sfx.throwGrab({ pan: p }); break;
+      // the perfect round finisher (sim.js perfectStep): the grab, the throw at the camera, the glass, the squeak down it
+      case 'perfectGrab': sfx.throwGrab({ pan: p }); break;
+      case 'perfectThrow': sfx.perfectWhoosh({ pan: p }); break;
+      case 'perfectSplat': sfx.glassThud(); music.duck(0.35, 1.6); break;
+      case 'perfectSlide': { const c = sim && sim.units[ev.winner] && sim.units[ev.winner].char, pf = c && c.perfect; sfx.squeak({ dur: PERFECT.drop - PERFECT.slide, rate: pf ? pf.slide.rate : 1 }); break; }
+      case 'perfectDrop': sfx.unstick(); break;
+      case 'perfectEnd': if (ev.skipped) sfx.squeakStop(); break;
       case 'thud': sfx.bodyFall({ strength: ev.strength, pan: p }); break;
       case 'wallImpact':
         if (ev.strength >= 1) { sfx.wallSplat({ pan: p }); music.pump(0.3, 0.08, 0.35); }

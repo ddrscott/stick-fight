@@ -5,7 +5,7 @@
 // armored charge that walks through one hit and bounces the victim off a nearby wall), and one unique
 // string, LOCKDOWN (1,2,1), ending in an overhead hammer fist. Drops SKY SPIKE (too airborne for him).
 import { RIG_KIT } from '../fighter/index.js';
-import { stoop, lift } from './perfectKit.js';
+import { stoop } from './perfectKit.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
 
@@ -78,7 +78,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): an escort: up by the collar, two marching steps with a hand on the back, a two-handed shove face-first into the glass, then the arms fold.
-const perfect = { name: 'FACE-FIRST ESCORT', stamp: 'ESCORTED OUT', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 0 }, keys: [
+const perfect = { name: 'FACE-FIRST ESCORT', note: 'An escort: up by the collar, two marching steps with a hand on the back, a two-handed shove face-first into the glass, then the arms fold.', stamp: 'ESCORTED OUT', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 0 }, keys: [
   ...stoop('lHand'),
   K({ ...F(2, HIP - 2, LF + 4, RF), torso: 2, bend: -4, head: -6, la: [118, 130], ra: [80, 100] }, 220, 'inOut'),
   K({ ...F(10, HIP - 1, LF + 20, RF, 6, 0), torso: 8, head: -6, la: [116, 124], ra: [84, 96] }, 160, 'inOut', 'footstep'),

@@ -96,7 +96,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): have you tried turning them off and on: he spins once with the body held out by the collar and lets go on the way round; on the glass it blinks off and back on; then a calm thumbs-up.
-const perfect = { name: 'OFF AND ON AGAIN', stamp: 'TICKET CLOSED', hand: 'lHand', hold: 'collar', fly: { spin: 3, arc: 30 }, slide: { blink: true }, keys: [
+const perfect = { name: 'OFF AND ON AGAIN', note: 'Have you tried turning them off and on: he spins once with the body held out by the collar and lets go on the way round; on the glass it blinks off and back on; then a calm thumbs-up.', stamp: 'TICKET CLOSED', hand: 'lHand', hold: 'collar', fly: { spin: 3, arc: 30 }, slide: { blink: true }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
   K({ ...F(-2, HIP - 6, LF, RF), torso: 4, bend: -2, head: -4, tw: -10, la: [96, 100], ra: [40, 110], spin: 0 }, 120, 'in'),

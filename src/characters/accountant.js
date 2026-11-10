@@ -94,7 +94,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a precise underhand toss: he lifts it, takes a measured half step back, sights the lens down a pencil, and lobs it underhand with bent knees; then the tidy fist pump.
-const perfect = { name: 'PRECISE UNDERHAND', stamp: 'AUDITED', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 110 }, keys: [
+const perfect = { name: 'PRECISE UNDERHAND', note: 'A precise underhand toss: he lifts it, takes a measured half step back, sights the lens down a pencil, and lobs it underhand with bent knees; then the tidy fist pump.', stamp: 'AUDITED', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 110 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
   K({ ...F(-6, HIP - 2, LF - 4, RF - 8, 0, 4), torso: 0, bend: -2, head: -8, la: [96, 104], ra: [100, 160] }, 200, 'inOut', 'footstep'),

@@ -122,7 +122,7 @@ const dance = { keys: [
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): up by the collar, a wax-on circle, then a two-armed squeegee push at the glass; on the glass his squeegee follows the body across and down; then the wax-on circles again.
-const perfect = { name: 'SQUEEGEE PUSH', stamp: 'STREAK FREE', hand: 'lHand', hold: 'collar', fly: { spin: 0.5, arc: 40 }, slide: { dx: 300, squeegee: true }, keys: [
+const perfect = { name: 'SQUEEGEE PUSH', note: 'Up by the collar, a wax-on circle, then a two-armed squeegee push at the glass; on the glass his squeegee follows the body across and down; then the wax-on circles again.', stamp: 'STREAK FREE', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 40 }, slide: { dx: 300, squeegee: true }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
   K({ ...F(0, HIP - 4, LF + 4, RF), torso: 4, head: -6, la: [100, 110], ra: [120, 170] }, 130, 'sine'),
