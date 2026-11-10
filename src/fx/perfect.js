@@ -305,16 +305,16 @@ export function createPerfectFX() {
       if (tr >= PERFECT.drop) {
         // it peels off the glass and drops out of the bottom
         const td = clamp01((tr - PERFECT.drop) / (PERFECT.after - PERFECT.drop));
-        if (slide.chute) { cy += H * 0.75 * Math.pow(td, 1.3); cx += 40 * Math.sin(td * 7) * side; }
+        if (slide.chute) { cy += H * 1.1 * Math.pow(td, 1.2); cx += 40 * Math.sin(td * 7) * side; }
         else cy += H * 1.1 * td * td;
         rot = 0.4 * td * side; k *= 1 - 0.18 * td; kx = lerp(kx, 1, td); ky = lerp(ky, 1, td);
         local = mix(local, poses.peel, smooth(0, 0.5, td));
       }
-      // the parachute (THE CEO's): a canopy in the winner's accent, flat, opening as it starts to slide
+      // the parachute (THE CEO's): a canopy in the winner's color (his gold), flat, opening as it starts to slide
       if (slide.chute && tr >= PERFECT.slide) {
         const op = smooth(PERFECT.slide, PERFECT.slide + 0.3, tr), cw = box.w * k * 0.75 * op, top = cy - box.h * k * 0.55 - 70 * op;
         const cc = center(local), hand = (n) => ({ x: cx + (local[n].x - cc.x) * side * k * kx, y: cy + (local[n].y - cc.y) * k * ky });
-        ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = w.rig.accent || w.color || '#ffd23f'; ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 3;
+        ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = w.color || '#ffd23f'; ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.ellipse(cx, top, Math.max(1, cw), Math.max(1, cw * 0.45), 0, Math.PI, 0); ctx.closePath(); ctx.fill();
         for (const n of ['lHand', 'rHand']) { const p = hand(n); ctx.beginPath(); ctx.moveTo(cx + (n === 'lHand' ? -cw : cw) * side, top); ctx.lineTo(p.x, p.y); ctx.stroke(); }
         ctx.restore();
