@@ -1,38 +1,40 @@
-// The sound settings panel: SOUND and MUSIC switches, the track playing with NEXT, a meter,
-// and MUSIC and EFFECTS sliders. Opened from a small speaker button in the stage's bottom
-// left corner on desktop, or from the touch layer's SOUND button (touch.js sends
-// 'sf:sound-panel'), which sits in the top-right gutter beside HORDE. Neon arcade look:
-// Bungee and Teko (loaded by index.html), the touch layer's palette, hard corners.
+// The SETTINGS panel: SOUND and MUSIC switches, the track playing with NEXT, a meter, MUSIC and
+// EFFECTS sliders, and the credits. One panel, opened three ways: the menu button (three bars) in the
+// top-right corner on desktop (src/corner.js), the touch layer's menu button (touch.js sends
+// 'sf:settings'), and the pause menu's SETTINGS item (src/flow/index.js calls open()). Neon arcade
+// look: Bungee and Teko (loaded by index.html), the touch layer's palette, hard corners.
 //
 // On a touch screen the panel also holds CONTROLS: the size of the touch layer's stick and buttons
 // (src/touchPrefs.js), five steps with RESET. While the panel is open <html> has .tc-preview, which
 // shows the controls behind it on every screen, so each press is seen at once. A desktop never
 // shows the row.
 //
+// Keys and the pad work it too (key(), fed by the flow's menu input): up and down move a cursor,
+// left and right turn a slider or step the size, confirm presses, back closes. Escape always closes
+// it and goes no further, so it never also resumes a paused game.
+//
 // The sliders are drawn here and driven by pointer events, because touch.js cancels every
 // touchmove on the page and a native range input on Android needs those.
 
 import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
+import { MENU_ICON, cornerButton, cornerRow } from '../corner.js';
 
-const SPEAKER = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path class="sf-wave" d="M11 5.5c1 .8 1 4.2 0 5M12.8 3.8c2 1.8 2 6.6 0 8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path class="sf-x" d="M11 6l4 4M15 6l-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
 export function createSoundUI({ settings, music, actions, isUnlocked }) {
-  if (typeof document === 'undefined') return { update() {}, close() {} };
+  if (typeof document === 'undefined') return { update() {}, close() {}, open() {}, key() { return false; }, isOpen: false };
   injectStyle();
   const isTouch = () => document.documentElement.classList.contains('touch-ui');
 
-  // desktop button and its "press a key" hint
-  const host = document.getElementById('stage') || document.body;
-  const btn = el('button', 'sf-btn', { 'aria-label': 'Sound settings', type: 'button' });
-  btn.innerHTML = SPEAKER;
+  // the desktop menu button and its "press a key" hint, which sits beside the row it's in
+  const btn = cornerButton('sf-menu', 'Settings', 2, MENU_ICON);
   const hint = el('div', 'sf-hint');
-  host.appendChild(btn); host.appendChild(hint);
+  cornerRow().appendChild(hint);
   btn.addEventListener('click', () => { actions.click(); toggle(); });
 
-  const panel = el('div', 'sf-panel', { role: 'dialog', 'aria-label': 'Sound' });
+  const panel = el('div', 'sf-panel', { role: 'dialog', 'aria-label': 'Settings' });
   panel.innerHTML = `
-    <div class="sf-head"><h2>SOUND</h2><button class="sf-close" type="button" aria-label="Close">X</button></div>
+    <div class="sf-head"><h2>SETTINGS</h2><button class="sf-close" type="button" aria-label="Close">X</button></div>
     <div class="sf-row">
       <button class="sf-sw" data-k="sound" type="button"><span>SOUND</span><b></b></button>
       <button class="sf-sw" data-k="music" type="button"><span>MUSIC</span><b></b></button>
@@ -103,8 +105,8 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
   }
   onTouchPref(paintSize);
 
-  // the touch layer's SOUND button, and a click for its small buttons
-  window.addEventListener('sf:sound-panel', () => toggle());
+  // the touch layer's menu button, and a click for its small buttons
+  window.addEventListener('sf:settings', () => toggle());
   document.addEventListener('touchstart', (e) => {
     const t = e.target instanceof Element && e.target.closest('.tc-top .tc-btn');
     if (t) actions.click();
@@ -113,8 +115,63 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
   let open = false, raf = 0;
   function toggle() { if (open) close(); else show(); }
   const preview = (on) => document.documentElement.classList.toggle('tc-preview', on && isTouch());
-  function show() { open = true; panel.classList.add('sf-open'); preview(true); update(); meterLoop(); }
-  function close() { open = false; panel.classList.remove('sf-open'); preview(false); cancelAnimationFrame(raf); }
+  /** keys: opened from a key or the pad, so the cursor shows at once (a click or a tap shows none until a key is used) */
+  function show({ keys = false } = {}) {
+    if (open) return;
+    open = true; panel.classList.add('sf-open'); preview(true); update(); meterLoop();
+    setCursor(keys ? navItems()[0] : null);
+  }
+  function close() {
+    if (!open) return;
+    open = false; panel.classList.remove('sf-open'); preview(false); cancelAnimationFrame(raf); setCursor(null);
+    window.dispatchEvent(new CustomEvent('sf:settings-closed'));   // the flow hands the keys back to the menu under it
+  }
+  // Escape closes the panel and nothing else: caught before the menus, the pause key and the online LEAVE confirm
+  window.addEventListener('keydown', (e) => {
+    if (!open || e.code !== 'Escape') return;
+    e.stopImmediatePropagation(); e.preventDefault();
+    if (!e.repeat) { actions.click('off'); close(); }
+  }, { capture: true });
+
+  // ---- keys and the pad ----------------------------------------------------------------------
+  // The cursor's stops, top to bottom, leaving out what this screen doesn't show (CONTROLS on a desktop)
+  // or can't press (a dim RESET). SOUND and MUSIC share a row: left and right go between them.
+  let cursor = null;
+  const navItems = () => [
+    { el: $('.sf-sw[data-k="sound"]'), row: 0 }, { el: $('.sf-sw[data-k="music"]'), row: 0 },
+    { el: $('.sf-next') },
+    { el: $('.sf-slider[data-k="musicVolume"]'), slide: 'musicVolume' }, { el: $('.sf-slider[data-k="sfxVolume"]'), slide: 'sfxVolume' },
+    { el: $('.sf-pips'), size: true }, { el: $('.sf-reset') },
+    { el: $('.sf-close') },
+  ].filter((it) => it.el.offsetParent !== null && !(/** @type {any} */ (it.el)).disabled);
+  function setCursor(it) {
+    if (cursor) cursor.classList.remove('sf-focus');
+    cursor = it ? it.el : null;
+    if (cursor) { cursor.classList.add('sf-focus'); if (cursor.scrollIntoView) cursor.scrollIntoView({ block: 'nearest' }); }
+  }
+  /** a menu key (src/flow/menuInput.js) while the panel is open; true when the panel took it */
+  function key(k) {
+    if (!open) return false;
+    if (k === 'back' || k === 'escape' || k === 'select' || k === 'start' || k === 'pause') { actions.click('off'); close(); return true; }
+    const its = navItems(), i = its.findIndex((it) => it.el === cursor);
+    if (i < 0) { if (its.length && k !== 'moves' && k !== 'del') setCursor(its[0]); return true; }   // the first key only shows the cursor
+    const it = its[i], d = k === 'down' || k === 'right' ? 1 : -1;
+    if (k === 'up' || k === 'down') {
+      let j = i + d;
+      if (it.row !== undefined && its[j] && its[j].row === it.row) j += d;   // out of the row, not along it
+      if (its[j]) { actions.click(); setCursor(its[j]); }
+    } else if (k === 'left' || k === 'right') {
+      if (it.slide) {
+        const v = Math.round(Math.max(0, Math.min(1, settings[it.slide] + d * 0.05)) * 100) / 100;
+        if (it.slide === 'musicVolume') actions.setMusicVolume(v); else { actions.setSfxVolume(v); actions.sfxPreview(); }
+      } else if (it.size) pickStep(touchStep() + d);
+      else if (it.row !== undefined && its[i + d] && its[i + d].row === it.row) { actions.click(); setCursor(its[i + d]); }
+    } else if (k === 'confirm' && it.el.tagName === 'BUTTON') {
+      (/** @type {HTMLElement} */ (it.el)).click();
+      if (open && cursor && (/** @type {any} */ (cursor)).disabled) setCursor(navItems()[0]);   // RESET just went dim under the cursor
+    }
+    return true;
+  }
   function meterLoop() {
     if (!open) return;
     const lv = music.state.playing ? music.level() : 0;
@@ -133,23 +190,22 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     const sw = (k, on) => { const b = panel.querySelector(`.sf-sw[data-k="${k}"]`); b.classList.toggle('sf-on', on); b.querySelector('b').textContent = on ? 'ON' : 'OFF'; };
     sw('sound', soundOn); sw('music', musicOn);
     const t = music.tracks[music.state.track];
-    $('.sf-name').textContent = t ? t.name : '';
-    $('.sf-mood').textContent = music.state.loading ? 'loading…' : music.state.error ? 'music error' : musicOn && !unlocked ? 'tap or press a key to start' : t ? `${t.bpm} BPM` : '';
+    $('.sf-name').textContent = t ? t.name.toUpperCase() : '';   // upper case, like everything else in the panel
+    $('.sf-mood').textContent = music.state.loading ? 'LOADING…' : music.state.error ? 'MUSIC ERROR' : musicOn && !unlocked ? 'TAP OR PRESS A KEY TO START' : t ? `${t.bpm} BPM` : '';
     paintSlider(panel.querySelector('[data-k="musicVolume"]'), settings.musicVolume);
     paintSlider(panel.querySelector('[data-k="sfxVolume"]'), settings.sfxVolume);
     paintSize();
     // the buttons show sound off, and pulse while sound is wanted but still locked
     const locked = soundOn && !unlocked;
-    const touchBtn = document.querySelector('[data-role="sound"]');
+    const touchBtn = document.querySelector('[data-role="settings"]');
     for (const b of [btn, touchBtn]) if (b) { b.classList.toggle('sf-muted', !soundOn); b.classList.toggle('sf-locked', locked); }
-    if (touchBtn && !touchBtn.querySelector('svg')) touchBtn.innerHTML = SPEAKER;
     hint.textContent = locked && !isTouch() ? 'PRESS ANY KEY FOR SOUND' : '';
     hint.classList.toggle('sf-show', locked && !isTouch());
   }
   update();
   // touch.js builds its layer after this module runs; pick its button up once it's there
   setTimeout(update, 0); setTimeout(update, 600);
-  return { update, close };
+  return { update, close, open: show, key, get isOpen() { return open; } };
 }
 
 function el(tag, cls, attrs = {}) {
@@ -161,23 +217,13 @@ function el(tag, cls, attrs = {}) {
 function injectStyle() {
   if (document.getElementById('sf-sound-style')) return;
   const css = `
-  .sf-btn, .sf-panel, .sf-hint { --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff; --ink: #fff4fd; --face: rgba(10,3,22,0.94); }
-  .sf-btn {
-    position: absolute; left: 10px; bottom: 8px; z-index: 5; width: 30px; height: 30px; padding: 0;
-    display: flex; align-items: center; justify-content: center; cursor: pointer;
-    background: rgba(14,4,30,0.55); color: var(--cyan); border: 2px solid var(--cyan); border-radius: 2px;
-    box-shadow: 0 0 8px rgba(46,242,255,0.55); opacity: 0.6; transition: opacity 120ms;
-  }
-  .sf-btn:hover, .sf-btn:focus-visible { opacity: 1; outline: none; }
-  html.touch-ui .sf-btn, html.touch-ui .sf-hint { display: none; }
-  .sf-btn svg, [data-role="sound"] svg { filter: drop-shadow(0 0 3px currentColor); }
-  .sf-x { display: none; }
-  .sf-muted .sf-wave { display: none; } .sf-muted .sf-x { display: inline; }
-  .sf-btn.sf-muted { color: var(--pink); border-color: var(--pink); box-shadow: 0 0 8px rgba(255,43,214,0.5); }
+  .sf-panel, .sf-hint { --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff; --ink: #fff4fd; --face: rgba(10,3,22,0.94); }
   .sf-locked { animation: sf-pulse 1.1s ease-in-out infinite; }
   @keyframes sf-pulse { 50% { box-shadow: 0 0 18px var(--amber, #ffb02e), 0 0 4px var(--amber, #ffb02e); } }
+  /* in the corner row (src/corner.js), to the left of its buttons */
+  html.touch-ui .sf-hint { display: none; }
   .sf-hint {
-    position: absolute; left: 48px; bottom: 12px; z-index: 5; pointer-events: none; opacity: 0;
+    order: 0; margin-right: 0.25rem; white-space: nowrap; pointer-events: none; opacity: 0;
     font: 500 17px/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.08em; color: var(--amber);
     text-shadow: ${PLAIN}; transition: opacity 200ms;   /* a hint to read: no glow */
   }
@@ -216,6 +262,9 @@ function injectStyle() {
   .sf-next { height: 34px; padding: 0 12px; background: transparent; color: var(--amber); border: 2px solid var(--amber);
     border-radius: 2px; font-size: 12px; box-shadow: 0 0 8px rgba(255,176,46,0.5); }
   .sf-next:active, .sf-sw:active, .sf-close:active { transform: scale(0.95); }
+  /* the cursor of a keyboard or a pad: a full outline, never a one-edge rail */
+  .sf-panel .sf-focus { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .sf-panel button:focus { outline: none; } .sf-panel button.sf-focus:focus { outline: 2px solid var(--ink); }
   .sf-meter { height: 4px; margin: 8px 0 10px; background: rgba(166,107,255,0.18); overflow: hidden; }
   .sf-meter i { display: block; height: 100%; background: var(--amber); box-shadow: 0 0 6px var(--amber); transform-origin: left; transform: scaleX(0); }
   .sf-slider { display: grid; grid-template-columns: 62px 1fr 30px; align-items: center; gap: 8px; height: 34px; }

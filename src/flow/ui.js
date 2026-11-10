@@ -1,7 +1,13 @@
 // The flow's screens: a DOM overlay over the stage (#flow, inside #stage, so it scales with the
 // canvas), in the HUD's neon arcade look: Bungee and Teko, glowing text, hard corners. Menus draw
-// over a dimmed scene; during a fight the overlay is empty except for the small touch pause
-// button in the corner, so nothing covers the fighters (owner requirement).
+// over a dimmed scene; during a fight the overlay is empty, so nothing covers the fighters (owner
+// requirement). The pause button is one of the corner buttons (src/corner.js), not part of a screen.
+//
+// A screen always fits the stage. Sizes are container units with a few px floors (a button is never
+// under 44px), so on a small stage a tall menu would run past the top and bottom: fit() measures
+// what the screen holds and zooms the whole screen down until it's inside. A phone held upright has
+// a stage about 390 by 219, where zoom alone would leave nothing readable, so the long menus also
+// lay out wider there (the @container rules at the end of the stylesheet).
 //
 // A screen is a root element plus its focusable items. Keys and the pad move the focus by
 // geometry (the nearest item in that direction), so lists, button rows and the keypad all navigate
@@ -14,6 +20,7 @@
 
 import { legend } from './controls.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
+import { cornerButton, PAUSE_ICON } from '../corner.js';
 
 export function el (tag, cls = '', text) {
   const n = document.createElement(tag);
@@ -27,10 +34,10 @@ export function createUI(onSound) {
   const stage = document.getElementById('stage') || document.body;
   const root = el('div'); root.id = 'flow';
   stage.appendChild(root);
-  // the touch pause button lives outside the screens: CSS shows it only while fighting on a touch screen
-  const pauseBtn = el('button', 'fl-pausebtn'); pauseBtn.type = 'button'; pauseBtn.setAttribute('aria-label', 'Pause');
-  pauseBtn.innerHTML = '<i></i><i></i>';
-  stage.appendChild(pauseBtn);
+  // the desktop pause button: first in the corner row, shown by CSS only in a fight you can pause
+  // (a touch screen has its own in the touch layer, which sends 'sf:pause')
+  const pauseBtn = cornerButton('sf-pause', 'Pause', 1, PAUSE_ICON);
+  pauseBtn.tabIndex = -1;   // never focused, so Space or Enter in a fight can't press it
 
   let screen = null;
   let items = [];
@@ -39,7 +46,41 @@ export function createUI(onSound) {
   let focusFn = null;
   let token = 0;
 
-  const off = (k) => !!(items[k] && items[k].disabled && items[k].disabled());
+  // an item is off when its screen says so, or when this layout doesn't show it (the upright pause menu drops one)
+  const off = (k) => !!(items[k] && ((items[k].disabled && items[k].disabled()) || items[k].el.offsetParent === null));
+
+  // ---- fitting a screen to the stage ------------------------------------------------------------
+  // What the screen holds (its in-flow children; the legend and anything else positioned is left out)
+  // against the stage less the legend's room. zoom scales px and container units alike, so one pass is exact.
+  let zoomNow = 1;
+  function fit() {
+    if (!screen) return;
+    const st = root.getBoundingClientRect();
+    if (!st.width || !st.height) return;
+    let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+    for (const n of screen.children) {
+      const cs = getComputedStyle(n);
+      if (cs.position === 'absolute' || cs.position === 'fixed' || cs.display === 'none') continue;
+      const r = n.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      top = Math.min(top, r.top); bottom = Math.max(bottom, r.bottom); left = Math.min(left, r.left); right = Math.max(right, r.right);
+    }
+    if (bottom <= top) return;
+    const cs = getComputedStyle(screen);
+    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);   // measured zoomed, like the rest
+    const edge = st.height * 0.012;   // a sliver of air at the top and bottom
+    const h = (bottom - top + pad) / zoomNow, w = (right - left) / zoomNow;
+    const k = Math.max(0.3, Math.min(1, (st.height - 2 * edge) / h, st.width / w));
+    const next = k > 0.995 ? 1 : Math.floor(k * 200) / 200;
+    if (Math.abs(next - zoomNow) < 0.004) return;
+    zoomNow = next;
+    screen.style.zoom = next === 1 ? '' : String(next);
+  }
+  // a screen's content changes under it (the pause menu's right panel, a lobby filling up, a font arriving)
+  const watch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => fit()) : null;
+  if (watch) watch.observe(root);
+  window.addEventListener('resize', fit);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit).catch(() => {});
   function setFocus(i, sound = false) {
     if (!items.length) { focus = -1; return; }
     i = Math.max(0, Math.min(items.length - 1, i));
@@ -88,6 +129,9 @@ export function createUI(onSound) {
       : [...(items.length > 1 ? [['move']] : []), ...(items.length ? [['confirm', 'SELECT']] : []), ...(backFn ? [['back', 'BACK']] : [])];
     if (lg && lg.length) s.appendChild(legend(lg));
     focus = -1;
+    zoomNow = 1;
+    if (watch) for (const n of s.children) watch.observe(n);
+    fit();
     refresh();
     setFocus(out.focus || 0);
     return s;
@@ -99,7 +143,7 @@ export function createUI(onSound) {
   }
   function clear() {
     token++;
-    if (screen) screen.remove();
+    if (screen) { if (watch) for (const n of screen.children) watch.unobserve(n); screen.remove(); }
     screen = null; items = []; focus = -1; backFn = null; focusFn = null;
   }
   function activate() {
@@ -135,7 +179,7 @@ export function createUI(onSound) {
     if (best >= 0) setFocus(best, true);
   }
   return {
-    root, pauseBtn, show, clear, activate, back, move, setFocus, refresh,
+    root, pauseBtn, show, clear, activate, back, move, setFocus, refresh, fit,
     get screen() { return screen; },
     get focus() { return focus; },
     get items() { return items; },
@@ -268,15 +312,6 @@ function injectStyle() {
   .fl-roll p { margin: 0; text-align: center; font-size: 2.5cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1.05; color: #eadcff; }
   .fl-roll p b { display: block; font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 1.7cqw; color: var(--amber); letter-spacing: 0.06em; }
   @keyframes fl-roll { from { transform: translateY(0); } to { transform: translateY(calc(-100% - 46cqh)); } }
-
-  /* the touch pause button: only while fighting on a touch screen, in the top-left corner */
-  /* sized like the rest of the touch layer: rem times the player's controls size (--tc-u, src/touch.js) */
-  .fl-pausebtn { --u: var(--tc-u, 1rem); display: none; position: absolute; left: 0.6%; top: 11.5%; z-index: 4; width: calc(var(--u) * 2.5); height: calc(var(--u) * 2.5); padding: 0;
-    appearance: none; background: rgba(14,4,30,0.5); border: calc(var(--u) * 0.125) solid #a66bff; border-radius: 0; box-shadow: 0 0 8px rgba(166,107,255,0.7);
-    align-items: center; justify-content: center; gap: calc(var(--u) * 0.375); pointer-events: auto; touch-action: none; }
-  .fl-pausebtn i { display: block; width: calc(var(--u) * 0.3125); height: calc(var(--u) * 1); background: #d9c6ff; box-shadow: 0 0 6px #a66bff; }
-  html.touch-ui:not(.pad-ui).fl-play .fl-pausebtn { display: flex; }
-  html.online .fl-pausebtn { display: none !important; } /* online: no pause; online.js has LEAVE */
 
   /* character select (select.js): a grid of live rigs on the left, the focused one's sheet on the right */
   .fl-select { justify-content: flex-start; padding-top: 3.2cqh; gap: 1.4cqh; }
@@ -460,6 +495,30 @@ function injectStyle() {
   .fl-crewpair { gap: 1cqw; }
   .fl-crewpair .fl-btn { flex: 1; min-width: 0; }
   .fl-crewfail .fl-h3 { max-width: 70cqw; }
+
+  /* A narrow stage: a phone held upright, where the stage is about 390 by 219. A column of seven or nine
+     44px buttons can't fit that, so the long menus go wide instead of tall, and the small print grows
+     enough to read. fit() (above) zooms out whatever is still too tall. */
+  @container (max-width: 520px) {
+    .fl-screen { gap: 1.2cqh; }
+    .fl-veil { padding-bottom: 0; }   /* the legend is for keys and a pad; here it sits over the bottom edge when one is in use */
+    .fl-btn { min-height: max(38px, 8cqh); font-size: 3.6cqw; }
+    .fl-btn small { font-size: 2.3cqw; }
+    .fl-label { font-size: 2.8cqw; }
+    /* mode select: the four modes two by two, the two rules side by side, BACK across */
+    .fl-modes .fl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6cqh 1.6cqw; width: 94cqw; }
+    .fl-modes .fl-list .fl-btn { min-width: 0; }
+    .fl-modes .fl-list .fl-btn:last-child { grid-column: 1 / -1; min-height: 32px; }
+    /* pause: the menu three across. The right panel (techniques, controls) and the button that swaps it need
+       the room a sideways stage has, so they wait for the phone to be turned. */
+    .fl-pause .fl-tech, .fl-pause .fl-viewbtn { display: none; }
+    .fl-pause .fl-list { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.6cqh 1.4cqw; width: 96cqw; }
+    .fl-pause .fl-list .fl-btn { min-width: 0; padding-left: 0.6cqw; padding-right: 0.6cqw; font-size: 3.3cqw; white-space: nowrap; }
+    .fl-pause .fl-list .fl-btn small { font-size: 2cqw; }
+    /* the fighter select's footer buttons give up their 44px floor to stay on the stage */
+    .fl-selfoot .fl-btn { min-height: 12cqh; }
+    .fl-select { padding-top: 1.6cqh; gap: 1cqh; }
+  }
   `;
   const s = document.createElement('style');
   s.id = 'flow-style';

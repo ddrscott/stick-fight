@@ -7,9 +7,10 @@
 //   right thumb  Tekken diamond of round arcade buttons, one per limb: 1 LP (U)  2 RP (I) /
 //                3 LK (J)  4 RK (K), plus GUARD (B), which means hold back (it walks back and guards what's coming). Stick + button gives
 //                the directional and crouch moves; two buttons together (1+3, 2+4) throw.
-//   top corner   HORDE (G), SOUND (the src/audio/ui.js settings panel, which also sets this layer's size) and fullscreen
-//                (src/fullscreen.js); in an online
-//                match HORDE gives way to LEAVE (Escape)
+//   top corner   one row of pills, the same set and order as the desktop's (src/corner.js): pause (only in a fight
+//                you can pause; the flow listens for 'sf:pause'), the menu button (three bars: the SETTINGS panel in
+//                src/audio/ui.js, which also sets this layer's size) and fullscreen (src/fullscreen.js). In an
+//                online match LEAVE (Escape) sits where pause would, and on a ?scene= page HORDE (G) does.
 //
 // Every touch is tracked by its identifier, so a held stick and an attack press coexist.
 // Keys are reference counted per code.
@@ -23,6 +24,7 @@ import { touchPref, setTouchFit, onTouchPref } from './touchPrefs.js';
 
 import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';   // shared with the desktop button and F11
 import { PLAIN } from './plaintext.js';   // readable text never glows: the shared dark outline
+import { MINI, MINI_FACE, MINI_INK, HUD_STRIP, MENU_ICON, PAUSE_ICON } from './corner.js';   // the corner buttons' size and icons, shared with the desktop row
 
 const TARGET = window;                  // must match createInput(window) in main.js
 // the stick's travel in px at scale 1 with a 16px rem; it grows and shrinks with the drawn stick,
@@ -36,10 +38,9 @@ const D = {
   hint: 1.375,              // room under the resting stick for MOVE
   guardW: 4.5, guardH: 3,   // GUARD beside the diamond (landscape)
   guardHP: 2.75,            // GUARD above it (portrait; its width is the button's times 1.05)
-  miniW: 3.5, miniH: 2.25, miniGap: 0.5,   // the top-corner buttons
+  miniW: MINI.w, miniH: MINI.h, miniGap: MINI.gap,   // the top-corner buttons
   edge: 0.75,               // the stick's distance from the screen edge
 };
-const HUD_STRIP = 0.14;     // the HUD's bars, names and move hint: the top of the stage, as a share of its height
 const MIN_SCALE = 0.6;      // fit() never goes under this, whatever the screen
 
 // limb glyphs, stroke only so they take the button's neon color
@@ -83,7 +84,8 @@ function init() {
     <div class="tc-top">
       <button class="tc-btn tc-mini" data-tap="KeyG" aria-label="Toggle horde mode">HORDE</button>
       <button class="tc-btn tc-mini tc-leave" data-tap="Escape" aria-label="Leave the online match">LEAVE</button>
-      <button class="tc-btn tc-mini tc-sound" data-role="sound" aria-label="Sound settings">SND</button>
+      <button class="tc-btn tc-mini tc-pause" data-role="pause" aria-label="Pause">${PAUSE_ICON}</button>
+      <button class="tc-btn tc-mini tc-sound" data-role="settings" aria-label="Settings">${MENU_ICON}</button>
       <button class="tc-btn tc-mini" data-role="fullscreen" aria-label="Fullscreen">${FS_ICON}</button>
     </div>
     <div class="tc-rotate" role="note">
@@ -116,8 +118,8 @@ function init() {
     const env = (side) => parseFloat(ps.getPropertyValue('padding-' + side)) || 0;
     const sl = Math.max(0.75 * rem, env('left')), sr = Math.max(0.75 * rem, env('right'));
     const st = Math.max(0.5 * rem, env('top')), sb = Math.max(0.625 * rem, env('bottom'));
-    // HORDE and LEAVE never show together, so the most at once is one fewer than there are
-    const n = Math.max(1, root.querySelectorAll('.tc-mini').length - 1);
+    // HORDE, LEAVE and pause never show together, so the most at once is two fewer than there are
+    const n = Math.max(1, root.querySelectorAll('.tc-mini').length - 2);
     const minisDown = n * D.miniH + (n - 1) * D.miniGap, minisAcross = n * D.miniW + (n - 1) * D.miniGap;
     const grid = 2 * D.btn + D.gap;
     let u, mode = '', topY = 0;         // u: the most px one scaled rem can be
@@ -197,8 +199,10 @@ function init() {
         press(btn.dataset.code);
       } else if (btn && btn.dataset.tap) {
         tap(btn.dataset.tap); flash(btn);
-      } else if (btn && btn.dataset.role === 'sound') {
-        window.dispatchEvent(new CustomEvent('sf:sound-panel')); flash(btn);   // src/audio/ui.js opens its panel
+      } else if (btn && btn.dataset.role === 'pause') {
+        window.dispatchEvent(new CustomEvent('sf:pause')); flash(btn);      // src/flow/index.js pauses the fight
+      } else if (btn && btn.dataset.role === 'settings') {
+        window.dispatchEvent(new CustomEvent('sf:settings')); flash(btn);   // src/audio/ui.js opens the SETTINGS panel
       } else if (btn && btn.dataset.role === 'fullscreen') {
         toggleFullscreen(); flash(btn);
       } else if (btn && btn.dataset.role === 'dismiss') {
@@ -283,6 +287,8 @@ function injectStyle() {
   /* LEAVE only in an online match (src/net/online.js sets html.online). The selector outranks the
      .tc-btn and .tc-mini rules below, which set display: flex and would otherwise show it everywhere. */
   .tc-leave { --c: var(--pink); } html:not(.online) .tc-root .tc-leave { display: none; }
+  /* pause only in a fight you can pause: the flow's fighting and roundEnd, never online */
+  html:not(.fl-fighting):not(.fl-roundEnd) .tc-root .tc-pause, html.online .tc-root .tc-pause { display: none; }
   .tc-root {
     --btn: ${u(D.btn)}; --gap: ${u(D.gap)};
     --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff;
@@ -300,7 +306,7 @@ function injectStyle() {
     color: var(--c); font: inherit;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
     box-shadow: 0 0 ${u(0.625)} var(--c), inset 0 0 ${u(0.625)} color-mix(in srgb, var(--c) 45%, transparent);
-    text-shadow: ${PLAIN}; transition: transform 60ms, box-shadow 60ms;   /* word labels (GUARD, SND) are read: no glow */
+    text-shadow: ${PLAIN}; transition: transform 60ms, box-shadow 60ms;   /* word labels (GUARD, HORDE, LEAVE) are read: no glow */
     -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
   }
   .tc-btn svg { width: ${u(1.5)}; height: ${u(1.5)}; filter: drop-shadow(0 0 ${u(0.25)} var(--c)); }
@@ -349,6 +355,7 @@ function injectStyle() {
   .tc-top { position: absolute; top: var(--st); right: var(--sr); display: flex; gap: ${u(D.miniGap)}; }
   .tc-mini { height: ${u(D.miniH)}; min-width: ${u(D.miniW)}; padding: 0 ${u(0.625)}; border-radius: ${u(D.miniH / 2)};
     font-size: ${u(0.6875)}; letter-spacing: 0.04em; flex-direction: row; border-width: ${u(0.125)}; }
+  .tc-mini:not(.tc-on) { background: ${MINI_FACE}; color: ${MINI_INK}; }   /* the corner pill's face, the desktop row's too (src/corner.js) */
   .tc-mini svg { width: ${u(1.125)}; height: ${u(1.125)}; }
 
   /* portrait */

@@ -13,6 +13,9 @@
 //                                               anywhere else it's confirm
 //   delete    Backspace (typing screens)        X / □ (the two keyboard screens)  DEL
 //   move list F1 (pause menu, character select)  Y / △ (same screens)             the MOVE LIST button
+//   settings  the menu button (a click), or      SETTINGS in the pause menu;       the menu button, or SETTINGS
+//             SETTINGS in the pause menu; Esc   B closes                          in the pause menu; X closes
+//             closes (src/audio/ui.js key())
 //   nothing   -                                 X and Y elsewhere, bumpers, triggers, sticks
 //
 // A screen with nothing to back out to (the title, a stage card, stage clear, continue, game over,

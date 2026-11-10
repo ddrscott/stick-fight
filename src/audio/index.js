@@ -101,8 +101,7 @@ function createGameAudio() {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName || '')) return;
     if (e.code === 'KeyM') actions.setMusic(!(settings.music && settings.sound));
-    else if (e.code === 'KeyN') actions.next();
-    else if (e.code === 'Escape') ui.close();
+    else if (e.code === 'KeyN') actions.next();   // Escape closing the SETTINGS panel is the panel's own (ui.js)
   });
 
   // ---- the phone's player ---------------------------------------------------------------------
@@ -271,6 +270,7 @@ function createGameAudio() {
 
   const api = {
     sfx, music, settings, actions, monitor,
+    panel: ui,   // the SETTINGS panel: open(), close(), key(), isOpen (the pause menu's SETTINGS item, the flow's keys)
     attach(s) { sim = s; },
     event,
     // the screen shows the world mirrored left-right (the ?mirror=1 debug view): pan follows it

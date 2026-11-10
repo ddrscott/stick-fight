@@ -820,7 +820,6 @@ function injectStyle() {
     font: 500 clamp(12px, 1.6vw, 18px)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; color: #b9f9ff;
     text-shadow: ${PLAIN}; display: flex; gap: 0.6em; align-items: baseline; white-space: nowrap; }
   .nf-readout[hidden] { display: none; }
-  html.online .sf-hint { display: none; }   /* the "press any key for sound" hint sits under the readout */
   .nf-readout.nf-relay { color: #ffe0a8; }
   .nf-readout b { font-weight: 600; }
   .nf-desync { color: #ffc2f3; }
