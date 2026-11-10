@@ -20,6 +20,17 @@ const STATS = [
 ];
 const clamp01 = (v) => Math.max(0.06, Math.min(1, v));
 
+// The glow. A live shadowBlur on the rig's own strokes blurs every limb, joint and prop separately (about
+// thirty blurs a rig, nineteen rigs a frame), and Chrome's canvas flush for that held the whole screen to
+// 20 fps on a desktop: every press waited for a 50 ms frame. So the glow is its own layer: the rig drawn
+// plain into a scratch canvas, and that canvas's shadow alone (the same 9 px blur in the fighter's color,
+// one blur for the whole figure) stamped into a glow canvas. A frame is then the floor, the glow layer and
+// the rig on top. The sheet's rig and the card under the cursor remake their glow every frame; the other
+// cards only breathe, so theirs is remade every GLOW_EVERY seconds, a few cards a frame.
+// The cards the cursor isn't on (dimmed, breathing) are also redrawn 30 times a second, not every frame, in four
+// groups that take turns, so a frame draws a handful of rigs, not nineteen.
+const GLOW = 9, GLOW_EVERY = 0.1, CARD_STEP = 1 / 30;
+
 // a rig drawn into its own canvas, glowing in the character's color
 function rigView(canvas, c, zoom) {
   const rig = createFighter({ color: c.color, x: 0, y: 0, facing: 1, body: c.body });
@@ -28,20 +39,35 @@ function rigView(canvas, c, zoom) {
   rig.speedLines = false;
   rig.charDef = c;   // its cloth (a tie, a lanyard, an apron's hem) hangs at rest
   const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const layer = () => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; return cv; };
+  const plain = layer(), pctx = plain.getContext('2d');
+  const glow = layer(), gctx = glow.getContext('2d');
+  // the shadow without the thing casting it: the figure is stamped a canvas-width off to the left and its shadow offset back
+  gctx.shadowColor = c.color; gctx.shadowBlur = GLOW; gctx.shadowOffsetX = w;
+  // a floor glow under the feet
+  const floor = ctx.createRadialGradient(w / 2, h * 0.93, 2, w / 2, h * 0.93, w * 0.42);
+  floor.addColorStop(0, c.color + '55'); floor.addColorStop(1, 'transparent');
+  const pose = (x) => { x.setTransform(zoom, 0, 0, zoom, w / 2, h * 0.93); rig.draw(x); x.setTransform(1, 0, 0, 1, 0, 0); };
   return {
     rig,
-    draw(dt) {
+    age: Infinity,   // seconds since the glow was remade
+    wait: 0,         // seconds since it was drawn (the select's tick keeps it)
+    /** the first glow counts as this much newer than it is, so cards given different leads take turns from then on */
+    lead: 0,
+    /** @param {number} dt @param {boolean} [fresh] remake the glow this frame (false: only once it's GLOW_EVERY old) */
+    draw(dt, fresh = true) {
       rig.update(dt);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // a floor glow under the feet
-      const g = ctx.createRadialGradient(canvas.width / 2, canvas.height * 0.93, 2, canvas.width / 2, canvas.height * 0.93, canvas.width * 0.42);
-      g.addColorStop(0, c.color + '55'); g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g; ctx.fillRect(0, canvas.height * 0.8, canvas.width, canvas.height * 0.2);
-      ctx.translate(canvas.width / 2, canvas.height * 0.93);
-      ctx.scale(zoom, zoom);
-      ctx.shadowColor = c.color; ctx.shadowBlur = 9;
-      rig.draw(ctx);
+      this.age += dt;
+      const remake = fresh || this.age >= GLOW_EVERY;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = floor; ctx.fillRect(0, h * 0.8, w, h * 0.2);
+      if (remake) {
+        this.age = -this.lead; this.lead = 0;
+        pctx.clearRect(0, 0, w, h); pose(pctx);
+        gctx.clearRect(0, 0, w, h); gctx.drawImage(plain, -w, 0);
+        ctx.drawImage(glow, 0, 0); ctx.drawImage(plain, 0, 0);
+      } else { ctx.drawImage(glow, 0, 0); pose(ctx); }
     },
   };
 }
@@ -65,16 +91,29 @@ export function openSelect(ui, o) {
   const start = Math.max(0, roster.findIndex((c) => c.id === o.initial));
   const cards = new Map();   // id -> the card's element (mark() tags the rival's)
 
+  // The sheet follows the cursor, so it's built to be cheap to change: the stat rows and move rows are made
+  // once and rewritten in place, each fighter's big rig is built the first time the cursor lands on them and
+  // kept, and the sheet's canvas is redrawn right here, in the same frame as the card's highlight, not a
+  // frame later on the next tick.
+  const bigs = new Map();   // id -> its big rigView
+  const statBars = [], moveRows = [];
   function paint(c) {
-    if (!c || !detail) return;
+    if (!c || !detail || c === bigChar) return;
     detail.style.setProperty('--c', c.color);
     nameEl.textContent = c.name; nameEl.classList.toggle('fl-long', c.name.length > 11);
     tagEl.textContent = c.tagline;
-    statsEl.textContent = '';
-    for (const [label, f] of STATS) { const i = el('i'); i.style.setProperty('--v', String(clamp01(f(c)))); statsEl.append(el('span', '', label), i); }
-    movesEl.textContent = '';
-    for (const m of (c.moveList || []).slice(0, 4)) { const p = el('p'); p.append(el('b', '', m.name), el('em', '', m.input), el('small', '', m.note || '')); movesEl.appendChild(p); }
-    big = rigView(bigCanvas, c, 1.9); bigChar = c; bigT = 0; showing = false;
+    STATS.forEach(([, f], i) => statBars[i].style.setProperty('--v', String(clamp01(f(c)))));
+    const list = (c.moveList || []).slice(0, moveRows.length);
+    moveRows.forEach((r, i) => {
+      const m = list[i];
+      r.p.style.display = m ? '' : 'none';
+      if (m) { r.name.textContent = m.name; r.input.textContent = m.input; r.note.textContent = m.note || ''; }
+    });
+    big = bigs.get(c.id);
+    if (!big) bigs.set(c.id, big = rigView(bigCanvas, c, 1.9));
+    else { big.rig.x = 0; big.rig.play('idle'); }   // back from another card: standing, not mid-move
+    bigChar = c; bigT = 0; showing = false;
+    big.draw(0);
   }
 
   ui.show(`fl-select ${o.cls || ''}`, (root) => {
@@ -90,13 +129,20 @@ export function openSelect(ui, o) {
       b.el.append(cv, el('b', c.name.length > 9 ? 'fl-long' : '', c.name));   // a long name (WINDOW WASHER) goes smaller and may take two lines
       grid.appendChild(b.el);
       cards.set(c.id, b.el);
-      views.push(rigView(cv, c, 1.08));
+      const v = rigView(cv, c, 1.08); v.lead = GLOW_EVERY * views.length / roster.length;
+      views.push(v);
       items.push({ ...b, focusFirst: true, char: c });
     });
     detail = el('div', 'fl-detail');
     bigCanvas = document.createElement('canvas'); bigCanvas.width = 210; bigCanvas.height = 540; bigCanvas.className = 'fl-big';
     const info = el('div', 'fl-info');
     nameEl = el('h1', 'fl-cname'); tagEl = el('div', 'fl-tagline'); statsEl = el('div', 'fl-stats'); movesEl = el('div', 'fl-moves');
+    for (const [label] of STATS) { const i = el('i'); statBars.push(i); statsEl.append(el('span', '', label), i); }
+    for (let k = 0; k < 4; k++) {
+      const r = { p: el('p'), name: el('b'), input: el('em'), note: el('small') };
+      r.p.append(r.name, r.input, r.note); r.p.style.display = 'none';
+      moveRows.push(r); movesEl.appendChild(r.p);
+    }
     info.append(nameEl, tagEl, statsEl, movesEl);
     detail.append(bigCanvas, info);
     row.append(grid, detail);
@@ -132,7 +178,13 @@ export function openSelect(ui, o) {
     },
     /** per frame: the cards breathe, the big rig throws one of its unique moves every few seconds */
     tick(dt) {
-      for (const v of views) v.draw(dt);
+      for (let i = 0; i < views.length; i++) {
+        const v = views[i];
+        if (roster[i] === bigChar) { v.draw(v.wait + dt, true); v.wait = 0; continue; }
+        v.wait += dt;
+        if (v.age === Infinity) { v.draw(dt, true); v.wait = (i % 4) * CARD_STEP / 4; }   // the first frame draws them all
+        else if (v.wait >= CARD_STEP - 0.002) { v.draw(v.wait, false); v.wait = 0; }
+      }
       if (!big) return;
       bigT += dt;
       // its own clips (a frame-only move like SAME DAY plays another move's clip, so it's skipped)

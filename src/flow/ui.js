@@ -64,10 +64,22 @@ export function createUI(onSound) {
     items = out.items || [];
     backFn = out.back || null;
     focusFn = out.onFocus || null;   // the screen follows the cursor (the character select's detail panel)
+    let tapped = -1;   // the focusFirst item this touch just focused: its click is the end of that tap, not a second one
     items.forEach((it, k) => {
       // focusFirst: a tap on an item that isn't focused only focuses it; a second tap activates (a
-      // character card: look before you pick)
-      it.el.addEventListener('click', (e) => { e.preventDefault(); if (my !== token || off(k)) return; if (it.focusFirst && focus !== k) { setFocus(k, true); return; } setFocus(k); activate(); });
+      // character card: look before you pick). The focus lands when the finger does (pointerdown), not
+      // when it lifts (click, a tap's length later).
+      if (it.focusFirst) it.el.addEventListener('pointerdown', (e) => {
+        if (my !== token || off(k) || e.pointerType === 'mouse') return;   // the mouse focuses by hovering
+        if (focus !== k) { tapped = k; setFocus(k, true); } else tapped = -1;
+      });
+      it.el.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (my !== token || off(k)) return;
+        const first = tapped === k; tapped = -1;
+        if (it.focusFirst && (first || focus !== k)) { setFocus(k, !first); return; }
+        setFocus(k); activate();
+      });
       it.el.addEventListener('pointerenter', (e) => { if ((e).pointerType === 'mouse' && my === token && !off(k)) setFocus(k); });
     });
     // the legend: the screen's own, or move / select / back from what it has
@@ -161,7 +173,8 @@ function injectStyle() {
     text-shadow: 0 0 0.6cqw var(--c); box-shadow: 0 0 0.8cqw color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 0.8cqw color-mix(in srgb, var(--c) 25%, transparent);
     display: flex; flex-direction: column; align-items: center; justify-content: center; transition: background 80ms, color 80ms, transform 60ms; }
   .fl-btn small { display: block; font-size: 1.7cqw; letter-spacing: 0.12em; font-weight: 500; opacity: 0.8; margin-top: -0.2cqw; }
-  .fl-btn.fl-focus { background: var(--c); color: var(--deep); text-shadow: none; box-shadow: 0 0 1.6cqw var(--c), 0 0 3.2cqw color-mix(in srgb, var(--c) 45%, transparent); }
+  /* the cursor lands at once: an item taking the focus doesn't fade in (only the press squeeze eases), the one losing it fades out */
+  .fl-btn.fl-focus { transition: transform 60ms; background: var(--c); color: var(--deep); text-shadow: none; box-shadow: 0 0 1.6cqw var(--c), 0 0 3.2cqw color-mix(in srgb, var(--c) 45%, transparent); }
   .fl-btn.fl-focus small { opacity: 0.85; }
   .fl-btn.fl-hit { transform: scale(0.96); }
   .fl-btn:focus { outline: none; }
@@ -273,11 +286,11 @@ function injectStyle() {
   .fl-card { border-color: color-mix(in srgb, var(--c) 30%, transparent); background: rgba(10,3,22,0.55); box-shadow: none; transition: transform 90ms ease-out, background 80ms, border-color 80ms; }
   #flow .fl-card canvas { opacity: 0.72; transition: opacity 90ms; }
   .fl-card b { color: rgba(255,244,253,0.8); text-shadow: 0 0 0.5cqw color-mix(in srgb, var(--c) 60%, transparent); }
-  .fl-card.fl-focus { z-index: 1; transform: translateY(-0.7cqh) scale(1.06); border-color: var(--c); background: color-mix(in srgb, var(--c) 26%, rgba(14,4,30,0.72)); color: #fff;
+  .fl-card.fl-focus { z-index: 1; transition: none; transform: translateY(-0.7cqh) scale(1.06); border-color: var(--c); background: color-mix(in srgb, var(--c) 26%, rgba(14,4,30,0.72)); color: #fff;
     box-shadow: 0 0 0 1px color-mix(in srgb, #fff 55%, var(--c)), 0 0 1.6cqw var(--c), 0 0 3.4cqw color-mix(in srgb, var(--c) 55%, transparent), inset 0 0 1.4cqw color-mix(in srgb, var(--c) 50%, transparent); }
-  #flow .fl-card.fl-focus canvas { opacity: 1; }
+  #flow .fl-card.fl-focus canvas { opacity: 1; transition: none; }
   .fl-card.fl-focus b { color: #fff; text-shadow: 0 0 0.6cqw var(--c), 0 0 1.4cqw var(--c); }
-  .fl-card.fl-focus.fl-hit { transform: translateY(-0.7cqh) scale(1.01); }
+  .fl-card.fl-focus.fl-hit { transition: transform 60ms; transform: translateY(-0.7cqh) scale(1.01); }
   .fl-card.fl-taken { opacity: 0.55; }
   .fl-detail { --c: var(--cyan); width: 42cqw; height: 63.5cqh; display: flex; gap: 1.2cqw; padding: 1.2cqw 1.4cqw; border: 2px solid var(--c); background: rgba(14,4,30,0.7);
     box-shadow: 0 0 1.4cqw color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 2cqw color-mix(in srgb, var(--c) 18%, transparent); }
