@@ -11,6 +11,8 @@
 //   net.roomFromUrl()           the ?room=CODE on the page's URL, or ''
 //   net.openLobby(mode?)        the built-in panel: 'menu' | 'host' | 'join' (+ code)
 //   net.active                  a match is running (main.js steps it through net.advance)
+//   net.watchers                how many are watching this room ('watching' fires when it changes)
+//   net.watchable / net.setWatchable(on)   the host's switch: may anyone watch my quick rooms (kept in localStorage)
 //
 // Once both players are linked (peer to peer, or the relay after RTC_TIMEOUT_MS), the host
 // picks a seed and sends {t:'start', seed, chars, botch, rules}; both call startMatch({ seed, localIndex, lockstep, chars, botch, rules }),
@@ -54,6 +56,7 @@ import { track, analyticsOn } from '../analytics.js';
 import { howEnded } from '../bookkeeping.js';
 import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
+import { createWatchFeed } from './watchfeed.js';
 import { hashSim } from './hash.js';
 import { legend, watchDevice } from '../flow/controls.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
@@ -61,6 +64,7 @@ import { PLAIN } from '../plaintext.js';   // readable text never glows: the sha
 export const NET_VERSION = 22;   // bump when the sim or the netcode changes in a way old builds can't play against (22: the perfect round finisher, a sim stage inside the KO phase (sim.perfectT, the winner's 'perfect' state, the body thrown at the camera) that only the winner's press skips; 21: getups by the sides (u.home fixed at touchdown, rolls away / toward with a cross under a man standing near, u.roll* fields, rig.rebase and the roll clips), a body on the floor held off to its drawn feet and short of its hip, lows that touch a floored body as its one ground hit and grazes (u.grazeId), the stomp on down+4 only; 'home', 'rollT' and 'otgHit' in the state hash; 20: a fainted fighter is rooted and shakes it off with alternating left/right presses (u.shakeDir, u.shakeAt, u.faintCut, in the state hash), the CPU's faint shake; 19: bodies never sink into the floor: the ground snap and the point simulation use each joint's drawn radius, the stairs' solid line runs through the nosings, tumbling joints stop at the risers, poses on and beside a flight are fitted to its treads, the vault faces the opening; all of it moves the rig's joints, which are the hitboxes and are hashed; 18: stamina refunds on contact and the no-faint save on a connecting strike (u.paid, u.faintPending, u.refundMove/refundRep/refundAt), so an old build's sim drifts from a new one's; 17: resync (the host sends its confirmed state on a hash mismatch), the end of a match agreed by state hash, a character's reach measured on a reset rig (it depended on what the rig was doing the first time that phone saw the character), the rng and the reach table in the state hash; 16: quick rooms from the menus open on the pick screen too (pickFirst, the 'go' at match 0), which an old guest would ignore; 15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
+const WATCH_KEY = 'stick-fight-watch';   // localStorage: '0' when the host has turned spectators off for their rooms
 const PID_KEY = 'stick-fight-pid', RIVALS_KEY = 'stick-fight-rivals';   // this browser's random id, and the all-time record per rival id
 const END_HOLD = 150;     // frames of the WINS card after the result shows (the sim's own hold, 216, would reset the match)
 const AUTO_MS = 5000, AGREE_MS = 3000, GRACE_MS = 20000, ALIVE_MS = 3000, SILENT_MS = 15000;
@@ -89,7 +93,7 @@ function addRivalResult(pid, res) {
     localStorage.setItem(RIVALS_KEY, JSON.stringify(Object.fromEntries(keep)));
   } catch { /* storage off */ }
 }
-const cleanRules = (r) => ({
+export const cleanRules = (r) => ({
   roundTime: r && ROUND_TIMES.includes(r.roundTime) ? r.roundTime : DEFAULT_ROUND_TIME,
   winsNeeded: r && [1, 2, 3].includes(r.winsNeeded) ? r.winsNeeded : winsFor(DEFAULT_BEST_OF),
 });
@@ -125,6 +129,10 @@ export function createOnline(game) {
   let myName = '', rivalName = '', pickFirst = false, crewMode = false;
   let matchSeed = 0;   // this match's seed: with the match number it names the match in the result both pages report
   const now = () => performance.now();
+  // spectators (watchfeed.js): the host tells the room about each match and, while anyone watches, its confirmed
+  // inputs. Quick rooms only: a crew's match never feeds the room
+  const feed = createWatchFeed({ now, version: NET_VERSION });
+  try { feed.setAllowed(localStorage.getItem(WATCH_KEY) !== '0'); } catch { /* storage off: spectators stay on */ }
   /** @type {null | ((frame: number) => any)} */ let localSource = null;
   const params = new URLSearchParams(location.search);
   const forceRelay = () => params.get('relay') === '1' || net.forceRelay || (() => { try { return !!JSON.parse(localStorage.getItem(STORE) || '{}').relay; } catch { return false; } })();
@@ -140,6 +148,9 @@ export function createOnline(game) {
 
   function wire(l) {
     link = l;
+    feed.open(typeof l.sendRoom === 'function' ? (d) => l.sendRoom(d) : null, { on: role === 'host' && !crewMode });
+    l.on('open', () => feed.hello());
+    l.on('watching', (m) => { const was = feed.count; feed.onWatching(m || {}); if (feed.count !== was) { emit('watching', feed.count); readout.render(); } });
     l.on('peer', (present) => {
       if (present) { localReady = false; remoteReady = false; setState('linking'); return; }
       if (lockstep || between()) finish('peer-left');
@@ -208,6 +219,7 @@ export function createOnline(game) {
       onDesync: (d) => { emit('desync', d); readout.render(); },
       onResync: (r) => { emit('resync', r); readout.render(); },
     });
+    if (localIndex === 0) feed.begin({ n: m, seed, chars, botch, rules, names: [myName, rivalName], tally: { host: tally.host, guest: tally.guest, draw: tally.draw } }, lockstep);
     lobby.close();
     setState('playing');
     try { game.input.swallowHeld(); } catch { /* old input */ }
@@ -252,6 +264,7 @@ export function createOnline(game) {
     tally.rounds[0] += wins[0]; tally.rounds[1] += wins[1];
     const me = role === 'host' ? 0 : 1;
     if (!crewMode) addRivalResult(rivalPid, winner < 0 ? 'd' : winner === me ? 'w' : 'l');   // a crew keeps its own, on the server
+    feed.end({ f: ls ? ls.frame : 0, wins, tally: { host: tally.host, guest: tally.guest, draw: tally.draw } });   // spectators: the last frames, then the result
     last = { n, winner, wins, chars: [(sim.units[0].char && sim.units[0].char.id) || '', (sim.units[1].char && sim.units[1].char.id) || ''], hash: hashSim(sim), frame: ls ? ls.frame : -1 };
     // the books (README, Analytics): each page tells the room the result, and the room counts it only when the two
     // agree (so a player whose browser asks not to be tracked keeps the match off the books for both). Everything outside x comes from the final state both sims hold; x is this page's own count of the effects
@@ -380,6 +393,7 @@ export function createOnline(game) {
     const was = !!lockstep || between();
     if (lockstep && (reason === 'peer-left' || reason === 'lost')) track('online_drop', [reason, crewMode ? 'crew' : 'quick', localChar, remoteChar]);   // a match that never got a result
     lockstep = null; drain = null; stopTimer(); cd = null;
+    feed.abort(); feed.close();   // anyone watching sees the match end here too
     if (link) { const l = link; link = null; if (reason === 'lost' && was) { try { l.sendControl({ t: 'lost' }); } catch { /* gone */ } } l.close(); }
     document.documentElement.classList.remove('online');
     readout.show(false);
@@ -435,6 +449,7 @@ export function createOnline(game) {
     advance(ms) {
       if (!lockstep) return 0;
       const k = lockstep.advance(ms);
+      feed.tick(game.sim);   // spectators: note what's confirmed, and send it on if anyone is watching
       // the link is gone, or can't carry this match any more: both sides end it, never two different fights
       if (lockstep && (lockstep.lost || lockstep.broken || lockstep.stalledMs > STALL_LOST_MS)) { finish('lost'); return k; }
       checkEnd();
@@ -500,6 +515,12 @@ export function createOnline(game) {
     /** the lobby panel is up (or just closed): the attract screen shouldn't start a game */
     get busy() { return lobby.busy; },
     get active() { return !!lockstep; },
+    /** how many are watching this room (0 in a crew match: nobody can) */
+    get watchers() { return feed.count; },
+    /** the host's switch: may anyone watch my quick rooms. Kept in localStorage; takes effect at once */
+    get watchable() { return feed.allowed; },
+    setWatchable(v) { feed.setAllowed(!!v); try { localStorage.setItem(WATCH_KEY, v ? '1' : '0'); } catch { /* storage off: this page only */ } readout.render(); },
+    get feed() { return feed; },
     /** between matches in a room (post-match or the pick screen): the link is up, no match running */
     get between() { return between(); },
     get state() { return state; },
@@ -548,11 +569,12 @@ function createReadout(net, stage) {
   const el = document.createElement('div');
   el.className = 'nf-readout';
   el.hidden = true;
-  el.innerHTML = '<span class="nf-mode"></span> <span class="nf-ping"></span><b class="nf-resync" hidden>RESYNC</b><b class="nf-desync" hidden>DESYNC</b><b class="nf-wait" hidden>WAITING FOR RIVAL</b>';
+  el.innerHTML = '<span class="nf-mode"></span> <span class="nf-ping"></span><b class="nf-watch" hidden></b><b class="nf-resync" hidden>RESYNC</b><b class="nf-desync" hidden>DESYNC</b><b class="nf-wait" hidden>WAITING FOR RIVAL</b>';
   (stage || document.body).appendChild(el);
   const mode = el.querySelector('.nf-mode'), ping = el.querySelector('.nf-ping');
   const desync = /** @type {HTMLElement} */ (el.querySelector('.nf-desync')), wait = /** @type {HTMLElement} */ (el.querySelector('.nf-wait'));
   const resync = /** @type {HTMLElement} */ (el.querySelector('.nf-resync'));
+  const watch = /** @type {HTMLElement} */ (el.querySelector('.nf-watch'));
   let last = 0;
   const r = {
     show(on) { el.hidden = !on; if (on) r.render(); },
@@ -566,6 +588,9 @@ function createReadout(net, stage) {
       ping.textContent = `${Math.round(s.rtt || 0)} MS · RB ${s.lastDepth || 0} · DELAY ${s.delay || 0}`;
       // a resync just put this side back on the host's state: a brief note. DESYNC only for a mismatch nothing has
       // fixed in 3 s (a resync normally lands in a round trip)
+      // the players can see they're being watched
+      const w = net.watchers | 0;
+      if (watch) { watch.hidden = !w; if (w) watch.textContent = `WATCHING ${w}`; }
       resync.hidden = !(s.sinceResync < 1500);
       desync.hidden = !(s.desync && performance.now() - (s.desync.at || 0) > 3000);
       wait.hidden = !(s.stalledMs > 300 || s.endWaitMs > 300);
@@ -801,6 +826,7 @@ function injectStyle() {
   .nf-desync { color: #ffc2f3; }
   .nf-resync { color: #ffe0a8; }
   .nf-wait { color: #fff4fd; animation: nf-blink 1.1s steps(1) infinite; }
+  .nf-watch { color: #ffe0a8; text-shadow: 0 0 2px #000; }   /* readable text never glows */
   html.touch-ui .nf-readout { bottom: auto; top: calc(var(--nf-top, 74px)); left: 50%; transform: translateX(-50%); }
   /* online: no horde toggle on the touch layer */
   html.online .tc-top [data-tap="KeyG"] { display: none; }`;

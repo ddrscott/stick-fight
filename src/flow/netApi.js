@@ -50,6 +50,9 @@
  * @property {(c: string) => void} [postFocus]                      where this side's cursor is
  * @property {(id: string, ready: boolean) => void} [pick]          the pick screen: this side's card and whether it's locked in
  * @property {() => void} [startNow]                                the host's START on the pick screen
+ * @property {() => boolean} [watchable]                            the host's switch: may anyone watch my quick rooms
+ * @property {(on: boolean) => void} [setWatchable]
+ * @property {() => number} [watchers]                              how many are watching this room
  * @property {<K extends keyof NetEvents>(ev: K, fn: (e: NetEvents[K]) => void) => () => void} on   subscribe; returns an unsubscribe
  */
 
@@ -127,6 +130,10 @@ export function adaptOnline(online) {
     postFocus: (c) => online.postFocus(c),
     pick: (id, ready) => online.pick(id, ready),
     startNow: () => online.startNow(),
+    // spectators: the host's switch (kept in localStorage), and how many are watching this room
+    watchable: () => !!online.watchable,
+    setWatchable: (v) => online.setWatchable(v),
+    watchers: () => online.watchers | 0,
     on(ev, fn) {
       const list = (handlers[ev] = handlers[ev] || []);
       list.push(fn);

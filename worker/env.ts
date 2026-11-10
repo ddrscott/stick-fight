@@ -1,16 +1,17 @@
 // What the Worker's modules share: the bindings, JSON answers, the per-IP rate limit helper, and
 // the four-letter quick room codes (crew rooms open one for each match they start).
-import type { Room } from "./index";
+import type { Room, Lobby } from "./index";
 import type { Crew } from "./crew";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
   CREWS: DurableObjectNamespace<Crew>;
+  LOBBY: DurableObjectNamespace<Lobby>;   // the LIVE list of watchable quick matches (worker/index.ts Lobby)
   DB: D1Database;            // profiles and sign-in (worker/auth.ts, migrations/)
   EMAIL: SendEmail;          // sign-in codes, from EMAIL_FROM
   EMAIL_FROM: string;
   ROOM_LIMIT?: RateLimit;    // quick room creations per IP (wrangler.jsonc ratelimits)
-  JOIN_LIMIT?: RateLimit;    // WebSocket joins per IP, quick rooms and crew rooms
+  JOIN_LIMIT?: RateLimit;    // WebSocket joins per IP: quick rooms, crew rooms and spectators
   CREW_LIMIT?: RateLimit;    // crew room creations per IP
   AUTH_LIMIT?: RateLimit;    // profile and sign-in calls per IP
   EVENT_LIMIT?: RateLimit;   // analytics events per IP
@@ -21,6 +22,12 @@ export interface Env {
   DEV_LOGIN_CODES?: string;  // "1" only in .dev.vars: no email is sent, the code comes back in the answer
   DEV_HOOKS?: string;        // "1" only in .dev.vars: test routes (expire a crew room now)
 }
+
+/** One match in the LIVE list (GET api/live): a quick room with a match on that anyone may watch. */
+export type LiveEntry = {
+  code: string; n: number; chars: string[]; names: string[]; round: number; wins: number[];
+  tally: { host: number; guest: number; draw: number }; watching: number; at: number;
+};
 
 export const API = "/stick-fight/api/";
 export const BUSY = "Too many tries from your network. Try again shortly.";
@@ -65,11 +72,12 @@ export function newCode(): string {
   for (const b of bytes) s += ALPHABET[b % ALPHABET.length];
   return s;
 }
-/** A fresh quick room, claimed; on the rare collision with a live room, draw again. "" if none. */
-export async function claimRoom(env: Env): Promise<string> {
+/** A fresh quick room, claimed; on the rare collision with a live room, draw again. "" if none.
+ *  priv: a crew's match room, closed to spectators and kept off the LIVE list. */
+export async function claimRoom(env: Env, priv = false): Promise<string> {
   for (let i = 0; i < 8; i++) {
     const code = newCode();
-    if (await env.ROOMS.get(env.ROOMS.idFromName(code)).claim()) return code;
+    if (await env.ROOMS.get(env.ROOMS.idFromName(code)).claim(code, priv)) return code;
   }
   return "";
 }

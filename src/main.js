@@ -16,6 +16,7 @@ import { createHUD, HUD_TOP } from './combat/hud.js';
 import { FRAME_DATA } from './combat/frameData.js';
 import { mulberry32 } from './combat/rng.js';
 import { gameAudio } from './audio/index.js';   // audio: all sound logic lives in src/audio/
+import { createWatch } from './net/watch.js';     // spectators: a quick match played back from the players' confirmed inputs (README, Spectators)
 import { createOnline } from './net/online.js';   // online play: rooms, lockstep, readout (src/net/)
 import { createFlow } from './flow/index.js';     // the arcade flow: title, menus, ladder, continue, scores (src/flow/)
 import { setNet, adaptOnline } from './flow/netApi.js';
@@ -220,6 +221,11 @@ const online = createOnline({ sim, input, startMatch: (o) => setScene('online', 
 // bookkeeping online: count this match's effects from its start; the result itself goes through the room (online.js matchOver)
 online.on('start', (m) => book.begin({ mode: m.crew ? 'crew' : 'quick', local: m.localIndex }));
 online.on('match-over', () => book.end());
+// spectators: watch.open(code) plays a room's match on this page's sim, as the same 'online' scene (its controllers
+// read the inputs the room hands over); watch.advance steps it. When it stops, the flow's watch view says why
+const watch = createWatch({ sim, startMatch: (o) => setScene('online', o),
+  endMatch: (reason) => { if (flow && flow.on) flow.watchEnded(reason); else setScene('attract'); } });
+/** @type {any} */ (window).__watch = watch;
 
 // ---- scenes ---------------------------------------------------------------------------
 // A scripted controller: walks into range, then presses each move in turn as soon as the
@@ -1183,6 +1189,7 @@ function updateCamera(dt, snap = false) {
 }
 
 // ---- frame ----------------------------------------------------------------------------------
+let wasCatching = false;
 function advance(ms) {
   // an online match: only the netcode moves the sim, whatever screen the flow is on (its demo screens hold a KO
   // card longer and start a new bout after one round, which on one phone only would split the two fights)
@@ -1191,7 +1198,10 @@ function advance(ms) {
   else if (!netMatch) { if (paused) return; if (attractFlow(ms)) return; }
   // the finisher beat: a KO by an ender runs at quarter speed
   const slow = sim.koSlow > 0 ? (sim.finisher ? 0.25 : 0.5) : 1;
-  if (netMatch) online.advance(ms * slow); else sim.step(ms * slow);   // online: the netcode owns the stepping
+  if (netMatch) online.advance(ms * slow); else if (watch.active) watch.advance(ms * slow); else sim.step(ms * slow);   // online: the netcode owns the stepping; watching: the room's inputs do
+  // a spectator that just caught up (it ran the sim undrawn): the camera cuts to where the fight is now
+  if (wasCatching && !watch.catching) { updateCamera(1, true); lights.length = 0; }
+  wasCatching = watch.catching;
   if (flowRuns) { if (flow.afterStep()) return; }   // flow: demo bouts, round and match ends
   else if (attract && (sim.round > 1 || sim.phase === 'match')) { setScene('attract'); return; }   // one round per demo bout
   const dt = ms / 1000;
@@ -1641,6 +1651,7 @@ flow = createFlow({
   click: (kind) => { try { gameAudio.actions && gameAudio.actions.click(kind); } catch (e) { /* audio off */ } },   // audio: menu clicks through the public API
   music: (pool) => gameAudio.setMusicPool(pool),   // audio: the flow pins the music pool per screen
   netBusy: () => !!online.busy,
+  watch,
 });
 window.__flow = flow;
 
@@ -1702,7 +1713,8 @@ function frame(now) {
   const ms = Math.max(0, Math.min(100, now - last)); last = now;   // rAF's timestamp can be a little before the performance.now() it follows
   const idle = embedHidden && !online.active && flow && flow.on && flow.demo;
   perf.begin(now);
-  if (!driven && !idle) { lastFrameMs = ms; advance(ms); perf.mark('sim'); render(); }
+  // (a spectator catching up runs the sim flat out and draws nothing until it's level)
+  if (!driven && !idle) { lastFrameMs = ms; advance(ms); perf.mark('sim'); if (!watch.catching) render(); }
   perf.end();
   requestAnimationFrame(frame);
 }

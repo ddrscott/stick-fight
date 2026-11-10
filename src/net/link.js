@@ -8,9 +8,11 @@
 // ?ice=relay in the page URL allows TURN candidates only (a test switch for the TURN path).
 //
 //   const link = createLink({ code, role, forceRelay })
-//   link.on('status' | 'peer' | 'control' | 'packet' | 'closed', fn)
+//   link.on('status' | 'peer' | 'control' | 'packet' | 'closed' | 'watching', fn)
 //   link.sendControl(obj)   reliable JSON through the room
 //   link.sendPacket(buf)    the DataChannel when it's open, else the room
+//   link.sendRoom(data)     to the room itself, not the other player: the host's spectator feed
+//                           (src/net/watchfeed.js); 'watching' comes back with who's watching
 //   link.mode               'connecting' | 'p2p' | 'relay'
 //   link.candidate          once p2p: the local ICE candidate type in use, 'host' | 'srflx' | 'relay'
 //   link.close()
@@ -87,6 +89,9 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
       if (dc && dc.readyState === 'open') { try { dc.send(buf); return; } catch { /* fall through to the relay */ } }
       if (ws.readyState === WebSocket.OPEN) ws.send(buf);
     },
+    /** to the room itself (a {t:'watch'} message as text, or a batch of confirmed inputs): never passed on
+     *  @param {string | ArrayBuffer} data */
+    sendRoom(data) { if (ws.readyState === WebSocket.OPEN) ws.send(data); },
     close() {
       if (closed) return;
       closed = true;
@@ -182,6 +187,8 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.t === 'sys') {
       if (msg.ev === 'error') { link.error = msg.reason; emit('closed', msg.reason); return; }
+      if (msg.ev === 'watching') { emit('watching', msg); return; }   // spectators: how many, and what the room needs
+      if (msg.ev === 'welcome') emit('open');   // the room is there: the host's spectator switch goes out first
       if (msg.ev === 'welcome' || msg.ev === 'peer') {
         const present = msg.ev === 'welcome' ? !!msg.peer : !!msg.present;
         if (present === peerPresent) return;

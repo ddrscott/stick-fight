@@ -53,10 +53,11 @@ import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './
 import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
 import { profile, setName as saveName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
 import { createCrew, createCrewRoom, cleanSlug, crewLink } from '../net/crew.js';
+import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
-  off: ['attract', 'onlineJoin', 'charSelect', 'nameEntry', 'crewLobby', 'signInCode'],
+  off: ['attract', 'onlineJoin', 'charSelect', 'nameEntry', 'crewLobby', 'signInCode', 'watching'],
   attract: ['modeSelect', 'highScores', 'controls', 'install'],
   highScores: ['attract', 'modeSelect'],
   controls: ['attract', 'modeSelect'],
@@ -73,7 +74,10 @@ const TRANSITIONS = {
   enterInitials: ['highScores'],
   ending: ['enterInitials', 'highScores', 'modeSelect'],
   paused: ['fighting', 'roundEnd', 'stageIntro', 'attract', 'modeSelect'],
-  onlineMenu: ['modeSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract', 'profile', 'crewCreate', 'crewJoin', 'crewLobby', 'nameEntry'],
+  onlineMenu: ['modeSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract', 'profile', 'crewCreate', 'crewJoin', 'crewLobby', 'nameEntry', 'watchList'],
+  // spectators (src/net/watch.js): the LIVE list, and the watch view
+  watchList: ['watching', 'onlineMenu', 'modeSelect', 'attract'],
+  watching: ['watchList', 'onlineMenu', 'modeSelect', 'attract'],
   onlineHost: ['onlineMenu', 'onlineSelect', 'onlineFighting', 'onlineEnd', 'modeSelect'],
   onlineJoin: ['onlineMenu', 'onlineConnecting', 'attract'],
   onlineConnecting: ['onlineJoin', 'onlineSelect', 'onlineFighting', 'onlineEnd', 'modeSelect'],
@@ -96,7 +100,7 @@ const TEXT = new Set(['nameEntry', 'signInEmail', 'signInCode', 'crewCreate', 'c
 // the crew's lobby connection stays open in these (the lobby, and a match the crew started)
 const CREW_KEEP = new Set(['crewLobby', 'crewLinking', 'onlineFighting', 'onlinePost', 'onlineSelect', 'onlineEnd']);
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
-const DEMO = new Set(['attract', 'controls', 'install', 'modeSelect', 'charSelect', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'crewLobby', 'crewLinking']);
+const DEMO = new Set(['attract', 'controls', 'install', 'modeSelect', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'crewLobby', 'crewLinking']);
 // the sim steps in these (plus onlineFighting, unless the net module steps it)
 const STEPS = new Set([...DEMO, 'fighting', 'roundEnd', 'result']);
 // the HUD draws in these; everything else is a menu over a dimmed scene, HUD off
@@ -104,7 +108,7 @@ const HUD_ON = new Set(['attract', 'fighting', 'roundEnd', 'result', 'paused', '
 // the player is fighting: touch controls up, menu keys off except pause
 const PLAY = new Set(['fighting', 'roundEnd', 'result', 'onlineFighting']);
 const IDLE_MS = 30000;
-const ONLINE = new Set(['onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineFighting', 'onlineEnd', 'onlinePost', 'onlineSelect', 'crewLobby', 'crewLinking']);
+const ONLINE = new Set(['watchList', 'watching', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineFighting', 'onlineEnd', 'onlinePost', 'onlineSelect', 'crewLobby', 'crewLinking']);
 // between online matches: the room is open, the scene behind is the last match's final frame (held)
 const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
 
@@ -120,12 +124,13 @@ const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
  * @property {() => boolean} padUI
  * @property {(kind?: string) => void} [click]            a menu click (src/audio/'s public actions.click)
  * @property {() => boolean} [netBusy]                    online.js's own panel (leave confirm, messages) is up: it owns the keys and the pad
+ * @property {any} [watch]                                the spectator (src/net/watch.js createWatch): the LIVE list's matches play through it
  * @property {(pool: string|null) => void} [music]       pin the music pool (src/audio/'s setMusicPool): 'menu', 'fight', 'horde', 'calm', or null to follow the sim
  */
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
 const ENDING_ROLL = 22;   // seconds the ending's roll takes to scroll by (the story and the credits); it moves on 3s after
-const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'install', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'crewLobby', 'crewLinking']);
+const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'install', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'crewLobby', 'crewLinking', 'watchList']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -184,7 +189,7 @@ export function createFlow(ctx) {
   function music() {
     if (!ctx.music) return;
     const pool = state === 'off' ? null
-      : MENU_MUSIC.has(state) ? 'menu'
+      : MENU_MUSIC.has(state) || (state === 'watching' && !watchOn()) ? 'menu'
       : mode === 'horde' ? 'horde' : mode === 'training' ? 'calm' : 'fight';
     try { ctx.music(pool); } catch (e) { /* audio off */ }
   }
@@ -204,6 +209,8 @@ export function createFlow(ctx) {
     if (crewCli && (crewCli.active || prev === 'crewLobby') && !CREW_KEEP.has(next)) crewClose();   // out of the crew: its lobby connection closes
     if (TEXT.has(prev)) te = null;
     if (prev === 'crewLinking') clearTimeout(linkTimer);
+    if (prev === 'watchList') { clearInterval(liveTimer); liveTimer = 0; }
+    if (prev === 'watching') watchStop();
     if (prev === 'charSelect' || prev === 'onlineSelect') selCtl = null;
   }
   function enter(s, prev) {
@@ -249,6 +256,8 @@ export function createFlow(ctx) {
       case 'crewJoin': ensureDemo(); return screenCrewJoin();
       case 'crewLobby': mode = null; ensureDemo(); crewEnter(); return screenCrewLobby();
       case 'crewLinking': ensureDemo(); return screenCrewLinking();
+      case 'watchList': mode = null; ensureDemo(); return screenWatchList();
+      case 'watching': mode = 'watch'; if (!watchOn()) ensureDemo(); return screenWatching();
     }
   }
 
@@ -270,11 +279,11 @@ export function createFlow(ctx) {
     t += dt; idle += ms;
     if (ml) idle = 0;   // reading the move list isn't idling
     if (bonus.t > 0) bonus.t -= dt;
-    if (DEMO.has(state)) {
+    if (DEMO.has(state) || (state === 'watching' && !watchOn())) {
       // the demo's KO card holds a beat longer
       if (sim.phase === 'ko' && !demoKO) { demoKO = true; sim.phaseTimer = 1.6; }
       // (never the crew lobby, the typing screens or sign-in: friends wait there, and a code takes a trip to the inbox)
-      if (idle > IDLE_MS && (state === 'controls' || state === 'install' || state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || (state === 'onlineEnd' && !crewMatch) || state === 'profile')) go('attract');
+      if (idle > IDLE_MS && (state === 'watchList' || state === 'controls' || state === 'install' || state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || (state === 'onlineEnd' && !crewMatch) || state === 'profile')) go('attract');
     }
     if ((state === 'charSelect' || state === 'onlineSelect') && selCtl) selCtl.tick(dt);
     if (BETWEEN.has(state)) paintBetween();   // the countdowns tick
@@ -291,6 +300,7 @@ export function createFlow(ctx) {
       case 'ending': if (t > ENDING_ROLL + 3) afterGame(); break;
       case 'enterInitials': if (idle > IDLE_MS) submitInitials(); break;
     }
+    if (state === 'watching') { paintWatch(); return true; }   // main.js steps the watched match (or the demo behind the card)
     if (state === 'onlineFighting') {
       const net = getNet();
       if (net.step) { net.step(ms); return false; }
@@ -301,6 +311,7 @@ export function createFlow(ctx) {
   /** after the sim stepped; true if the flow changed the scene (main.js skips the rest of the frame) */
   function afterStep() {
     if (state === 'off') return false;
+    if (state === 'watching') { if (!watchOn() && (sim.round > 1 || sim.phase === 'match')) { demo(); return true; } return false; }
     if (DEMO.has(state)) {
       if (sim.round > 1 || sim.phase === 'match') {   // one round per demo bout
         if (state === 'attract') { hs = { mode: hs.loop % 2 ? 'horde' : 'arcade', highlight: -1, postGame: false, loop: hs.loop + 1 }; go('highScores'); }   // the two tables take turns
@@ -900,12 +911,14 @@ export function createFlow(ctx) {
       const joinCrew = mk(left, 'JOIN A CREW', 'BY LINK OR CODE', () => go('crewJoin'));
       const host = mk(right, 'HOST A GAME', 'A ONE-OFF ROOM CODE', () => { if (!getNet().available) { endMsg = 'ONLINE PLAY IS NOT READY YET'; retryTo = null; go('onlineEnd'); } else go('onlineHost'); }, 'fl-pink');
       const join = mk(right, 'JOIN A GAME', 'WITH A 4-LETTER CODE', () => { joinCode = ''; go('onlineJoin'); });
+      const watch = mk(right, 'WATCH', 'LIVE MATCHES', () => go('watchList'), 'fl-violet');
+      fetchLive().then((rows) => { const sm = watch.el.querySelector('small'); if (sm && rows && rows.length) sm.textContent = `${rows.length} LIVE NOW`; });
       cols.append(left, right);
       root.appendChild(cols);
       const prof = button('PROFILE', () => go('profile'), 'fl-mini');
       const main = button('MAIN MENU', () => go('modeSelect'), 'fl-violet fl-mini');
       const row = el('div', 'fl-row fl-orow'); row.append(prof.el, main.el); root.appendChild(row);
-      const items = [...crews, create, joinCrew, host, join, prof, main];
+      const items = [...crews, create, joinCrew, host, join, watch, prof, main];
       // a crew to go back to is the likeliest press; otherwise HOST A GAME, as before
       return { items, focus: crews.length ? 0 : items.indexOf(host), back: () => go('modeSelect') };
     });
@@ -927,6 +940,11 @@ export function createFlow(ctx) {
       statusEl = waitEl;
       root.append(codeEl, linkEl, waitEl);
       const items = [];
+      // spectators: on unless the host says no (kept for their next rooms; a crew's match is never watchable)
+      const net0 = getNet();
+      const specLabel = () => (net0.watchable && !net0.watchable() ? 'SPECTATORS: OFF  ·  NOBODY CAN WATCH' : 'SPECTATORS: ON  ·  YOUR MATCH SHOWS IN LIVE NOW');
+      const spec = button(specLabel(), () => { if (!net0.setWatchable) return; net0.setWatchable(!net0.watchable()); spec.el.textContent = specLabel(); }, 'fl-mini fl-violet fl-spec');
+      if (net0.setWatchable) root.appendChild(spec.el);
       // send the link: the phone's share sheet where there is one, and the clipboard everywhere (both
       // wait for the room: dim, and skipped by the focus, until there's a link)
       const noLink = () => !linkEl.textContent;
@@ -949,6 +967,7 @@ export function createFlow(ctx) {
       }
       items.push(button('CANCEL', () => go('onlineMenu'), 'fl-violet'), mainMenuBtn());
       btnRow(root, items, '17cqw');
+      if (net0.setWatchable) items.push(spec);
       return { items, back: () => go('onlineMenu') };
     });
     const fallback = ui.focus;   // COPY LINK is dim until the room opens, so the focus starts on CANCEL
@@ -1014,6 +1033,170 @@ export function createFlow(ctx) {
     getNet().join(joinCode, { pickFirst: true }).then(() => { if (session === netSession && /^CONNECTING/.test(msg.textContent || '')) msg.textContent = 'FINDING THE ROOM'; })
       .catch((e) => { if (session !== netSession) return; netFail(String((e && e.message) || e).toUpperCase()); });
   }
+  // ---- spectators: the LIVE list and the watch view (src/net/watch.js; README, Multiplayer, Spectators) ----
+  // WATCH in the online menu lists the quick matches on right now (GET api/live, asked again every few seconds);
+  // picking one, or opening play/?watch=CODE, goes to the watch view: the normal arena and HUD driven by the
+  // players' confirmed inputs a few seconds behind, with no controls, a WATCHING tag and a way out. Until a match
+  // is on (and after one that stopped short) the demo runs behind a card that says what's happening.
+  const W = () => ctx.watch || null;
+  const watchOn = () => !!(W() && W().active);
+  let watchCode = '', liveTimer = 0, liveRows = null, liveKey = '', liveFail = false, wv = null, watchBackAt = 0, watchWas = '';
+  const WATCH_ERR = {
+    'no-room': 'NO MATCH AT THAT CODE', 'bad-code': 'NO MATCH AT THAT CODE', off: 'THE HOST TURNED SPECTATORS OFF', 'watch-full': 'FULL HOUSE: 50 ARE WATCHING ALREADY',
+    busy: 'SERVER BUSY: TRY AGAIN SHORTLY', flood: 'THE ROOM CLOSED', lost: 'CONNECTION LOST', closed: 'THE PLAYERS LEFT THE ROOM',
+    newer: 'THIS MATCH IS ON A NEWER VERSION OF THE GAME', older: 'THIS MATCH IS ON AN OLDER VERSION OF THE GAME',
+    left: 'A PLAYER LEFT THE MATCH', ended: 'THE MATCH ENDED',
+  };
+  function setWatchParam(code) {
+    try {
+      const u = new URL(location.href);
+      if (code) u.searchParams.set('watch', code); else u.searchParams.delete('watch');
+      window.history.replaceState(null, '', u.toString());
+    } catch { /* sandboxed */ }
+  }
+  function watchStop() {
+    wv = null;
+    setWatchParam('');
+    try { const w = W(); if (w) w.leave(); } catch { /* not plugged in */ }
+  }
+  /** main.js: the watched match stopped (a player left, the room closed, this side left): the demo is back behind */
+  function watchEnded() {
+    if (state !== 'watching') return;
+    demo();
+    music();
+  }
+  function openWatch(code) { watchCode = cleanCode(code); if (watchCode) go('watching'); }
+  // -- the LIVE list --
+  function screenWatchList() {
+    liveRows = null; liveKey = ''; liveFail = false;
+    paintLive();
+    const poll = () => {
+      fetchLive().then((rows) => { if (state !== 'watchList') return; if (rows) { liveRows = rows; liveFail = false; } else liveFail = true; paintLive(); });   // (a miss keeps the list it had)
+    };
+    poll();
+    clearInterval(liveTimer);
+    liveTimer = window.setInterval(poll, 6000);
+  }
+  function paintLive() {
+    const rows = liveRows, key = (rows ? rows.map((r) => `${r.code}:${r.n}:${r.round}:${r.wins}:${r.watching}`).join('|') : '?') + (liveFail ? '!' : '');
+    if (key === liveKey && ui.screen) return;
+    liveKey = key;
+    const focused = ui.items[ui.focus] && ui.items[ui.focus].code;
+    ui.show('fl-live', (root) => {
+      root.append(el('h1', 'fl-h2', 'LIVE NOW'), el('div', 'fl-label', rows && rows.length ? 'QUICK MATCHES ON RIGHT NOW  ·  PICK ONE TO WATCH' : rows ? 'NOBODY IS FIGHTING RIGHT NOW' : liveFail ? "CAN'T REACH THE SERVER  ·  TRYING AGAIN" : 'LOOKING FOR MATCHES'));
+      const list = el('div', 'fl-list fl-livelist');
+      const items = [];
+      for (const r of (rows || []).slice(0, 5)) {
+        const b = button('', () => openWatch(r.code), 'fl-slim fl-liverow');
+        const side = (i) => {
+          const c = characterOr(r.chars[i]), s = el('span', `fl-lside fl-lside${i}`);
+          const f = el('b', 'fl-lchar', c.name); f.style.setProperty('--fc', i && r.chars[0] === r.chars[1] ? (c.alt || c.color) : c.color);
+          s.append(f, el('i', 'fl-lname', r.names[i] || `P${i + 1}`));
+          return s;
+        };
+        const line = el('span', 'fl-lline');
+        line.append(side(0), el('em', 'fl-lvs', `${r.wins[0]} – ${r.wins[1]}`), side(1));
+        b.el.append(line, el('small', '', `ROUND ${r.round}  ·  ${r.watching} WATCHING`));
+        b.code = r.code;
+        list.appendChild(b.el); items.push(b);
+      }
+      if (rows && !rows.length) root.appendChild(el('div', 'fl-small', 'HOST A GAME AND YOUR MATCH SHOWS UP HERE  ·  CREW MATCHES STAY PRIVATE'));
+      root.appendChild(list);
+      const back = button('ONLINE MENU', () => go('onlineMenu'), rows && rows.length ? 'fl-violet' : 'fl-pink');
+      const row = btnRow(root, [back, mainMenuBtn()], '18cqw');
+      items.push(...row);
+      const at = items.findIndex((it) => it.code && it.code === focused);
+      return { items, focus: at >= 0 ? at : 0, back: () => go('onlineMenu') };
+    });
+  }
+  // -- the watch view --
+  function screenWatching() {
+    wv = null; watchBackAt = 0; watchWas = '';
+    setWatchParam(watchCode);
+    paintWatch();
+    const w = W();
+    if (!w) return;
+    if (!(w.code === watchCode && w.state !== 'idle' && w.state !== 'error')) w.open(watchCode);
+  }
+  /** the overlay follows the spectator's state: a slim bar while the fight is on screen, a card otherwise */
+  function paintWatch() {
+    const w = W();
+    if (state !== 'watching') return;
+    const v = w ? w.view() : { state: 'error', detail: 'lost', count: 0, names: ['', ''], chars: ['', ''], result: null, progress: 1 };
+    const live = v.state === 'live' || v.state === 'buffering';
+    const kind = live ? 'bar' : v.state === 'result' ? 'result' : v.state === 'error' || v.state === 'over' ? 'stop' : 'wait';
+    if (v.state !== watchWas) { watchWas = v.state; music(); }
+    // the room is gone for good: the LIVE list after a moment (a version mismatch or a refusal waits for a press)
+    const gone = v.state === 'error' && (v.detail === 'closed' || v.detail === 'lost') || (v.state === 'result' && v.detail);
+    if (gone && !watchBackAt) watchBackAt = performance.now() + 6000;
+    if (!gone) watchBackAt = 0;
+    if (watchBackAt && performance.now() >= watchBackAt) { go('watchList'); return; }
+    if (!wv || wv.kind !== kind) {
+      const o = { kind };
+      ui.show(`fl-watch fl-watch-${kind}`, (root) => {
+        const who = (i) => v.names[i] || (v.chars[i] ? characterOr(v.chars[i]).name : `P${i + 1}`);
+        const list = button('LIVE LIST', () => go('watchList'), kind === 'bar' ? 'fl-mini fl-violet' : 'fl-pink');
+        if (kind === 'bar') {
+          // the fight is on: a tag, who's fighting, how many are watching, and the way out
+          const bar = el('div', 'fl-wbar');
+          o.tag = el('b', 'fl-wtag', 'WATCHING');
+          o.names = el('span', 'fl-wnames', '');
+          o.count = el('span', 'fl-wcount', '');
+          o.note = el('span', 'fl-wnote', '');
+          bar.append(o.tag, o.names, o.count, o.note);
+          const leave = button('LEAVE', () => go('watchList'), 'fl-mini fl-violet');
+          const copy = button('COPY LINK', () => {
+            Promise.resolve().then(() => navigator.clipboard.writeText(watchUrl(watchCode)))
+              .then(() => { copy.el.textContent = 'COPIED'; }, () => { copy.el.textContent = 'COPY FAILED'; })
+              .then(() => setTimeout(() => { copy.el.textContent = 'COPY LINK'; }, 1400));
+          }, 'fl-mini');
+          const row = el('div', 'fl-row fl-wbtns'); row.append(copy.el, leave.el);
+          root.append(bar, row);
+          // (COPY LINK holds the focus, so a stray Enter or A doesn't walk a viewer out; Esc or B leaves)
+          return { items: [copy, leave], focus: 0, back: () => go('watchList'), legend: [] };
+        }
+        const card = el('div', 'fl-wcard');
+        o.tag = el('b', 'fl-wtag', kind === 'result' ? 'FINAL' : 'WATCH');
+        o.head = el('h1', 'fl-h2', '');
+        o.sub = el('div', 'fl-label', '');
+        o.count = el('div', 'fl-small', '');
+        card.append(o.tag, o.head, o.sub, o.count);
+        root.appendChild(card);
+        const items = [list];
+        if (kind === 'stop' && (v.detail === 'newer')) items.unshift(button('RELOAD', () => location.reload(), 'fl-pink'));
+        items.push(mainMenuBtn());
+        btnRow(card, items, '18cqw');
+        void who;
+        return { items, focus: 0, back: () => go('watchList') };
+      }, { veil: false });
+      wv = o;
+    }
+    const who = (i) => v.names[i] || (v.chars[i] ? characterOr(v.chars[i]).name : `P${i + 1}`);
+    const cnt = v.count === 1 ? '1 WATCHING' : `${v.count} WATCHING`;
+    if (kind === 'bar') {
+      setText(wv.names, `${who(0)} VS ${who(1)}`);
+      setText(wv.count, cnt);
+      setText(wv.note, v.outOfSync ? 'OUT OF SYNC' : v.state === 'buffering' ? 'WAITING FOR THE FIGHT' : '');
+      wv.note.classList.toggle('fl-warn', !!v.outOfSync);
+      return;
+    }
+    let head = '', sub = '';
+    if (kind === 'result') {
+      const r = v.result || { winner: -1, wins: [0, 0], names: ['', ''], chars: ['', ''] };
+      const nm = (i) => r.names[i] || (r.chars[i] ? characterOr(r.chars[i]).name : `P${i + 1}`);
+      head = r.winner < 0 ? `DRAW  ${r.wins[0]} – ${r.wins[1]}` : `${nm(r.winner)} WINS  ${Math.max(r.wins[0], r.wins[1])} – ${Math.min(r.wins[0], r.wins[1])}`;
+      sub = v.detail ? `THE PLAYERS LEFT  ·  BACK TO THE LIVE LIST IN ${Math.max(1, Math.ceil((watchBackAt - performance.now()) / 1000))}` : 'WAITING FOR A REMATCH';
+    } else if (kind === 'stop') {
+      head = WATCH_ERR[v.detail] || 'THE MATCH ENDED';
+      sub = watchBackAt ? `BACK TO THE LIVE LIST IN ${Math.max(1, Math.ceil((watchBackAt - performance.now()) / 1000))}` : v.detail === 'newer' ? 'RELOAD TO GET IT, THEN WATCH' : v.detail === 'older' ? 'THE PLAYERS NEED TO RELOAD' : v.state === 'over' ? 'WAITING FOR THE NEXT MATCH IN THIS ROOM' : `ROOM ${watchCode}`;
+    } else {
+      head = v.state === 'catching' ? 'CATCHING UP' : v.state === 'waiting' ? 'NO MATCH ON YET' : 'JOINING';
+      sub = v.state === 'catching' ? `${Math.round(v.progress * 100)}%  ·  ${who(0)} VS ${who(1)}` : v.state === 'waiting' ? 'THE PLAYERS ARE BETWEEN MATCHES  ·  IT STARTS HERE WHEN THEY DO' : `ROOM ${watchCode}`;
+    }
+    setText(wv.head, head); setText(wv.sub, sub);
+    setText(wv.count, v.state === 'error' || v.state === 'connecting' ? '' : cnt);
+  }
+
   // ---- between online matches ------------------------------------------------------------------------------
   // The post-match screen and the pick screen read online.js's view() (the same picture on both
   // machines, from each one's side) and paint it; the agreement rules live in online.js.
@@ -1665,7 +1848,7 @@ export function createFlow(ctx) {
     const st = ladder()[run.stage];
     const pad = ctx.padUI(), touch = ctx.touchUI();
     return {
-      bare: !HUD_ON.has(state),
+      bare: state === 'watching' ? !watchOn() : !HUD_ON.has(state),   // watching: the HUD is the match's, once one is on
       card: state === 'attract',
       score: scored ? run.score : null,
       bonus: bonus.t > 0 ? bonus.text : '',
@@ -1676,7 +1859,7 @@ export function createFlow(ctx) {
       // the room's running tally for the fight HUD (src/combat/hud.js may draw it): from this side,
       // { you, rival, draw, roundsYou, roundsRival, games, n } where n is this match's number
       tally: state === 'onlineFighting' ? onlineTally() : null,
-      hint: touch ? '' : state === 'onlineFighting' ? (pad ? `${startName()}  LEAVE` : 'F1  MOVES     ESC  LEAVE') : pad ? `${startName()}  PAUSE` : 'F1  MOVES     ESC  PAUSE',
+      hint: touch || state === 'watching' ? '' : state === 'onlineFighting' ? (pad ? `${startName()}  LEAVE` : 'F1  MOVES     ESC  LEAVE') : pad ? `${startName()}  PAUSE` : 'F1  MOVES     ESC  PAUSE',
     };
   }
   function onlineTally() { const v = view(); return v && v.n ? { ...v.tally, n: v.n } : null; }
@@ -1701,12 +1884,14 @@ export function createFlow(ctx) {
     const code = cleanCode(opts.room);
     const q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.slice(1));
     const crew = cleanSlug(opts.crew || q.get('crew'));
+    const watching = cleanCode(opts.watch || q.get('watch'));   // a watch link: straight to that room's match
     // the sign-in email's link: #signin=<email>&code=<code>, submitted from here (never by a plain GET)
     if (h.get('signin') && /^\d{6}$/.test(h.get('code') || '')) {
       try { window.history.replaceState(null, '', location.pathname + location.search); } catch { /* sandboxed */ }
       demo(); signIn = { email: String(h.get('signin')).toLowerCase(), dev: '', code: String(h.get('code')), auto: true };
       go('signInCode');
-    } else if (crew) { demo(); openCrew(crew); }   // a crew link: the lobby (a name first, the first time)
+    } else if (watching.length === CODE_LEN) { demo(); watchCode = watching; go('watching'); }
+    else if (crew) { demo(); openCrew(crew); }   // a crew link: the lobby (a name first, the first time)
     else if (code) {
       demo(); joinCode = code;
       const toJoin = () => go('onlineJoin');   // JOIN with the code filled in; the fighters are picked in the room
@@ -1725,7 +1910,7 @@ export function createFlow(ctx) {
   }
 
   return {
-    start, update, afterStep, event, hud, frame, allowHotkey, netEnded,
+    start, update, afterStep, event, hud, frame, allowHotkey, netEnded, watchEnded,
     off: () => go('off'),
     get state() { return state; },
     get on() { return state !== 'off'; },
