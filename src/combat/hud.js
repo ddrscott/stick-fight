@@ -19,7 +19,7 @@ const BAR_W = 420, BAR_H = 18, BAR_Y = 16, SKEW = 12, STRIP_H = 96, ST_H = 5;   
 // screen px from the top that the bars, names and move hints own (with their shade): the camera keeps heads below it
 export const HUD_TOP = STRIP_H + 30;
 const SIDE = [NEON.cyan, NEON.pink];
-const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a' };
+const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, clash: '#99bfff', break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a' };
 
 export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) {
   const ctx = canvas.getContext('2d');
@@ -253,6 +253,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   function event(ev) {
     if (ev.type === 'hit' && ev.defender) { if (ev.counter) tstate(ev.defender).counter = 0.5; if (ev.armor) tstate(ev.defender).armor = 0.4; }
     if (ev.type === 'block' && ev.parry && ev.defender) tstate(ev.defender).parry = 0.5;
+    if (ev.type === 'clash' && !ev.broke && ev.units) for (const u of ev.units) tstate(u).clash = 0.5;   // while he bounces off it (statusOf)
     if (ev.type === 'refund' && ev.unit) {
       const max = ev.unit.staminaMax || 100, old = refundAt.get(ev.unit), now = ev.unit.stamina / max;
       // refunds landing inside one flash (a string) keep the piece growing from where the first one started
@@ -270,6 +271,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (u.faint > 0) return { text: 'FAINT', color: NEON.pink, bar: Math.min(1, u.faint / (1.5 * 120)), barColor: NEON.violet, dizzy: true };
     if (u.state === 'hitstun' && u.shockT > 0) return { text: 'SHOCKED', color: '#fff27a', bar: stunK, barColor: '#ffe066' };   // frame data shock
     if (u.state === 'hitstun') return { text: 'STUN', color: '#ff3d6e', bar: stunK, barColor: '#ff2b4a' };
+    if (u.state === 'blockstun' && s.clash > 0) return { text: 'CLASH', color: KIND_COLOR.clash, bar: stunK, barColor: KIND_COLOR.clash };   // bouncing off a clash, not guarding
     if (u.state === 'blockstun') return { text: 'GUARD', color: NEON.cyan, bar: stunK, barColor: NEON.cyan };
     if (u.state === 'block' || (u.state === 'crouch' && u.backHeld)) return { text: u.crouch ? 'LOW GUARD' : 'GUARD', color: NEON.cyan, dim: true };
     // lying there: the bar is the second left before he stands up by himself
@@ -300,7 +302,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const boxes = who.map(boxOf);
     who.forEach((u, i) => {
       const s = tstate(u);
-      s.counter = Math.max(0, s.counter - dt); s.armor = Math.max(0, s.armor - dt); s.parry = Math.max(0, s.parry - dt); s.refill = Math.max(0, (s.refill || 0) - dt);
+      s.counter = Math.max(0, s.counter - dt); s.armor = Math.max(0, s.armor - dt); s.parry = Math.max(0, s.parry - dt); s.clash = Math.max(0, (s.clash || 0) - dt); s.refill = Math.max(0, (s.refill || 0) - dt);
       if (u.stun > s.lastStun) s.stunMax = Math.max(1, u.stun);
       s.lastStun = u.stun;
       const st = statusOf(u, s);

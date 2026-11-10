@@ -4,19 +4,36 @@ import { FRAME_DATA } from './frameData.js';
 
 const HAND_R = 15, FOOT_R = 18;
 
+const PARENT = { lHand: 'lElbow', rHand: 'rElbow', lFoot: 'lKnee', rFoot: 'rKnee', lKnee: 'hip', rKnee: 'hip', lElbow: 'lShoulder', rElbow: 'rShoulder' };
+// the two joints of the striking segment, parent first: the limb the move names (the rig's MOVE_DATA limb, set
+// on FRAME_DATA as joint); the old "most forward hand/foot" guess measured some jabs off the guard hand
+function strikeChain(rig, fd, facing) {
+  const j = rig.joints;
+  if (fd.joint && PARENT[fd.joint]) return [PARENT[fd.joint], fd.joint];
+  const chains = fd.limb === 'hand' ? [['lElbow', 'lHand'], ['rElbow', 'rHand']] : [['lKnee', 'lFoot'], ['rKnee', 'rFoot']];
+  const fwd = (name) => (j[name].x - rig.x) * facing;
+  return fwd(chains[0][1]) >= fwd(chains[1][1]) ? chains[0] : chains[1];
+}
+
+// The striking segment as it's drawn, for limb against limb (sim.js clash): the forearm and fist of a punch, the
+// shin and foot of a kick, from a to the tip b, with the drawn limb's half width (the rig draws a lower limb about
+// 10px wide). A held object flung past the hand (the pose's ext) is the thin stretch beyond it, as in buildHitboxes.
+const DRAWN_HALF = 5;
+export function strikeSegment(rig, move, facing) {
+  const j = rig.joints, fd = FRAME_DATA[move];
+  if (!fd || !j || !j.lHand) return null;
+  const chain = strikeChain(rig, fd, facing), mid = j[chain[0]], end = j[chain[1]];
+  const r = DRAWN_HALF * (rig.shape ? rig.shape.limb : 1);
+  const ext = rig.pose && rig.pose.ext > 4 ? rig.pose.ext * (rig.scale || 1) : 0;
+  if (!ext) return { a: mid, b: end, r };
+  const dx = end.x - mid.x, dy = end.y - mid.y, L = Math.sqrt(dx * dx + dy * dy) || 1;
+  return { a: end, b: { x: end.x + dx / L * ext, y: end.y + dy / L * ext }, r: r * 0.5 };
+}
+
 export function buildHitboxes(rig, move, facing) {
   const j = rig.joints, fd = FRAME_DATA[move];
   if (!j || !j.lHand) return [];
-  // the limb the move names (the rig's MOVE_DATA limb, set on FRAME_DATA as joint); the old
-  // "most forward hand/foot" guess measured some jabs off the guard hand
-  const PARENT = { lHand: 'lElbow', rHand: 'rElbow', lFoot: 'lKnee', rFoot: 'rKnee', lKnee: 'hip', rKnee: 'hip', lElbow: 'lShoulder', rElbow: 'rShoulder' };
-  let chain;
-  if (fd.joint && PARENT[fd.joint]) chain = [PARENT[fd.joint], fd.joint];
-  else {
-    const chains = fd.limb === 'hand' ? [['lElbow', 'lHand'], ['rElbow', 'rHand']] : [['lKnee', 'lFoot'], ['rKnee', 'rFoot']];
-    const fwd = (name) => (j[name].x - rig.x) * facing;
-    chain = fwd(chains[0][1]) >= fwd(chains[1][1]) ? chains[0] : chains[1];
-  }
+  const chain = strikeChain(rig, fd, facing);
   const mid = j[chain[0]], end = j[chain[1]];
   const r = (fd.limb === 'hand' ? HAND_R : FOOT_R) * (rig.shape ? rig.shape.limb : 1);   // a character's thicker limbs hit wider
   // a held object flung past the hand (the pose's ext, THE RECEPTIONIST's phone on its cord): only its thin far end
@@ -35,9 +52,18 @@ export function buildHitboxes(rig, move, facing) {
   return out;
 }
 
-export function buildHurtboxes(rig) {
+// the joint at the tip of the striking segment (null for a held object flung past the hand: that isn't body)
+export function strikeTip(rig, move, facing) {
+  const fd = FRAME_DATA[move];
+  if (!fd || !rig.joints || !rig.joints.lHand || (rig.pose && rig.pose.ext > 4)) return null;
+  return strikeChain(rig, fd, facing)[1];
+}
+
+// `skipTip`: leave out the segment ending at that joint (sim.js testStrike: a striking limb isn't body to another strike)
+export function buildHurtboxes(rig, skipTip = null) {
   const j = rig.joints;
   if (!j || !j.hip) return { circles: [], capsules: [] };
+  if (skipTip && j[skipTip]) { const h = buildHurtboxes(rig), tip = j[skipTip]; h.capsules = h.capsules.filter((c) => c[1] !== tip); return h; }
   const sh = rig.shape, t = sh ? 9 * sh.torso : 9, l = sh ? 6 * sh.limb : 6, a = sh ? 5 * sh.limb : 5;   // a character's body is wider or narrower
   return {
     circles: [{ x: j.head.x, y: j.head.y, r: (rig.radius || 11) + 3 }],

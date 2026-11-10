@@ -10,6 +10,8 @@
 //   node gauntlet/measure.mjs cpu [--root DIR] [--matches 24] [--diff 0.7] [--pairs temp:courier,security:helpdesk]
 //     CPU vs CPU, sides swapped every match; rounds won per character
 //   node gauntlet/measure.mjs scene NAME     a timeline scene phase by phase: P1's stamina at each hit, block, botch, faint
+//   node gauntlet/measure.mjs scenes [a,b]   every scripted scene (or the ones named) phase by phase: best combo, damage, the log and a
+//                                           digest of both bodies per frame; run it with --root on another checkout and diff the two
 //   node gauntlet/measure.mjs faint          faint-test phase by phase: how long P1 stayed fainted, shakes, movement while fainted
 //   node gauntlet/measure.mjs faintsave      save/restore checks through faints with head shakes (state hash per restored step)
 //   node gauntlet/measure.mjs cpufaint       a fainted CPU shaking it off at each difficulty: average and best faint length
@@ -38,8 +40,8 @@ const browser = await chromium.launch({ executablePath, args: ['--use-gl=angle',
 const pg = await (await browser.newContext({ viewport: { width: 640, height: 360 } })).newPage();
 const errors = [];
 pg.on('pageerror', e => errors.push(String(e)));
-await pg.goto(`http://127.0.0.1:${server.address().port}/play/index.html?scene=dummy`);
-await pg.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 30000 });
+const fresh = async () => { await pg.goto(`http://127.0.0.1:${server.address().port}/play/index.html?scene=dummy`, { waitUntil: 'domcontentloaded', timeout: 60000 }); await pg.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 30000 }); };
+await fresh();
 // --set k=v,k=v overrides STAMINA fields for this run (the module is shared with the game, so it takes effect)
 const sets = Object.fromEntries((opt('--set', '') || '').split(',').filter(Boolean).map(kv => { const [k, v] = kv.split('='); return [k, +v]; }));
 if (Object.keys(sets).length) await pg.evaluate(async (sets) => { const m = await import('/src/combat/frameData.js'); Object.assign(m.STAMINA, sets); }, sets);
@@ -75,7 +77,7 @@ async function match(o) {
       });
     }
     sim.setAI(1, o.diff2 != null ? o.diff2 : o.diff);
-    const st = [0, 1].map(() => ({ dmg: 0, best: 0, combos: [], open: 0, faints: 0, rounds: 0, botches: 0, hits: 0, blocks: 0, timeWins: 0, ground: 0, groundDmg: 0, grazes: 0 }));
+    const st = [0, 1].map(() => ({ dmg: 0, best: 0, combos: [], open: 0, faints: 0, rounds: 0, botches: 0, hits: 0, blocks: 0, timeWins: 0, ground: 0, groundDmg: 0, grazes: 0, clashes: 0, breaks: 0, trades: 0 }));
     let steps = 0, lastH = sim.units.map(u => u.health), lastFaint = sim.units.map(u => u.faintAt), curCombo = [0, 0], seen = new WeakSet(sim.log), lastPhase = sim.phase;
     const OPEN = /^(botch|knockdown|down|getup|roll|splat|grabbed)$/;
     for (let f = 0; f < 60 * 60 * 8 && sim.phase !== 'match'; f++) {
@@ -88,6 +90,8 @@ async function match(o) {
         if (n.type === 'hit' && n.otg && n.att <= 1) { st[n.att].ground++; st[n.att].groundDmg += n.dmg || 3; }
         if (n.type === 'graze' && n.att <= 1) st[n.att].grazes++;
         if (n.type === 'block' && n.att <= 1) st[n.att].blocks++;
+        if (n.type === 'clash') st[0][n.broke ? 'breaks' : 'clashes']++;   // per match, kept on P1's row (a clash has no winner)
+        if (n.type === 'trade') st[0].trades++;
       }
       if (lastPhase === 'fight' && sim.phase !== 'fight' && sim.banner === 'TIME' && sim.winner >= 0 && sim.winner <= 1) st[sim.winner].timeWins++;
       lastPhase = sim.phase;
@@ -215,6 +219,36 @@ if (mode === 'faintsave') {
     if (!r) break;
     out[k] = r; process.stderr.write(`${k} ${JSON.stringify(r)}\n`);
   }
+} else if (mode === 'scenes') {
+  // every scripted scene phase by phase, for a before/after (--root): P1's best combo, the damage each side took, what
+  // the sim logged (hits, blocks, parries, trades, clashes...) and a digest of both bodies on every frame
+  const all = await pg.evaluate(() => window.__gauntlet.scenes);
+  const names = rest[0] && !rest[0].startsWith('--') ? rest[0].split(',') : all.filter((n) => /-test$|^(scripted-combo|combo-test|string-test|ko|ai-fight|ai-fight-2|ai-fight-3|horde-ai)$/.test(n) && n !== 'perfect-test');
+  for (const name of names) for (let k = 0; k < 60; k++) {
+    if (k === 0) await fresh();   // a page of its own per scene: the reach table the sim learns from hits carries from one scene to the next
+    const r = await pg.evaluate(({ name, k }) => {
+      const g = window.__game, sim = g.sim;
+      try { window.__gauntlet.setScene(name, { only: k }); } catch (e) { return null; }   // past the last phase
+      const ph = sim.phaseName; if (!ph && k > 0) return null;
+      const seen = new WeakSet(sim.log), h0 = sim.units.map((u) => u.health), ev = [];
+      let best = 0, h = 0x811c9dc5;
+      const mixS = (s) => { for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } };
+      for (let f = 0; f < 60 * 9; f++) {
+        g.advance(1000 / 60);
+        for (const e of sim.log) {
+          if (seen.has(e)) continue; seen.add(e);
+          if (/^(hit|block|parry|trade|clash|armor|grab|break|botch|faint|graze|throwCounter)$/.test(e.type)) ev.push(`${e.type}${e.move ? ':' + e.move : ''}${e.counter ? '!' : ''}${e.broke ? ':broke' : ''}`);
+        }
+        for (const u of sim.units.slice(0, 2)) { mixS(`${u.x},${u.y},${u.state},${u.move},${u.phase},${u.health},${u.stamina},${u.hitstop},${u.stun}`); const j = u.rig.joints; for (const n in j) mixS(`${j[n].x},${j[n].y}`); }
+        if (sim.combo && sim.combo.by === 0) best = Math.max(best, sim.combo.count);
+        if (ph && sim.phaseName !== ph) break;
+      }
+      return { phase: ph || '(whole scene)', best, dmg: sim.units.slice(0, 2).map((u, i) => Math.round(h0[i] - u.health)).join('/'), digest: h.toString(16), ev: ev.join(' ') };
+    }, { name, k });
+    if (!r) break;
+    out[`${name}#${k}`] = r; process.stderr.write(`${name}#${k} ${JSON.stringify(r)}\n`);
+    if (r.phase === '(whole scene)') break;
+  }
 } else if (mode === 'swaps') {
   // side swaps (README, Measurements (side swaps)): CPU vs CPU at --diff, --secs seconds a fight, one fight per pair and
   // seed. Per 60fps frame (stepped quietly: the draw smoothing runs, nothing is drawn) the side of the two fighters by
@@ -274,19 +308,20 @@ if (mode === 'faintsave') {
     const rows = [];
     for (let m = 0; m < N; m++) { const r = await match({ p1: kind, diff: d, seed: 101 + m * 17, chars: [ch, 'temp'], debug: !!process.env.DEBUG_COMBO }); rows.push({ ...r[0], cpuRounds: r[1].rounds }); if (r[0].long) process.stderr.write(`LONG seed ${101 + m * 17}: ${r[0].long}\n`); }
     const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
-    out[`${kind}@${d}`] = { rounds: sum('rounds'), dmg: Math.round(sum('dmg')), best: Math.max(...rows.map(r => r.best)), avgCombo: +(sum('avg') / N).toFixed(2), open: +(sum('open') / N * 100).toFixed(1), faints: sum('faints'), botches: sum('botches'), hits: sum('hits'), blocks: sum('blocks'), timeWins: sum('timeWins'), ground: sum('ground'), groundDmg: sum('groundDmg'), grazes: sum('grazes'), cpuRounds: rows.reduce((a, r) => a + r.cpuRounds, 0) };
+    out[`${kind}@${d}`] = { rounds: sum('rounds'), dmg: Math.round(sum('dmg')), best: Math.max(...rows.map(r => r.best)), avgCombo: +(sum('avg') / N).toFixed(2), open: +(sum('open') / N * 100).toFixed(1), faints: sum('faints'), botches: sum('botches'), hits: sum('hits'), blocks: sum('blocks'), timeWins: sum('timeWins'), ground: sum('ground'), groundDmg: sum('groundDmg'), grazes: sum('grazes'), clashes: sum('clashes'), breaks: sum('breaks'), trades: sum('trades'), cpuRounds: rows.reduce((a, r) => a + r.cpuRounds, 0) };
     process.stderr.write(`${kind}@${d} ${JSON.stringify(out[`${kind}@${d}`])}\n`);
   }
 } else {
   const N = +opt('--matches', 24), d = +opt('--diff', 0.7);
   for (const pr of opt('--pairs', 'temp:temp,temp:courier,security:helpdesk,manager:intern').split(',')) {
     const [a, b] = pr.split(':'); let ra = 0, rb = 0, fa = 0, fb = 0;
+    let cl = 0, br = 0, tr = 0;
     for (let m = 0; m < N; m++) {
       const swap = m % 2 === 1, r = await match({ p1: 'cpu', diff: d, seed: 500 + m * 31, chars: swap ? [b, a] : [a, b] });
       const [A, B] = swap ? [r[1], r[0]] : [r[0], r[1]];
-      ra += A.rounds; rb += B.rounds; fa += A.faints; fb += B.faints;
+      ra += A.rounds; rb += B.rounds; fa += A.faints; fb += B.faints; cl += r[0].clashes; br += r[0].breaks; tr += r[0].trades;
     }
-    out[pr] = { rounds: `${ra}-${rb}`, pct: +(100 * ra / Math.max(1, ra + rb)).toFixed(1), faints: `${fa}-${fb}` };
+    out[pr] = { rounds: `${ra}-${rb}`, pct: +(100 * ra / Math.max(1, ra + rb)).toFixed(1), faints: `${fa}-${fb}`, clashes: cl, breaks: br, trades: tr, matches: N };
     process.stderr.write(`${pr} ${JSON.stringify(out[pr])}\n`);
   }
 }
