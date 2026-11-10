@@ -37,12 +37,12 @@
  * @property {number} CODE_LEN      room codes: CODE_LEN characters from ALPHABET (no 0/O, 1/I/L)
  * @property {string} ALPHABET
  * @property {(opts?: { code?: string, pickFirst?: boolean, crew?: boolean }) => Promise<{ code: string, link: string }>} host   open a room (or host one a crew claimed: opts.code); resolves with its code and a ?room=CODE link
- * @property {(code: string, opts?: { pickFirst?: boolean, crew?: boolean }) => Promise<void>} join   join a friend's room (pickFirst: a crew match, which opens on the pick screen)
+ * @property {(code: string, opts?: { pickFirst?: boolean, crew?: boolean }) => Promise<void>} join   join a friend's room (pickFirst: open on the pick screen, as every flow room does)
  * @property {(name: string) => void} [setName]                    this player's display name, shown to the rival
  * @property {() => void} startMatch                                both connected: start the match (online.js already has)
  * @property {(ms: number) => void} [step]                          optional: steps the online match in place of the local sim
  * @property {() => void} leave                                     close the room / match and hand the sim back
- * @property {(id: string) => void} [setCharacter]                  this side's fighter, picked on the select screen before HOST or JOIN
+ * @property {(id: string) => void} [setCharacter]                  this side's fighter: where its cursor starts on the pick screen (and its fighter if it never picks)
  * @property {() => any} [view]                                     between matches: the session as this side sees it (online.js view())
  * @property {(c: 'rematch' | 'chars') => void} [postChoose]       a post-match button: the guest's is a request, the host's decides
  * @property {() => void} [postBack]                                back on the post-match screen: guest asks to wait, host stops the countdown
