@@ -117,6 +117,30 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // falling: the air recovery out of a juggle (once per hit, the step to press it), a second jab on the way
   // down after a whiffed air attack (once per jump), an air attack out of the vault's drop (once per vault)
   let techFor = -1, techAt = -1, fallFor = -1, vaultFor = -1;
+  // Shaking off a faint (sim.js shakeOff: alternating fresh left/right presses at least STAMINA.shakeGap
+  // apart): decided once per faint, whether it shakes at all (always for the showcase, 45% at the bottom of
+  // the ladder up to 95% at the top) and its rhythm, a press every 14 to 16 steps for the showcase (the best
+  // rate is 12) up to about 30 to 44 at the bottom, after a reaction time. Each press is held half its beat
+  // then let go; the lower the difficulty the more often it presses the same way twice (a shake that
+  // doesn't count) or misses a beat.
+  let shakeFor = -1, shakeNext = -1, shakeDir = 0, shakeBeat = 0, shakeOn = false;
+  function shakeOff(me, out, step) {
+    for (const k in out) out[k] = k === 'touch' ? out[k] : typeof out[k] === 'boolean' ? false : 0;
+    if (me.faintAt !== shakeFor) {
+      shakeFor = me.faintAt; shakeDir = chance(0.5) ? 1 : -1;
+      shakeOn = show || chance(0.45 + 0.5 * difficulty);
+      shakeBeat = show ? 14 : 14 + Math.round(22 * (1 - difficulty));
+      shakeNext = step + lag;
+    }
+    if (!shakeOn) return;
+    if (step >= shakeNext) {
+      const sloppy = show ? 0 : 0.3 * (1 - difficulty);
+      if (!chance(sloppy)) shakeDir = -shakeDir;   // sloppy: the same way again
+      shakeNext = step + shakeBeat + irnd(show ? 3 : 3 + Math.round(10 * (1 - difficulty))) + (chance(sloppy * 0.5) ? shakeBeat : 0);
+    }
+    const beat = shakeNext - step;
+    out.dx = beat > (shakeBeat >> 1) ? shakeDir : 0;
+  }
   function wakePlan(me, opp) {
     const hip = me.rig.joints.hip.x, away = -(Math.sign(opp.x - hip) || 1), near = Math.abs(opp.x - hip) < 175 && opp.grounded;
     const k = rng(), wait = 10 + irnd(show ? 60 : 12 + Math.round(70 * difficulty));
@@ -600,9 +624,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       me.grabId = opp.attackId;
       if (chance(show ? 0.5 : 0.15 + 0.55 * difficulty)) { queue = [move(0, 4 + irnd(16)), { ...press('1'), lk: true, ok: true }]; act = null; }
     }
-    // stamina: low or fainted, back off and let it come back (a beat of guard if he presses; a
-    // fainted CPU just staggers away, it can't guard)
-    if ((me.faint > 0 || me.stamina < (show ? 28 : 30)) && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'hitstun' && !DOWN_STATES.has(opp.state) && !(opp.faint > 0 && !me.faint)) {
+    // stamina: low, back off and let it come back (a beat of guard if he presses). Fainted it's rooted
+    // and shakes its head instead (shakeOff, below)
+    if (!(me.faint > 0) && me.stamina < (show ? 28 : 30) && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'hitstun' && !DOWN_STATES.has(opp.state) && !(opp.faint > 0 && !me.faint)) {
       const cornered = me.x - sim.bounds.x0 < 90 || sim.bounds.x1 - me.x < 90 || wellBehindMe(well(me, sim), me, opp);
       queue = opp.state === 'attack' && dist < 200 ? [blockFor(14)] : cornered ? [blockFor(16)] : [move(-toward, 12 + irnd(10))]; act = null;
     }
@@ -753,6 +777,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         if (a) { accFor = me.attackId; if (chance(0.03)) { if (a.tok === 'T') { out.lp = true; out.lk = true; } else out[BTN[a.tok]] = true; out.down = false; } }
       }
     }
+    // fainted on its feet: no plan moves it (the sim roots it); the stick shakes the head clear instead
+    if (me.faint > 0 && me.grounded && me.state === 'idle') { shakeOff(me, out, step); stickDx = out.dx; stickAt = step; return out; }
     // A hand on a stick. Plans can be a few steps long, and back-to-back plans used to flip the direction
     // every 2 to 4 steps (25 ms) over a downed body, which restarted the walk, idle and run clips each time:
     // the arms seized. Walking, running or standing, the direction holds at least STICK_DWELL steps before
