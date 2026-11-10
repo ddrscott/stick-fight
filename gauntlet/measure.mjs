@@ -9,6 +9,10 @@
 //   node gauntlet/measure.mjs cpu [--root DIR] [--matches 24] [--diff 0.7] [--pairs temp:courier,security:helpdesk]
 //     CPU vs CPU, sides swapped every match; rounds won per character
 //   node gauntlet/measure.mjs scene NAME     a timeline scene phase by phase: P1's stamina at each hit, block, botch, faint
+//   node gauntlet/measure.mjs faint          faint-test phase by phase: how long P1 stayed fainted, shakes, movement while fainted
+//   node gauntlet/measure.mjs faintsave      save/restore checks through faints with head shakes (state hash per restored step)
+//   node gauntlet/measure.mjs cpufaint       a fainted CPU shaking it off at each difficulty: average and best faint length
+//   PW_CHROME=/path/to/chrome-headless-shell  a browser binary when the installed playwright's own isn't downloaded
 //   --set k=v,...  overrides STAMINA fields (frameData.js) for the run, e.g. --set refundHit=0.4
 //
 // --root points at another checkout (say, main unpacked under gauntlet/captures/base) for a before/after.
@@ -17,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { chromium } = require('/Users/spierce/.nvm/versions/node/v22.23.2/lib/node_modules/playwright');
+const { chromium } = (() => { try { return require('playwright'); } catch { return require(path.join(path.dirname(process.execPath), '../lib/node_modules/playwright')); } })();   // local, else the global install beside this node
 
 const [,, mode = 'mash', ...rest] = process.argv;
 const opt = (k, d) => { const i = rest.indexOf(k); return i >= 0 ? rest[i + 1] : d; };
@@ -30,7 +34,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise(r => server.listen(0, r));
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath: process.env.PW_CHROME || undefined, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const pg = await (await browser.newContext({ viewport: { width: 640, height: 360 } })).newPage();
 const errors = [];
 pg.on('pageerror', e => errors.push(String(e)));
@@ -97,7 +101,85 @@ async function match(o) {
 }
 
 const out = { root, mode };
-if (mode === 'scene') {
+if (mode === 'faintsave') {
+  // save/restore across faints: P1 faints and shakes (alternating every 12 to 17 steps) while P2 jabs him now
+  // and then; at save points through each faint, save, run 40 steps, load, run them again: every step's state
+  // hash must match, and loading a state with faintCut or shakeDir nudged must not
+  out.faintsave = await pg.evaluate(async () => {
+    const g = window.__game, sim = g.sim, { hashSim } = await import('/src/net/hash.js');
+    window.__gauntlet.setScene('dummy', {});
+    let s0 = 0;
+    const E = { dx: 0, jump: false, block: false, down: false, run: false, lp: false, rp: false, lk: false, rk: false };
+    sim.setController(0, 'script', () => { const t = sim.stepCount - s0, n = 12 + (Math.floor(t / 97) % 6); return t >= 20 && t % n < 6 ? { ...E, dx: Math.floor(t / n) % 2 ? 1 : -1 } : E; });
+    sim.setController(1, 'script', () => { const t = sim.stepCount - s0; return t % 70 === 45 ? { ...E, lp: true } : E; });
+    let checks = 0, bad = 0, caught = 0, tries = 0, faints = 0, shakes = 0;
+    for (let rep = 0; rep < 12; rep++) {
+      for (let i = 0; i < 30; i++) sim.tick();
+      const u = sim.units[0]; u.stamina = 0; sim.faintNow(u); s0 = sim.stepCount; faints++;
+      for (let at = 0; at < 200 && u.faint > 0; at += 9) {
+        for (let i = 0; i < 9; i++) sim.tick();
+        const st = sim.saveState(), ref = [];
+        for (let i = 0; i < 40; i++) { sim.tick(); ref.push(hashSim(sim)); }
+        sim.loadState(st);
+        for (let i = 0; i < 40; i++) { sim.tick(); checks++; if (hashSim(sim) !== ref[i]) bad++; }
+        // a nudged restore must show up
+        sim.loadState(st);
+        if (u.faint > 0) { tries++; u.faintCut += 1; u.shakeDir = -u.shakeDir || 1; let diff = false; for (let i = 0; i < 40; i++) { sim.tick(); if (hashSim(sim) !== ref[i]) { diff = true; break; } } if (diff) caught++; }
+        sim.loadState(st);
+        for (let i = 0; i < 40; i++) sim.tick();
+        shakes = Math.max(shakes, u.faintCut / 12);
+      }
+    }
+    return { faints, checks, mismatched: bad, nudged: tries, nudgesCaught: caught, maxCutShakes: shakes };
+  });
+  process.stderr.write(JSON.stringify(out.faintsave) + '\n');
+} else if (mode === 'cpufaint') {
+  // a fainted CPU shaking it off: P1 is the CPU at each difficulty (and the showcase), P2 stands still; P1 faints
+  // 40 times on the spot. Average and best faint length, shakes counted, and how often it shook at all
+  for (const [d, style] of [[0.1, null], [0.3, null], [0.5, null], [0.7, null], [0.9, null], [1, 'showcase']]) {
+    const r = await pg.evaluate(({ d, style }) => {
+      const g = window.__game, sim = g.sim;
+      window.__gauntlet.setScene('ai-fight', { seed: 7 });
+      sim.setAI(0, d, style ? { style } : undefined);
+      const E = { dx: 0, jump: false, block: false, down: false, run: false, lp: false, rp: false, lk: false, rk: false };
+      sim.setController(1, 'script', () => E);
+      const lens = [], cuts = []; let shook = 0, moved = 0;
+      for (let rep = 0; rep < 40; rep++) {
+        for (let i = 0; i < 90; i++) sim.tick();
+        const u = sim.units[0];
+        for (let i = 0; i < 600 && !(/^(idle|walk)$/.test(u.state) && u.grounded && sim.phase === 'fight'); i++) sim.tick();   // faint him on his feet, free
+        u.stamina = 0; sim.faintNow(u); const s0 = sim.stepCount, x0 = u.x;
+        while (u.faint > 0 && sim.stepCount - s0 < 400) sim.tick();
+        lens.push((sim.stepCount - s0) / 0.12); cuts.push(u.faintCut); if (u.shakeDir) shook++; moved = Math.max(moved, Math.abs(u.x - x0));
+        sim.units[1].health = sim.units[1].maxHealth; u.health = u.maxHealth;
+      }
+      const avg = lens.reduce((a, b) => a + b, 0) / lens.length;
+      return { d, style, avgMs: Math.round(avg), bestMs: Math.round(Math.min(...lens)), worstMs: Math.round(Math.max(...lens)), shookShare: shook / lens.length, avgShakes: +(cuts.reduce((a, b) => a + b, 0) / cuts.length / 12).toFixed(1), maxMoved: Math.round(moved) };
+    }, { d, style });
+    out[`${style || d}`] = r; process.stderr.write(JSON.stringify(r) + '\n');
+  }
+} else if (mode === 'faint') {
+  // faint-test phase by phase: how long P1 stayed fainted, shakes counted, how far the body moved
+  for (let k = 0; k < 20; k++) {
+    const r = await pg.evaluate((k) => {
+      const g = window.__game, sim = g.sim;
+      try { window.__gauntlet.setScene('faint-test', { only: k }); } catch (e) { return null; }
+      const ph = sim.phaseName; if (!ph) return null;
+      const u = sim.units[0], s0 = sim.stepCount;
+      let shakes = 0, end = -1, minX = u.x, maxX = u.x, last = u.shakeAt, ns = 0;
+      for (let f = 0; f < 60 * 3; f++) {
+        g.advance(1000 / 60);
+        if (u.shakeAt !== last) { last = u.shakeAt; shakes++; }
+        if (end < 0) { minX = Math.min(minX, u.x); maxX = Math.max(maxX, u.x); }   // while fainted
+        if (end < 0 && !(u.faint > 0)) { end = sim.stepCount - s0; ns = u.faintCut; }
+        if (sim.phaseName !== ph) break;
+      }
+      return { phase: ph, faintMs: Math.round(end / 0.12), shakes, cutMs: Math.round(ns / 0.12), movedWhileFainted: Math.round(maxX - minX) };
+    }, k);
+    if (!r) break;
+    out[k] = r; process.stderr.write(`${k} ${JSON.stringify(r)}\n`);
+  }
+} else if (mode === 'scene') {
   // a scripted scene, phase by phase: P1's stamina trace at each hit, block, refund and faint, the best combo, P2's damage
   const name = rest[0];
   for (let k = 0; k < 40; k++) {

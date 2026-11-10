@@ -707,6 +707,16 @@ Object.assign(MOVE_DEFS, {
     K({ ...F(7, HIP - 11, LF, RF, 3, 0), torso: 22, bend: 14, head: 20, tw: -5, la: [12, 32], ra: [0, 18] }, 360, 'sine'),
     K({ ...F(0, HIP - 6, LF, RF), torso: 13, bend: 6, head: 4, tw: 0, la: [18, 44], ra: [10, 34] }, 360, 'sine'),
   ] },
+  // Shaking it off (an additive reaction over the faint's sway, sim.js shakeOff): the head whips one way
+  // and back past centre, the shoulders a little behind it, in under a quarter second. Only its offsets
+  // from the last key count, so it rides whatever sway is under it; dir picks which way it whips first.
+  headShake: { blend: 0, keys: [
+    K({ head: -4 }, 40, 'out'),
+    K({ head: 22, torso: 9, tw: 5, la: [61, 146], ra: [36, 160] }, 60, 'inOut'),
+    K({ head: -20, torso: 2, tw: -5, la: [50, 154], ra: [25, 170] }, 60, 'inOut'),
+    K({ head: 9, torso: 7, tw: 2, la: [57, 150], ra: [32, 164] }, 70, 'inOut'),
+    K({ head: -4 }, 0, 'sine'),
+  ] },
   // A hit taken on the standing guard: the arms absorb it, the body rocks back a step's worth and
   // returns. And the same from the crouching guard.
   blockHit: { blend: 20, keys: [

@@ -283,6 +283,9 @@ function timeline(phases, o = {}) {
   begin();
 }
 const B = (b, extra) => ({ [b]: true, ...(extra || {}) });
+// faint-test: P1 faints on the spot; alternate(n): a fresh press every n steps from step 20, left then right, each held half the beat
+const faintP1 = () => { const u = sim.units[0]; u.stamina = 0; sim.faintNow(u); };
+const alternate = (n) => (me, o, t) => (t >= 20 && (t - 20) % n < (n >> 1) ? { dx: Math.floor((t - 20) / n) % 2 ? 1 : -1 } : {});
 const D = (b) => ({ [b]: true, down: true });
 const nearRight = () => [W1() - 150, W1() - 50];
 // spots measured from stairwell k's near edge, toward it (k 1, the right one: x0 + a; k 0, the left one: mirrored)
@@ -422,6 +425,17 @@ const PHASES = {
       setup: () => { sim.units[0].stamina = 12; sim.units[0].regenAt = 1e9; }, p2: { back: true }, p1: [[10, B('rp')]] },
     { name: 'the same cross at 12 from out of range: it whiffs, so he faints as it recovers', at: () => [470, 650], dur: 300,
       setup: () => { sim.units[0].stamina = 12; sim.units[0].regenAt = 1e9; }, p1: [[10, B('rp')]] },
+  ],
+  // fainted (README, Faint): rooted, and alternating left/right presses shake it off faster. P1 faints on the
+  // spot at the start of each phase; P2 stands there unless the phase says otherwise. Presses start 20 steps in.
+  faint: [
+    { name: 'fainted, no input: the full 1.5 s', at: () => [520, 680], setup: faintP1, p1: [], dur: 220 },
+    { name: 'steady alternation at the best rate (a fresh press every 12 steps, 100 ms): about 0.9 s', at: () => [520, 680], setup: faintP1, p1: [], p1f: alternate(12), dur: 220 },
+    { name: 'a calmer rhythm (a press every 20 steps, 6 a second): about 1 s', at: () => [520, 680], setup: faintP1, p1: [], p1f: alternate(20), dur: 220 },
+    { name: 'holding a direction: rooted, no gain', at: () => [520, 680], setup: faintP1, p1: [], hold1: { dx: 1 }, dur: 220 },
+    { name: 'mashing one direction (a press every 8 steps): no gain past the first', at: () => [520, 680], setup: faintP1, p1: [], p1f: (me, o, t) => (t >= 20 && t % 8 < 4 ? { dx: 1 } : {}), dur: 220 },
+    { name: 'frantic alternation (a flip every 5 steps, 42 ms): slower than the steady rhythm', at: () => [520, 680], setup: faintP1, p1: [], p1f: (me, o, t) => (t >= 20 ? { dx: Math.floor((t - 20) / 5) % 2 ? 1 : -1 } : {}), dur: 220 },
+    { name: 'shaking under a jab, 1, 1: the hits still knock him back', setup: faintP1, p1: [], p1f: alternate(12), p2: (me, o, t) => (t === 40 || t === 56 ? { lp: true } : {}), dur: 220 },
   ],
   strings: [
     { name: 'FLASH ROUNDHOUSE 1,1,2,4', p1: [[10, B('lp')], [26, B('lp')], [42, B('rp')], [62, B('rk')]], dur: 200 },
@@ -741,6 +755,7 @@ const scenes = {
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
   'stamina-test'(o) { timeline(PHASES.stamina, o); },
   'refund-test'(o) { timeline(PHASES.refund, o); },
+  'faint-test'(o) { timeline(PHASES.faint, o); },
   'string-ender-test'(o) { timeline(PHASES.strings, o); },
   'wall-test'(o) { timeline(PHASES.wall, o); },
   'juggle-test'(o) { timeline(PHASES.juggle, o); },

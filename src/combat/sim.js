@@ -348,7 +348,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       hitstop: 0, flash: 0, stun: 0, downTimer: 0, buffer: null, bufferAge: 0,
       health: 100, hidden: false, controller: null, kind: 'none', home: 0, prevX: 0, prevBX: 0, apartSteps: 0,
       last: EMPTY_INPUT, tapDir: 0, tapTimer: 0, running: false, koDone: false, prevJoints: null,
-      stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, paid: 0, refundId: 0, faintPending: 0, refundMove: '', refundRep: 0, refundAt: -999, crouch: false, backHeld: false, downHeld: false,
+      stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, paid: 0, refundId: 0, faintPending: 0, shakeDir: 0, shakeAt: -999, faintCut: 0, refundMove: '', refundRep: 0, refundAt: -999, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
       downPin: 0,  // steps a stomped body is held on the floor
@@ -429,7 +429,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.maxHealth = (sim.horde && i >= 1) ? sim.horde.goonHealth : u.char.stats.health === 100 ? sim.startHealth : Math.round(sim.startHealth * u.char.stats.health / 100);
     u.health = u.maxHealth; u.hidden = false; u.koDone = false; u.running = false; u.hitConfirmed = false;
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
-u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.paid = 0; u.refundId = 0; u.faintPending = 0; u.refundMove = ''; u.refundRep = 0; u.refundAt = -999; u.crouch = false; u.seq = null; u.bufferKeys = null;
+u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.paid = 0; u.refundId = 0; u.faintPending = 0; u.shakeDir = 0; u.shakeAt = -999; u.faintCut = 0; u.refundMove = ''; u.refundRep = 0; u.refundAt = -999; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
     u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1; u.parryAt = -999; u.parryLow = false; u.parryLock = -1; u.pressAt = -999;
     u.shockT = 0; u.shockUsed = false; u.rootT = 0;
@@ -786,6 +786,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function faintNow(u) {
     u.faintPending = 0;
     u.faint = FAINT_STEPS; u.faintDmg = 0; u.faintAt = sim.stepCount; u.running = false; u.queued = null;
+    u.shakeDir = 0; u.shakeAt = -999; u.faintCut = 0;
     callout('FAINT', u.id, 'faint');
     note({ type: 'faint', def: u.id });
   }
@@ -815,12 +816,31 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.health <= 0 || sim.phase !== 'fight') { u.faintPending = 0; return; }
     if (u.state !== 'attack' || u.attackId !== u.faintPending || (u.phase === 'recovery' && !u.hitConfirmed)) faintNow(u);
   }
+  // Shaking it off (fainted, on his feet): a fresh left or right press in the opposite direction to the last
+  // one counted, at least SHAKE_GAP steps after it, is a head shake that takes SHAKE_CUT steps off the faint.
+  // The first press only starts it (the head shakes, nothing comes off), so holding a direction or pressing
+  // the same one over and over gains nothing at all; a press inside the gap is dropped and doesn't count as
+  // the turn, so frantic alternation counts less often than a steady rhythm. The cuts add up to at most
+  // SHAKE_MAX, so a faint lasts at least STAMINA.faintMin.
+  const SHAKE_GAP = Math.round(STAMINA.shakeGap * 120), SHAKE_CUT = Math.round(STAMINA.shakeCut * 120);
+  const SHAKE_MAX = FAINT_STEPS - Math.round(STAMINA.faintMin * 120);
+  function shakeOff(u, e) {
+    const d = e.dxPress;
+    if (!d || d === u.shakeDir || sim.stepCount - u.shakeAt < SHAKE_GAP) return;
+    const first = !u.shakeDir;
+    u.shakeDir = d; u.shakeAt = sim.stepCount;
+    const cut = first ? 0 : Math.min(SHAKE_CUT, SHAKE_MAX - u.faintCut, u.faint - 1);
+    if (cut > 0) { u.faint -= cut; u.faintCut += cut; }
+    if (typeof u.rig.react === 'function') { try { u.rig.react('headShake', { weight: 1, dir: d * u.facing }); } catch (err) { warnOnce('shake', 'rig.react threw: ' + err.message); } }
+    onEvent({ type: 'shake', unit: u, dir: d, cut: Math.max(0, cut), x: u.x, y: u.y });
+  }
   function endFaint(u) {
     u.faint = 0; u.faintDmg = 0;
     u.stamina = Math.max(u.stamina, STAMINA.faintRecover); u.regenAt = sim.stepCount;
     if (u.state === 'idle') safePlay(u.rig, 'idle');
   }
   sim.endFaint = endFaint;
+  sim.faintNow = faintNow;   // scenes (faint-test) faint a fighter on the spot
   // knocked down (a hit, a throw, a trip, a floor break, a stair tumble): the bar refills to the top as he
   // hits the floor, and any faint ends; the HUD and the status effects flash it ('refill')
   function floored(u) {
@@ -1260,10 +1280,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     switch (u.state) {
       case 'idle': case 'walk': case 'run': {
         if (u.faint > 0 && u.grounded) {
-          // fainted: no attack, guard, crouch, jump or run; a slow stagger in the held direction
+          // fainted: no attack, guard, crouch, jump, run or walk (rooted); left and right shake the head clear
           tryAttack(u); u.running = false;
-          if (e.dx) { u.vx = e.dx * WALK * u.char.stats.walk * STAMINA.faintWalk; u.followThrough = false; }
-          else if (u.followThrough) { u.vx *= STUMBLE_FRICTION; if (Math.abs(u.vx) < 60) { u.vx = 0; u.followThrough = false; u.chase = false; } }
+          shakeOff(u, e);
+          if (u.followThrough) { u.vx *= STUMBLE_FRICTION; if (Math.abs(u.vx) < 60) { u.vx = 0; u.followThrough = false; u.chase = false; } }
           else u.vx = Math.abs(u.vx) > 20 ? u.vx * 0.85 : 0;
           setState(u, 'idle');
           break;

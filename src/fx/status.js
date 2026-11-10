@@ -7,7 +7,8 @@
 //                after a light hit, full after a heavy one or a counter (hitWeight)
 //   guard        nothing while a guard is just held; a blocked strike puts a brief thin cyan glint on
 //                the guard side of the contact, sized by the blocked strike (blockWeight)
-//   faint        three stars circling over the head and a wobbling violet halo ring
+//   faint        stars circling over the head (three, fewer as the faint runs down) and a wobbling violet
+//                halo ring; each head shake (sim 'shake') knocks a star off, flying the way the head whipped
 //   armor        an amber halo while Security's shoulder check still has its armor
 //   parry stance a white-cyan shield ring in front of Helpdesk's stance; a burst when it catches
 //   counter hit  a hot white halo for a beat (main.js also flashes the body harder)
@@ -79,6 +80,10 @@ export function createStatusFX() {
       // a blocked strike: a quick thin glint on the guard side of the contact, sized by the strike
       const d = st(ev.defender), w = blockWeight(ev);
       d.guard = { t: GUARD_GLINT[w].t, w, x: ev.x, y: ev.y, dir: ev.dir || 1 };
+    } else if (ev.type === 'shake' && ev.unit) {
+      // shaking it off: a star knocked off the ring, out the way the head whipped, falling and spinning
+      const u = ev.unit, h = u.rig && u.rig.joints && u.rig.joints.head, r = (u.rig && u.rig.radius) || 11;
+      if (h) bits.push({ kind: 'star', x: h.x + ev.dir * 18, y: h.y - r - 10, vx: ev.dir * (150 + 40 * (u.faintCut % 3)), vy: -170, t: 0.5, max: 0.5, rot: 0 });
     } else if (ev.type === 'accident') {
       // over the head, toward the opponent: the body itself would hide it (owner requirement 5)
       const h = ev.unit && ev.unit.rig && ev.unit.rig.joints && ev.unit.rig.joints.head;
@@ -205,7 +210,8 @@ export function createStatusFX() {
         ctx.save(); ctx.globalAlpha = 0.55 * k; ctx.strokeStyle = VIOLET; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.ellipse(hx, hy, 20 + 2 * Math.sin(clock * 5), 6, Math.sin(clock * 3.3) * 0.25, 0, Math.PI * 2); ctx.stroke();
         ctx.restore();
-        for (let n = 0; n < 3; n++) {
+        const stars = Math.max(1, Math.ceil(3 * u.faint / FAINT_MAX - 0.01));   // fewer as the faint runs down (shakes speed it)
+        for (let n = 0; n < stars; n++) {
           const a = clock * 5.5 + n * Math.PI * 2 / 3, front = Math.sin(a) > 0;
           ctx.save(); ctx.globalAlpha = k * (front ? 1 : 0.45);
           star(ctx, hx + Math.cos(a) * 24, hy + Math.sin(a) * 7, front ? 8 : 6, n === 1 ? WHITE : GOLD, clock * 4 + n);
@@ -262,6 +268,10 @@ export function createStatusFX() {
         const rr = b.r0 + (b.r1 - b.r0) * (1 - k * k);
         ctx.globalAlpha = 0.8 * k; ctx.strokeStyle = b.color; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.ellipse(b.x, b.y, rr, rr * b.flat, 0, 0, Math.PI * 2); ctx.stroke();
+      } else if (b.kind === 'star') {
+        b.vy += 700 * dt; b.rot += 14 * dt;
+        ctx.globalAlpha = Math.min(1, k * 1.6);
+        star(ctx, b.x, b.y, 7, GOLD, b.rot);
       } else if (b.kind === 'glint') {
         const sz = 26 * Math.sin(Math.PI * Math.min(1, age * 1.2));
         ctx.globalAlpha = Math.min(1, k * 2);

@@ -332,6 +332,17 @@ export function createSfx({ context = null, destination = null } = {}) {
     tone(v, { dur: 0.4, type: 'sawtooth', f: [vary(150), 105], gain: 0.05, attack: 0.06, lp: 750, q: 3 });
   }
 
+  // Shaking it off (a fainted fighter's head shake): a quick double flick of air, the head going one way
+  // and back, over a small wobbling "brr" that rises a little with each shake of the faint (n).
+  function shake({ pan = 0, n = 1 } = {}) {
+    const v = voice(P.air, 0.22, pan * 0.7, 1.2);
+    if (!v) return;
+    hiss(v, { dur: 0.05, filter: 'bandpass', f: [vary(1800), 900], q: 1.6, gain: 0.12, attack: 0.012 });
+    hiss(v, { at: 0.07, dur: 0.05, filter: 'bandpass', f: [vary(1500), 800], q: 1.6, gain: 0.1, attack: 0.012 });
+    const f0 = 230 * semis(Math.min(7, n - 1));
+    tone(v, { dur: 0.16, type: 'triangle', f: [vary(f0, 0.05), f0 * 0.7], gain: 0.07, attack: 0.004, lp: 1400 });
+  }
+
   // ---- stingers: short synth hits ---------------------------------------------------------
   // ROUND n: two low hits, a step higher each round. FIGHT: a bright stab and a crash.
   function round({ n = 1 } = {}) {
@@ -486,7 +497,7 @@ export function createSfx({ context = null, destination = null } = {}) {
       return { peak, rms: Math.sqrt(sum / samples.length) };
     },
     whoosh, hit, block, counter, footstep, land, jump, bodyFall, wallSplat, wallBounce, wallKnock, groundBounce,
-    throwGrab, throwSlam, whiff, gassed, round, fight, ko, slowmoKO, combo, ender, goonDown, match, ui,
+    throwGrab, throwSlam, whiff, gassed, shake, round, fight, ko, slowmoKO, combo, ender, goonDown, match, ui,
     floorBreak, tread, vault, floorClear,
   };
   return sfx;
