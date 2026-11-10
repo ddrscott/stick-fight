@@ -26,6 +26,8 @@
 //   throw 1+3 or 2+4 / R1, run Shift / R2, pause P or Esc / Start or Select (online: leave
 //   confirm), the quick move strip F1; the full MOVE LIST is in the pause menu (src/flow/movelist.js).
 
+import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
+
 /** @typedef {'move'|'confirm'|'back'|'start'|'del'|'type'|'moves'} Action */
 
 // ---- the device in use ------------------------------------------------------------------------------
@@ -159,7 +161,8 @@ function injectStyle() {
   styled = true;
   const css = `
   .lg-bar { --lg: var(--lg-size, 1.75cqw); position: absolute; left: 50%; bottom: 2.2cqh; transform: translateX(-50%); display: flex; gap: 2.4em; align-items: center; justify-content: center;
-    white-space: nowrap; pointer-events: none; font: 600 var(--lg)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.12em; color: rgba(230,214,255,0.86); }
+    white-space: nowrap; pointer-events: none; font: 600 var(--lg)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.12em; color: rgba(230,214,255,0.86);
+    text-shadow: ${PLAIN}; }   /* read, so no glow: a dark outline holds it over the room */
   .lg-i { display: inline-flex; align-items: center; gap: 0.5em; }
   .lg-t { padding-top: 0.15em; }
   .lg-p { display: none; }
@@ -183,9 +186,9 @@ function injectStyle() {
   .lg-dpad svg { width: 100%; height: 100%; }
   /* the controls table */
   .lg-table { --lg: var(--lg-size, 1.6cqw); display: grid; grid-template-columns: auto auto auto; column-gap: 1.6em; row-gap: 0.3em; white-space: nowrap; align-items: center;
-    font: 600 var(--lg)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; color: rgba(230,214,255,0.9); }
-  .lg-th { font: 400 0.85em/1 'Bungee', 'Arial Black', sans-serif; color: #c8ff3a; text-shadow: 0 0 0.4em rgba(200,255,58,0.7); letter-spacing: 0.04em; padding-bottom: 0.2em; }
-  .lg-th.lg-col { color: rgba(214,190,255,0.8); text-shadow: none; font-size: 0.7em; }
+    font: 600 var(--lg)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; color: rgba(230,214,255,0.9); text-shadow: ${PLAIN}; }
+  .lg-th { font: 400 0.85em/1 'Bungee', 'Arial Black', sans-serif; color: #c8ff3a; letter-spacing: 0.04em; padding-bottom: 0.2em; }
+  .lg-th.lg-col { color: rgba(214,190,255,0.8); font-size: 0.7em; }
   .lg-what { color: #fff; }
   .lg-kc .lg-key { font-size: 0.9em; }
   .lg-pc { display: flex; align-items: center; min-height: 1.75em; }

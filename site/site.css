@@ -1,7 +1,10 @@
 /* The site around the game: the homepage, the roster and the fighter pages (README, "Site").
-   The game's look, not a terminal one: Bungee for display type with a neon glow (big headings only),
-   Teko for labels and buttons, a plain sans for body copy and tables so they stay readable on a phone.
-   Deep purple night, square edges, the character's own neon on its page (--c, --p, --a). */
+   The game's look, not a terminal one: Bungee for display type, Teko for labels and buttons, a plain sans for
+   body copy and tables so they stay readable on a phone. Deep purple night, square edges, the character's own
+   neon on its page (--c, --p, --a).
+   Text that's read never glows (README, "The look"). Neon glow is only on the wordmarks (.s-logo, .s-title),
+   a page's one big title (.s-h1) and the pillar numerals; section headings (.s-h2), labels, buttons and body
+   copy are a solid color. */
 :root {
   --bg: #07020f;
   --bg2: #0e0520;
@@ -40,8 +43,7 @@ img, canvas { display: block; max-width: 100%; }
 /* ---- type ---- */
 .s-h1, .s-title, .s-h2 { font-family: var(--display); font-weight: 400; letter-spacing: 0.02em; margin: 0; }
 .s-h1 { font-size: clamp(34px, 6vw, 64px); line-height: 1.05; color: #fff; text-shadow: 0 0 8px var(--c), 0 0 26px var(--c); }
-.s-h2 { font-size: clamp(24px, 3.4vw, 34px); line-height: 1.1; color: #fff; text-shadow: 0 0 10px rgba(46, 242, 255, 0.55); margin-bottom: 14px; }
-.s-fighter .s-h2 { text-shadow: 0 0 10px var(--c); }
+.s-h2 { font-size: clamp(24px, 3.4vw, 34px); line-height: 1.1; color: color-mix(in srgb, var(--c) 30%, #fff); margin-bottom: 14px; }   /* a section heading is read: the page's neon as a tint, no glow */
 .s-h3 { font: 600 26px/1 var(--label); letter-spacing: 0.06em; margin: 0 0 6px; color: #fff; }
 .s-kicker { font: 600 20px/1 var(--label); letter-spacing: 0.14em; color: var(--amber); margin: 0 0 10px; }
 .s-lede { font-size: 20px; color: var(--ink); max-width: 46em; margin: 0 0 20px; }
@@ -168,7 +170,7 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
 .s-how-cols { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 34px; align-items: start; }
 .s-pad { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 360px; }
 .s-pad div { background: var(--panel); border: 1px solid var(--line); padding: 12px; display: grid; grid-template-columns: auto 1fr; column-gap: 12px; align-items: center; }
-.s-pad b { grid-row: span 2; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; border: 3px solid var(--amber); font: 400 26px/1 var(--display); color: #fff; text-shadow: 0 0 8px var(--amber); }
+.s-pad b { grid-row: span 2; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; border: 3px solid var(--amber); font: 400 26px/1 var(--display); color: #ffe0a8; }
 .s-pad span { font: 600 21px/1 var(--label); letter-spacing: 0.06em; }
 .s-pad small { font-size: 14px; color: var(--dim); }
 .s-rules { margin: 0; display: grid; gap: 12px; }
@@ -263,7 +265,7 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
 .s-details summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
 .s-details summary::-webkit-details-marker { display: none; }
 .s-details summary .s-h2 { margin: 0; }
-.s-details summary .s-h2::after { content: ' +'; color: var(--amber); text-shadow: none; }
+.s-details summary .s-h2::after { content: ' +'; color: var(--amber); }
 .s-details[open] summary .s-h2::after { content: ' –'; }
 .s-details summary span { color: var(--dim); font-size: 16px; }
 .s-details[open] summary { margin-bottom: 12px; }

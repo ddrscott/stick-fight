@@ -55,6 +55,7 @@ import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
 import { legend, watchDevice } from '../flow/controls.js';
+import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 
 export const NET_VERSION = 22;   // bump when the sim or the netcode changes in a way old builds can't play against (22: the perfect round finisher, a sim stage inside the KO phase (sim.perfectT, the winner's 'perfect' state, the body thrown at the camera) that only the winner's press skips; 21: getups by the sides (u.home fixed at touchdown, rolls away / toward with a cross under a man standing near, u.roll* fields, rig.rebase and the roll clips), a body on the floor held off to its drawn feet and short of its hip, lows that touch a floored body as its one ground hit and grazes (u.grazeId), the stomp on down+4 only; 'home', 'rollT' and 'otgHit' in the state hash; 20: a fainted fighter is rooted and shakes it off with alternating left/right presses (u.shakeDir, u.shakeAt, u.faintCut, in the state hash), the CPU's faint shake; 19: bodies never sink into the floor: the ground snap and the point simulation use each joint's drawn radius, the stairs' solid line runs through the nosings, tumbling joints stop at the risers, poses on and beside a flight are fitted to its treads, the vault faces the opening; all of it moves the rig's joints, which are the hitboxes and are hashed; 18: stamina refunds on contact and the no-faint save on a connecting strike (u.paid, u.faintPending, u.refundMove/refundRep/refundAt), so an old build's sim drifts from a new one's; 17: resync (the host sends its confirmed state on a hash mismatch), the end of a match agreed by state hash, a character's reach measured on a reset rig (it depended on what the rig was doing the first time that phone saw the character), the rng and the reach table in the state hash; 16: quick rooms from the menus open on the pick screen too (pickFirst, the 'go' at match 0), which an old guest would ignore; 15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
@@ -748,29 +749,31 @@ function injectStyle() {
   const css = `
   .nf-lobby { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
     background: rgba(7,2,15,0.55); font-family: 'Teko', 'Arial Narrow', system-ui, sans-serif;
-    --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff; --ink: #fff4fd; }
+    --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff; --ink: #fff4fd;
+    /* everything in the panel is read (a question, a code, a status), so none of it glows: README, "The look" */
+    --plain: ${PLAIN}; text-shadow: var(--plain); }
   .nf-lobby[hidden] { display: none; }
   .nf-panel { min-width: min(420px, 86vw); max-width: 92vw; max-height: 92vh; overflow: auto; box-sizing: border-box;
     padding: clamp(12px, 3vmin, 26px) clamp(16px, 4vmin, 34px); text-align: center; color: var(--ink);
     background: rgba(14,4,30,0.9); border: 2px solid var(--cyan); border-radius: 2px;
     box-shadow: 0 0 18px rgba(46,242,255,0.55), inset 0 0 22px rgba(46,242,255,0.12); }
   .nf-panel h2 { margin: 0 0 clamp(8px, 2vmin, 16px); font: 400 clamp(20px, 5vmin, 34px)/1.05 'Bungee', 'Arial Black', Impact, sans-serif;
-    color: #ffc2f3; text-shadow: 0 0 10px var(--pink), 0 0 2px var(--pink); letter-spacing: 0.02em; }
+    color: #ffc2f3; letter-spacing: 0.02em; }
   .nf-roomcode { font: 400 clamp(40px, 13vmin, 84px)/1 'Bungee', 'Arial Black', Impact, sans-serif; letter-spacing: 0.12em;
-    color: #ffe0a8; text-shadow: 0 0 14px var(--amber), 0 0 3px var(--amber); margin: 0 0 4px; user-select: all; -webkit-user-select: all; }
+    color: #ffe0a8; margin: 0 0 4px; user-select: all; -webkit-user-select: all; }
   .nf-link { margin: 0 0 4px; font: 500 clamp(15px, 3.4vmin, 20px)/1.1 'Teko', sans-serif; color: rgba(214,190,255,0.85);
     letter-spacing: 0.04em; word-break: break-all; user-select: all; -webkit-user-select: all; }
   .nf-status { margin: 4px 0 clamp(8px, 2vmin, 14px); font: 600 clamp(18px, 4vmin, 24px)/1 'Teko', sans-serif; letter-spacing: 0.1em;
-    color: var(--cyan); text-shadow: 0 0 8px var(--cyan); animation: nf-blink 1.1s steps(1) infinite; }
+    color: #9df8ff; animation: nf-blink 1.1s steps(1) infinite; }
   @keyframes nf-blink { 70% { opacity: 0.35; } }
   .nf-panel { position: relative; padding-bottom: clamp(40px, 9vmin, 56px); }
   .nf-panel .lg-bar { --lg-size: clamp(13px, 2.6vmin, 18px); bottom: clamp(10px, 2.2vmin, 16px); }
   .nf-row, .nf-col { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   .nf-col { flex-direction: column; align-items: stretch; }
   .nf-btn { --c: var(--cyan); appearance: none; cursor: pointer; min-height: 44px; padding: 6px 18px; border-radius: 2px;
-    border: 2px solid var(--c); background: rgba(14,4,30,0.6); color: var(--c);
+    border: 2px solid var(--c); background: rgba(14,4,30,0.6); color: color-mix(in srgb, var(--c) 70%, #fff);
     font: 400 clamp(14px, 3.4vmin, 19px)/1 'Bungee', 'Arial Black', Impact, sans-serif; letter-spacing: 0.03em;
-    text-shadow: 0 0 6px var(--c); box-shadow: 0 0 10px color-mix(in srgb, var(--c) 60%, transparent), inset 0 0 8px color-mix(in srgb, var(--c) 30%, transparent);
+    text-shadow: var(--plain); box-shadow: 0 0 10px color-mix(in srgb, var(--c) 60%, transparent), inset 0 0 8px color-mix(in srgb, var(--c) 30%, transparent);
     touch-action: manipulation; }
   .nf-btn.nf-pink { --c: var(--pink); } .nf-btn.nf-dim { --c: var(--violet); }
   .nf-btn:hover, .nf-btn:focus-visible, .nf-btn:focus { outline: none; background: var(--c); color: #12041f; text-shadow: none;
@@ -783,13 +786,13 @@ function injectStyle() {
   .nf-code:focus { outline: none; box-shadow: 0 0 20px rgba(255,176,46,0.85); }
   .nf-readout { position: absolute; left: 2.4%; bottom: 2%; z-index: 5; pointer-events: none;
     font: 500 clamp(12px, 1.6vw, 18px)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; color: #b9f9ff;
-    text-shadow: 0 0 6px #2ef2ff, 0 0 2px #000; display: flex; gap: 0.6em; align-items: baseline; white-space: nowrap; }
+    text-shadow: ${PLAIN}; display: flex; gap: 0.6em; align-items: baseline; white-space: nowrap; }
   .nf-readout[hidden] { display: none; }
   html.online .sf-hint { display: none; }   /* the "press any key for sound" hint sits under the readout */
-  .nf-readout.nf-relay { color: #ffe0a8; text-shadow: 0 0 6px #ffb02e, 0 0 2px #000; }
+  .nf-readout.nf-relay { color: #ffe0a8; }
   .nf-readout b { font-weight: 600; }
-  .nf-desync { color: #ffc2f3; text-shadow: 0 0 8px #ff2bd6, 0 0 2px #000; }
-  .nf-resync { color: #ffe0a8; text-shadow: 0 0 8px #ffb02e, 0 0 2px #000; }
+  .nf-desync { color: #ffc2f3; }
+  .nf-resync { color: #ffe0a8; }
   .nf-wait { color: #fff4fd; animation: nf-blink 1.1s steps(1) infinite; }
   html.touch-ui .nf-readout { bottom: auto; top: calc(var(--nf-top, 74px)); left: 50%; transform: translateX(-50%); }
   /* online: no horde toggle on the touch layer */

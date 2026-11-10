@@ -14,6 +14,7 @@
 // Keys are reference counted per code.
 
 import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';   // shared with the desktop button and F11
+import { PLAIN } from './plaintext.js';   // readable text never glows: the shared dark outline
 
 const TARGET = window;                  // must match createInput(window) in main.js
 const DEAD_PX = 14, RUN_PX = 52, VERT_PX = 26, KNOB_MAX = 56;
@@ -207,11 +208,12 @@ function injectStyle() {
     color: var(--c); font: inherit;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
     box-shadow: 0 0 10px var(--c), inset 0 0 10px color-mix(in srgb, var(--c) 45%, transparent);
-    text-shadow: 0 0 6px var(--c); transition: transform 60ms, box-shadow 60ms;
+    text-shadow: ${PLAIN}; transition: transform 60ms, box-shadow 60ms;   /* word labels (GUARD, SND) are read: no glow */
     -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
   }
   .tc-btn svg { filter: drop-shadow(0 0 4px var(--c)); }
-  .tc-btn i { font-style: normal; font-size: 15px; line-height: 1; margin-top: 1px; }
+  .tc-btn i { font-style: normal; font-size: 15px; line-height: 1; margin-top: 1px; text-shadow: 0 0 6px var(--c); }   /* the 1-4 is the button's glyph, lit like its icon */
+  .tc-btn.tc-on i { text-shadow: none; }
   .tc-l1 { --c: var(--cyan); } .tc-l2 { --c: var(--pink); } .tc-l3 { --c: var(--amber); } .tc-l4 { --c: var(--violet); }
   .tc-btn.tc-on {
     background: var(--c); color: #12041f; text-shadow: none; transform: scale(0.94);
@@ -237,7 +239,7 @@ function injectStyle() {
   }
   .tc-base.tc-run .tc-knob { border-color: var(--pink); box-shadow: 0 0 14px var(--pink); }
   .tc-hint { position: absolute; left: 0; right: 0; top: 100%; margin-top: 6px; text-align: center;
-    font-size: 11px; letter-spacing: 0.08em; color: var(--cyan); text-shadow: 0 0 6px var(--cyan); opacity: 0.75; }
+    font-size: 11px; letter-spacing: 0.08em; color: #9df8ff; text-shadow: ${PLAIN}; opacity: 0.85; }
   .tc-base.tc-on .tc-hint { visibility: hidden; }
 
   /* right thumb */
