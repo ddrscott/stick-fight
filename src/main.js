@@ -1062,12 +1062,15 @@ function updateCamera(dt, snap = false) {
 
 // ---- frame ----------------------------------------------------------------------------------
 function advance(ms) {
-  if (flow && flow.on) { if (!flow.update(ms)) return; }   // flow: menus, stage cards, pause and results hold the sim
-  else { if (paused) return; if (attractFlow(ms)) return; }
+  // an online match: only the netcode moves the sim, whatever screen the flow is on (its demo screens hold a KO
+  // card longer and start a new bout after one round, which on one phone only would split the two fights)
+  const netMatch = online.active, flowRuns = flow && flow.on && (!netMatch || flow.state === 'onlineFighting');
+  if (flowRuns) { if (!flow.update(ms)) return; }   // flow: menus, stage cards, pause and results hold the sim
+  else if (!netMatch) { if (paused) return; if (attractFlow(ms)) return; }
   // the finisher beat: a KO by an ender runs at quarter speed
   const slow = sim.koSlow > 0 ? (sim.finisher ? 0.25 : 0.5) : 1;
-  if (online.active) online.advance(ms * slow); else sim.step(ms * slow);   // online: lockstep owns the stepping
-  if (flow && flow.on) { if (flow.afterStep()) return; }   // flow: demo bouts, round and match ends
+  if (netMatch) online.advance(ms * slow); else sim.step(ms * slow);   // online: the netcode owns the stepping
+  if (flowRuns) { if (flow.afterStep()) return; }   // flow: demo bouts, round and match ends
   else if (attract && (sim.round > 1 || sim.phase === 'match')) { setScene('attract'); return; }   // one round per demo bout
   const dt = ms / 1000;
   for (let i = lights.length - 1; i >= 0; i--) { lights[i].ttl -= dt; if (lights[i].ttl <= 0) lights.splice(i, 1); }
@@ -1180,13 +1183,17 @@ function render() {
     const joints = life.apply(u, smoothJ, sim, lifeDt);   // the life layer on top, drawn only
     const realJ = u.rig.joints; u.rig.joints = joints;   // the turnaround and snap fade, drawn only (put back below)
     ctxs.figures.save(); ctxs.figures.translate(off.x, off.y);
-    u.rig.draw(ctxs.figures);
-    if (u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld)) drawGuard(u, ctxs.figures);
-    if (u.flash > 0) drawFlash(u, ctxs.figures, '#fff', statusFX.counterOn(u) ? 0.65 : 0.3);   // a counter hit flashes harder
-    // a knocked-down body reads as down: 30% darker while it is on the floor
-    else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);
-    ctxs.figures.restore();
-    u.rig.joints = realJ; u.rig.sway = null;
+    try {
+      u.rig.draw(ctxs.figures);
+      if (u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld)) drawGuard(u, ctxs.figures);
+      if (u.flash > 0) drawFlash(u, ctxs.figures, '#fff', statusFX.counterOn(u) ? 0.65 : 0.3);   // a counter hit flashes harder
+      // a knocked-down body reads as down: 30% darker while it is on the floor
+      else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);
+    } finally {
+      // the real joints go back whatever happened: the rig's joints feed the hitboxes and the online hash
+      ctxs.figures.restore();
+      u.rig.joints = realJ; u.rig.sway = null;
+    }
   }
   drawGhosts(ctxs.figures, ctxs.emissive);
   // ragdolls: KO'd horde goons still in the air after their unit respawned

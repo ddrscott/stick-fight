@@ -19,11 +19,19 @@
 //   is not taken back (a stray spark or sound now and then). See eventGate().
 // - Hashes: every HASH_EVERY frames, once a frame is confirmed (both real inputs in), each side
 //   sends the hash of the state after it; a mismatch is a DESYNC (both log which fields differ).
+// - Resync: on a mismatch the host sends the guest its confirmed state (the state after its newest
+//   confirmed frame, as text: src/net/state.js) over the reliable channel, in chunks; the guest loads it
+//   and re-runs the sim from there to the present on the inputs it has. Hash checks of frames before the
+//   resync point are moot from then on, and the guest's hashes carry how many resyncs it has applied
+//   (its epoch), so the host doesn't answer a stale hash from before one with another.
+// - The end of a match: the sim halts endHold frames after the frame the result first shows on (matchAt);
+//   a correction that moves the result moves the halt with it, either way.
 //
 // The wire format (src/net/codec.js) is the lockstep's: every input the other side hasn't acked
 // goes out in each packet (unordered, no retransmits; a lost packet is covered by the next).
 
 import { hashSim, dumpSim, diffDumps } from './hash.js';
+import { encodeState, decodeState } from './state.js';
 import { encodeInput, decodeInput, inputPacket, clockPacket, parsePacket, PKT_INPUT, PKT_PING, PKT_PONG, NO_FRAME, MAX_INPUTS_PER_PACKET } from './codec.js';
 
 const STEP_MS = 1000 / 120;          // the sim's fixed step
@@ -36,7 +44,10 @@ const HASH_EVERY = 30;               // frames between state hash exchanges (4 a
 const DUMPS_KEPT = 8;
 const PING_MS = 500;
 const SEND_GAP_MS = 1000 / 60;       // inputs go out at most this often (and every frame stepped)
-const LOST_MS = 10000;               // no packet for this long: the other side is gone
+const LOST_MS = 15000;               // no packet for this long: the other side is gone (a 10 s cellular dropout rides out as a stall)
+const SYNC_CHUNK = 12000;            // characters of state per control message (the room drops messages over 16 KB)
+const SYNC_GAP_MS = 700;             // the host sends a resync at most this often
+const ASK_GAP_MS = 1000;             // the guest asks for one at most this often
 
 const perf = () => performance.now();   // for the cost measurements (the netcode's own clock is `now`)
 function ring() { return { code: new Uint16Array(HISTORY), frame: new Int32Array(HISTORY).fill(-1) }; }
@@ -53,11 +64,12 @@ function eventSig(ev) {
  * @param {{
  *   sim: any, localIndex: number, link: { sendPacket(b: ArrayBuffer): void, sendControl(o: object): void },
  *   sampleLocal: (frame: number) => any, now?: () => number, delay?: number, adaptDelay?: boolean,
- *   maxRollback?: number, match?: number,
+ *   maxRollback?: number, match?: number, endHold?: number,
  *   onDesync?: (info: { frame: number, local: string, remote: string, diff?: string[] }) => void,
+ *   onResync?: (info: { frame: number, role: 'sent' | 'applied', bytes: number }) => void,
  * }} o
  */
-export function createRollback({ sim, localIndex, link, sampleLocal, now = () => performance.now(), delay = LOCAL_DELAY, adaptDelay = true, maxRollback = MAX_ROLLBACK, match = 0, onDesync }) {
+export function createRollback({ sim, localIndex, link, sampleLocal, now = () => performance.now(), delay = LOCAL_DELAY, adaptDelay = true, maxRollback = MAX_ROLLBACK, match = 0, endHold = Infinity, onDesync, onResync }) {
   const remoteIndex = 1 - localIndex;
   const maxRb = Math.max(1, Math.min(MAX_ROLLBACK, maxRollback | 0));
   const hist = [ring(), ring()];              // per player: frame -> input code (real inputs only)
@@ -80,9 +92,17 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
   let rtt = 0, jitter = 0, rttSamples = 0;
   let nextHash = HASH_EVERY - 1;              // the next hash frame to send once confirmed
   const hashes = new Map(), remoteHashes = new Map(), dumps = new Map();
-  /** @type {null | { frame: number, local: string, remote: string, diff?: string[] }} */
+  /** @type {null | { frame: number, local: string, remote: string, diff?: string[], at?: number }} */
   let desync = null;
   let hashChecks = 0;
+  // resync: frames before resyncFloor no longer count in hash checks (the state they hashed was replaced);
+  // epoch counts the resyncs this side has applied (guest) or sent (host)
+  const host = localIndex === 0;
+  let resyncFloor = 0, epoch = 0, lastSyncAt = -1e9, lastAskAt = -1e9, syncWanted = false, resyncs = 0, lastResyncAt = -1e9;
+  let dumped = -1;   // the resync floor the last desync dump went out for (one dump per episode)
+  /** @type {Map<string, { f: number, of: number, parts: string[], got: number, at: number, e: number }>} */
+  const incoming = new Map();
+  let broken = '';   // the link can't recover this match (inputs fell out of the history): online.js ends it
   // the frame on which the sim first showed the match result (phase 'match'), or -1: online.js ends
   // the match a fixed number of frames after it, once that frame is confirmed on both sides
   let matchAt = -1;
@@ -116,6 +136,15 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     gate.map.set(sig, n);
     if (gate.replay) rb.eventsLate++;
     return true;
+  }
+
+  // the frame the sim halts on: endHold frames after the result first showed (tests may halt sooner)
+  const endAt = () => Math.min(api.haltAt, matchAt >= 0 ? matchAt + endHold : Infinity);
+  /** re-run frames from..to-1 (the state loaded is the one before `from`), stopping at the halt; the new frame */
+  function resim(from, to) {
+    let f = from;
+    while (f < to) { simulate(f); f++; if (f >= endAt()) break; }
+    return Math.max(f, from);
   }
 
   /** The one place the sim moves. A rollback calls it again for every frame it re-runs. */
@@ -156,8 +185,9 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     if (s.frame !== from || !s.state) { console.warn(`[net] no snapshot for frame ${from} (at ${frame})`); return; }
     const t0 = perf();
     sim.loadState(s.state);
-    for (let f = from; f < frame; f++) simulate(f);
-    const ms = perf() - t0, depth = frame - from;
+    const depth = frame - from;
+    frame = resim(from, frame);   // (a correction that ends the match sooner stops there)
+    const ms = perf() - t0;
     rb.count++; rb.frames += depth; rb.lastDepth = depth; rb.maxDepth = Math.max(rb.maxDepth, depth);
     rb.ms += ms; rb.maxMs = Math.max(rb.maxMs, ms);
   }
@@ -170,7 +200,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     const top = confirmedTop();
     while (nextHash <= top) {
       const h = hashes.get(nextHash);
-      if (h != null) { link.sendControl({ t: 'hash', f: nextHash, h, m: tag }); check(nextHash); }
+      if (h != null) { link.sendControl({ t: 'hash', f: nextHash, h, m: tag, e: epoch }); check(nextHash); }
       nextHash += HASH_EVERY;
     }
   }
@@ -178,20 +208,78 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     const a = hashes.get(f), b = remoteHashes.get(f);
     if (a == null || b == null || f > confirmedTop()) return;
     remoteHashes.delete(f);
+    if (f < resyncFloor) return;   // a state a resync has since replaced
     hashChecks++;
-    if (a === b || desync) return;
-    desync = { frame: f, local: a, remote: b };
-    console.warn(`[net] DESYNC at frame ${f}: local ${a}, remote ${b}`);
-    const d = dumps.get(f);
-    if (d) link.sendControl({ t: 'dump', f, dump: d, m: tag });
-    if (onDesync) onDesync(desync);
+    if (a === b) { if (desync && f >= resyncFloor) desync = null; return; }
+    mismatch(f, a, b);
+  }
+  /** two different states for a confirmed frame: log it once per episode, and get the guest the host's state */
+  function mismatch(f, a, b) {
+    const t = now();
+    if (!desync) {
+      desync = { frame: f, local: a, remote: b, at: t };
+      console.warn(`[net] DESYNC at frame ${f}: local ${a}, remote ${b}` + (resyncs ? ` (after ${resyncs} resyncs)` : ''));
+      if (onDesync) onDesync(desync);
+    }
+    if (dumped !== resyncFloor) { const d = dumps.get(f); if (d) { dumped = resyncFloor; link.sendControl({ t: 'dump', f, dump: d, m: tag }); } }
+    if (host) wantSync(); else ask(f);
+  }
+  function ask(f) {
+    const t = now();
+    if (t - lastAskAt < ASK_GAP_MS) return;
+    lastAskAt = t;
+    link.sendControl({ t: 'resync?', f, m: tag, e: epoch });
+  }
+  // the host: send the confirmed state as soon as there is one (see sendSync), at most every SYNC_GAP_MS
+  function wantSync() { syncWanted = true; trySync(); }
+  function trySync() {
+    if (!syncWanted || !host || now() - lastSyncAt < SYNC_GAP_MS) return;
+    // the state after the newest confirmed frame c: the live sim when nothing after c has run, else the
+    // snapshot saved before frame c+1 (c+1 ran on a guess, so there is one; a correction re-saves it)
+    const c = confirmedTop();
+    let state = null;
+    if (c === frame - 1) state = sim.saveState();
+    else { const sn = snaps[(c + 1) % SNAPS]; if (sn.frame === c + 1 && sn.state) state = sn.state; }
+    if (!state || c < 0) return;   // nothing confirmed yet: the next advance tries again
+    const text = encodeState(sim, state), F = c + 1, id = `${tag}.${epoch + 1}`;
+    const of = Math.ceil(text.length / SYNC_CHUNK);
+    epoch++; resyncFloor = F; syncWanted = false; lastSyncAt = now();
+    for (let i = 0; i < of; i++) link.sendControl({ t: 'sync', m: tag, id, e: epoch, f: F, i, of, at: matchAt >= 0 && matchAt < F ? matchAt : -1, d: text.slice(i * SYNC_CHUNK, (i + 1) * SYNC_CHUNK) });
+    for (const k of [...remoteHashes.keys()]) if (k < F) remoteHashes.delete(k);
+    resyncs++; lastResyncAt = now();
+    console.warn(`[net] RESYNC: sent the state after frame ${c} (${(text.length / 1024).toFixed(1)} KB in ${of} parts)`);
+    if (onResync) onResync({ frame: F, role: 'sent', bytes: text.length });
+  }
+  // the guest: the host's state for the start of frame F; load it and run back up to the present
+  function applySync(F, text, at, e) {
+    if (e <= epoch || F < resyncFloor) return;   // an older one than what's already loaded
+    let state;
+    try { state = decodeState(sim, text); } catch (err) { console.warn('[net] resync: bad state', err); return; }
+    const t0 = perf(), was = frame;
+    sim.loadState(state);
+    epoch = e; resyncFloor = F; rollbackFrom = Infinity;
+    matchAt = at >= 0 && at < F ? at : -1;
+    // forget what this side hashed before F, and don't compare it again
+    for (const m of [hashes, remoteHashes, dumps]) for (const k of [...m.keys()]) if (k < F) m.delete(k);
+    let h = F; while ((h + 1) % HASH_EVERY) h++;
+    nextHash = Math.max(nextHash, h);
+    // back up to where this side was (or the halt), on the inputs it has; a side that was behind jumps ahead
+    frame = resim(F, Math.min(was, endAt()));
+    if (frame > maxSimulated + 1) maxSimulated = frame - 1;
+    fillLocal();
+    desync = null; resyncs++; lastResyncAt = now();
+    console.warn(`[net] RESYNC: loaded the host's state for frame ${F} and ran ${Math.max(0, frame - F)} frames to the present (${(perf() - t0).toFixed(1)} ms)`);
+    if (onResync) onResync({ frame: F, role: 'applied', bytes: text.length });
   }
 
   function sendInputs(force) {
     const t = now();
     if (localTop < 0) return;
     // everything the other side hasn't confirmed, oldest first (so a long loss still heals);
-    // with nothing new, the newest input again, as a keepalive that carries the ack
+    // with nothing new, the newest input again, as a keepalive that carries the ack. Inputs the other side
+    // still needs that have left the history can't be sent: the match can't go on (never in practice: each
+    // side stalls MAX_ROLLBACK frames past the other's inputs, far inside the history)
+    if (ackedByRemote + 1 < localTop - (HISTORY - 1) - MAX_INPUTS_PER_PACKET && !broken) { broken = 'history'; console.warn('[net] the other side fell out of the input history'); }
     let first = Math.max(ackedByRemote + 1, localTop - (HISTORY - 1));
     const fresh = first <= localTop;
     if (!fresh) first = localTop;
@@ -238,20 +326,23 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
       const wasStalling = stalling;
       stalling = false;
       while (acc >= STEP_MS) {
-        if (frame >= api.haltAt) { acc = 0; break; }   // tests: stop both sides on the same frame
+        if (frame >= endAt()) { acc = 0; break; }   // the match is over (or a test stops both sides on the same frame)
         if (frame - remoteTop > maxRb) { stalling = true; break; }   // guessing any further would pass the rollback window
         simulate(frame);
         frame++; acc -= STEP_MS; stepped++;
         fillLocal();
       }
       // short of remote inputs: the time waited is given up, not banked (a banked burst would put
-      // this side right back ahead and stalling again); if this side isn't ahead, the delay may grow
-      if (stalling) { acc = Math.min(acc, STEP_MS); if (ld < 1) stallFrames++; }
+      // this side right back ahead and stalling again); if this side isn't ahead, the delay may grow,
+      // though not over a dropout (nothing arriving at all isn't a long trip)
+      if (stalling) { acc = Math.min(acc, STEP_MS); if (ld < 1 && t - lastPacket < 300) stallFrames++; }
       stalling = stalling && !stepped;   // waiting with no frame run at all: shown after a moment
       if (stalling) { stalledMs += ms; if (!wasStalling) stalls++; }
       else stalledMs = 0;
       sendInputs(stepped > 0);
       confirmHashes();
+      trySync();
+      for (const [k, v] of incoming) if (t - v.at > 30000) incoming.delete(k);   // a resync that never completed
       if (t - lastPing > PING_MS) { lastPing = t; link.sendPacket(clockPacket(PKT_PING, t)); }
       adapt(t);
       const took = perf() - t0;
@@ -288,10 +379,25 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
       if (p.ack !== NO_FRAME) ackedByRemote = Math.max(ackedByRemote, /** @type {number} */ (p.ack));
       if (/** @type {number} */ (p.frame) > remoteFrame) { remoteFrame = /** @type {number} */ (p.frame); remoteFrameAt = t; }
     },
-    /** control messages that belong to the netcode: state hashes and desync dumps */
+    /** control messages that belong to the netcode: state hashes, desync dumps and resyncs */
     onControl(msg) {
-      if ((msg.t === 'hash' || msg.t === 'dump') && (msg.m | 0) !== tag) return true;   // from another match: not ours to check
-      if (msg.t === 'hash') { remoteHashes.set(msg.f, msg.h); check(msg.f); if (remoteHashes.size > 256) remoteHashes.delete(remoteHashes.keys().next().value); return true; }
+      const mine = msg.t === 'hash' || msg.t === 'dump' || msg.t === 'sync' || msg.t === 'resync?';
+      if (mine && (msg.m | 0) !== tag) return true;   // from another match: not ours to check
+      if (msg.t === 'hash') {
+        if (host && (msg.e | 0) < epoch) return true;   // hashed before the guest loaded the last resync
+        remoteHashes.set(msg.f, msg.h); check(msg.f); if (remoteHashes.size > 256) remoteHashes.delete(remoteHashes.keys().next().value); return true;
+      }
+      if (msg.t === 'resync?') { if (host && (msg.e | 0) >= epoch) wantSync(); return true; }
+      if (msg.t === 'sync') {
+        if (host) return true;
+        const k = String(msg.id), of = msg.of | 0, i = msg.i | 0;
+        if (of < 1 || of > 64 || i < 0 || i >= of || typeof msg.d !== 'string') return true;
+        let p = incoming.get(k);
+        if (!p) { p = { f: msg.f | 0, of, parts: new Array(of), got: 0, at: now(), e: msg.e | 0 }; incoming.set(k, p); }
+        if (p.parts[i] == null) { p.parts[i] = msg.d; p.got++; }
+        if (p.got === p.of) { incoming.delete(k); applySync(p.f, p.parts.join(''), typeof msg.at === 'number' ? msg.at : -1, p.e); }
+        return true;
+      }
       if (msg.t === 'dump') {
         const mine = dumps.get(msg.f);
         const diff = mine ? diffDumps(mine, msg.dump, 40) : ['(no local dump for that frame)'];
@@ -305,7 +411,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     stats() {
       const t = now();
       return {
-        frame, delay, rtt, jitter, stalledMs, stalls, stalling, remoteTop, localTop, desync, hashChecks,
+        frame, delay, rtt, jitter, stalledMs, stalls, stalling, remoteTop, localTop, desync, hashChecks, resyncs, epoch, sinceResync: t - lastResyncAt, halted: frame >= endAt(),
         confirmed: confirmedTop(), predicted: Math.max(0, frame - 1 - remoteTop), lead: lead(t),
         lastHash: [...hashes.entries()].filter(([f]) => f <= confirmedTop()).pop() || null,
         lostMs: t - lastPacket, maxRollback: maxRb,
@@ -319,6 +425,16 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     keepalive() { sendInputs(false); },
     /** the frame the match result first showed on, or -1 */
     get matchAt() { return matchAt; },
+    /** the frame the sim halts on at the end of the match (Infinity while it's on) */
+    get endAt() { return endAt(); },
+    /** a match that can't go on ('' while it can): online.js ends it as a lost connection */
+    get broken() { return broken; },
+    /** how long this side has been waiting on the other's inputs without running a frame */
+    get stalledMs() { return stalledMs; },
+    get epoch() { return epoch; },
+    get resyncs() { return resyncs; },
+    /** the end of the match didn't agree: the host sends its state, the guest asks for it */
+    resync() { if (host) wantSync(); else ask(frame - 1); },
     get confirmed() { return confirmedTop(); },
     get ackedByRemote() { return ackedByRemote; },
     get match() { return tag; },
