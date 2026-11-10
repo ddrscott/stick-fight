@@ -26,6 +26,9 @@ export function createParticles() {
   let rainRate = 0, rainWind = -0.08, rainAccum = 0, rainRegion = null;
   let moteTarget = 0;
   let moteCount = 0;
+  // scratch for build(): screen points (toScreen(x, y, out) writes into out) and a light sample, so a frame's
+  // particles make no garbage
+  const S = Array.from({ length: 6 }, () => [0, 0]), Lbuf = [0, 0, 0];
 
   const sys = {
     ground: 640,
@@ -295,7 +298,7 @@ export function createParticles() {
           const t = p.age / p.life;
           let a = p.alpha, c = p.color;
           if (p.lit && !p.flat) {
-            const L = sys.lightAt(p.x, p.y);
+            const L = sys.lightAt(p.x, p.y, Lbuf);
             if (p.emissive) { // rain and motes: visible in the dark, sparkle near lights
               const l = Math.min(2.2, 0.8 + (L[0] + L[1] + L[2]) * 0.3);
               tmp[0] = Math.min(1.6, c[0] * (0.5 + L[0]) * l); tmp[1] = Math.min(1.6, c[1] * (0.5 + L[1]) * l); tmp[2] = Math.min(1.6, c[2] * (0.5 + L[2]) * l);
@@ -311,12 +314,12 @@ export function createParticles() {
             if (n + 6 > MAX_PARTICLES * 6) continue;
             const fade = a * (1 - t);
             const q = p.corners;
-            const s0 = toScreen(q[0], q[1]), s1 = toScreen(q[2], q[3]), s2 = toScreen(q[4], q[5]), s3 = toScreen(q[6], q[7]);
+            const s0 = toScreen(q[0], q[1], S[0]), s1 = toScreen(q[2], q[3], S[1]), s2 = toScreen(q[4], q[5], S[2]), s3 = toScreen(q[6], q[7], S[3]);
             emit(s0[0], s0[1], 0, 0, c, 0, SHAPE.POLY); emit(s1[0], s1[1], 0, 0, c, 0, SHAPE.POLY); emit(s2[0], s2[1], 0, 0, c, fade, SHAPE.POLY);
             emit(s0[0], s0[1], 0, 0, c, 0, SHAPE.POLY); emit(s2[0], s2[1], 0, 0, c, fade, SHAPE.POLY); emit(s3[0], s3[1], 0, 0, c, fade, SHAPE.POLY);
             continue;
           }
-          const s = toScreen(p.x, p.y);
+          const s = toScreen(p.x, p.y, S[4]);
           let size = p.size + (p.grow || 0) * t;
           size *= camZoom;
           switch (p.kind) {
@@ -349,7 +352,7 @@ export function createParticles() {
               }
               if (t1 - t0 < 1) break;
               const tm = (t0 + t1) / 2;
-              const ms = toScreen(p.x - ux * tm, p.y - uy * tm);
+              const ms = toScreen(p.x - ux * tm, p.y - uy * tm, S[5]);
               quad(ms[0], ms[1], (t1 - t0) / 2 * camZoom, size, Math.atan2(p.vy, p.vx), c, a, SHAPE.STREAK + BEHIND); // behind the fighters: rain never lowers their contrast
               break;
             }

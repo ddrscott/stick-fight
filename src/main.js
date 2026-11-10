@@ -20,7 +20,8 @@ import { roster, getCharacter, TEMP_ID } from './characters/index.js';   // regi
 import { botchEnabled, discover, techniques } from './flow/techniques.js';
 import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
 import { ACCIDENTS } from './combat/botch.js';
-import { perf, perfOverlay } from './perf.js';   // frame timing, and the ?perf=1 overlay (README, Performance)
+import { perf, perfOverlay } from './perf.js';
+import { track } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
@@ -1500,19 +1501,16 @@ window.__gauntlet = {
   step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
   ready: false,   // true once fonts are in and the first frame has rendered
 };
-window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
+window.__game = { caches: { bg: bgCache, emi: emiCache }, drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
   // measurement hooks: a frame stepped without drawing (the draw smoothing still runs), and where a body is drawn
   stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); fitCameraToDrawn(); },
   drawn: (u) => drawnPoints(u), poseState, life };
-// no load race for captures: fonts first, then one real rendered frame, then ready
-// the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
-// loads on its own); offline, the system fallbacks are used after a short wait
-try {
-  if (document.fonts && document.fonts.load) await Promise.race([Promise.all(['40px Bungee', '600 20px Teko', '500 20px Teko'].map(f => document.fonts.load(f))), new Promise(r => setTimeout(r, 2500))]);
-  await document.fonts.ready;
-} catch (e) { /* no font API */ }
+// The first frame doesn't wait for the web fonts (it used to, for up to 2.5 s): the game draws at once, and the
+// HUD's canvas text, cached as bitmaps, is redrawn in the real faces when they arrive (hud.js empties its text
+// cache on the fonts' loadingdone). Captures still get no load race: __gauntlet.ready turns true only once the
+// two faces are in (or a short wait passed, offline) and a frame has rendered with them.
 render();
-await new Promise(r => requestAnimationFrame(r));
+try { performance.mark('sf:first-frame'); } catch (e) { /* old browser */ }   // the load harness times this (scripts/perf/run.mjs --load)
 // Embedded in the homepage (an iframe), the page tells the game when its frame scrolls off screen
 // ({ type: 'sf:visible', visible }); while it's hidden, the demo and menus stop simulating and drawing
 // so the page around it scrolls smoothly. A match (and anything online) never pauses this way.
@@ -1522,16 +1520,43 @@ window.addEventListener('message', (e) => {
   embedHidden = !e.data.visible;
 });
 function frame(now) {
-  const ms = Math.min(100, now - last); last = now;
+  const ms = Math.max(0, Math.min(100, now - last)); last = now;   // rAF's timestamp can be a little before the performance.now() it follows
   const idle = embedHidden && !online.active && flow && flow.on && flow.demo;
   perf.begin(now);
   if (!driven && !idle) { lastFrameMs = ms; advance(ms); perf.mark('sim'); render(); }
   perf.end();
   requestAnimationFrame(frame);
 }
+last = performance.now();
 requestAnimationFrame(frame);
+// the HUD asks for its two faces by name (an unused web font never loads on its own)
+try {
+  if (document.fonts && document.fonts.load) await Promise.race([Promise.all(['40px Bungee', '600 20px Teko', '500 20px Teko'].map(f => document.fonts.load(f))), new Promise(r => setTimeout(r, 2500))]);
+  await document.fonts.ready;
+} catch (e) { /* no font API */ }
+await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 window.__gauntlet.ready = true;
 // what the profiler reports alongside the times: the tier, the DPR and the size the GL canvas draws at
 const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height });
 perfInfo(); setInterval(perfInfo, 1000);
+// What real players get (README, Analytics, 'perf'): once a session, after 30 s on the page with the tier unchanged for
+// the last 15 s, the tier it settled on, the one it started on, touch or mouse, the frame time p95 (ms, as a label)
+// and the p50 as the number. A tab that's hidden or closed sooner sends what it had after 10 s.
+{
+  const t0 = performance.now(), startTier = fx.tier;
+  let tierNow = fx.tier, tierSince = t0, sent = false;
+  const send = () => {
+    if (sent || performance.now() - t0 < 10000) return;
+    sent = true;
+    const s = perf.summary();
+    track('perf', [`t${fx.tier}`, `start t${startTier}`, matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse', `p95 ${Math.round(s.iv.p95)}`], Math.round(s.iv.p50 * 10) / 10);
+  };
+  const tick = setInterval(() => {
+    const now = performance.now();
+    if (fx.tier !== tierNow) { tierNow = fx.tier; tierSince = now; }
+    if (now - t0 > 30000 && now - tierSince > 15000 && !document.hidden) { send(); clearInterval(tick); }
+  }, 1000);
+  addEventListener('pagehide', send);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) send(); });
+}
 if (params.get('perf') === '1') perfOverlay(document.getElementById('stage'));

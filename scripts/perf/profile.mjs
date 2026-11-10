@@ -26,12 +26,32 @@ const ctx = await browser.newContext({ viewport: { width: 915, height: 412 }, de
 const page = await ctx.newPage();
 const cdp = await ctx.newCDPSession(page);
 await cdp.send('Emulation.setCPUThrottlingRate', { rate: +opt('--throttle', 4) });
+if (argv.includes('--load')) {
+  // the load itself: from navigation to the first drawn frame
+  await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
+  await cdp.send('Profiler.start');
+}
 await page.goto(`http://127.0.0.1:${server.address().port}/stick-fight/play/?${query}`);
 await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
-await page.waitForTimeout(3000);
-await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
-await cdp.send('Profiler.start');
-await page.waitForTimeout(+opt('--secs', 5) * 1000);
+if (!argv.includes('--load')) await page.waitForTimeout(3000);
+if (argv.includes('--alloc')) {
+  // allocations (sampled, collected ones included) by the function that made them
+  await cdp.send('HeapProfiler.enable');
+  await cdp.send('HeapProfiler.startSampling', { samplingInterval: 4096, includeObjectsCollectedByMinorGC: true, includeObjectsCollectedByMajorGC: true });
+  const secs = +opt('--secs', 5);
+  await page.waitForTimeout(secs * 1000);
+  const { profile } = await cdp.send('HeapProfiler.stopSampling');
+  const agg = new Map(); let tot = 0;
+  (function walk(n) { const f = n.callFrame; const k = `${f.functionName || '(anon)'} ${(f.url || '').split('/').pop()}:${f.lineNumber}`; agg.set(k, (agg.get(k) || 0) + n.selfSize); tot += n.selfSize; (n.children || []).forEach(walk); })(profile.head);
+  console.log(`${(tot / 1024 / secs).toFixed(0)} KB allocated a second`);
+  for (const [k, t] of [...agg].sort((a, b) => b[1] - a[1]).slice(0, +opt('--top', 25))) console.log(`${(100 * t / tot).toFixed(1).padStart(5)}%  ${k}`);
+  await browser.close(); server.close(); process.exit(0);
+}
+if (!argv.includes('--load')) {
+  await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
+  await cdp.send('Profiler.start');
+  await page.waitForTimeout(+opt('--secs', 5) * 1000);
+}
 const { profile } = await cdp.send('Profiler.stop');
 const dt = profile.timeDeltas, self = new Map(), byId = new Map(profile.nodes.map(n => [n.id, n]));
 const parent = new Map(); for (const n of profile.nodes) for (const c of n.children || []) parent.set(c, n.id);

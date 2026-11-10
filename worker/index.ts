@@ -32,7 +32,7 @@ import { DurableObject } from "cloudflare:workers";
 import { type Env, API, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName, track } from "./env";
 
 // the events the page may send (src/analytics.js); anything else is dropped
-const EVENT_NAMES = new Set(["visit", "mode", "pick", "stage", "arcade_end", "horde_end", "online_match", "install", "technique"]);
+const EVENT_NAMES = new Set(["visit", "mode", "pick", "stage", "arcade_end", "horde_end", "online_match", "install", "technique", "perf"]);
 import { Crew, SLUG_RE } from "./crew";
 import { handleAuth } from "./auth";
 

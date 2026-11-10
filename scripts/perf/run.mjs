@@ -18,6 +18,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 let pw;
@@ -48,20 +49,29 @@ const DEVICES = {
   desktop: { viewport: { width: 1440, height: 810 }, deviceScaleFactor: 2, isMobile: false, hasTouch: false },
 };
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../dist');
+const root = opt('--dist') ? path.resolve(opt('--dist')) : path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../dist');
 if (!fs.existsSync(path.join(root, 'stick-fight/play/index.html'))) { console.error('no build: run npm run build first'); process.exit(2); }
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
 const server = http.createServer((req, res) => {
   let p = path.join(root, decodeURIComponent(req.url.split('?')[0]));
   if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
   if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': types[path.extname(p)] || 'application/octet-stream', 'cache-control': 'no-store' });
+  const type = types[path.extname(p)] || 'application/octet-stream';
+  // compressed like Cloudflare serves it (gzip here; it sends brotli, a little smaller still)
+  if (/text|javascript|json|manifest/.test(type) && /gzip/.test(req.headers['accept-encoding'] || '')) {
+    res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store', 'content-encoding': 'gzip' });
+    return res.end(zlib.gzipSync(fs.readFileSync(p)));
+  }
+  res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
   fs.createReadStream(p).pipe(res);
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}/stick-fight/play/`;
 
-const browser = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-blink-features=AutomationControlled', '--disable-gpu-vsync=false'] });
+// --angle swiftshader: software GL, whose time grows with the shader work per pixel (a stand-in for a phone GPU's
+// fill cost, relative between builds and tiers; the M3's GPU is too fast for its own time to show it)
+const ANGLE = opt('--angle', 'metal');
+const browser = await chromium.launch({ headless: true, args: [ANGLE === 'swiftshader' ? '--use-angle=swiftshader' : '--use-angle=metal', ...(ANGLE === 'swiftshader' ? ['--enable-unsafe-swiftshader'] : ['--enable-gpu', '--ignore-gpu-blocklist']), '--disable-blink-features=AutomationControlled'] });
 const results = [];
 
 async function open(url, throttle, extra = {}) {
@@ -109,7 +119,8 @@ if (flag('--gpu')) {
     await page.goto(base + '?' + q);
     await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
     await page.waitForTimeout(WARM * 1000);
-    const r = await page.evaluate(() => {
+    const r = await page.evaluate((off) => {
+      for (const k of off) { if (k.startsWith('up:')) window.__game.fx.skip[k.slice(3)] = true; else window.__game.fx.options[k] = false; }   // --off lighting,bloom,up:figures...: what a pass or an upload costs
       const g = window.__gauntlet, gl = window.__game.fx.gl, px = new Uint8Array(4);
       const t = [], a = [];
       for (let i = 0; i < 240; i++) {
@@ -122,8 +133,8 @@ if (flag('--gpu')) {
       }
       const p = (v, q) => v.slice().sort((x, y) => x - y)[Math.floor(q * v.length)];
       return { cpu50: p(a, 0.5), synced50: p(t, 0.5), synced95: p(t, 0.95), gpuWait50: p(t.map((v, i) => v - a[i]), 0.5) };
-    });
-    const out = { scenario: name, mode: 'gpu', tier, ...Object.fromEntries(Object.entries(r).map(([k, v]) => [k, ms(v)])) };
+    }, opt('--off', '').split(',').filter(Boolean));
+    const out = { scenario: name, mode: 'gpu', angle: ANGLE, tier, off: opt('--off', ''), ...Object.fromEntries(Object.entries(r).map(([k, v]) => [k, ms(v)])) };
     results.push(out); console.log(JSON.stringify(out));
     await ctx.close();
   }
@@ -186,11 +197,13 @@ if (flag('--load')) {
       const task = m.metrics.find(x => x.name === 'TaskDuration').value;
       const bytes = await page.evaluate(() => performance.getEntriesByType('resource').reduce((a, e) => a + (e.transferSize || e.encodedBodySize || 0), 0) + (performance.getEntriesByType('navigation')[0]?.transferSize || 0));
       const fcp = await page.evaluate(() => (performance.getEntriesByName('first-contentful-paint')[0] || {}).startTime || 0);
-      runs.push({ ready, task: task * 1000, kb: bytes / 1024, fcp });
+      // the game's first drawn frame (main.js marks it; the build before this pass didn't, so fall back to ready)
+      const first = await page.evaluate(() => (performance.getEntriesByName('sf:first-frame')[0] || {}).startTime || 0);
+      runs.push({ ready, task: task * 1000, kb: bytes / 1024, fcp, first: first || ready });
       await ctx.close();
     }
     const avg = (k) => runs.reduce((a, r) => a + r[k], 0) / runs.length;
-    const out = { mode: 'load', throttle, net: flag('--net') ? '4g' : 'local', readyMs: Math.round(avg('ready')), fcpMs: Math.round(avg('fcp')), mainThreadMs: Math.round(avg('task')), kb: Math.round(avg('kb')) };
+    const out = { mode: 'load', throttle, net: flag('--net') ? '4g' : 'local', firstFrameMs: Math.round(avg('first')), readyMs: Math.round(avg('ready')), fcpMs: Math.round(avg('fcp')), mainThreadMs: Math.round(avg('task')), kb: Math.round(avg('kb')) };
     results.push(out); console.log(JSON.stringify(out));
   }
 }
