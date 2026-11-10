@@ -2,7 +2,7 @@
 //
 //   F11             toggles the Fullscreen API on <html> instead of the browser's own F11 full screen, from every
 //                   screen. The key never reaches the game: no menu, attract screen or fighter sees it.
-//   corner button   desktop only, beside the speaker button in the stage's bottom-left corner. A touch screen
+//   corner button   desktop only, beside the menu button in the stage's bottom-left corner. A touch screen
 //                   keeps the touch layer's own button (html.touch-ui hides this one).
 //   Esc             leaves fullscreen the browser's way; the icon follows through fullscreenchange.
 //
@@ -69,7 +69,7 @@ if (doc && typeof window !== 'undefined') {
 
     const style = doc.createElement('style');
     style.id = 'sf-fs-style';
-    // the speaker button's look (src/audio/ui.js), a step dimmer and with less glow, so it never lights a fighter
+    // the menu button's look (src/audio/ui.js), a step dimmer and with less glow, so it never lights a fighter
     style.textContent = `
   .fs-exit, html.fs-on .fs-enter { display: none; }
   html.fs-on .fs-exit { display: inline; }
@@ -85,7 +85,7 @@ if (doc && typeof window !== 'undefined') {
   html.fs-ok .sf-hint { left: 86px; }`;
     doc.head.appendChild(style);
 
-    // "sf-" keeps the attract screen's tap-to-start off it (main.js), like the speaker button
+    // "sf-" keeps the attract screen's tap-to-start off it (main.js), like the menu button
     const btn = doc.createElement('button');
     btn.className = 'sf-fs'; btn.type = 'button'; btn.tabIndex = -1;   // never focused, so Space or Enter in a fight can't press it
     btn.innerHTML = FS_ICON;
