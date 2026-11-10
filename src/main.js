@@ -194,8 +194,8 @@ function onEvent(ev) {
       fx.dust({ x: ev.unit.x, y: ev.unit.y, dir: -ev.unit.facing });
       break;
     case 'accident': {
-      // a technique found by a player on this machine goes in the book (the pause menu's list)
-      light(ev.x, ev.y, 200, [0.78, 1.0, 0.23], 0.9, 0.3);
+      // a technique found by a player on this machine goes in the book (the pause menu's list).
+      // Its light comes from the glint statusFX draws over the head, not from here.
       const u = ev.unit, mine = u.kind === 'human' || (u.kind === 'net' && online.active && u.id === (online.role === 'host' ? 0 : 1));
       if (mine && !attract && discover(ev.id)) { const t = techniques(); toast = { text: `TECHNIQUE FOUND  ${t.filter(x => x.found).length}/${t.length}`, t: 2.2 }; }
       break;

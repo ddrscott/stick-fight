@@ -224,9 +224,10 @@ export const geometry = {
     // main floor anchors
     ...TUBES.map((t, i) => ({ name: TUBE_NAMES[i], x: t.x, y: TUBE_Y + 4, radius: i === 0 || i === 3 ? 300 : 240, color: HUES.tube, intensity: 0.6 })),
     ...EXITS.map((e) => ({ name: e.light, x: e.x + e.w / 2, y: e.y + e.h / 2, radius: 160, color: HUES.exit, intensity: 0.65 })),
-    // the orange sign's glow on the room: below the sill, so it lights the wall and floor, not the far plane
-    { name: 'window', x: WINDOW.x + WINDOW.w - 50, y: WINDOW.y + WINDOW.h + 40, radius: 240, color: [1.0, 0.82, 0.6], intensity: 1.1 }, // warm white: the pool can reach the top of the range
-    { name: 'window2', x: WINDOWS[0].x + 50, y: WINDOWS[0].y + WINDOWS[0].h + 40, radius: 200, color: [0.75, 0.82, 1.0], intensity: 0.7 },   // the other window: the street's cool light
+    // the city's glow coming in each window: on the sill, centered, so the pool reads as spilling
+    // out of the opening onto the sill, the wall under it and the floor. Cool and dim, like the
+    // towers' lit windows it stands for; a city across the street never outshines the tubes.
+    ...WINDOWS.map((w, i) => ({ name: i === 1 ? 'window' : 'window2', x: w.x + w.w / 2, y: w.y + w.h, radius: 220, color: [0.62, 0.7, 1.0], intensity: 0.55 })),
     { name: 'vending', x: VENDING.x + VENDING.w / 2, y: VENDING.y + 60, radius: 120, color: HUES.pink, intensity: 0.9 },
     { name: 'copier', x: COPIER.x + COPIER.w / 2, y: COPIER.y + 14, radius: 110, color: HUES.cyan, intensity: 0.55 },
     { name: 'elev3', x: INDICATORS[1].x + 22, y: INDICATORS[1].y + 11, radius: 150, color: HUES.cyan, intensity: 0.45 },

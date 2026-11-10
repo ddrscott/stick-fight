@@ -240,7 +240,7 @@ const ARENAS = {
     drawFar,
     drawForeground: drawBuildingForeground,
     drawEmissive: drawBuildingEmissive,
-    // deterministic flicker: the dying tube, the vending ballast, the beacon's pulse, the plant's fairy light
+    // deterministic flicker: the dying tube, the vending ballast, the plant's fairy light
     flicker(lights, t) {
       const by = {};
       for (const l of lights) by[l.name] = l;
@@ -251,7 +251,6 @@ const ARENAS = {
       }
       if (by.tubeA) by.tubeA.intensity = 0.6 + 0.02 * Math.sin(t * 31) + 0.01 * Math.sin(t * 7.3);
       if (by.vending) by.vending.intensity = 0.9 + 0.03 * Math.sin(t * 19);
-      if (by.beacon) by.beacon.intensity = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(t * 4.2));
       if (by.plantSparkle) by.plantSparkle.intensity = 0.3 + 0.12 * Math.sin(t * 2.3);
     },
   },

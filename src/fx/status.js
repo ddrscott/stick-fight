@@ -277,6 +277,7 @@ export function createStatusFX() {
         ctx.globalAlpha = Math.min(1, k * 2);
         star(ctx, b.x, b.y, sz, GOLD, age * 1.5);
         star(ctx, b.x, b.y, sz * 0.45, WHITE, age * 1.5 + Math.PI / 4);
+        lights.push({ x: b.x, y: b.y, radius: 140, color: [1, 0.85, 0.35], intensity: 0.9 * sz / 26 });   // gold, like the star
       }
       ctx.restore();
     }
