@@ -9,6 +9,7 @@ import { EMPTY_INPUT } from './input.js';
 import { createAI } from './ai.js';
 import { mulberry32 } from './rng.js';
 import * as dm from './dmath.js';   // bit-identical hypot on every engine (online play)
+import { fitToGround } from '../fighter/ground.js';   // a pose kept on top of the steps (src/fighter/ground.js)
 import { saveSim, loadSim } from './snapshot.js';
 import { characterOr, canUse, colorFor, pantsFor, TEMP_ID } from '../characters/registry.js';   // per-character stats, moves, strings (src/characters/)
 import { BOTCH_GRACE, BOTCH_CALLOUT, ACCIDENTS, chooseBotch, botchCost, accidentFor, sideOf, isFoot } from './botch.js';   // mistimed presses (src/combat/botch.js)
@@ -670,25 +671,65 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // On a flight the rig's pose (made for a flat floor) is fitted to the steps, joints included, so the
   // hurtboxes and hitboxes are where the body is drawn: each foot near the floor line goes down or up onto
   // the tread under it (its knee half as far); a body lying on the floor is laid along the slope, turned
-  // about its hip and its hip set on the steps under it. In between (getting up) it blends by how high the
-  // hip is. Only on the ground: in the air the root is no floor line.
+  // about its hip and set on the line through the treads' front edges (the nosings: a body on steps rests on
+  // them, and on the walking line through the treads' middles it sank into the front of every step). In
+  // between (getting up) it blends by how high the hip is. Then whatever is still under a tread (a long stride's
+  // rear foot up the steps, a kick's knee, the head of a body lying along them) is fitted back on top of the
+  // real tread tops (fitToGround, src/fighter/ground.js): the limb turns up off the step, a planted foot is set
+  // on its tread. A body on the lower floor gets the same at a flight's foot (lying with its head toward the
+  // steps, it's propped up against them instead of lying through them). Only on the ground: in the air the
+  // root is no floor line.
+  const nosingY = (k, x) => { const st = stairsNow()[k]; return Math.max(st.top, Math.min(st.bottom, st.top + st.slope * (x - st.head) * st.dir - st.rise / 2)); };
+  const inFlight = (k, x) => { const st = stairsNow()[k]; return x >= Math.min(st.back0, st.foot) && x <= Math.max(st.back0, st.foot); };
+  // the surface under x for a grounded body on a flight (its treads) or on the lower floor (the floor, or a
+  // flight's treads where one rises out of it)
+  function groundUnder(u) {
+    if (onStair(u)) { const k = u.stair; return (x) => treadY(k, x); }
+    const fy = floorYOf(u.floor), S = stairsNow();
+    return (x) => { for (let k = 0; k < S.length; k++) if (inFlight(k, x)) return Math.min(fy, treadY(k, x)); return fy; };
+  }
   function slopePose(u) {
-    if (!onStair(u) || u.rag || !u.grounded) return;
+    if (u.rag && u.rig.airborne) return;   // the point simulation keeps its own joints on the floor (a body it has just set down is fitted here)
     const j = u.rig.joints, y0 = u.rig.y, hip = j && j.hip;
     if (!hip) return;
-    const lie = Math.max(0, Math.min(1, (70 - (y0 - hip.y)) / 50));
-    if (lie > 0) {
+    if (u.state === 'vault') { vaultPose(u); return; }
+    const stair = onStair(u);
+    if (!stair && !((u.floor || 0) > 0 && stairsNow().length)) return;
+    // in the air (a jump, a keyframed knockdown's fall) the root is no floor line: nothing is laid along the slope
+    // or set on a tread, but a pose coming down onto the steps still stops on them
+    const lie = !u.grounded ? 0 : Math.max(0, Math.min(1, (70 - (y0 - hip.y)) / 50));
+    if (stair && lie > 0) {
       const th = stairAngle(u.stair) * lie, c = dm.cos(th), sn = dm.sin(th);
-      const hx = hip.x, hy = hip.y, dyHip = (stairY(u.stair, hx) - y0) * lie;
+      const hx = hip.x, hy = hip.y, dyHip = (nosingY(u.stair, hx) - y0) * lie;
       for (const k in j) { const dx = j[k].x - hx, dy = j[k].y - hy; j[k] = { x: hx + dx * c - dy * sn, y: hy + dx * sn + dy * c + dyHip }; }
     }
-    if (lie < 1) for (const [ft, kn] of FEET) {
+    if (stair && u.grounded && lie < 1) for (const [ft, kn] of FEET) {
       const F = j[ft];
       if (!F || F.y < y0 - 22) continue;   // a foot off the floor (a kick, a knee) keeps its height
       const d = (treadY(u.stair, F.x) - y0) * (1 - lie);
       j[ft] = { x: F.x, y: F.y + d };
       if (j[kn]) j[kn] = { x: j[kn].x, y: j[kn].y + d * 0.5 };
     }
+    const rad = u.rig.radii;
+    if (!rad) return;
+    const lying = LYING.has(u.state) || wakeLying(u);
+    const fit = fitToGround(j, rad, groundUnder(u), { planted: !lying, side: u.facing });
+    if (fit !== j) for (const k in fit) j[k] = fit[k];
+  }
+  // the vault's drop: the clip comes down the opening onto the flight under it, its legs reaching the steps first;
+  // they stop on the treads (the slab either side, the treads, the floor below: the topmost under each joint)
+  function vaultPose(u) {
+    const j = u.rig.joints, rad = u.rig.radii, sw = wellsNow()[u.vaultWell];
+    if (!rad || !sw) return;
+    const S = stairsNow(), k = sw.flight != null && S[sw.flight] ? sw.flight : -1, main = floorYOf(0), low = floorYOf(sw.toFloor != null ? sw.toFloor : 1);
+    const ground = (x, y) => {
+      let b = x > sw.x0 && x < sw.x1 ? null : main;
+      if (b != null && b < y - 40) b = null;
+      if (k >= 0 && inFlight(k, x)) { const t = treadY(k, x); if (t >= y - 40 && (b == null || t < b)) b = t; }
+      return low >= y - 40 && (b == null || low < b) ? low : b;
+    };
+    const fit = fitToGround(j, rad, ground, { side: u.facing });
+    if (fit !== j) for (const q in fit) j[q] = fit[q];
   }
   sim.rigUpd = rigUpd;
   // The first walkable line at or below the feet that spans this x; off an edge, the
@@ -1555,6 +1596,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // the body; when it ends the sim takes its travel and the lower floor
     const sw = wellsNow()[u.vaultWell] || stairwellNow(), to = sw ? sw.toFloor : 1;
     u.vx = 0;
+    // over the rail toward the opening: a man who started inside his rail spot ran back out to it and was facing
+    // away from the hole, so the clip dropped him through the solid floor beside it
+    if (sw) u.facing = Math.sign((sw.x0 + sw.x1) / 2 - u.x) || u.facing;
     // the drop: down to the flight under the opening where the clip lands him (its 56px step), or the floor
     const flight = sw && sw.flight != null && stairsNow()[sw.flight] ? sw.flight : -1;
     const landX = u.x + u.facing * 56 * (u.rig.scale || 1);

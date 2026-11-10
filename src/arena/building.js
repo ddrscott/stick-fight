@@ -175,10 +175,12 @@ function stairDefs() {
     id: f.id, head: f.head, foot: f.foot, dir: f.dir, slope: STAIR_SLOPE, run: STAIR_RUN, rise: STAIR_RISE,
     back0: f.back0, top: FLOOR_Y, bottom: LOW_FLOOR_Y, toFloor: 1, well: f.id,
     // the stair as solid ground for a body on the point simulation: the main floor's end beyond the head,
-    // then the slope down to the foot (src/fighter/index.js f.slopes)
+    // then the line through the treads' nosings down to the floor (src/fighter/index.js f.slopes). A body on
+    // steps rests on their front edges; the walking line through the treads' middles is half a rise lower, and
+    // a body lying on that sank into the front of every step
     solid: f.dir > 0
-      ? [{ x0: WALL_L, x1: f.head, y0: FLOOR_Y, y1: FLOOR_Y }, { x0: f.head, x1: f.foot, y0: FLOOR_Y, y1: LOW_FLOOR_Y }]
-      : [{ x0: f.foot, x1: f.head, y0: LOW_FLOOR_Y, y1: FLOOR_Y }, { x0: f.head, x1: WALL_R, y0: FLOOR_Y, y1: FLOOR_Y }],
+      ? [{ x0: WALL_L, x1: f.head + STAIR_RUN / 2, y0: FLOOR_Y, y1: FLOOR_Y }, { x0: f.head + STAIR_RUN / 2, x1: f.foot + STAIR_RUN / 2, y0: FLOOR_Y, y1: LOW_FLOOR_Y }]
+      : [{ x0: f.foot - STAIR_RUN / 2, x1: f.head - STAIR_RUN / 2, y0: LOW_FLOOR_Y, y1: FLOOR_Y }, { x0: f.head - STAIR_RUN / 2, x1: WALL_R, y0: FLOOR_Y, y1: FLOOR_Y }],
   }));
 }
 

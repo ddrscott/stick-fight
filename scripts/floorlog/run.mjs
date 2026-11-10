@@ -62,6 +62,7 @@ async function worker() {
   await pg.goto(base + '?scene=idle');
   await pg.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 30000 });
   await pg.evaluate(probe);
+  await pg.evaluate(() => window.__floorlogReady);
   while (jobs.length) {
     const j = jobs.shift();
     const lab = j.scene + (j.chars ? `:${j.chars.join('-')}:${j.seed}` : '');

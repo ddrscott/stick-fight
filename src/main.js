@@ -2,6 +2,7 @@
 // events to effects and camera, draws the HUD, and exposes window.__gauntlet.
 import { camera } from './camera.js';
 import { createFighter, MOVES, MOVE_DATA, RIG_KIT } from './fighter/index.js';
+import { fitToGround } from './fighter/ground.js';   // the floor guard: nothing drawn goes under the floor
 import { createLife } from './fighter/life.js';   // the life layer: eyeline, springs and props, fatigue (drawn only; ?life=0 turns it off)
 import { createFX } from './fx/index.js';
 import { createStatusFX, hitWeight, blockWeight } from './fx/status.js';   // state read off the bodies: stun halo, guard glint, dizzy stars, breath
@@ -1198,7 +1199,9 @@ function render() {
   drawGhosts(ctxs.figures, ctxs.emissive);
   // ragdolls: KO'd horde goons still in the air after their unit respawned
   for (const r of sim.ragdolls || []) {
-    const j = {}; for (const k in r.joints) j[k] = { x: r.x + r.joints[k].x, y: r.y + r.joints[k].y };
+    let j = {}; for (const k in r.joints) j[k] = { x: r.x + r.joints[k].x, y: r.y + r.joints[k].y };
+    const rad = {}; for (const k in j) rad[k] = k === 'head' ? r.radius : 2.5;
+    j = fitToGround(j, rad, () => r.floorY, { side: r.facing });   // the floor guard: a goon flying off doesn't skim through the floor
     if (typeof drawJoints === 'function') drawJoints(ctxs.figures, j, r.color, 5, r.radius);
   }
   for (const s of blockSparks) drawBlockSpark(s, ctxs.emissive);
@@ -1214,15 +1217,53 @@ function render() {
   if (fl) flow.frame(layout);
 }
 // the joints each body is drawn with this frame: the draw smoothing (frameDraw, already in drawnNow), then the life
-// layer on top, drawn only
+// layer on top, then the floor guard, drawn only
 function figureJoints(drawnNow, lifeDt) {
   const out = new Map();
   for (const u of sim.units) {
     if (u.hidden) continue;
     const { off, joints: smoothJ } = drawnNow.get(u);
-    out.set(u, { off, joints: life.apply(u, smoothJ, sim, lifeDt) });
+    const floor = floorFor(u, off);
+    out.set(u, { off, joints: floor.fit(life.apply(u, smoothJ, sim, lifeDt, floor)) });
   }
   return out;
+}
+// ---- the floor guard (README, Floors: bodies never sink into the floor) -----------------------------------------
+// The sim keeps its own joints on top of the floor (the ground snap and the point simulation use each joint's
+// drawn radius, a pose on a flight is fitted to its treads). Some layers move the drawing after that: the
+// turnaround's squash (on a flight it mirrors a pose fitted to the steps), the snap fade, the air catch-up, the life
+// layer's springs, takes and hit wave. The last word before a body is drawn: no joint's drawn edge goes below the
+// surface under it (fitToGround in src/fighter/ground.js: the limb turns up off the floor, a planted foot is set on
+// it, the body lifts as a whole if it has to). The surface is the one the sim uses for that body: its floor (the
+// main floor's walking strip runs behind the rails, over the holes), a flight's real tread tops, and for a body
+// falling through a stairwell the slab outside the holes, the treads and the floor below.
+const LYING_DRAW = new Set(['knockdown', 'ko', 'down', 'getup', 'roll', 'grabbed', 'thrown', 'splat', 'vault']);
+function groundOf(u) {
+  const fl = sim.floors, main = fl[0].y, low = fl[1] ? fl[1].y : main, S = sim.stairs || [], wells = sim.stairwells || [];
+  const tread = (k, x) => { const st = S[k]; return x < Math.min(st.back0, st.foot) || x > Math.max(st.back0, st.foot) ? null : arena.treadY(k, x); };
+  // the topmost surface at or under a joint (its centre may already be sunk up to 40px into it)
+  const top = (x, y, first) => {
+    let b = first != null && first >= y - 40 ? first : null;
+    for (let k = 0; k < S.length; k++) { const t = tread(k, x); if (t != null && t >= y - 40 && (b == null || t < b)) b = t; }
+    return low >= y - 40 && (b == null || low < b) ? low : b;
+  };
+  if (u.falling || u.state === 'vault') return (x, y) => top(x, y, wells.some(w => x > w.x0 && x < w.x1) ? null : main);
+  if (u.rag) {
+    if (u.rig.slopes || (u.rig.treads && u.rig.treads.length)) return (x, y) => top(x, y, null);
+    const fy = u.ragFloor; return () => fy;
+  }
+  if (u.stair != null && u.stair >= 0 && S[u.stair]) { const k = u.stair; return (x) => arena.treadY(k, x); }
+  if ((u.floor || 0) === 0) return () => main;
+  return (x, y) => top(x, y, null);
+}
+function floorFor(u, off) {
+  const g = groundOf(u), ox = off.x, oy = off.y;
+  // the higher of the surfaces half a px either side: a joint right on a riser's line counts the upper tread
+  const ground = (x, y) => { const a = g(x + ox - 0.5, y + oy), b = g(x + ox + 0.5, y + oy), v = a == null ? b : b == null ? a : Math.min(a, b); return v == null ? null : v - oy; };
+  const rad = u.rig.drawnRadii || u.rig.radii || {};
+  const wake = u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].wake && u.wakeUp === 1;
+  const opt = { planted: !(u.rag || LYING_DRAW.has(u.state) || wake), side: u.facing };
+  return { ground, fit: (M) => fitToGround(M, rad, ground, opt) };
 }
 // ---- draw smoothing: a visual-only catch-up for air moves ---------------------------------------
 // Some air attacks have to cover 50-90px between the press and the contact pose in two or three

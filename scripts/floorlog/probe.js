@@ -11,6 +11,8 @@
   const G = window.__game, sim = G.sim, arena = G.arena;
   const BASE = { headR: 15, limbW: 12, limbTip: 9, torsoW: 15, hipW: 11 };   // RIG in src/fighter/index.js
   const radCache = new WeakMap();
+  let fit = null;   // the floor guard render() runs on the horde's flying ragdolls (absent before it existed)
+  window.__floorlogReady = import('/src/fighter/ground.js').then(m => { fit = m.fitToGround; }).catch(() => {});
   function radii(rig) {
     let c = radCache.get(rig);
     if (c && c.body === rig.body && c.scale === rig.scale) return c.r;
@@ -115,16 +117,18 @@
       }
       if (cl.at) note('cloth', key, cl.d);
       if (cl.at) bump(rows.byKeyCtx, 'cloth:' + ctx.kind + ' ' + key, cl.d);
-      const d = Math.max(dr.d, cl.d);
-      if (d > 1) offender({ d: +d.toFixed(2), scene: label, frame: frameN, unit: u.id, char: u.char && u.char.id, key, joint: dr.d >= cl.d ? dr.at : 'cloth:' + cl.at,
+      const d = Math.max(dr.d, cl.d, rig.d);   // the worst lists keep the sim's own dips too (the drawing may already hide them)
+      if (d > 1) offender({ d: +d.toFixed(2), scene: label, frame: frameN, unit: u.id, char: u.char && u.char.id, key, joint: rig.d > dr.d && rig.d > cl.d ? 'rig:' + rig.at : dr.d >= cl.d ? dr.at : 'cloth:' + cl.at,
         rig: +rig.d.toFixed(2), smooth: +sm.d.toFixed(2), drawn: +dr.d.toFixed(2), cloth: cl.at ? +cl.d.toFixed(2) : null, ctx: ctx.kind, juggle: !!u.juggle, grounded: !!u.grounded,
-        where: dr.where, ux: +u.x.toFixed(1), uy: +u.y.toFixed(1), stair: u.stair, floor: u.floor, hip: { x: +u.rig.joints.hip.x.toFixed(1), y: +u.rig.joints.hip.y.toFixed(1) } });
+        where: dr.d >= rig.d ? dr.where : rig.where, ux: +u.x.toFixed(1), uy: +u.y.toFixed(1), stair: u.stair, floor: u.floor, hip: { x: +u.rig.joints.hip.x.toFixed(1), y: +u.rig.joints.hip.y.toFixed(1) } });
     }
     // the horde's ragdolls in flight, drawn as joints offset from (r.x, r.y)
     for (const r of sim.ragdolls || []) {
       const J = {}; for (const k in r.joints) J[k] = { x: r.x + r.joints[k].x, y: r.y + r.joints[k].y };
       const rad = {}; for (const k in J) rad[k] = k === 'head' ? r.radius : 2.5;
-      const dd = depth({ kind: 'flat', y: r.floorY }, J, rad, 0, 0, 2.5);
+      // as drawn: render() puts each in-flight goon through the floor guard
+      const D = fit ? fit(J, rad, () => r.floorY, { side: r.facing }) : J;
+      const dd = depth({ kind: 'flat', y: r.floorY }, D, rad, 0, 0, 2.5);
       bump(rows.ragdolls, 'flying', dd.d);
       if (dd.d > 1) offender({ d: +dd.d.toFixed(2), scene: label, frame: frameN, unit: 'ragdoll', key: 'ragdoll/flying', joint: dd.at });
     }
