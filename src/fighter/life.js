@@ -253,9 +253,11 @@ export function createLife() {
 
   /**
    * The joints to draw this frame: J (the pose after the draw smoothing) with the life layer on top.
-   * Never mutates J. dt in seconds of real time (0 while paused or frozen in a hit).
+   * Never mutates J. dt in seconds of real time (0 while paused or frozen in a hit). floor (optional, from main.js):
+   * { fit(M) => M, ground(x, y) => y | null }: the springs and takes can push a joint a few px past where the clip
+   * put it, so the pose is fitted back on top of the floor before the cloth hangs off it, and the cloth lies on it.
    */
-  function apply(u, J, sim, dt) {
+  function apply(u, J, sim, dt, floor = null) {
     const s = stateOf(u);
     // what happened since the last frame (read only)
     const hurt = u.health < s.health - 0.01;
@@ -283,7 +285,7 @@ export function createLife() {
       // what was seen is forgotten so nothing that happened meanwhile is reacted to late
       s.head.init = s.lHand.init = s.rHand.init = false; s.wave = null; s.pendingWave = null;
       s.take = null; s.takeW = 0; s.habit = null; s.habitW = 0; s.idleFor = 0; s.seen = null; s.koPending = false;
-      clothRun(u, s, J, sim, dt, sc); s.last = J; return J;
+      clothRun(u, s, J, sim, dt, sc, floor); s.last = J; return J;
     }
     if (s.pendingWave && !(u.hitstop > 0)) { s.wave = { ...s.pendingWave, t: 0 }; s.pendingWave = null; }
 
@@ -392,9 +394,10 @@ export function createLife() {
     const vx = hx - neckX, vy = hy - neckY, c = Math.cos(theta), sn = Math.sin(theta);
     M.head = { x: neckX + vx * c - vy * sn, y: neckY + vx * sn + vy * c };
 
-    clothRun(u, s, M, sim, dt, sc);
-    s.last = M;
-    return M;
+    const out = floor ? floor.fit(M) : M;
+    clothRun(u, s, out, sim, dt, sc, floor);
+    s.last = out;
+    return out;
   }
 
   // ---- takes: reactions to the other fighter, read from unit fields frame to frame (the sim emits nothing new)
@@ -459,7 +462,7 @@ export function createLife() {
   // the cloth: each chain a character lists (`cloth`) steps on the joints drawn this frame; the rig's draw reads
   // the points from u.rig.cloth (set here, cleared after the draw; null hangs everything at rest). A hit's freeze
   // holds it, and the hit's fling lands as the freeze ends.
-  function clothRun(u, s, J, sim, dt, sc) {
+  function clothRun(u, s, J, sim, dt, sc, floor) {
     const items = u.rig && u.rig.charDef && u.rig.charDef.cloth;
     if (!items || !items.length || !on) { if (u.rig) u.rig.cloth = null; return; }
     if (!s.cloth || s.cloth.length !== items.length) s.cloth = items.map(() => ({ st: {}, P: null }));
@@ -467,7 +470,7 @@ export function createLife() {
     const kick = !frozen && s.clothKick ? s.clothKick : null;
     if (kick) s.clothKick = null;
     const out = [];
-    for (let i = 0; i < items.length; i++) out.push(clothStep(s.cloth[i].st, items[i], J, u.facing || 1, sc, frozen ? 0 : dt, kick));
+    for (let i = 0; i < items.length; i++) out.push(clothStep(s.cloth[i].st, items[i], J, u.facing || 1, sc, frozen ? 0 : dt, kick, floor && floor.ground));
     u.rig.cloth = out;
   }
 

@@ -14,6 +14,7 @@
 import * as dm from '../combat/dmath.js';   // bit-identical trig on every engine: online play runs this rig on both machines
 import { mixBotch } from './limbBlend.js';   // a botch mixes the two moves per limb
 import { clothItem, clothRest } from './cloth.js';   // what hangs off a character (drawn only)
+import { jointRadii } from './ground.js';   // each joint's drawn radius: nothing drawn goes under the floor
 const DEG = Math.PI / 180;
 
 // Segment lengths, ~130px tall standing.
@@ -1064,6 +1065,9 @@ function headRel(p, R = RIG, lean = 0) {
 // Missing fields keep the baseline rig's, so TEMP (no body) draws and moves exactly as before.
 export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scale = 1, body = null } = {}) {
   let R = RIG, lean = 0, stance = 0, accessory = null;
+  // what touches the floor: each joint's drawn radius (src/fighter/ground.js), never less than the half limb width the
+  // ground snap always used (so a standing pose stands exactly where it did); radU in body space, f.radii in world px
+  let radU = null;
   const f = {
     color, x, y, facing, scale,
     radius: RIG.headR * scale,
@@ -1094,6 +1098,10 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     f.shape = { limb: f.scale * R.limbW / RIG.limbW, tip: f.scale * R.limbTip / RIG.limbTip, torso: f.scale * R.torsoW / RIG.torsoW };
     // how much ground one walk or run cycle covers relative to the baseline (scale and leg length)
     f.stride = f.scale * (R.upperLeg + R.lowerLeg) / (RIG.upperLeg + RIG.lowerLeg);
+    radU = jointRadii(R, 1);
+    for (const k in radU) if (k !== 'head') radU[k] = Math.max(radU[k], R.limbW * 0.5);
+    f.radii = {}; for (const k in radU) f.radii[k] = radU[k] * f.scale;
+    f.drawnRadii = jointRadii(R, f.scale);   // exactly as drawn (the feet a little thinner than they stand), for the drawing's floor guard
     f.joints = {};
     if (move) { f.joints = solve(f.pose); }
   }
@@ -1398,7 +1406,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       const ox = clamp(s2.x - t.x, -cap, cap), oy = clamp(s2.y - t.y, -cap, cap);
       s2.x = t.x + ox; s2.y = t.y + oy;
       // never push a sprung joint through the floor (but a body below f.y, mid-drop, is left alone)
-      j[k] = { x: t.x + ox, y: Math.min(t.y + oy, Math.max(t.y, f.y - (k === 'head' ? R.headR : R.limbW / 2))) };
+      j[k] = { x: t.x + ox, y: Math.min(t.y + oy, Math.max(t.y, f.y - f.radii[k])) };
     }
     return j;
   }
@@ -1412,12 +1420,13 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     ['lElbow', 'lHand'], ['rShoulder', 'rElbow'], ['rElbow', 'rHand'], ['hip', 'lKnee'], ['lKnee', 'lFoot'], ['hip', 'rKnee'], ['rKnee', 'rFoot'],
     ['hip', 'neck'], ['chest', 'head'], ['lShoulder', 'rShoulder'], ['chest', 'lShoulder'], ['chest', 'rShoulder'], ['hip', 'head']];
   const GRAV = 1900;
+  const SLAB_DEPTH = 80;   // the main floor's slab, top to the ceiling below (a body under it is in the lower room)
   function launch({ vx = 260, vy = -620, spin = 360, wall = 'splat' } = {}) {
     // vx > 0 sends the body backward (away from where it faces); spin > 0 tips the head back.
     const J = f.joints, wv = -f.facing * vx * f.scale, om = -f.facing * spin * DEG, hip = J.hip;
     if (!rag) {
       rag = { pts: {}, len: [], t: 0, rest: 0, splat: 0, bounceNext: false, landed: false, wall };
-      for (const k in J) rag.pts[k] = { x: J[k].x, y: J[k].y, px: J[k].x, py: J[k].y, r: k === 'head' ? R.headR * f.scale : R.limbW / 2 * f.scale };
+      for (const k in J) rag.pts[k] = { x: J[k].x, y: J[k].y, px: J[k].x, py: J[k].y, r: f.radii[k] };   // each joint as thick as it's drawn
       rag.len = BONES.map(([a, b]) => dm.hypot(J[a].x - J[b].x, J[a].y - J[b].y));
       f.airborne = true; reactL = null; landEase = null;
       f.current = { move: 'airborne', t: 0, frame: 0, done: false };
@@ -1487,6 +1496,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       for (const k in P) {
         const q = P[k], vx = (q.x - q.px) * 0.998, vy = (q.y - q.py) * 0.998;
         q.px = q.x; q.py = q.y; q.x += vx; q.y += vy + GRAV * f.scale * h * h;
+        q.ox = q.px; q.oy = q.py;   // where it was at the start of this step: the treads' one-way test (a bounce rewrites py)
       }
       for (let it = 0; it < 8; it++) {
         BONES.forEach(([a, b], i) => {
@@ -1498,7 +1508,15 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
           const q = P[k], fl = groundAt(q.x, ground) - q.r;
           if (f.treads) for (let ti = 0; ti < f.treads.length; ti++) {
             const t = f.treads[ti];
-            if (q.x < t.x0 || q.x > t.x1 || q.py + q.r > t.y + 0.5 || q.y + q.r <= t.y) continue;
+            if (q.x < t.x0 || q.x > t.x1 || q.y + q.r <= t.y) continue;
+            const sx = q.ox != null ? q.ox : q.px, sy = q.oy != null ? q.oy : q.py;
+            // a joint already below this tread's top came in from the side, through the riser (or the slab's cut
+            // edge): a flight is solid down to the floor under it and the slab is SLAB_DEPTH thick, so it stops at
+            // the riser instead of slipping in under the tread above it
+            if (sy + q.r > t.y + 0.5) {
+              if ((t.flight != null || q.y + q.r < t.y + SLAB_DEPTH) && (sx < t.x0 || sx > t.x1)) { q.x = sx < t.x0 ? t.x0 - 0.01 : t.x1 + 0.01; q.px = q.x + (q.x - sx) * 0.2; }
+              continue;
+            }
             const vy = q.y - q.py;
             q.y = t.y - q.r; q.py = q.y + vy * 0.25; q.px = q.x - (q.x - q.px) * 0.97;   // a bounce with light friction (applied per solver pass)
             rag.treadT = rag.treadT || {};
@@ -1608,7 +1626,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     // Lowest solid point rests on the ground line.
     let low = -Infinity;
     for (const k in j) {
-      const extra = k === 'head' ? R.headR : R.limbW * 0.5;
+      const extra = radU[k];
       if (j[k].y + extra > low) low = j[k].y + extra;
     }
     // Airborne attacks hold the hip at the jump's height instead of standing on their lowest point.

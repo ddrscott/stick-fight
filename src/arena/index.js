@@ -214,6 +214,14 @@ function lyingPose(x, y, dir, m, v) {
   return { head, neck, hip, lShoulder, rShoulder, lElbow, rElbow, lHand, rHand, lKnee, rKnee, lFoot, rFoot };
 }
 
+// how far a joint set's drawn edge (the head's circle, the stroke's half width, the rim's extra px) reaches below y
+function sinkBelow(j, y, headR, lineWidth) {
+  let d = -Infinity;
+  for (const n of JOINT_NAMES) if (j[n]) d = Math.max(d, j[n].y + (n === 'head' ? headR : lineWidth / 2) + 1 - y);
+  return d;
+}
+function lift(j, dy) { for (const n of JOINT_NAMES) if (j[n]) j[n].y -= dy; return j; }
+
 function copyJoints(j) {
   const out = {};
   for (const n of JOINT_NAMES) out[n] = { x: j[n].x, y: j[n].y };
@@ -370,8 +378,16 @@ export function createArena(name = 'building') {
       const y = Math.max(floor.y - BODY_LIFT * MAX_PILE, top);
       const idx = arena.bodies.length;
       const variant = ((idx * 7 + under * 3) % 5) / 4;
+      const radius = typeof snap.radius === 'number' ? snap.radius : 11, lineWidth = typeof snap.lineWidth === 'number' ? snap.lineWidth : 5;
+      // on top of the floor (or the body under it), never in it: the lying pose's head and feet are drawn with their
+      // thickness, and the settle starts from the fallen pose put back on top of the floor if it was under it, so
+      // the tween between the two (each joint on a straight line) never passes under it either
       const to = lyingPose(x, y, dir, m, variant);
+      const sunk = sinkBelow(to, y, radius, lineWidth);
+      if (sunk > 0) lift(to, sunk);
       const from = hasAllJoints(snap.joints) && !collinear(snap.joints) ? copyJoints(snap.joints) : copyJoints(to);
+      const below = sinkBelow(from, floor.y, radius, lineWidth);
+      if (below > 0) lift(from, below);
       const recent = arena.bodies.slice(-4).map((b) => b.color);
       const color = pickBodyColor(snap.color || '#333', arena.liveColors, idx, recent);
       const drawColor = capLuma(desaturate(color, 0.55));
@@ -380,8 +396,7 @@ export function createArena(name = 'building') {
         color,          // the hue the body was given (for the record)
         drawColor,      // what is painted: luma-capped so live fighters outrank the pile
         rim: lighten(drawColor, 0.22), // a 1px lighter rim, so the silhouette and limb angles read on the floor
-        radius: typeof snap.radius === 'number' ? snap.radius : 11,
-        lineWidth: typeof snap.lineWidth === 'number' ? snap.lineWidth : 5,
+        radius, lineWidth,
         from, to, t: 0, age: 0,
         joints: copyJoints(from),
       };

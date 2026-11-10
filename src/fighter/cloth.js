@@ -26,12 +26,14 @@
 //   push     joints whose thigh (hip to that joint) pushes the chain aside, pushR px wide (an apron's hem)
 //   end      a joint the last point is pinned to (a phone cord between the hip and the hand), or null
 //   kick     how hard a hit flings it (1 = the default)
+//   thick    px at scale 1 the chain is drawn either side of its line, and endR the same for its last point (a
+//            badge, a cup, a briefcase): how far above the floor its points stay
 //   layer    'front' (over the chest, after the head) or 'back' (behind the far arm, the body and the head)
 //   draw     (ctx, P, o): P the chain's points [{ x, y }], anchor first; o { scale, facing, color, accent, R, headR, pose, J }
 const DEF = {
   axis: ['neck', 'chest'], at: 0, off: [0, 0], dir: [0, 1], hang: 0, len: 20, seg: 3,
   hz: 2, damping: 0.35, air: 1.2, gravity: 300, side: null, clear: 2, limit: 2.4, push: null, pushR: 7,
-  end: null, kick: 1, layer: 'front', draw: null,
+  end: null, kick: 1, thick: 2.5, endR: 5, layer: 'front', draw: null,
 };
 const norm = new WeakMap();
 /** an item with every default filled in (cached per item) */
@@ -97,9 +99,10 @@ const ease = (v, target, dt, tau) => v + (target - v) * (1 - Math.exp(-dt / tau)
 
 /**
  * One rendered frame of a chain. st is the chain's own state (an empty object to begin), facing the unit's,
- * dt real seconds (0: frozen), kick { x, y } px/s at the free end or null. Returns the points to draw.
+ * dt real seconds (0: frozen), kick { x, y } px/s at the free end or null, ground (x, y) => the floor's y under x
+ * (or null) for a chain that falls on it. Returns the points to draw.
  */
-export function clothStep(st, raw, J, facing, sc, dt, kick) {
+export function clothStep(st, raw, J, facing, sc, dt, kick, ground) {
   const it = clothItem(raw);
   if (st.fs == null) st.fs = facing;
   // the facing eases across a turn, so the rest shape (and the body line it keeps clear of) swings round
@@ -112,6 +115,7 @@ export function clothStep(st, raw, J, facing, sc, dt, kick) {
   if (!st.P || Math.hypot(R[0].x - st.ax, R[0].y - st.ay) > 120 * sc) {   // first frame, or a respawn: hang at rest
     st.P = R.map((p) => ({ x: p.x, y: p.y, px: p.x, py: p.y }));
     st.ax = R[0].x; st.ay = R[0].y; st.acc = 0;
+    if (ground) onFloor(st.P, it, sc, ground, true);
     return st.P;
   }
   const P = st.P;
@@ -187,9 +191,24 @@ export function clothStep(st, raw, J, facing, sc, dt, kick) {
         p.x = a.x + ux * L; p.y = a.y + uy * L;
       }
     }
+    // the floor: a chain on a body lying down (or swinging low) lies along it and slides, it never hangs through
+    if (ground) onFloor(P, it, sc, ground, false);
   }
   st.ax = R[0].x; st.ay = R[0].y;
   return P;
+}
+// every free point kept its drawn thickness above the floor under it, sliding with a little friction, no bounce
+function onFloor(P, it, sc, ground, still) {
+  const n = P.length - 1;
+  for (let i = 0; i <= n; i++) {   // the anchor too: an apron's waist tie on a body lying face down
+    const p = P[i], g = ground(p.x, p.y);
+    if (g == null) continue;
+    const r = (i === n ? Math.max(it.thick, it.endR) : it.thick) * sc;
+    if (p.y + r > g) {
+      p.y = g - r;
+      if (still) { p.px = p.x; p.py = p.y; } else { p.py = p.y; p.px = p.x - (p.x - p.px) * 0.7; }
+    }
+  }
 }
 function seat(p, q, L) {
   const dx = p.x - q.x, dy = p.y - q.y, l = Math.hypot(dx, dy) || 1;
