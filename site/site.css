@@ -377,5 +377,6 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
 .s-story p:not(.s-lede) + p { margin-top: 14px; }
 .s-dance { grid-template-columns: 1fr; max-width: 360px; }
 .s-dance .s-move-rig { height: 260px; }
-.s-perfect { max-width: 720px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-@media (max-width: 600px) { .s-perfect { grid-template-columns: 1fr; } }
+.s-move.s-perfect { max-width: 880px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.s-move.s-perfect .s-perfect-rig { height: auto; min-height: 0; aspect-ratio: 16 / 9; align-self: start; background: #07020f; }
+@media (max-width: 600px) { .s-move.s-perfect { grid-template-columns: 1fr; } }

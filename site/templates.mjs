@@ -299,8 +299,8 @@ ${s.dance ? `<section class="s-section" id="celebration">
   ` : ''}${s.perfect ? `<section class="s-section" id="perfect">
     <h2 class="s-h2">PERFECT</h2>
     <p class="s-note">Win a round without taking a hit and ${esc(s.name)} ends it with ${esc(s.perfect.name)}: the beaten body goes into the camera, hits the glass and squeaks down it.</p>
-    <article class="s-move s-dance s-perfect">
-      <canvas class="s-rig s-move-rig" data-char="${s.id}" data-mode="move" data-seq="${esc(s.perfect.clip)}" aria-label="${esc(s.name)} perfect round finisher"></canvas>
+    <article class="s-move s-perfect">
+      <canvas class="s-rig s-move-rig s-perfect-rig" data-char="${s.id}" data-mode="perfect" aria-label="${esc(s.name)} perfect round finisher: the beaten body thrown into the camera"></canvas>
       <div class="s-move-body">
         <h3 class="s-h3">${esc(s.perfect.name)}</h3>
         <p class="s-desc">${esc(s.perfect.note)}</p>
