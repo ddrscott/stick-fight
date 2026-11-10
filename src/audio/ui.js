@@ -4,8 +4,15 @@
 // 'sf:sound-panel'), which sits in the top-right gutter beside HORDE. Neon arcade look:
 // Bungee and Teko (loaded by index.html), the touch layer's palette, hard corners.
 //
+// On a touch screen the panel also holds CONTROLS: the size of the touch layer's stick and buttons
+// (src/touchPrefs.js), five steps with RESET. While the panel is open <html> has .tc-preview, which
+// shows the controls behind it on every screen, so each press is seen at once. A desktop never
+// shows the row.
+//
 // The sliders are drawn here and driven by pointer events, because touch.js cancels every
 // touchmove on the page and a native range input on Android needs those.
+
+import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
 
 const SPEAKER = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path class="sf-wave" d="M11 5.5c1 .8 1 4.2 0 5M12.8 3.8c2 1.8 2 6.6 0 8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path class="sf-x" d="M11 6l4 4M15 6l-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
@@ -36,6 +43,15 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     <div class="sf-meter"><i></i></div>
     <div class="sf-slider" data-k="musicVolume"><label>MUSIC</label><div class="sf-rail"><div class="sf-fill"></div><div class="sf-knob"></div></div><output></output></div>
     <div class="sf-slider" data-k="sfxVolume"><label>EFFECTS</label><div class="sf-rail"><div class="sf-fill"></div><div class="sf-knob"></div></div><output></output></div>
+    <div class="sf-size">
+      <div class="sf-size-head"><label>CONTROLS</label><span class="sf-size-name"></span></div>
+      <div class="sf-size-row">
+        <button class="sf-step" data-d="-1" type="button" aria-label="Smaller controls">&minus;</button>
+        <div class="sf-pips">${TOUCH_STEPS.map((st, i) => `<button class="sf-pip" data-i="${i}" type="button" aria-label="${st.name}"><i style="--d:${(0.5 + i * 0.22).toFixed(2)}rem"></i></button>`).join('')}</div>
+        <button class="sf-step" data-d="1" type="button" aria-label="Bigger controls">+</button>
+        <button class="sf-reset" type="button">RESET</button>
+      </div>
+    </div>
     <p class="sf-keys">M MUSIC ON/OFF &nbsp; N NEXT TRACK</p>
     <p class="sf-credit">MUSIC MADE WITH <a href="https://strudel.cc" target="_blank" rel="noopener">STRUDEL</a> (<a href="https://codeberg.org/uzu/strudel" target="_blank" rel="noopener">AGPL-3.0</a>) &nbsp;·&nbsp; GAME <a href="https://github.com/ddrscott/stick-fight" target="_blank" rel="noopener">SOURCE</a></p>`;
   document.body.appendChild(panel);
@@ -66,6 +82,26 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     rail.addEventListener('pointerup', end); rail.addEventListener('pointercancel', end);
   });
 
+  // CONTROLS: the touch layer's size. Each press saves it and the layer redraws behind the panel.
+  const pickStep = (i) => {
+    const n = Math.max(0, Math.min(TOUCH_STEPS.length - 1, i));
+    actions.click(n === touchStep() ? 'off' : 'on');
+    if (n !== touchStep()) setTouchScale(TOUCH_STEPS[n].scale);
+  };
+  panel.querySelectorAll('.sf-step').forEach((b) => b.addEventListener('click', () => pickStep(touchStep() + Number(b.dataset.d))));
+  panel.querySelectorAll('.sf-pip').forEach((b) => b.addEventListener('click', () => pickStep(Number(b.dataset.i))));
+  $('.sf-reset').addEventListener('click', () => { actions.click(); setTouchScale(TOUCH_DEFAULT); });
+  function paintSize() {
+    const at = touchStep(), last = TOUCH_STEPS.length - 1;
+    // touch.js caps the size at what this screen holds without the controls touching, and this says so
+    $('.sf-size-name').textContent = TOUCH_STEPS[at].name + (touchFit.clamped ? ` · SCREEN FITS ${Math.round(touchFit.scale * 100)}%` : '');
+    panel.querySelectorAll('.sf-pip').forEach((b, i) => { b.classList.toggle('sf-on', i === at); b.classList.toggle('sf-under', i < at); });
+    $('.sf-step[data-d="-1"]').disabled = at === 0;
+    $('.sf-step[data-d="1"]').disabled = at === last;
+    $('.sf-reset').disabled = touchPref().scale === TOUCH_DEFAULT;
+  }
+  onTouchPref(paintSize);
+
   // the touch layer's SOUND button, and a click for its small buttons
   window.addEventListener('sf:sound-panel', () => toggle());
   document.addEventListener('touchstart', (e) => {
@@ -75,8 +111,9 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
 
   let open = false, raf = 0;
   function toggle() { if (open) close(); else show(); }
-  function show() { open = true; panel.classList.add('sf-open'); update(); meterLoop(); }
-  function close() { open = false; panel.classList.remove('sf-open'); cancelAnimationFrame(raf); }
+  const preview = (on) => document.documentElement.classList.toggle('tc-preview', on && isTouch());
+  function show() { open = true; panel.classList.add('sf-open'); preview(true); update(); meterLoop(); }
+  function close() { open = false; panel.classList.remove('sf-open'); preview(false); cancelAnimationFrame(raf); }
   function meterLoop() {
     if (!open) return;
     const lv = music.state.playing ? music.level() : 0;
@@ -99,6 +136,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     $('.sf-mood').textContent = music.state.loading ? 'loading…' : music.state.error ? 'music error' : musicOn && !unlocked ? 'tap or press a key to start' : t ? `${t.bpm} BPM` : '';
     paintSlider(panel.querySelector('[data-k="musicVolume"]'), settings.musicVolume);
     paintSlider(panel.querySelector('[data-k="sfxVolume"]'), settings.sfxVolume);
+    paintSize();
     // the buttons show sound off, and pulse while sound is wanted but still locked
     const locked = soundOn && !unlocked;
     const touchBtn = document.querySelector('[data-role="sound"]');
@@ -186,6 +224,29 @@ function injectStyle() {
   .sf-fill { position: absolute; left: 0; top: 13px; height: 4px; background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
   .sf-knob { position: absolute; top: 6px; width: 12px; height: 18px; margin-left: -6px; background: var(--ink);
     border: 2px solid var(--cyan); border-radius: 2px; box-shadow: 0 0 8px var(--cyan); }
+  /* CONTROLS: touch only. Five rings that grow, the picked one lit. */
+  .sf-size { display: none; margin-top: 6px; padding-top: 6px; border-top: 2px solid rgba(166,107,255,0.3); }
+  html.touch-ui .sf-size { display: block; }
+  .sf-size-head { display: flex; align-items: baseline; justify-content: space-between; }
+  .sf-size-head label { font-size: 18px; font-weight: 600; letter-spacing: 0.06em; color: var(--cyan); }
+  .sf-size-name { font-size: 18px; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; color: var(--amber); text-shadow: 0 0 8px rgba(255,176,46,0.7); }
+  .sf-size-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .sf-step, .sf-reset { height: 36px; padding: 0; background: transparent; color: var(--cyan); border: 2px solid var(--cyan);
+    border-radius: 2px; box-shadow: 0 0 8px rgba(46,242,255,0.5); }
+  .sf-step { width: 36px; font-size: 18px; line-height: 1; }
+  .sf-reset { padding: 0 9px; font-size: 11px; letter-spacing: 0.05em; color: var(--pink); border-color: var(--pink); box-shadow: 0 0 8px rgba(255,43,214,0.5); }
+  .sf-step:disabled, .sf-reset:disabled { opacity: 0.3; box-shadow: none; }
+  .sf-step:active, .sf-reset:active, .sf-pip:active { transform: scale(0.95); }
+  .sf-pips { flex: 1; display: flex; align-items: center; justify-content: space-between; height: 36px; }
+  .sf-pip { flex: 1; height: 36px; padding: 0; background: transparent; border: 0; display: flex; align-items: center; justify-content: center; }
+  .sf-pip i { display: block; width: var(--d); height: var(--d); border: 2px solid rgba(166,107,255,0.6); border-radius: 50%; }
+  .sf-pip.sf-under i { border-color: var(--cyan); }
+  .sf-pip.sf-on i { background: var(--cyan); border-color: var(--ink); box-shadow: 0 0 10px var(--cyan), 0 0 3px var(--cyan); }
+  /* held upright, the panel sits over the stage so the controls under it stay in view */
+  @media (orientation: portrait) {
+    html.touch-ui .sf-panel { top: calc(env(safe-area-inset-top) + 8px); transform: translate(-50%, 0) scale(0.96); }
+    html.touch-ui .sf-panel.sf-open { transform: translate(-50%, 0) scale(1); }
+  }
   .sf-keys { margin: 6px 0 0; font-size: 15px; letter-spacing: 0.08em; color: rgba(255,244,253,0.45); }
   html.touch-ui .sf-keys { display: none; }
   .sf-credit { margin: 8px 0 0; font-size: 14px; letter-spacing: 0.08em; color: rgba(255,244,253,0.45); }

@@ -248,10 +248,11 @@ function injectStyle() {
   @keyframes fl-roll { from { transform: translateY(0); } to { transform: translateY(calc(-100% - 46cqh)); } }
 
   /* the touch pause button: only while fighting on a touch screen, in the top-left corner */
-  .fl-pausebtn { display: none; position: absolute; left: 0.6%; top: 11.5%; z-index: 4; width: 40px; height: 40px; padding: 0;
-    appearance: none; background: rgba(14,4,30,0.5); border: 2px solid #a66bff; border-radius: 0; box-shadow: 0 0 8px rgba(166,107,255,0.7);
-    align-items: center; justify-content: center; gap: 6px; pointer-events: auto; touch-action: none; }
-  .fl-pausebtn i { display: block; width: 5px; height: 16px; background: #d9c6ff; box-shadow: 0 0 6px #a66bff; }
+  /* sized like the rest of the touch layer: rem times the player's controls size (--tc-u, src/touch.js) */
+  .fl-pausebtn { --u: var(--tc-u, 1rem); display: none; position: absolute; left: 0.6%; top: 11.5%; z-index: 4; width: calc(var(--u) * 2.5); height: calc(var(--u) * 2.5); padding: 0;
+    appearance: none; background: rgba(14,4,30,0.5); border: calc(var(--u) * 0.125) solid #a66bff; border-radius: 0; box-shadow: 0 0 8px rgba(166,107,255,0.7);
+    align-items: center; justify-content: center; gap: calc(var(--u) * 0.375); pointer-events: auto; touch-action: none; }
+  .fl-pausebtn i { display: block; width: calc(var(--u) * 0.3125); height: calc(var(--u) * 1); background: #d9c6ff; box-shadow: 0 0 6px #a66bff; }
   html.touch-ui:not(.pad-ui).fl-play .fl-pausebtn { display: flex; }
   html.online .fl-pausebtn { display: none !important; } /* online: no pause; online.js has LEAVE */
 

@@ -6,6 +6,11 @@
 // only thing other players see. Every storage call is wrapped: a private window or blocked storage
 // just means the profile lives for this page.
 //
+// The account also carries prefs, a small JSON object of settings that follow the player. Today
+// that's the touch-control size (src/touchPrefs.js): prefs.touch = { scale, at }. A device that has
+// never set a size takes the account's; after that whichever was changed last wins, here and on
+// the server. Signed out, the size lives in localStorage alone.
+//
 //   profile()                 { id, name, email, crews: [{ slug, name, at }] }
 //   setName(name)             saves it (and to the account when signed in); false if it isn't a name
 //   rememberCrew(slug, name)  puts a crew at the top of the list
@@ -15,6 +20,7 @@
 //   signOut()                 ends the session and forgets this device's profile (a fresh id)
 
 import { apiUrl } from './link.js';
+import { touchPref, mergeTouchPref, onTouchPref } from '../touchPrefs.js';
 
 const KEY = 'stick-fight-player';
 const MAX_CREWS = 20;
@@ -90,11 +96,31 @@ function adopt(acct) {
   const merged = [];
   for (const c of crews.sort((a, b) => (b.at || 0) - (a.at || 0))) if (!merged.some((m) => m.slug === c.slug)) merged.push(c);
   write({ id: acct.pid, name: cleanName(acct.name) || p.name, email: acct.email, crews: merged.slice(0, MAX_CREWS) });
+  // the touch-control size: the account's when this device never set one, else the newer of the two
+  const touch = mergeTouchPref(acct.prefs && acct.prefs.touch);
   // anything this device knew that the account didn't goes up too (and a name the account lacks)
   const extra = p.crews.filter((c) => !(acct.crews || []).some((a) => a.slug === c.slug));
-  if (extra.length || (!cleanName(acct.name) && p.name)) api('me', 'PUT', { crews: extra, ...(!cleanName(acct.name) && p.name ? { name: p.name } : {}) }).catch(() => {});
+  const up = {};
+  if (extra.length) up.crews = extra;
+  if (!cleanName(acct.name) && p.name) up.name = p.name;
+  if (touch === 'push') up.prefs = { touch: touchPref() };
+  if (Object.keys(up).length) api('me', 'PUT', up).catch(() => {});
   return restored;
 }
+
+// the player changed the size on this device: it goes to the account when signed in, once the
+// presses stop (a few steps in a row are one save)
+let prefsTimer = 0;
+onTouchPref((source) => {
+  if (source !== 'player') return;
+  clearTimeout(prefsTimer);
+  prefsTimer = setTimeout(() => { if (read().email) api('me', 'PUT', { prefs: { touch: touchPref() } }).catch(() => {}); }, 800);
+});
+// a signed-in phone asks the account at start, so a size changed on another device arrives
+// without a trip through the online menu
+if (typeof document !== 'undefined') setTimeout(() => {
+  if (document.documentElement.classList.contains('touch-ui') && read().email) syncProfile();
+}, 1500);
 
 let syncing = null;
 /** who's signed in on this browser (the cookie): adopt the account's profile, or note the session ended */

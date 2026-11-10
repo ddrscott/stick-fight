@@ -4,9 +4,12 @@
 // restores the same id (and with it the name, the crew list and every crew record).
 //
 //   POST /stick-fight/api/auth/start   { email }                    -> { ok } (dev: + devCode, devLink)
-//   POST /stick-fight/api/auth/verify  { email, code, pid, name }   -> { email, pid, name, crews, restored } + cookie
-//   GET  /stick-fight/api/me                                        -> { email, pid, name, crews } | null
-//   PUT  /stick-fight/api/me           { name?, crews? }            -> { ok }
+//   POST /stick-fight/api/auth/verify  { email, code, pid, name }   -> { email, pid, name, crews, prefs, restored } + cookie
+//   GET  /stick-fight/api/me                                        -> { email, pid, name, crews, prefs } | null
+//   PUT  /stick-fight/api/me           { name?, crews?, prefs? }    -> { ok }
+//
+// prefs is a small JSON object of settings that follow the account (migrations/0002_prefs.sql).
+// Only known keys with values in range are kept (cleanPrefs); today that's the touch-control size.
 //   POST /stick-fight/api/auth/logout                               -> { ok }, cookie cleared
 //
 // The code is 6 digits, lasts 10 minutes and takes 5 tries; the email also carries a link to the
@@ -37,8 +40,12 @@ const COOKIE = "sf_session";
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_CREWS = 20;
 
-type Account = { email: string; player_id: string; name: string; crews: string };
+type Account = { email: string; player_id: string; name: string; crews: string; prefs: string };
 type CrewRef = { slug: string; name: string; at: number };
+/** touch: the size of the touch controls (src/touchPrefs.js) and when the player last changed it */
+type Prefs = { touch?: { scale: number; at: number } };
+const TOUCH_SCALE_MIN = 0.5, TOUCH_SCALE_MAX = 2;
+const CLOCK_SLACK_MS = 5 * 60 * 1000;
 
 export function normalizeEmail(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -83,6 +90,31 @@ function cleanCrews(raw: unknown): CrewRef[] {
 const parseCrews = (s: string): CrewRef[] => { try { return cleanCrews(JSON.parse(s)); } catch { return []; } };
 
 /**
+ * Prefs as stored: known keys only, each value checked against its range, anything else dropped.
+ * A new setting gets a key here and nothing else changes.
+ */
+function cleanPrefs(raw: unknown): Prefs {
+  const out: Prefs = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const t = (raw as { touch?: unknown }).touch;
+  if (t && typeof t === "object" && !Array.isArray(t)) {
+    const { scale, at } = t as { scale?: unknown; at?: unknown };
+    if (typeof scale === "number" && scale >= TOUCH_SCALE_MIN && scale <= TOUCH_SCALE_MAX && typeof at === "number" && Number.isFinite(at) && at > 0) {
+      // a phone whose clock runs ahead can't hold the newest-wins rule forever
+      out.touch = { scale: Math.round(scale * 1000) / 1000, at: Math.min(Math.floor(at), Date.now() + CLOCK_SLACK_MS) };
+    }
+  }
+  return out;
+}
+const parsePrefs = (s: string | null | undefined): Prefs => { try { return cleanPrefs(JSON.parse(s || "{}")); } catch { return {}; } };
+/** what a device sent over what the account had: per key, the most recent change wins */
+function mergePrefs(have: Prefs, sent: Prefs): Prefs {
+  const out: Prefs = { ...have };
+  if (sent.touch && (!have.touch || sent.touch.at >= have.touch.at)) out.touch = sent.touch;
+  return out;
+}
+
+/**
  * Count one event against `key` in a fixed window and say whether it's within `max`. One atomic
  * statement, so parallel requests can't all read the same count.
  */
@@ -106,9 +138,9 @@ async function currentEmail(req: Request, env: Env): Promise<string | null> {
   return row ? row.email : null;
 }
 async function account(env: Env, email: string): Promise<Account | null> {
-  return env.DB.prepare("SELECT email, player_id, name, crews FROM accounts WHERE email = ?").bind(email).first<Account>();
+  return env.DB.prepare("SELECT email, player_id, name, crews, prefs FROM accounts WHERE email = ?").bind(email).first<Account>();
 }
-const profileOf = (a: Account) => ({ email: a.email, pid: a.player_id, name: a.name, crews: parseCrews(a.crews) });
+const profileOf = (a: Account) => ({ email: a.email, pid: a.player_id, name: a.name, crews: parseCrews(a.crews), prefs: parsePrefs(a.prefs) });
 
 async function start(req: Request, env: Env): Promise<Response> {
   const body = await req.json<{ email?: unknown; page?: unknown }>().catch(() => ({} as { email?: unknown; page?: unknown }));
@@ -195,7 +227,7 @@ async function linkAccount(env: Env, email: string, pid: unknown, name: unknown)
   }
   const id = typeof pid === "string" && PID_RE.test(pid) ? pid : newPid();
   if (await env.DB.prepare("SELECT 1 FROM accounts WHERE player_id = ?").bind(id).first()) return null;
-  const acct: Account = { email, player_id: id, name: cleanName(name) || "", crews: "[]" };
+  const acct: Account = { email, player_id: id, name: cleanName(name) || "", crews: "[]", prefs: "{}" };   // prefs: the column's default
   await env.DB.prepare("INSERT INTO accounts (email, player_id, name, crews, created_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)")
     .bind(acct.email, acct.player_id, acct.name, acct.crews, now, now).run();
   return { acct, restored: id !== pid };
@@ -245,9 +277,10 @@ async function saveMe(req: Request, env: Env): Promise<Response> {
   if (name === null) return json({ error: "bad-name" }, 400);
   // the crew list merges: what this device knows plus what the account had, newest first
   const crews = body.crews === undefined ? parseCrews(acct.crews) : cleanCrews([...cleanCrews(body.crews), ...parseCrews(acct.crews)]);
-  await env.DB.prepare("UPDATE accounts SET name = ?, crews = ?, seen_at = ? WHERE email = ?")
-    .bind(name, JSON.stringify(crews), Date.now(), email).run();
-  return json({ ok: true, name, crews });
+  const prefs = body.prefs === undefined ? parsePrefs(acct.prefs) : mergePrefs(parsePrefs(acct.prefs), cleanPrefs(body.prefs));
+  await env.DB.prepare("UPDATE accounts SET name = ?, crews = ?, prefs = ?, seen_at = ? WHERE email = ?")
+    .bind(name, JSON.stringify(crews), JSON.stringify(prefs), Date.now(), email).run();
+  return json({ ok: true, name, crews, prefs });
 }
 
 async function logout(req: Request, env: Env): Promise<Response> {
