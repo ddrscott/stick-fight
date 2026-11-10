@@ -4,10 +4,12 @@
 // sim isn't stepping. Touch and mouse go straight to the buttons (src/flow/ui.js). The full table,
 // and what each key means on which screen, is in src/flow/controls.js.
 //
-//   keyboard: arrows / WASD move, Enter or Space confirm, Escape (escape), Backspace (back), P (pause)
+//   keyboard: arrows / WASD move, Enter or Space confirm, Escape (escape), Backspace (back), P (pause),
+//             F1 (moves: the MOVE LIST, src/flow/movelist.js)
 //   pad:      D-pad or left stick move, A confirm, B or Select back (Select is 'select', which the
 //             flow reads as back in menus and pause in a fight), Start (start), X (del: the
-//             keyboard screens' DEL). Y, the bumpers and the triggers do nothing in menus.
+//             keyboard screens' DEL), Y (moves: the MOVE LIST where a screen offers it). The bumpers and
+//             the triggers do nothing in menus.
 //
 // onText gets the keydown first on screens that take typing (initials, a room code); if it
 // returns true the key stops there (capture phase), so it neither moves the fighter (input.js)
@@ -21,9 +23,9 @@ import { setDevice, watchDevice } from './controls.js';
 
 const KEYS = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
-  Enter: 'confirm', NumpadEnter: 'confirm', Space: 'confirm', Escape: 'escape', Backspace: 'back', KeyP: 'pause',
+  Enter: 'confirm', NumpadEnter: 'confirm', Space: 'confirm', Escape: 'escape', Backspace: 'back', KeyP: 'pause', F1: 'moves',
 };
-const PAD = { 0: 'confirm', 1: 'back', 2: 'del', 8: 'select', 9: 'start' };
+const PAD = { 0: 'confirm', 1: 'back', 2: 'del', 3: 'moves', 8: 'select', 9: 'start' };
 const DIRS = new Set(['up', 'down', 'left', 'right']);
 const REPEAT_FIRST = 380, REPEAT_EVERY = 110;
 
@@ -40,6 +42,7 @@ export function createMenuInput({ onKey, onActivity, onText }) {
     if (onText && onText(e)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
     const k = KEYS[e.code];
     if (!k) return;
+    if (k === 'moves') e.preventDefault();   // F1 is the browser's help otherwise
     if (e.repeat && !DIRS.has(k)) return;
     onKey(k, 'key');
   }, { capture: true });

@@ -325,6 +325,7 @@ function injectStyle() {
   .fl-netpick .fl-grid { grid-auto-rows: 18.4cqh; }
   .fl-netpick .fl-card { height: 18.4cqh; }
   .fl-netpick .fl-detail { height: 57.2cqh; }
+  .fl-netpick .fl-selfoot .fl-btn { min-width: 16cqw; }   /* four buttons here (LEAVE ROOM, PICK, MOVE LIST, START) */
   .fl-post .fl-btn { white-space: nowrap; }
   .fl-selstatus { display: flex; gap: 3cqw; font-size: 2.3cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1; min-height: 2.4cqw; }
   .fl-selstatus b { font-weight: 600; color: var(--amber); text-shadow: 0 0 0.5cqw var(--amber); }

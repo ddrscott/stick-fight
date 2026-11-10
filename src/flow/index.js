@@ -20,7 +20,10 @@
 //   gameOver        the final score, then enterInitials (a top-5 score) or highScores
 //   enterInitials   three letters for the table
 //   ending          the credits after the ladder
-//   paused          RESUME / RESTART / BOTCHES / CONTROLS / MAIN MENU over the held scene (single-player modes)
+//   paused          RESUME / MOVE LIST / RESTART / BOTCHES / CONTROLS / MAIN MENU over the held scene (single-player modes)
+//
+// The MOVE LIST (src/flow/movelist.js) isn't a state: it's an overlay over the pause menu or a pick screen, so
+// the screen under it keeps its state, and any state change closes it. While it's up it gets every menu key.
 //   onlineMenu, onlineHost, onlineJoin, onlineConnecting, onlineFighting, onlineEnd   (netApi.js)
 //   onlinePost      after an online match, the room still open: REMATCH, NEW CHARACTERS, LEAVE ROOM,
 //                   MAIN MENU, the tally, the rival's choice live and the countdowns (online.js runs
@@ -39,6 +42,7 @@
 import { track } from '../analytics.js';   // cookieless game analytics (README, Analytics)
 import { LADDER, buildLadder, secretStage, retryDifficulty } from './ladder.js';
 import { openSelect } from './select.js';
+import { openMoveList } from './movelist.js';
 import { roster, getCharacter, characterOr, TEMP_ID } from '../characters/index.js';
 import * as S from './scores.js';
 import { createMenuInput } from './menuInput.js';
@@ -148,6 +152,7 @@ export function createFlow(ctx) {
   // ?pick=<id> (PLAY AS on a fighter's page, README "Site"): the select screen opens on that fighter
   try { const want = new URLSearchParams(location.search).get('pick'); if (want && roster().some((c) => c.id === want)) sel.player = want; } catch { /* no location */ }
   let selCtl = null;
+  let ml = null;   // the MOVE LIST overlay while it's up (openMoves)
   const ladder = () => run.ladder || LADDER;
   const history = [];
   const ui = createUI((k) => { if (ctx.click) ctx.click(k); });
@@ -158,6 +163,7 @@ export function createFlow(ctx) {
     if (next === state) return false;
     if (next !== 'off' && !TRANSITIONS[state].includes(next)) { console.warn(`[flow] refused ${state} -> ${next}`); return false; }
     const prev = state;
+    if (ml) { ml.close(); ml = null; }   // the screen under the move list is going away
     leave(prev, next);
     state = next; t = 0; idle = 0;
     history.push(`${prev}>${next}`); if (history.length > 300) history.shift();
@@ -256,6 +262,7 @@ export function createFlow(ctx) {
     if (state === 'off') return true;
     const dt = ms / 1000;
     t += dt; idle += ms;
+    if (ml) idle = 0;   // reading the move list isn't idling
     if (bonus.t > 0) bonus.t -= dt;
     if (DEMO.has(state)) {
       // the demo's KO card holds a beat longer
@@ -385,7 +392,7 @@ export function createFlow(ctx) {
     const dummy = sel.step === 'dummy';
     const sub = { arcade: `ARCADE  ·  ${LADDER.length} STAGES UP THE BUILDING`, online: 'VERSUS ONLINE  ·  YOUR RIVAL PICKS TOO', horde: 'HORDE  ·  FLOOR BY FLOOR', training: 'TRAINING  ·  STEP 1 OF 2' }[sel.mode] || '';
     selCtl = openSelect(ui, { title: dummy ? 'PICK YOUR DUMMY' : 'SELECT FIGHTER', sub: dummy ? 'TRAINING  ·  STEP 2 OF 2  ·  WHO TAKES THE HITS' : sub,
-      roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack });
+      roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack, onMoves: openMoves });
   }
   function pickChar(id) {
     if (state !== 'charSelect' || t < 0.15) return;
@@ -404,6 +411,12 @@ export function createFlow(ctx) {
     if (sel.step === 'dummy') { sel.step = 'player'; screenSelect(); }
     else go(sel.join ? 'attract' : 'modeSelect');
   }
+  // the MOVE LIST for a fighter, over the pause menu or a pick screen; closing it hands the keys back
+  function openMoves(c) {
+    if (ml || !c) return;
+    ml = openMoveList({ char: c, click: ctx.click, onClose: () => { ml = null; if (menu) menu.swallow(); } });
+  }
+  const myChar = () => (sim.units[0] && sim.units[0].char) || characterOr(sel.player);
   function pressStart() { if (state === 'attract') go('modeSelect'); }
   function openScores() { hs = { mode: 'arcade', highlight: -1, postGame: false, loop: hs.loop, manual: true }; go('highScores'); }
 
@@ -420,6 +433,7 @@ export function createFlow(ctx) {
       // post-match: any press but a confirm stops the auto rematch (a confirm presses a button, which says what it wants)
       if (state === 'onlinePost' && k !== 'confirm' && k !== 'start') { try { getNet().postPoke?.(); } catch { /* stub */ } }
       if (ctx.netBusy && ctx.netBusy()) return;   // its panel is up; it can't block the pad, so we ignore it here
+      if (ml) { ml.key(k); return; }   // the move list owns every key while it's up
       if (PLAY.has(state)) {
         if (state !== 'result' && (k === 'pause' || k === 'escape' || k === 'start' || k === 'select')) pause();
         return;
@@ -427,7 +441,8 @@ export function createFlow(ctx) {
       if (k === 'up' || k === 'down' || k === 'left' || k === 'right') { ui.move(k); return; }
       switch (state) {
         case 'attract': if (k === 'start') { pressStart(); return; } break;
-        case 'paused': if (k === 'pause' || k === 'start' || k === 'escape' || k === 'back' || k === 'select') { resume(); return; } break;
+        case 'paused': if (k === 'pause' || k === 'start' || k === 'escape' || k === 'back' || k === 'select') { resume(); return; } if (k === 'moves') { openMoves(myChar()); return; } break;
+        case 'charSelect': case 'onlineSelect': if (k === 'moves' && selCtl) { openMoves(selCtl.current); return; } break;
         case 'enterInitials': if (k === 'del') { cursorTo(slot - 1); return; } break;
         case 'onlineJoin': if (k === 'del') { typeCode('DEL'); return; } break;
         default: if (TEXT.has(state) && k === 'del') { teType('DEL'); return; } break;
@@ -550,7 +565,7 @@ export function createFlow(ctx) {
       root.append(el('h1', 'fl-h2', 'CONTROLS'));
       const row = el('div', 'fl-row fl-ctlrow');
       const right = el('div', 'fl-ctlcol');
-      right.append(controlsTable(MENUS, 'MENUS'), el('div', 'fl-small fl-ctlnote', 'ON A TOUCH SCREEN THE LEFT THUMB STEERS, THE BUTTONS STRIKE AND GUARD, AND MENUS ARE TAPPED. F1 SHOWS THE MOVE LIST IN A FIGHT.'),
+      right.append(controlsTable(MENUS, 'MENUS'), el('div', 'fl-small fl-ctlnote', 'ON A TOUCH SCREEN THE LEFT THUMB STEERS, THE BUTTONS STRIKE AND GUARD, AND MENUS ARE TAPPED. THE PAUSE MENU AND THE FIGHTER SELECT HAVE EVERY FIGHTER\'S FULL MOVE LIST (F1, OR Y ON A PAD); IN A FIGHT F1 SHOWS A QUICK STRIP.'),
         el('div', 'fl-small fl-ctlnote', 'PARRY: TAP TOWARD HIM JUST BEFORE A HIT LANDS (DOWN-FORWARD FOR A LOW). KNOCKED DOWN: UP STANDS, LEFT OR RIGHT ROLLS, A BUTTON STRIKES FROM THE FLOOR. OVER HIM ON THE FLOOR: DOWN + KICK STOMPS. JUGGLED: A BUTTON AT THE RIGHT MOMENT LANDS YOU ON YOUR FEET.'));
       row.append(controlsTable(FIGHT, 'FIGHT'), right);
       root.appendChild(row);
@@ -766,6 +781,10 @@ export function createFlow(ctx) {
       if (mode === 'arcade') root.appendChild(el('div', 'fl-label', `STAGE ${ladder()[run.stage].n}  ·  ${ladder()[run.stage].name}  ·  ${S.fmt(run.score)}`));
       const list = el('div', 'fl-list');
       const items = [button('RESUME', resume, 'fl-pink')];
+      // the full command list for the fighter you're playing (src/flow/movelist.js), over this menu
+      const movesBtn = button('MOVE LIST', () => openMoves(myChar()));
+      movesBtn.el.appendChild(el('small', '', 'EVERY MOVE, STRING AND INPUT'));
+      items.push(movesBtn);
       if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
       if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }));
       if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }));
@@ -794,7 +813,7 @@ export function createFlow(ctx) {
       paint();
       const row = el('div', 'fl-row fl-pauserow'); row.append(list, panel);
       root.appendChild(row);
-      return { items, back: resume, legend: [MOVE, SELECT, ['back', 'RESUME'], ['start', 'RESUME']] };
+      return { items, back: resume, legend: [MOVE, SELECT, ['moves', 'MOVE LIST'], ['back', 'RESUME'], ['start', 'RESUME']] };
     });
   }
 
@@ -1139,7 +1158,8 @@ export function createFlow(ctx) {
       // the back key un-readies (CHANGE); it never leaves the room by accident
       onBackKey: () => { const w = view(); if (w && w.mine.ready) { getNet().pick?.(w.mine.id, false); paintBetween(); } },
       onHover: (id) => { const w = view(); if (w && !w.mine.ready) getNet().pick?.(id, false); },
-      legend: [['move'], ['confirm', 'PICK'], ['back', 'CHANGE']],
+      legend: [['move'], ['confirm', 'PICK'], ['moves', 'MOVE LIST'], ['back', 'CHANGE']],
+      onMoves: openMoves,   // only on this screen: the rival's game goes on (nothing here pauses)
     });
     paintBetween(v);
   }
@@ -1652,7 +1672,8 @@ export function createFlow(ctx) {
   function allowHotkey(code) {
     if (state === 'off') return true;
     if (code === 'KeyH') return PLAY.has(state) || state === 'paused';
-    if (code === 'F1' || code === 'Slash') return PLAY.has(state) || state === 'paused';
+    if (code === 'F1') return PLAY.has(state);   // in the pause menu F1 opens the MOVE LIST instead (menuInput 'moves')
+    if (code === 'Slash') return PLAY.has(state) || state === 'paused';
     if (code === 'Minus' || code === 'Equal') return mode === 'training';
     return false;   // R, G and P belong to the pause menu now
   }

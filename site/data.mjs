@@ -16,71 +16,20 @@
 //             measured: ACCOUNTANT's Fine Print comes out +3 here and measured +2.5 in accountant-test.
 //
 // Hidden techniques (the happy accidents, src/combat/botch.js) are never listed: the shared basics come
-// from SHARED_INPUTS below and a character's own moves from its file, and the techniques are neither.
+// from SHARED_INPUTS (src/combat/moveinfo.js) and a character's own moves from its file, and the techniques are neither.
 
 import { roster, TEMP_ID, getCharacter } from '../src/characters/index.js';
-import { FRAME_DATA, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from '../src/combat/frameData.js';
+import { FRAME_DATA } from '../src/combat/frameData.js';
 import { STRINGS } from '../src/combat/strings.js';
 import { MOVE_DATA, RIG, RIG_KIT, createFighter } from '../src/fighter/index.js';
+// the notation, the shared button table and the per-character input reading live with the game, which uses
+// them for its MOVE LIST (src/flow/movelist.js); the site reads the same ones
+import { SHARED_INPUTS, inputFor, tokenGlyph, keysGlyph, norm, humanize, animOf, heightOf, quiet, payoffOf, comboDamage, listEntry, nameOf, inputsOf } from '../src/combat/moveinfo.js';
+export { SHARED_INPUTS, inputFor, tokenGlyph, animOf };
 import { buildHitboxes } from '../src/combat/hitboxes.js';
 
 const PREROLL_MS = 50;   // src/combat/sim.js PREROLL
 const fr = (ms) => Math.round(ms * 0.06);
-
-// The shared button table, as resolveButton() in src/combat/sim.js reads a press, plus the stomp (resolvePress)
-// and the wake-up strikes (wakeFor) (keep them together).
-export const SHARED_INPUTS = [
-  { button: '1', motion: '', move: 'jab', name: 'JAB' },
-  { button: '2', motion: '', move: 'cross', name: 'CROSS' },
-  { button: '3', motion: '', move: 'lkick', name: 'SNAP KICK' },
-  { button: '4', motion: '', move: 'roundhouse', name: 'ROUNDHOUSE' },
-  { button: '1', motion: 'f', move: 'bodyBlow', name: 'BODY BLOW' },
-  { button: '2', motion: 'f', move: 'lungeCross', name: 'LUNGE CROSS' },
-  { button: '2', motion: 'ff', move: 'cometCross', name: 'COMET CROSS', note: 'out of a run' },
-  { button: '4', motion: 'f', move: 'overhead', name: 'OVERHEAD KICK' },
-  { button: '4', motion: 'b', move: 'spinKick', name: 'SPIN KICK', note: 'near a wall: Wall Spin' },
-  { button: '1', motion: 'd', move: 'lowJab', name: 'LOW JAB' },
-  { button: '2', motion: 'd', move: 'uppercut', name: 'UPPERCUT' },
-  { button: '3', motion: 'd', move: 'lowKick', name: 'LOW KICK' },
-  { button: '4', motion: 'd', move: 'sweep', name: 'SWEEP' },
-  { button: '2', motion: 'rise', move: 'risingUppercut', name: 'RISING UPPERCUT' },
-  { button: '4', motion: 'rise', move: 'risingKnee', name: 'RISING KNEE' },
-  { button: '1+3', motion: '', move: 'throw', name: 'THROW', note: 'or 2+4; near a wall: Wall Slam' },
-  { button: '1', motion: 'air', move: 'jumpJab', name: 'JUMP JAB' },
-  { button: '2', motion: 'air', move: 'jumpCross', name: 'JUMP CROSS' },
-  { button: '3', motion: 'air', move: 'flyingKick', name: 'FLYING KICK' },
-  { button: '4', motion: 'air', move: 'airRoundhouse', name: 'AIR ROUNDHOUSE' },
-  { button: '4', motion: 'airDown', move: 'diveKick', name: 'DIVE KICK' },
-  // not in resolveButton: the stomp is resolvePress (stompOK), the wake-up strikes wakeFor. `fix` blanks what the
-  // standing measurement gets wrong: nobody blocks a stomp, and a wake-up strike springs from the floor (on block
-  // is getup-test's measurement, in the note)
-  { button: '3', motion: 'over', move: 'stomp', name: 'STOMP', note: 'or ↓4, the other fighter on the floor in front of you', fix: { onBlock: null } },
-  { button: '1', motion: 'floor', move: 'wakeKick', name: 'WAKE KICK', note: 'or 3, while knocked down; can\'t be hit until it swings; 17 to 24 frames minus on block', fix: { onBlock: null, reach: null } },
-  { button: '2', motion: 'floor', move: 'wakeSweep', name: 'WAKE SWEEP', note: 'or 4, or ↓ and any button, while knocked down; can\'t be hit until it swings; 17 to 24 frames minus on block', fix: { onBlock: null, reach: null } },
-];
-
-// ---- notation: the game's glyphs (the HUD's move hints and the move lists) ---------------------------
-export function inputFor(button, motion) {
-  if (motion === 'air') return `${button} in air`;
-  if (motion === 'airDown') return `↓${button} in air`;
-  if (motion === 'rise') return `release ↓, ${button}`;
-  if (motion === 'over') return `↓${button} over them`;
-  if (motion === 'floor') return `${button} on the floor`;
-  if (motion === 'd') return `↓${button}`;
-  const g = { f: '→', b: '←', df: '↘', db: '↙', ff: '→→', run: '→→' }[motion];
-  return g ? `${g} ${button}` : button;
-}
-export const tokenGlyph = (t) => (t[0] === 'd' ? '↓' + t.slice(1) : t);
-const keysGlyph = (keys) => keys.map(tokenGlyph).join(', ');
-const norm = (s) => String(s || '').replace(/\(.*?\)/g, '').replace(/\s+/g, '').toLowerCase();
-const humanize = (m) => m.replace(/^[a-z]+_/, '').replace(/([a-z])([A-Z0-9])/g, '$1 $2').toUpperCase();
-
-// the clip a move plays: its own, else the first of its `anims` the rig has (createCombat does the same)
-export function animOf(move) {
-  const fd = FRAME_DATA[move];
-  if (!fd) return null;
-  return [move, ...(fd.anims || []), ...(fd.anim ? [fd.anim] : [])].find((n) => MOVE_DATA[n]) || null;
-}
 
 function timing(move) {
   const anim = animOf(move), d = anim && MOVE_DATA[anim];
@@ -131,13 +80,6 @@ function reachOf(c, move) {
 }
 
 // ---- one move's frame data -------------------------------------------------------------------------------
-function heightOf(fd) {
-  if (fd.throw) return 'throw';
-  if (fd.overhead || fd.air) return 'overhead';
-  return fd.height || 'mid';
-}
-// a move that never strikes on its own: a stance, a counter stance, a step out
-const quiet = (fd) => !!(fd.noHit || fd.stance || fd.parry || fd.throwCounter);
 function damageOf(fd) {
   if (quiet(fd)) return { total: 0, text: '—' };
   if (fd.hits > 1 && fd.rush) {
@@ -211,36 +153,6 @@ export function frameRow(move, c) {
     reachKind: fd.throw ? 'grab range' : 'reach',
     props: propsOf(fd, c),
   };
-}
-
-// ---- combo damage, as the sim scales it (README, Combo decay) --------------------------------------------
-function comboDamage(moves, c) {
-  let total = 0, n = 0;
-  for (const m of moves) {
-    const fd = FRAME_DATA[m];
-    if (!fd || fd.noHit) continue;
-    const hits = fd.hits > 1 && fd.rush ? [...Array(fd.hits - 1).fill(fd.rush.damage != null ? fd.rush.damage : fd.damage), fd.damage] : [fd.damage];
-    for (const d of hits) {
-      n++;
-      let v = d * comboScale(COMBO_DMG, n) * c.stats.damage;
-      if (total >= COMBO_SOFTCAP) v *= COMBO_OVERCAP;
-      total += v;
-    }
-  }
-  return Math.round(total);
-}
-function payoffOf(fd) {
-  if (!fd) return '';
-  const p = [];
-  if (fd.juggle) p.push('launch'); else if (fd.knockdown) p.push('knockdown');
-  if (fd.splat) p.push('wall splat');
-  if (fd.groundBounce) p.push('ground bounce');
-  if (fd.wallBounce) p.push('wall bounce');
-  if (fd.status) p.push(fd.status.tag);
-  if (fd.overhead) p.push('overhead');
-  if (fd.height === 'low') p.push('low');
-  if (fd.hits > 1) p.push(`${fd.hits} hits`);
-  return p.join(', ') || (fd.ender ? 'mid finish' : '');
 }
 
 // ---- the character's sheet ---------------------------------------------------------------------------
@@ -319,43 +231,6 @@ function mechanicsOf(c, names) {
   if (c.ai && c.ai.style) out.push({ label: 'CPU STYLE', text: { turtle: 'Turtle: guards a lot, waits at range and punishes whiffs.', rushdown: 'Rushdown: runs in, swings more, never backs off.', grappler: 'Grappler: throws up close and hunts the wall.', aerial: 'Aerial: jumps in from further out, much more often.' }[c.ai.style] || c.ai.style });
   return out;
 }
-
-// moveList entry for a move: by name (its callout or a string it ends) or by the input that presses it
-function listEntry(c, names, inputs) {
-  const ns = names.filter(Boolean).map(norm), is = inputs.filter(Boolean).map(norm);
-  return (c.moveList || []).find((e) => ns.includes(norm(e.name))) || (c.moveList || []).find((e) => is.includes(norm(e.input))) || null;
-}
-function nameOf(c, m) {
-  const fd = FRAME_DATA[m];
-  const ender = c.strings.find((s) => s.moves[s.moves.length - 1] === m && s.moves.some((x) => FRAME_DATA[x] && FRAME_DATA[x].owner === c.id));
-  return (fd && fd.callout) || (ender && ender.name) || humanize(m);
-}
-
-// every way to press one of the character's own moves
-function inputsOf(c, m) {
-  const out = [];
-  // seq: the clips the page's animation plays for this way in (a string's presses up to it, a stance first)
-  const clip = animOf(m);
-  for (const k of c.commands) if (k.move === m) out.push({ input: inputFor(k.button, k.motion), how: '', seq: [clip] });
-  for (const s of c.strings) {
-    const i = s.moves.indexOf(m);
-    if (i < 0 || (i === 0 && out.length)) continue;
-    const seq = s.moves.slice(0, i + 1).map(animOf);
-    if (i === s.moves.length - 1) out.push({ input: keysGlyph(s.keys), how: `ends ${s.name}`, seq });
-    else out.push({ input: keysGlyph(s.keys.slice(0, i + 1)), how: `${ordinal(i + 1)} hit of ${s.name}`, seq });
-  }
-  for (const p of c.ownMoves) {
-    const fd = FRAME_DATA[p];
-    const parentIn = () => inputsOf(c, p).map((x) => x.input)[0] || '';
-    const seq = [animOf(p), clip];
-    if (fd.stance) for (const [b, x] of Object.entries(fd.stance.moves)) if (x === m) out.push({ input: `${parentIn()}, ${b}`, how: `out of ${nameOf(c, p)}`, seq });
-    if (fd.parry && fd.parry.reversal === m) out.push({ input: parentIn(), how: `when ${nameOf(c, p)} catches a strike`, seq });
-    if (fd.throwCounter && fd.throwCounter.reversal === m) out.push({ input: parentIn(), how: `when ${nameOf(c, p)} catches a grab`, seq });
-  }
-  return dedupe(out);
-}
-const ordinal = (n) => ['first', 'second', 'third', 'fourth', 'fifth'][n - 1] || `#${n}`;
-const dedupe = (a) => a.filter((x, i) => a.findIndex((y) => y.input === x.input && y.how === x.how) === i);
 
 function describe(row) {
   const bits = [];
