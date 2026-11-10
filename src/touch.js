@@ -82,7 +82,7 @@ function init() {
     <div class="tc-top">
       <button class="tc-btn tc-mini" data-tap="KeyG" aria-label="Toggle horde mode">HORDE</button>
       <button class="tc-btn tc-mini tc-leave" data-tap="Escape" aria-label="Leave the online match">LEAVE</button>
-      <button class="tc-btn tc-mini tc-sound" data-role="sound" aria-label="Sound settings">SND</button>
+      <button class="tc-btn tc-mini tc-sound" data-role="sound" aria-label="Settings"></button>
       <button class="tc-btn tc-mini" data-role="fullscreen" aria-label="Fullscreen">${FS_ICON}</button>
     </div>
     <div class="tc-rotate" role="note">
@@ -197,7 +197,7 @@ function init() {
       } else if (btn && btn.dataset.tap) {
         tap(btn.dataset.tap); flash(btn);
       } else if (btn && btn.dataset.role === 'sound') {
-        window.dispatchEvent(new CustomEvent('sf:sound-panel')); flash(btn);   // src/audio/ui.js opens its panel
+        window.dispatchEvent(new CustomEvent('sf:sound-panel')); flash(btn);   // src/audio/ui.js opens its SETTINGS panel
       } else if (btn && btn.dataset.role === 'fullscreen') {
         toggleFullscreen(); flash(btn);
       } else if (btn && btn.dataset.role === 'dismiss') {

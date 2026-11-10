@@ -1,6 +1,6 @@
-// The sound settings panel: SOUND and MUSIC switches, the track playing with NEXT, a meter,
-// and MUSIC and EFFECTS sliders. Opened from a small speaker button in the stage's bottom
-// left corner on desktop, or from the touch layer's SOUND button (touch.js sends
+// The SETTINGS panel: SOUND and MUSIC switches, the track playing with NEXT, a meter,
+// and MUSIC and EFFECTS sliders. Opened from a small menu button (three bars) in the stage's bottom
+// left corner on desktop, or from the touch layer's menu button (touch.js sends
 // 'sf:sound-panel'), which sits in the top-right gutter beside HORDE. Neon arcade look:
 // Bungee and Teko (loaded by index.html), the touch layer's palette, hard corners.
 //
@@ -14,7 +14,8 @@
 
 import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
 
-const SPEAKER = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path class="sf-wave" d="M11 5.5c1 .8 1 4.2 0 5M12.8 3.8c2 1.8 2 6.6 0 8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path class="sf-x" d="M11 6l4 4M15 6l-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+// three bars: the panel holds more than sound. Muted, the last bar shortens and a small X takes its end.
+const MENU_ICON = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 3.5h12M2 8h12"/><path class="sf-bar" d="M2 12.5h12"/><path class="sf-x" d="M2 12.5h6M10.5 10.5l4 4M14.5 10.5l-4 4"/></svg>';
 
 export function createSoundUI({ settings, music, actions, isUnlocked }) {
   if (typeof document === 'undefined') return { update() {}, close() {} };
@@ -23,15 +24,15 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
 
   // desktop button and its "press a key" hint
   const host = document.getElementById('stage') || document.body;
-  const btn = el('button', 'sf-btn', { 'aria-label': 'Sound settings', type: 'button' });
-  btn.innerHTML = SPEAKER;
+  const btn = el('button', 'sf-btn', { 'aria-label': 'Settings', type: 'button' });
+  btn.innerHTML = MENU_ICON;
   const hint = el('div', 'sf-hint');
   host.appendChild(btn); host.appendChild(hint);
   btn.addEventListener('click', () => { actions.click(); toggle(); });
 
-  const panel = el('div', 'sf-panel', { role: 'dialog', 'aria-label': 'Sound' });
+  const panel = el('div', 'sf-panel', { role: 'dialog', 'aria-label': 'Settings' });
   panel.innerHTML = `
-    <div class="sf-head"><h2>SOUND</h2><button class="sf-close" type="button" aria-label="Close">X</button></div>
+    <div class="sf-head"><h2>SETTINGS</h2><button class="sf-close" type="button" aria-label="Close">X</button></div>
     <div class="sf-row">
       <button class="sf-sw" data-k="sound" type="button"><span>SOUND</span><b></b></button>
       <button class="sf-sw" data-k="music" type="button"><span>MUSIC</span><b></b></button>
@@ -102,7 +103,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
   }
   onTouchPref(paintSize);
 
-  // the touch layer's SOUND button, and a click for its small buttons
+  // the touch layer's menu button, and a click for its small buttons
   window.addEventListener('sf:sound-panel', () => toggle());
   document.addEventListener('touchstart', (e) => {
     const t = e.target instanceof Element && e.target.closest('.tc-top .tc-btn');
@@ -137,11 +138,11 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     paintSlider(panel.querySelector('[data-k="musicVolume"]'), settings.musicVolume);
     paintSlider(panel.querySelector('[data-k="sfxVolume"]'), settings.sfxVolume);
     paintSize();
-    // the buttons show sound off, and pulse while sound is wanted but still locked
+    // the buttons show sound off (the X), and pulse while sound is wanted but still locked
     const locked = soundOn && !unlocked;
     const touchBtn = document.querySelector('[data-role="sound"]');
     for (const b of [btn, touchBtn]) if (b) { b.classList.toggle('sf-muted', !soundOn); b.classList.toggle('sf-locked', locked); }
-    if (touchBtn && !touchBtn.querySelector('svg')) touchBtn.innerHTML = SPEAKER;
+    if (touchBtn && !touchBtn.querySelector('svg')) touchBtn.innerHTML = MENU_ICON;
     hint.textContent = locked && !isTouch() ? 'PRESS ANY KEY FOR SOUND' : '';
     hint.classList.toggle('sf-show', locked && !isTouch());
   }
@@ -171,7 +172,7 @@ function injectStyle() {
   html.touch-ui .sf-btn, html.touch-ui .sf-hint { display: none; }
   .sf-btn svg, [data-role="sound"] svg { filter: drop-shadow(0 0 3px currentColor); }
   .sf-x { display: none; }
-  .sf-muted .sf-wave { display: none; } .sf-muted .sf-x { display: inline; }
+  .sf-muted .sf-bar { display: none; } .sf-muted .sf-x { display: inline; }
   .sf-btn.sf-muted { color: var(--pink); border-color: var(--pink); box-shadow: 0 0 8px rgba(255,43,214,0.5); }
   .sf-locked { animation: sf-pulse 1.1s ease-in-out infinite; }
   @keyframes sf-pulse { 50% { box-shadow: 0 0 18px var(--amber, #ffb02e), 0 0 4px var(--amber, #ffb02e); } }

@@ -1588,7 +1588,7 @@ for (const t of ['pointerdown', 'touchstart']) {
     idleMs = 0;
     if (!attract || (flow && flow.on)) return;   // with the flow on, a tap only wakes the sound (src/audio/); START is a button
     const el = e.target instanceof Element ? e.target : null;
-    if (el && el.closest('[class^="sf-"], [class*=" sf-"], #credits')) return;   // the sound button, panel and credits link are left alone
+    if (el && el.closest('[class^="sf-"], [class*=" sf-"], #credits')) return;   // the menu button, its panel and the credits link are left alone
     startFromAttract();
   }, { capture: true, passive: true });
 }
