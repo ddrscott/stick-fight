@@ -5,6 +5,7 @@
 // that hops lows and launches whatever it meets, the anti-air), and one unique string, STREAK FREE
 // (1, 3, 4), whose ender is a two-footed dropkick that pins him to the glass near a wall.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 import { chainPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP } = RIG_KIT;
@@ -120,8 +121,23 @@ const dance = { keys: [
   K({ ...F(0, HIP + 1, LF, RF), torso: -2, head: -10, la: [90, 100], ra: [120, 160] }, 170, 'sine'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): up by the collar, a wax-on circle, then a two-armed squeegee push at the glass; on the glass his squeegee follows the body across and down; then the wax-on circles again.
+const perfect = { name: 'SQUEEGEE PUSH', note: 'Up by the collar, a wax-on circle, then a two-armed squeegee push at the glass; on the glass his squeegee follows the body across and down; then the wax-on circles again.', stamp: 'STREAK FREE', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 40 }, slide: { dx: 300, squeegee: true }, keys: [
+  ...stoop('lHand'),
+  lift('collar', 'lHand', 200),
+  K({ ...F(0, HIP - 4, LF + 4, RF), torso: 4, head: -6, la: [100, 110], ra: [120, 170] }, 130, 'sine'),
+  K({ ...F(0, HIP - 4, LF + 4, RF), torso: 4, head: -6, la: [104, 112], ra: [80, 130] }, 130, 'sine'),
+  K({ ...F(-4, HIP - 8, LF + 2, RF - 2), torso: 6, head: -4, la: [70, 60], ra: [66, 56] }, 140, 'in'),
+  K({ ...F(10, HIP - 4, LF + 16, RF - 2), torso: 18, bend: 2, head: -8, la: [92, 92], ra: [90, 90] }, 80, 'out', 'release'),
+  K({ ...F(12, HIP - 3, LF + 16, RF + 4, 0, 4), torso: 12, head: -6, la: [96, 96], ra: [94, 94] }, 180, 'out', 'footstep'),
+  K({ ...F(10, HIP - 1, LF + 16, RF + 6), torso: 4, head: -6, la: [40, 110], ra: [110, 160] }, 200, 'sine'),
+  K({ ...F(10, HIP - 1, LF + 16, RF + 6), torso: 4, head: -6, la: [40, 110], ra: [80, 120] }, 200, 'sine'),
+  K({ ...F(10, HIP, LF + 16, RF + 6), torso: 4, head: -8, la: [40, 110], ra: [112, 164] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'windowWasher',
   name: 'WINDOW WASHER',
   tagline: 'DOES FLOOR 37 FROM OUTSIDE',

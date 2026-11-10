@@ -3,6 +3,7 @@
 // characters existed (the regression scenes in the README give the same results). It's also what a
 // ladder stage falls back to when its character isn't in the game yet.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop } from './perfectKit.js';
 import { chainPath } from '../fighter/cloth.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
@@ -39,8 +40,21 @@ const dance = { keys: [
   K({ ...F(0, HIP - 1, LF, RF), torso: 8, bend: 2, head: 6, la: [118, 250], ra: [12, 28] }, 260, 'sine'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): a clumsy two-handed heave: he gets the body up by the collar, swings it back between his knees, heaves it up and over at the camera and staggers after it, then a stunned fist in the air.
+const perfect = { name: 'TWO-HANDED HEAVE', note: 'A clumsy two-handed heave: he gets the body up by the collar, swings it back between his knees, heaves it up and over at the camera and staggers after it, then a stunned fist in the air.', stamp: 'CONTRACT ENDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 90 }, keys: [
+  ...stoop('both'),
+  K({ ...F(0, HIP - 6, LF, RF), torso: 4, bend: -2, head: -6, la: [84, 100], ra: [76, 96] }, 200, 'inOut'),
+  K({ ...F(-4, HIP - 18, LF, RF), torso: 32, bend: 6, head: -10, la: [-24, -12], ra: [-32, -22] }, 240, 'inOut'),
+  K({ ...F(6, HIP + 2, LF + 6, RF), torso: -12, bend: -6, head: -14, la: [150, 166], ra: [140, 160] }, 110, 'out', 'release'),
+  K({ ...F(9, HIP, LF + 8, RF), torso: -4, bend: -2, head: -10, la: [172, 190], ra: [160, 182] }, 170, 'out'),
+  K({ ...F(14, HIP - 4, LF + 18, RF + 6, 0, 8), torso: 12, bend: 2, head: 4, la: [60, 140], ra: [104, 64] }, 230, 'inOut', 'footstep'),
+  K({ ...F(16, HIP - 1, LF + 18, RF + 16), torso: 4, head: -8, la: [152, 178], ra: [18, 30] }, 320, 'inOut', 'footstep'),
+  K({ ...F(16, HIP, LF + 18, RF + 16), torso: 2, head: -12, la: [162, 188], ra: [14, 26] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'temp',
   name: 'TEMP',
   tagline: 'FIRST DAY. KNOWS THE BASICS',

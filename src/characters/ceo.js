@@ -7,6 +7,7 @@
 // (2, 1, 2), ending in a rear fist to the gut that splits up into an uppercut (two hits, the `hits` hook).
 // Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop } from './perfectKit.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
 
@@ -80,8 +81,21 @@ const dance = { keys: [
   K({ ...F(0, HIP + 2, LF, RF), torso: -6, bend: -5, head: -18, la: [152, 204], ra: [142, 192] }, 300, 'sine'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): the golden-parachute shove: held out at arm's length, a bored backhand push at the camera (a gold parachute opens on the glass and floats it down); then he straightens the tie.
+const perfect = { name: 'GOLDEN PARACHUTE', note: 'The golden-parachute shove: held out at arm\'s length, a bored backhand push at the camera (a gold parachute opens on the glass and floats it down); then he straightens the tie.', stamp: 'LET GO', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 30 }, slide: { chute: true, rate: 0.6 }, keys: [
+  ...stoop('lHand'),
+  K({ ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -10, la: [100, 100], ra: [30, 120] }, 220, 'inOut'),
+  K({ ...F(2, HIP, LF + 4, RF), torso: -2, bend: -4, head: -12, la: [100, 98], ra: [110, 200] }, 220, 'inOut'),
+  K({ ...F(0, HIP, LF + 2, RF), torso: -2, bend: -4, head: -12, la: [94, 120], ra: [80, 70] }, 120, 'in'),
+  K({ ...F(4, HIP - 1, LF + 6, RF), torso: 4, head: -12, la: [96, 96], ra: [92, 70] }, 80, 'out', 'release'),
+  K({ ...F(4, HIP - 1, LF + 6, RF), torso: 2, head: -12, la: [60, 110], ra: [96, 80] }, 220, 'out'),
+  K({ ...F(4, HIP, LF + 6, RF), torso: 0, head: -10, la: [116, 210], ra: [106, 200] }, 280, 'inOut'),
+  K({ ...F(4, HIP, LF + 6, RF), torso: 0, head: -14, la: [118, 212], ra: [108, 202] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'ceo',
   name: 'THE CEO',
   tagline: 'THE BOARD HAS DECIDED YOU’RE A COST',

@@ -120,6 +120,10 @@ export const STAMINA = { max: 100, regen: 90, regenBlock: 36, delay: 0.3, run: 1
 // juggled or launched body upright; inside the first `perfect` steps of that it comes with a jab; a press before
 // `min` locks it out for `lock` steps (a press while locked keeps it locked). The juggle's next hit restarts the wait.
 export const AIR_TECH = { min: 36, perfect: 10, lock: 24 };
+// The perfect round finisher's clock after the throw's release, in seconds (sim.js perfectStep fires an event at
+// each mark, src/fx/perfect.js draws to the same marks): the body flies at the lens until fly, hits the glass and
+// sticks until slide, squeaks down it until drop, and peels off out of the bottom of the screen until after.
+export const PERFECT = { fly: 0.42, slide: 0.7, drop: 1.75, after: 2.15 };
 // The universal parry (sim.js uParry): a fresh tap toward the opponent (down-forward for a low) within `win`
 // steps (120Hz) before a strike lands catches it: no damage, the striker reels `stun` frames. A tap starts a
 // `lock` of steps in which another tap doesn't count (and keeps it locked), so mashing forward never parries, and

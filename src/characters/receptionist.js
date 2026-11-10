@@ -6,6 +6,7 @@
 // unique string, HANG UP (3, 1, 1), ending in the handset swung over the top and down on him (an overhead).
 // Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 import { coilPath } from '../fighter/cloth.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
@@ -104,8 +105,21 @@ const dance = { keys: [
   K({ ...F(9, HIP - 1, LF, RF, 4, 0), torso: 10, bend: 2, head: 2, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): Transfer, the long way: both hands on him, heaved up overhead, a beat, and thrown forward down at the camera; then the phone back at her ear and a hip sway.
+const perfect = { name: 'TRANSFER TO THE LENS', note: 'Transfer, the long way: both hands on him, heaved up overhead, a beat, and thrown forward down at the camera; then the phone back at her ear and a hip sway.', stamp: 'TRANSFERRED', hand: 'lHand', hold: 'carry', fly: { spin: 1, arc: 70 }, keys: [
+  ...stoop('both'),
+  lift('overhead', 'lHand', 260),
+  K({ ...F(-2, HIP + 1, LF + 2, RF - 2), torso: -10, bend: -6, head: -14, la: [182, 192], ra: [176, 186] }, 200, 'sine'),
+  K({ ...F(10, HIP - 8, LF + 16, RF - 2), torso: 30, bend: 6, head: -6, la: [110, 100], ra: [104, 96] }, 100, 'out', 'release'),
+  K({ ...F(12, HIP - 6, LF + 16, RF + 4, 0, 4), torso: 26, bend: 4, head: -6, la: [80, 70], ra: [76, 66] }, 200, 'out', 'footstep'),
+  K({ ...F(10, HIP - 1, LF + 16, RF + 8), torso: 4, head: -4, la: [40, 120], ra: [150, 222] }, 240, 'inOut'),
+  K({ ...F(14, HIP - 2, LF + 16, RF + 8), torso: 6, head: -2, la: [36, 116], ra: [150, 222] }, 240, 'sine'),
+  K({ ...F(6, HIP - 1, LF + 16, RF + 8), torso: 2, head: -6, la: [40, 122], ra: [152, 224] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'receptionist',
   name: 'RECEPTIONIST',
   tagline: 'PLEASE HOLD. YOUR BEATING IS IMPORTANT TO US',

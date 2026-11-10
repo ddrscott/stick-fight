@@ -7,6 +7,7 @@
 // Exhale (step out of it). One unique string, SUN SALUTATION (1, 3, 4), ending in a backbend over a
 // vertical split kick that comes down on top of him (an overhead). Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 import { chainPath, ribbonPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP, deepKeys, base } = RIG_KIT;
@@ -117,8 +118,21 @@ const dance = { keys: [
   K({ ...F(-2, HIP - 2, LF, RF), torso: 30, bend: 6, head: 14, la: [40, 160], ra: [44, 164] }, 600, 'sine'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): lifted overhead and held there in tree pose, then a long pushing exhale that sends it up and out at the camera; then a bow.
+const perfect = { name: 'SALUTE TO THE LENS', note: 'Lifted overhead and held there in tree pose, then a long pushing exhale that sends it up and out at the camera; then a bow.', stamp: 'NAMASTE', hand: 'lHand', hold: 'carry', fly: { spin: 0, arc: 120, wobble: 0.3 }, keys: [
+  ...stoop('both'),
+  lift('overhead', 'lHand', 240),
+  K({ hx: -6, rl: [1, -1], ll: [64, -58], torso: 0, bend: -4, head: -10, la: [172, 180], ra: [166, 176] }, 220, 'inOut'),
+  K({ hx: -6, rl: [1, -1], ll: [64, -58], torso: -2, bend: -6, head: -12, la: [176, 182], ra: [170, 178] }, 240, 'sine'),
+  K({ ...F(2, HIP + 2, LF + 6, RF), torso: 4, bend: -2, head: -12, la: [140, 136], ra: [134, 130] }, 100, 'out', 'release'),
+  K({ ...F(2, HIP + 1, LF + 6, RF), torso: 2, head: -10, la: [130, 130], ra: [124, 124] }, 220, 'out', 'footstep'),
+  K({ ...F(2, HIP - 2, LF + 6, RF), torso: 30, bend: 6, head: 6, la: [20, 100], ra: [14, 100] }, 320, 'inOut'),
+  K({ ...F(2, HIP - 2, LF + 6, RF), torso: 32, bend: 6, head: 8, la: [18, 100], ra: [12, 100] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'wellness',
   name: 'WELLNESS COACH',
   tagline: 'BREATHE IN. NOW BREATHE THROUGH THE FLOOR',

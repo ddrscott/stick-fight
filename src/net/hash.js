@@ -43,7 +43,7 @@ function reachHash(sim) {
 /** A 32-bit FNV-1a style hash of the sim state, as 8 hex digits. */
 export function hashSim(sim) {
   let h = 0x811c9dc5;
-  for (const v of [sim.stepCount, sim.phase, sim.round, sim.timer, sim.phaseTimer, sim.wins[0], sim.wins[1], sim.floor, sim.floorBroken, sim.koSlow, sim.roundClock, sim.roundTime, sim.winsNeeded]) h = mixValue(h, v);
+  for (const v of [sim.stepCount, sim.phase, sim.round, sim.timer, sim.phaseTimer, sim.wins[0], sim.wins[1], sim.floor, sim.floorBroken, sim.koSlow, sim.roundClock, sim.roundTime, sim.winsNeeded, sim.perfectT, sim.perfectRel]) h = mixValue(h, v);
   h = mix(h, sim.rng ? sim.rng.state >>> 0 : 0);
   h = mix(h, reachHash(sim));
   for (const u of sim.units) {
@@ -64,7 +64,7 @@ export function dumpSim(sim) {
     else out[k] = String(v);
   };
   put('stepCount', sim.stepCount); put('phase', sim.phase); put('round', sim.round); put('timer', sim.timer);
-  put('phaseTimer', sim.phaseTimer); put('wins', sim.wins.join('-')); put('floor', sim.floor); put('koSlow', sim.koSlow); put('roundClock', sim.roundClock); put('rules', `${sim.roundTime}s/${sim.winsNeeded}`);
+  put('phaseTimer', sim.phaseTimer); put('wins', sim.wins.join('-')); put('floor', sim.floor); put('koSlow', sim.koSlow); put('roundClock', sim.roundClock); put('rules', `${sim.roundTime}s/${sim.winsNeeded}`); put('perfectT', sim.perfectT); put('perfectRel', sim.perfectRel);
   put('rng', sim.rng ? sim.rng.state >>> 0 : 0);
   for (const k of reachKeys(sim).sort()) put(`reach.${k}`, sim.reachSeen[k]);
   sim.units.forEach((u, i) => {

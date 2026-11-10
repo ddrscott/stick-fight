@@ -317,6 +317,54 @@ export function createSfx({ context = null, destination = null } = {}) {
     hit({ heavy: true, strength: 0.8, pan });
     bodyFall({ strength: 1, pan });
   }
+  // ---- the perfect round finisher (README, Perfect rounds) ----------------------------------
+  // The throw at the camera: a long whoosh that swells and rises as the body closes on the lens.
+  function perfectWhoosh({ pan = 0 } = {}) {
+    const d = 0.44, v = voice(P.ui, d + 0.05, pan * 0.5, 1.4);
+    if (!v) return;
+    hiss(v, { dur: d, filter: 'bandpass', f: [320, 2600], q: 1.6, gain: 0.34, attack: d * 0.85 });
+    hiss(v, { dur: d, filter: 'lowpass', f: [400, 1400], q: 0.7, gain: 0.22, attack: d * 0.8 });
+    tone(v, { dur: d, type: 'triangle', f: [90, 240], gain: 0.12, attack: d * 0.8, glide: 'lin' });
+  }
+  // The body on the glass: a padded thud, the pane's ring (a few inharmonic partials) and a crackle as it cracks.
+  function glassThud() {
+    const v = voice(P.sting, 1.1, 0, 1, true);
+    if (!v) return;
+    tone(v, { dur: 0.5, f: [vary(95, 0.04), 36], gain: 1 });
+    tone(v, { dur: 0.16, type: 'triangle', f: [vary(300), 110], gain: 0.6, attack: 0.001, drive: 2 });
+    hiss(v, { dur: 0.2, filter: 'lowpass', f: [2600, 200], q: 0.8, gain: 0.6 });
+    for (const [f, g, d] of [[1870, 0.07, 0.9], [2930, 0.05, 0.7], [4410, 0.04, 0.5], [6120, 0.03, 0.35]]) tone(v, { at: 0.005, dur: d, f: vary(f, 0.03), gain: g, attack: 0.001 });
+    hiss(v, { at: 0.01, dur: 0.32, filter: 'highpass', f: [5200, 2400], q: 0.9, gain: 0.18, attack: 0.002 });   // the crack running out
+  }
+  // Rubber on glass: a squeal whose pitch jumps up on each slip of the stick-slip slide (the same beat the
+  // drawing slides on: n slips over dur) and sags as it goes down; skip() cuts it off.
+  let squeakV = null;
+  function squeak({ dur = 1.05, n = 6, rate = 1, pan = 0 } = {}) {
+    const v = voice(P.ui, dur + 0.1, pan, 1.2);
+    if (!v) return;
+    squeakV = v;
+    const t0 = v.t, osc = new OscillatorNode(ctx, { type: 'sawtooth', frequency: 900 }), osc2 = new OscillatorNode(ctx, { type: 'square', frequency: 905 });
+    const bp = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 1500, Q: 5 }), env = new GainNode(ctx, { gain: 0 });
+    // the slips: the drawing's s = t^1.15 with n beats, so each beat's start is at (k/n)^(1/1.15) of the slide
+    for (let k = 0; k < n; k++) {
+      const a = t0 + dur * Math.pow(k / n, 1 / 1.15), b = t0 + dur * Math.pow((k + 1) / n, 1 / 1.15), m = a + (b - a) * 0.55;
+      const base = (1250 - 520 * (k / n)) * (rate < 1 ? 0.85 : 1) * vary(1, 0.04);
+      for (const o of [osc, osc2]) { o.frequency.setValueAtTime(base * 0.8, a); o.frequency.exponentialRampToValueAtTime(base * 1.35, m); o.frequency.exponentialRampToValueAtTime(base * 0.9, b); }
+      env.gain.setValueAtTime(0.02, a); env.gain.linearRampToValueAtTime(0.2, a + (b - a) * 0.2); env.gain.linearRampToValueAtTime(0.16, m); env.gain.linearRampToValueAtTime(0.03, b);
+      bp.frequency.setValueAtTime(base * 1.2, a); bp.frequency.exponentialRampToValueAtTime(base * 1.6, m);
+    }
+    env.gain.linearRampToValueAtTime(0.0008, t0 + dur + 0.05);
+    osc.connect(bp); osc2.connect(bp); bp.connect(env).connect(v.gain);
+    for (const o of [osc, osc2]) { o.start(t0); o.stop(t0 + dur + 0.08); track(v, o); }
+  }
+  function squeakStop() { if (squeakV && ctx) { kill(squeakV, ctx.currentTime); squeakV = null; } }
+  // Peeling off the glass: a short rising squeak and a soft suck.
+  function unstick() {
+    const v = voice(P.ui, 0.3, 0, 1.2);
+    if (!v) return;
+    tone(v, { dur: 0.12, type: 'sawtooth', f: [700, 1700], gain: 0.08, lp: 3000, glide: 'exp' });
+    hiss(v, { at: 0.06, dur: 0.18, filter: 'bandpass', f: [600, 2200], q: 2, gain: 0.14, attack: 0.03 });
+  }
   // A strike that met nothing: thin air falling away.
   function whiff({ pan = 0 } = {}) {
     const v = voice(P.air, 0.16, pan * 0.8, 1.6);
@@ -498,7 +546,7 @@ export function createSfx({ context = null, destination = null } = {}) {
     },
     whoosh, hit, block, counter, footstep, land, jump, bodyFall, wallSplat, wallBounce, wallKnock, groundBounce,
     throwGrab, throwSlam, whiff, gassed, shake, round, fight, ko, slowmoKO, combo, ender, goonDown, match, ui,
-    floorBreak, tread, vault, floorClear,
+    floorBreak, tread, vault, floorClear, perfectWhoosh, glassThud, squeak, squeakStop, unstick,
   };
   return sfx;
 }

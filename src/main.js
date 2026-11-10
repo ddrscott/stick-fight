@@ -6,6 +6,7 @@ import { fitToGround } from './fighter/ground.js';   // the floor guard: nothing
 import { createLife } from './fighter/life.js';   // the life layer: eyeline, springs and props, fatigue (drawn only; ?life=0 turns it off)
 import { createFX } from './fx/index.js';
 import { createStatusFX, hitWeight, blockWeight } from './fx/status.js';   // state read off the bodies: stun halo, guard glint, dizzy stars, breath
+import { createPerfectFX } from './fx/perfect.js';   // the perfect round finisher, drawn: the body thrown into the camera
 import { createArena, drawJoints } from './arena/index.js';
 import { createWorldCache, viewRect } from './arena/cache.js';   // the building's still art as bitmaps (README, Performance)
 import { createCombat } from './combat/sim.js';
@@ -47,6 +48,7 @@ const fighters = [
 const input = createInput(window);
 const hud = createHUD(hudCanvas, { width: W, height: H, dpr });
 const statusFX = createStatusFX();
+const perfectFX = createPerfectFX();   // the perfect round finisher, drawn (src/fx/perfect.js)
 
 // ---- integration wiring ------------------------------------------------------------------
 // The glue owns camera shake (hitstop has to hold the frame dead still), so the FX's own
@@ -168,6 +170,9 @@ function onEvent(ev) {
       break;
     case 'relocate':
       relocateFX(ev);
+      break;
+    case 'perfectSplat':   // the perfect finisher: the body hits the glass (src/fx/perfect.js draws it)
+      shake.trauma = Math.min(1, shake.trauma + 0.7); shake.zoomPunch = 0.06;
       break;
     case 'land': case 'body':
       fx.dust({ x: ev.x, y: ev.y, dir: ev.dir || 1 });
@@ -828,7 +833,25 @@ const scenes = {
     if (!o.lockstep) { scenes.play(o); return; }
     if (arena.clearBodies) arena.clearBodies();
     sim.setController(0, 'net', o.lockstep.controller(0)); sim.setController(1, 'net', o.lockstep.controller(1));
+    sim.perfectSkip = 'winner';   // the perfect finisher: only the winner's press skips it (the loser can't cut the show short)
     sim.resetMatch({ seed: o.seed >>> 0, fresh: true });   // fresh: nothing carried over from this machine's demo
+  },
+  // the perfect round finisher (README, Perfect rounds): P1 (?p1=, TEMP by default) walks up to a dummy that
+  // never fights back and crosses it out of a low health bar, so every round is a perfect one and ends in P1's
+  // throw at the camera. &hurt=1 takes a point off P1 at the start of each round: the same KO, no finisher.
+  // &p2win=1 swaps the parts (the dummy is P1), for the winner on the right of the screen.
+  'perfect-test'(o) {
+    sim.botchOn = false;
+    const hurt = params.get('hurt') === '1', swap = params.get('p2win') === '1', hit = swap ? 1 : 0;
+    let t = 0;
+    sim.setController(hit, 'script', (me, op, s) => {
+      if (s.phase !== 'fight' || op.state === 'ko') { t = 0; return EMPTY_INPUT; }
+      if (hurt && me.health === me.maxHealth) me.health -= 1;
+      if (Math.abs(op.x - me.x) > 100) return { ...EMPTY_INPUT, dx: Math.sign(op.x - me.x) };
+      return (t++ % 48) < 3 ? { ...EMPTY_INPUT, cross: true } : EMPTY_INPUT;
+    });
+    sim.setController(1 - hit, 'none');
+    sim.resetMatch({ seed: seedOf(o, 11), skipIntro: true, startHealth: 18 });
   },
   ko(o) {
     sim.setAI(0, 0.8); sim.setAI(1, 0.8);
@@ -953,7 +976,7 @@ function setScene(name, opts) {
   farDrawnW = 0; bodiesDrawn = true; // redraw the static layers once
   shakeRng = mulberry32(7);
   shake.trauma = 0; shake.kickX = shake.kickY = 0; shake.zoomPunch = 0;
-  lights.length = 0; blockSparks.length = 0; paused = false; statusFX.reset();
+  lights.length = 0; blockSparks.length = 0; paused = false; statusFX.reset(); perfectFX.reset();
   ghosts.length = 0; poseState.clear(); drawnJ.clear(); drawnOff.clear(); life.reset();   // the draw smoothing starts fresh (no turnaround out of the last scene's facing)
   camera.x = W / 2; camera.y = H / 2; camera.zoom = 1; camZoom = 1; camera.shakeX = camera.shakeY = 0;
   // botches on or off (the pause menu's switch, ?botch=0); online, the host's setting from the start message
@@ -964,6 +987,7 @@ function setScene(name, opts) {
   const rules = name === 'online' && opts && opts.lockstep && opts.rules ? opts.rules
     : picked ? { roundTime: roundTime(), winsNeeded: winsFor(bestOf()) } : { roundTime: DEFAULT_ROUND_TIME, winsNeeded: winsFor(DEFAULT_BEST_OF) };
   sim.roundTime = rules.roundTime; sim.winsNeeded = rules.winsNeeded;
+  sim.perfectOn = true; sim.perfectSkip = 'any';   // the perfect round finisher: on everywhere, any player's press skips (online: the scene says winner)
   scenes[name](opts || {});
   updateCamera(1, true);
 }
@@ -1306,6 +1330,7 @@ function render() {
       u.rig.joints = realJ; u.rig.cloth = null;
     }
   }
+  perfectFX.drawWorld(ctxs.figures, sim, lastFrameMs / 1000);   // the perfect finisher: the body in the winner's hand
   drawGhosts(ctxs.figures, ctxs.emissive);
   // ragdolls: KO'd horde goons still in the air after their unit respawned
   for (const r of sim.ragdolls || []) {
@@ -1325,7 +1350,8 @@ function render() {
   const fl = flow && flow.on ? flow.hud() : null;   // flow: score, names, no HUD under a menu, the title card only on the title
   if (toast) { toast.t -= lastFrameMs / 1000; if (toast.t <= 0) toast = null; }
   const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help, toast, found: help ? techniques().filter(t => t.found) : null,
-    attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl });
+    attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl,
+    under: perfectFX.active || sim.perfectT >= 0 ? (c) => perfectFX.drawScreen(c, sim, camera, lastFrameMs / 1000) : null, bannerUp: sim.perfectT >= 0 && sim.perfectRel >= 0 });
   if (fl) flow.frame(layout);
   perf.mark('hud');
 }
@@ -1635,7 +1661,7 @@ window.__gauntlet = {
   step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
   ready: false,   // true once fonts are in and the first frame has rendered
 };
-window.__game = { caches: { bg: bgCache, emi: emiCache }, drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
+window.__game = { caches: { bg: bgCache, emi: emiCache }, drawState, sim, camera, fx, perfectFX, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
   // measurement hooks: a frame stepped without drawing (the draw smoothing still runs), and where a body is drawn
   stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); fitCameraToDrawn(); },
   drawn: (u) => drawnPoints(u), poseState, life,

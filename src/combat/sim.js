@@ -2,7 +2,7 @@
 // physics, hit resolution with hitstop, rounds and KO. step(ms) is deterministic given
 // the same inputs and seed. Events for the glue (fx, camera) go through onEvent.
 
-import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PARRY, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
+import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PERFECT, PARRY, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
 import { matchStrings, MOVE_TOKEN } from './strings.js';
 import { buildHitboxes, buildHurtboxes, testHit } from './hitboxes.js';
 import { EMPTY_INPUT } from './input.js';
@@ -22,6 +22,13 @@ const FLASH_STEPS = 6;              // 3 frames of tint at 60fps; the body stays
 const ROUND_TIME = 99;               // the default round, in seconds (sim.roundTime: 0 is no limit; src/flow/rules.js)
 const WINS_NEEDED = 2;               // best of 3 (sim.winsNeeded)
 const INTRO_TIME = 1.4, KO_HOLD = 0.35, MATCH_HOLD = 1.8;
+// the perfect round finisher (README, Perfect rounds): how long the KO waits for the winner to be free, the
+// most the run to the body takes, how long the body is on the glass after the throw (src/fx/perfect.js plays
+// that part to the same clock), and how soon a press can skip it
+const PF_WAIT = 1.5, PF_RUN = 0.7, PF_SKIP_MIN = 0.3, PF_CUT = 2.6;
+const PF_FREE = new Set(['idle', 'walk', 'run', 'block', 'crouch', 'landing', 'attack', 'blockstun']);
+const PF_BUTTONS = ['lp', 'rp', 'lk', 'rk', 'jump', 'block'];
+const PF_MARKS = [['fly', 'perfectSplat'], ['slide', 'perfectSlide'], ['drop', 'perfectDrop']];
 const STUMBLE_FRICTION = 0.95;      // hitstun slide; victim keeps stumbling until slow
 const CHASE_FRICTION = 0.975;       // the attacker's ride after a launch: he follows the body across the room
 const MOVE_STATES = new Set(['idle', 'walk', 'run']);
@@ -340,6 +347,10 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   const sim = {
     units: [], bounds, get floors() { return floorsNow(); }, phase: 'intro', phaseTimer: 0, stepCount: 0, round: 1, timer: ROUND_TIME, roundTime: ROUND_TIME, winsNeeded: WINS_NEEDED, roundClock: 0,
     wins: [0, 0], winner: -1, banner: '', bannerT: 0, difficulty: 0.6, rng: mulberry32(1), reach, reachOf, reachSeen,
+    // perfectT: -1 not decided this round, -2 none (or over), >= 0 seconds into the perfect finisher; perfectRel: its
+    // clock at the throw's release; perfectWait: how long the KO has waited for the winner; perfectOn: scenes may
+    // turn it off; perfectSkip: 'any' (every player's press skips) or 'winner' (online: only the winner's)
+    perfectT: -1, perfectRel: -1, perfectWait: 0, perfectOn: true, perfectSkip: 'any',
     accumulator: 0, hitstopActive: 0, koSlow: 0, finisher: false, startHealth: 100, introTime: INTRO_TIME, seed: 1, horde: null, card: null,
     callouts: [], log: [],
     botchOn: true,   // mistimed presses botch (src/combat/botch.js); the settings toggle and ?botch=0 turn it off, online the host's setting rides the start message
@@ -467,7 +478,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     syncRig(u); u.rig.play('idle'); rigUpd(u, 0); u.rig.events.length = 0;
   }
   sim.startRound = (n, { skipIntro = false } = {}) => {
-    sim.round = n; sim.floor = 0; sim.floorBroken = false; refreshBounds(); sim.timer = sim.roundTime; sim.roundClock = 0; sim.winner = -1; sim.koSlow = 0; sim.finisher = false; sim.callouts.length = 0;
+    sim.round = n; sim.floor = 0; sim.floorBroken = false; refreshBounds(); sim.timer = sim.roundTime; sim.perfectT = -1; sim.perfectRel = -1; sim.perfectWait = 0; sim.roundClock = 0; sim.winner = -1; sim.koSlow = 0; sim.finisher = false; sim.callouts.length = 0;
     sim.units.forEach(spawn);
     if (skipIntro) { sim.phase = 'fight'; sim.phaseTimer = 0; sim.banner = ''; }
     else { sim.phase = 'intro'; sim.phaseTimer = sim.introTime; sim.banner = `ROUND ${n}`; }
@@ -1355,6 +1366,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       case 'celebrate':   // the winner's dance (see the 'match' phase): stand and loop it
         u.vx = 0;
         break;
+      case 'perfect':   // the perfect round finisher (perfectStep): the run to the body, then the throw clip
+        perfectUnit(u, opp);
+        break;
       case 'block':
         u.vx = 0;
         if (u.faint > 0) { setState(u, 'idle'); break; }
@@ -2008,7 +2022,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         }
       }
       else if (ev.type === 'recover' && u.state === 'attack') { u.phase = 'recovery'; if (u.recoverAt < 0) u.recoverAt = sim.stepCount; }
-      else if (ev.type === 'stand' && isWake(u)) u.wakeUp = 2;   // a wake-up strike's body leaves the floor
+      else if (ev.type === 'stand' && isWake(u)) u.wakeUp = 2;
+      else if (ev.type === 'grab' && u.state === 'perfect') perfectGrab(u);   // the finisher's clip (registry perfect)
+      else if (ev.type === 'release' && u.state === 'perfect') perfectRelease(u);   // a wake-up strike's body leaves the floor
       else if (ev.type === 'footstep' && u.grounded) onEvent({ type: 'footstep', x: u.x, y: u.y, dir: u.facing, stair: onStair(u) });
       else if (ev.type === 'land' && u.rag) {
         if (u.rig.events.some(e2 => e2.type === 'bounce')) continue;
@@ -2542,6 +2558,111 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     note({ type: 'graze', move: att.move, height: FRAME_DATA[att.move].height, att: att.id, def: def.id });
     onEvent({ type: 'graze', x: pt.x, y: pt.y, dir: awayDir(att, def), move: att.move, limb: FRAME_DATA[att.move].limb, attacker: att, defender: def });
   }
+  // ---- the perfect round finisher ---------------------------------------------------------
+  // The round-ending KO of a round the winner took no damage in: once the body comes to rest, the winner
+  // (sim-driven, no input) runs to it, plays the character's perfect clip (registry `perfect`: its 'grab'
+  // key picks the body up, its 'release' key throws it at the camera) and holds the clip's last pose while
+  // the body hits the glass and squeaks down it (src/fx/perfect.js, drawn only, on sim.perfectT's clock).
+  // It's sim state like the dance, so both machines in an online match play it the same, and a press
+  // skips it (perfectSkip). All of it sits inside the 'ko' phase, before the KO hold counts down.
+  function perfectReady(loser) {
+    if (!sim.perfectOn || sim.horde || sim.winner < 0 || !loser) return 'no';
+    const w = sim.units[sim.winner];
+    if (!w || w === loser || w.hidden || w.state === 'ko' || !w.char || !w.char.perfect || w.health < w.maxHealth) return 'no';
+    if (w.grounded && !w.rag && PF_FREE.has(w.state)) return 'go';
+    sim.perfectWait += DT;   // still in the air, or reeling from a trade: give him a moment to land
+    return sim.perfectWait > PF_WAIT ? 'no' : 'wait';
+  }
+  function pfMask(u) {
+    if (!u.controller) return 0;
+    const inp = u.controller(u, oppOf(u), sim) || EMPTY_INPUT;
+    let m = 0;
+    for (let i = 0; i < PF_BUTTONS.length; i++) if (inp[PF_BUTTONS[i]]) m |= 1 << i;
+    return m;
+  }
+  // who may skip: the players (never a CPU); online only the winner, so the loser can't cut the show short
+  const pfSkipper = (u) => (u.kind === 'human' || u.kind === 'net') && (sim.perfectSkip !== 'winner' || u.id === sim.winner);
+  function startPerfect(w, l) {
+    sim.perfectT = 0; sim.perfectRel = -1; sim.koSlow = 0; sim.banner = 'PERFECT';
+    w.state = 'perfect'; w.move = null; w.phase = null; w.crouch = false; w.glide = null; w.followThrough = false; w.chase = false;
+    w.buffer = null; w.bufferKeys = null; w.queued = null; w.running = false; w.vx = 0;
+    w.pfStage = 'run'; w.pfLastX = null;
+    // the body's on another level (a floor break, the stairs): no run, the throw plays where he stands and
+    // the body leaves the floor where it lies
+    w.pfFar = !sameLevel(w, l);
+    l.pfFar = w.pfFar; l.pfFrom = null; l.pfRel = null; l.pfGrabT = -1;
+    const dir = Math.sign(bodyX(l) - w.x) || w.facing;
+    w.facing = dir;
+    // a button already held when it starts doesn't skip, only a fresh press: every button counts as held until
+    // the first step reads them (the controllers are read once a step, by perfectStep, never twice in one)
+    for (const u of sim.units) u.pfMask = (1 << PF_BUTTONS.length) - 1;
+    if (w.pfFar || Math.abs(bodyX(l) - w.x) < 56 * (w.rig.scale || 1)) perfectThrow(w);
+    else safePlay(w.rig, 'run');
+    note({ type: 'perfect', att: w.id, def: l.id, far: w.pfFar });
+    onEvent({ type: 'perfect', stage: 'start', winner: w.id, x: w.x, y: w.y - 90, unit: w });
+  }
+  function perfectThrow(w) {
+    w.pfStage = 'throw'; w.vx = 0;
+    safePlay(w.rig, w.char.perfect.clip);
+  }
+  function perfectUnit(u, opp) {
+    if (u.pfStage !== 'run') { u.vx = 0; return; }
+    const d = bodyX(opp) - u.x, dir = Math.sign(d) || u.facing;
+    u.facing = dir;
+    // close enough, out of time, or stopped at the near end of the body (physics won't let him walk over it)
+    const stalled = u.pfLastX != null && Math.abs(u.x - u.pfLastX) < 0.05 && sim.perfectT > 0.05;
+    if (Math.abs(d) < 56 * (u.rig.scale || 1) || stalled || sim.perfectT > PF_RUN) { perfectThrow(u); return; }
+    u.vx = dir * RUN * u.char.stats.run * 1.2;
+    u.pfLastX = u.x;
+  }
+  // the 'grab' key: the body leaves the floor for the hand (drawn by fx/perfect.js from here on)
+  function perfectGrab(w) {
+    const l = oppOf(w);
+    if (!l || l.state !== 'ko' || l.pfGrabT >= 0) return;
+    l.pfGrabT = sim.perfectT;
+    if (w.pfFar) return;   // nothing in reach: it leaves the floor at the release
+    l.pfFrom = copyJoints(l.rig.joints, null); l.hidden = true;
+    const h = w.rig.joints[w.char.perfect.hand] || w.rig.joints.lHand;
+    onEvent({ type: 'perfectGrab', x: h.x, y: h.y, unit: w });
+  }
+  // the 'release' key: it's in the air, coming at the camera
+  function perfectRelease(w) {
+    const l = oppOf(w);
+    if (!l || l.state !== 'ko' || l.pfRel) return;
+    if (!l.pfFrom) l.pfFrom = copyJoints(l.rig.joints, null);
+    const h = w.pfFar ? l.rig.joints.hip : (w.rig.joints[w.char.perfect.hand] || w.rig.joints.lHand);
+    l.pfRel = { x: h.x, y: h.y }; l.hidden = true;
+    sim.perfectRel = sim.perfectT;
+    onEvent({ type: 'perfectThrow', x: h.x, y: h.y, unit: w, char: w.char.id });
+  }
+  // one step of the finisher; false once it's over (skipped, or the body is off the bottom of the screen)
+  function perfectStep(loser) {
+    const w = sim.units[sim.winner];
+    sim.perfectT += DT;
+    let skip = false;
+    for (const u of sim.units) {
+      if (!pfSkipper(u)) continue;
+      const m = pfMask(u), fresh = m & ~(u.pfMask || 0);
+      u.pfMask = m;
+      if (fresh && sim.perfectT > PF_SKIP_MIN) skip = true;
+    }
+    // a clip that never released (or a winner knocked out of it) still ends it
+    if (sim.perfectRel < 0 && (sim.perfectT > PF_CUT || !w || w.state !== 'perfect')) { if (w && w.state === 'perfect') perfectRelease(w); if (sim.perfectRel < 0) sim.perfectRel = sim.perfectT; }
+    // the marks on the glass (frameData PERFECT): the splat, the slide's start (the squeak), the peel off it
+    if (sim.perfectRel >= 0 && loser) {
+      const b = sim.perfectT - sim.perfectRel, a = b - DT;
+      for (const [k, type] of PF_MARKS) if (a < PERFECT[k] && b >= PERFECT[k]) onEvent({ type, x: loser.pfRel ? loser.pfRel.x : w.x, y: w.y, winner: sim.winner, char: w ? w.char.id : '' });
+    }
+    const done = skip || (sim.perfectRel >= 0 && sim.perfectT >= sim.perfectRel + PERFECT.after);
+    if (!done) return true;
+    // the body went out the bottom of the screen: it never joins the pile
+    if (loser) { loser.hidden = true; loser.koDone = true; }
+    if (w && w.state === 'perfect') { w.pfStage = null; setState(w, 'idle'); }
+    note({ type: 'perfectEnd', att: sim.winner, skipped: skip, t: sim.perfectT });
+    onEvent({ type: 'perfectEnd', skipped: skip, winner: sim.winner });
+    sim.perfectT = -2;
+    return false;
+  }
   function koDefender(att, def, fd, dir) {
     // the knockdown clip lands sprawled; the ko clip ends as a flat bar
     def.state = 'ko'; def.koDone = false; def.landJoints = null; safePlay(def.rig, 'knockdown');
@@ -2761,6 +2882,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         sim.koSlow = Math.max(0, sim.koSlow - DT);
         const loser = sim.units.find(u => u.state === 'ko');
         if (loser && !loser.koDone) break;
+        // a perfect round: before the body joins the pile, the winner throws it into the camera (perfectStep)
+        if (sim.perfectT === -1) {
+          const go = perfectReady(loser);
+          if (go === 'wait') break;
+          if (go === 'go') startPerfect(sim.units[sim.winner], loser); else sim.perfectT = -2;
+        }
+        if (sim.perfectT >= 0 && perfectStep(loser)) break;
         // the moment it comes to rest it joins the pile (drawn desaturated by the arena), the card holds after
         if (loser && !loser.hidden) { arena.addBody(snapshot(loser)); loser.hidden = true; onEvent({ type: 'body', x: loser.x, y: loser.y, unit: loser }); }
         sim.phaseTimer -= DT;
@@ -2809,7 +2937,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (sim.phase === 'match' && u.id === sim.winner && !sim.horde && u.char && u.char.dance && u.grounded && !u.rag && /^(idle|walk|run|block|crouch)$/.test(u.state)) {
         u.vx = 0; u.running = false; setState(u, 'celebrate', u.char.dance);
       }
-      const inp = (live && u.controller && u.state !== 'celebrate') ? u.controller(u, opp, sim) : EMPTY_INPUT;
+      const inp = (live && u.controller && u.state !== 'celebrate' && u.state !== 'perfect' && !(sim.perfectT >= 0)) ? u.controller(u, opp, sim) : EMPTY_INPUT;
       const e = edges(u, inp);
       // botches (botch.js): a tangled body loses its presses until it's back; a mistimed press botches
       // (or, in a technique's window, comes out as a happy accident) instead of waiting in the buffer
@@ -2869,7 +2997,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // a walk or run cycle plays at the rate that keeps planted feet planted at the character's speed
       // (exactly 1 for TEMP); the getup at its own speed
       const rate = u.state === 'getup' ? GETUP_SPEED : u.state === 'roll' ? u.rollRate || 1 : u.state === 'walk' ? u.char.stats.walk * (u.backHeld ? u.char.stats.backWalk : 1) / u.char.stride
-        : u.state === 'run' ? u.char.stats.run / u.char.stride : u.state === 'crouch' && u.vx ? u.char.stats.walk / u.char.stride
+        : u.state === 'run' || (u.state === 'perfect' && u.pfStage === 'run') ? u.char.stats.run / u.char.stride : u.state === 'crouch' && u.vx ? u.char.stats.walk / u.char.stride
         : u.state === 'attack' && u.phase === 'startup' && sim.stepCount < u.speedEnd ? u.speedMul : 1;   // a timed speed status quickens startups
       rigUpd(u, DT * rate);
       takeRoot(u);

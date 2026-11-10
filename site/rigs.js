@@ -3,12 +3,15 @@
 // has rig canvases, so the homepage and the roster (whose cards are pre-rendered sprites) skip it.
 //   data-mode="move"      a move card: plays its clips (data-seq: a string's presses, a stance first) on a loop
 //                         while it's on screen, and again at once on hover or tap
+//   data-mode="perfect"   the PERFECT card: the perfect round finisher with the thrown body (PerfectView)
 //   data-mode="showcase"  a fighter page's big rig: guard, then one of its unique moves every few seconds
 // Only what's on screen animates (IntersectionObserver), nothing runs in a hidden tab, phones draw at a
 // lower resolution, and prefers-reduced-motion gets still poses (a move card still plays on a tap).
 import { getCharacter, TEMP_ID } from '../src/characters/index.js';
+import { colorFor } from '../src/characters/registry.js';
 import { createFighter, MOVE_DATA } from '../src/fighter/index.js';
 import { createLife } from '../src/fighter/life.js';
+import { createPerfectFX } from '../src/fx/perfect.js';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const COARSE = matchMedia('(pointer: coarse)').matches;
@@ -130,6 +133,57 @@ class ShowcaseView {
   }
 }
 
+// the PERFECT card: the fighter's perfect round finisher on a TEMP lying in front of him, played on the same clock as
+// the game (frameData PERFECT) with the game's own drawing of the thrown body (src/fx/perfect.js), the card standing
+// in for the screen. A stand-in for the sim carries just what that drawing reads.
+class PerfectView {
+  constructor(canvas, c) {
+    this.s = new Surface(canvas); this.c = c; this.rig = makeRig(c);
+    const temp = getCharacter(TEMP_ID), loserColor = colorFor(temp, 1, c);   // as the game colors a P2 TEMP against this fighter
+    this.lrig = makeRig(temp, loserColor);
+    this.fx = createPerfectFX();
+    this.w = { id: 0, char: c, rig: this.rig, facing: 1, pfFar: false, color: c.color };
+    this.l = { id: 1, char: temp, rig: this.lrig, facing: -1, color: loserColor };
+    this.sim = { units: [this.w, this.l], winner: 0, round: 0, seed: 7, stepCount: 0, perfectT: -2, perfectRel: -1, oppOf: (u) => (u === this.w ? this.l : this.w) };
+    this.cam = { x: 70, y: -70, zoom: 2.3, shakeX: 0, shakeY: 0 };
+    this.wait = rand(0.3, 0.8);
+    canvas.addEventListener('click', () => this.start());
+  }
+  start() {
+    const { sim, l, rig, lrig } = this;
+    sim.round++; sim.perfectT = 0; sim.perfectRel = -1; sim.stepCount = 0;
+    l.hidden = false; l.pfFrom = null; l.pfRel = null; l.pfGrabT = -1;
+    lrig.x = 110; lrig.facing = -1; safePlay(lrig, 'ko'); for (let i = 0; i < 40; i++) lrig.update(0.05); lrig.events.length = 0;
+    rig.x = 0; safePlay(rig, this.c.perfect.clip); rig.events.length = 0;
+    wake(this);
+  }
+  tick(dt) {
+    const { sim, rig, l, s, c } = this;
+    if (sim.perfectT < 0) { if (!REDUCED && (this.wait -= dt) <= 0) this.start(); }
+    else {
+      sim.perfectT += dt; sim.stepCount = Math.round(sim.perfectT * 120);
+      for (const ev of rig.events) {
+        if (ev.type === 'grab' && l.pfGrabT < 0) { l.pfGrabT = sim.perfectT; l.pfFrom = copyJ(this.lrig.joints); l.hidden = true; }
+        if (ev.type === 'release' && !l.pfRel) { const h = rig.joints[c.perfect.hand] || rig.joints.lHand; l.pfRel = { x: h.x, y: h.y }; l.hidden = true; sim.perfectRel = sim.perfectT; }
+      }
+      if (sim.perfectRel >= 0 && sim.perfectT > sim.perfectRel + 2.15) { sim.perfectT = -2; this.wait = 1.4; }
+    }
+    rig.events.length = 0;
+    rig.update(dt);
+    s.clear();
+    const k = s.w / 1280, { cam } = this, ctx = s.ctx;
+    // the room: the card is the screen, at the camera's framing
+    ctx.setTransform(k * cam.zoom, 0, 0, k * cam.zoom, k * (640 - cam.x * cam.zoom), s.h / 2 - k * cam.y * cam.zoom);
+    if (!l.hidden) { ctx.save(); ctx.globalAlpha = 0.7; this.lrig.draw(ctx); ctx.restore(); }
+    ctx.save(); ctx.shadowColor = c.color; ctx.shadowBlur = 8 * s.dpr; rig.draw(ctx); ctx.restore();
+    this.fx.drawWorld(ctx, sim, dt);
+    // the glass: the screen-space part, the card scaled to 1280 wide
+    ctx.setTransform(k, 0, 0, k, 0, (s.h - 720 * k) / 2);
+    this.fx.drawScreen(ctx, sim, cam, dt);
+  }
+}
+const copyJ = (j) => { const o = {}; for (const n in j) o[n] = { x: j[n].x, y: j[n].y }; return o; };
+
 // shared strings a showcase falls back on when its fighter has no unique moves
 const SHARED_SEQS = [['jab', 'jab', 'cross'], ['jab', 'cross', 'roundhouse'], ['cross', 'lkick'], ['lkick', 'lkick', 'crescent'],
   ['lowJab', 'lowJab', 'lowKick'], ['jab', 'cross', 'uptown', 'neonTornado'], ['bodyBlow'], ['sweep'], ['overhead'], ['cross', 'jab', 'spinHeel']];
@@ -170,6 +224,7 @@ for (const cv of document.querySelectorAll('canvas[data-mode]')) {
   try {
     if (!c) continue;
     else if (mode === 'move') mount(cv, new MoveView(cv, c, (cv.dataset.seq || '').split(',').filter(Boolean)));
+    else if (mode === 'perfect' && c.perfect) mount(cv, new PerfectView(cv, c));
     else if (mode === 'showcase') mount(cv, new ShowcaseView(cv, c, pageSeqs.length ? pageSeqs : SHARED_SEQS.slice(0, 6)));
   } catch (e) { console.error(`[site] ${mode} ${cv.dataset.char || ''}:`, e); }
 }
