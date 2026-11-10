@@ -10,7 +10,7 @@
   // so this never runs inside it.
   (function () {
     var q = new URLSearchParams(location.search);
-    var game = ['room', 'crew', 'scene', 'pick', 'p1', 'p2', 'mirror', 'botch', 'tier', 'relay', 'ice', 'netsim', 'blend'];
+    var game = ['room', 'crew', 'scene', 'pick', 'p1', 'p2', 'mirror', 'botch', 'tier', 'perf', 'relay', 'ice', 'netsim', 'blend'];
     var app = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
     if (app || game.some(function (k) { return q.has(k); }) || /[#&](signin|code)=/.test(location.hash)) location.replace('./play/' + location.search + location.hash);
   })();

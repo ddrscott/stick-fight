@@ -3,18 +3,20 @@
     "mode": "load",
     "throttle": 1,
     "net": "local",
-    "readyMs": 511,
-    "fcpMs": 349,
-    "mainThreadMs": 192,
-    "kb": 758
+    "firstFrameMs": 409,
+    "readyMs": 409,
+    "fcpMs": 251,
+    "mainThreadMs": 130,
+    "kb": 249
   },
   {
     "mode": "load",
     "throttle": 4,
     "net": "local",
-    "readyMs": 1076,
-    "fcpMs": 711,
-    "mainThreadMs": 671,
-    "kb": 758
+    "firstFrameMs": 777,
+    "readyMs": 777,
+    "fcpMs": 487,
+    "mainThreadMs": 460,
+    "kb": 249
   }
 ]

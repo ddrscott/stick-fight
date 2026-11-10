@@ -1,0 +1,12 @@
+[
+  {
+    "mode": "load",
+    "throttle": 4,
+    "net": "4g",
+    "firstFrameMs": 1139,
+    "readyMs": 1365,
+    "fcpMs": 1248,
+    "mainThreadMs": 632,
+    "kb": 282
+  }
+]

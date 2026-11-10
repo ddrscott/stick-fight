@@ -89,14 +89,15 @@ function smoothstep(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - 
 // Quality tiers. 3 is the full look (what every capture and critic saw); lower tiers drop the
 // costliest passes for phones. The adaptive controller moves between them on frame time.
 // Each step down is a deliberate trade, not a blur (README, Performance): the fighters' layer stays at full
-// resolution on every tier, so a fighter's edge, outline and rim stay sharp; what goes first is what reads
+// resolution on tiers 3 and 2 (0.75 on tier 1), so a fighter's edge, outline and rim stay sharp; what goes first is what reads
 // least in motion. Tier 2 drops the contact shadows and star streaks, keeps 20 lights and lights the scene at
 // 0.8 of the canvas (64% of the pixels). Tier 1 also drops the haze and the widest glow, keeps 12 lights, lights
-// the scene at 0.6 (36%) and draws the backdrop layers at 0.6.
+// the scene at half size (a quarter of the pixels), the backdrop layers at half size and the fighters at 0.75
+// (sharper edges and outline than half size, for about 10% more GPU work than an all-half tier 1).
 const TIERS = {
   3: { name: 'full', shadows: true, stars: true, wideLight: true, haze: true, sceneScale: 1, layerScale: 1, figScale: 1, maxLights: 32 },
   2: { name: 'mid', shadows: false, stars: false, wideLight: true, haze: true, sceneScale: 0.8, layerScale: 1, figScale: 1, maxLights: 20 },
-  1: { name: 'low', shadows: false, stars: false, wideLight: false, haze: false, sceneScale: 0.6, layerScale: 0.6, figScale: 1, maxLights: 12 },
+  1: { name: 'low', shadows: false, stars: false, wideLight: false, haze: false, sceneScale: 0.5, layerScale: 0.5, figScale: 0.75, maxLights: 12 },
 };
 const PREC_BLOCK = /#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif/;
 
@@ -231,11 +232,13 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
   // Frame timing and the adaptive tier (README, Performance). The intervals between render() calls are judged
   // every half second. A window is slow when both its average and its median miss ~55 fps, so one long frame (a
   // GC, a scenery cache redraw) never counts; under ~33 fps it is very slow. One very slow window or two slow
-  // ones in a row step down a tier. A tier that failed is the ceiling for the rest of the session, so it never
-  // flaps back and forth; a tier below the ceiling is climbed back to after 5 good seconds. The window after a
+  // ones in a row step down a tier. A tier that failed becomes the ceiling, so it never flaps back and forth; a
+  // tier below the ceiling is climbed back to after 5 good seconds, and a failed tier gets one retry after a good
+  // minute at the ceiling. The window after a
   // change is skipped (resizing the canvases takes a frame or two).
   // A tier change resizes canvases (which clears them), so it is applied after the frame is composited.
   let tierPending = false, slowRun = 0, skipWindow = 1;
+  const retried = new Set();
   const ivSorted = [];
   function frameTick() {
     const now = performance.now();
@@ -264,7 +267,11 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       adapt.ceiling = Math.min(adapt.ceiling, tier - 1);   // this tier can't hold: never climb back to it
       tier--; adapt.lastChange = now; adapt.lastDown = now; adapt.good = 0; slowRun = 0; skipWindow = 1; tierPending = true;
     } else if (!slow && frameStats.avg < 17.4) {
-      if (++adapt.good >= 10 && tier < adapt.ceiling) { tier++; adapt.lastChange = now; adapt.good = 0; skipWindow = 1; tierPending = true; }
+      ++adapt.good;
+      // a minute of good frames at the ceiling earns the failed tier above it one more try (a phone that was hot,
+      // or a notification); a tier that fails its retry stays out for the session
+      if (adapt.good >= 120 && tier === adapt.ceiling && tier < 3 && !retried.has(tier + 1)) { retried.add(tier + 1); adapt.ceiling = tier + 1; }
+      if (adapt.good >= 10 && tier < adapt.ceiling) { tier++; adapt.lastChange = now; adapt.good = 0; skipWindow = 1; tierPending = true; }
     } else adapt.good = 0;
   }
 

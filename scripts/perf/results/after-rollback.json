@@ -1,0 +1,68 @@
+[
+  {
+    "scenario": "close",
+    "mode": "rollback",
+    "throttle": 1,
+    "burst50": 0.5,
+    "burstMax": 0.9,
+    "save50": 0,
+    "load50": 0,
+    "tick50": 0,
+    "tickMax": 0.2
+  },
+  {
+    "scenario": "close",
+    "mode": "rollback",
+    "throttle": 4,
+    "burst50": 3,
+    "burstMax": 7.9,
+    "save50": 0,
+    "load50": 0,
+    "tick50": 0,
+    "tickMax": 3.6
+  },
+  {
+    "scenario": "close",
+    "mode": "rollback",
+    "throttle": 6,
+    "burst50": 8,
+    "burstMax": 68.7,
+    "save50": 0,
+    "load50": 0.1,
+    "tick50": 0.1,
+    "tickMax": 52.1
+  },
+  {
+    "scenario": "horde",
+    "mode": "rollback",
+    "throttle": 1,
+    "burst50": 1,
+    "burstMax": 1.8,
+    "save50": 0,
+    "load50": 0.1,
+    "tick50": 0,
+    "tickMax": 0.3
+  },
+  {
+    "scenario": "horde",
+    "mode": "rollback",
+    "throttle": 4,
+    "burst50": 3.9,
+    "burstMax": 7,
+    "save50": 0,
+    "load50": 0.1,
+    "tick50": 0,
+    "tickMax": 3.2
+  },
+  {
+    "scenario": "horde",
+    "mode": "rollback",
+    "throttle": 6,
+    "burst50": 5.2,
+    "burstMax": 10.6,
+    "save50": 0,
+    "load50": 0.1,
+    "tick50": 0,
+    "tickMax": 5.2
+  }
+]

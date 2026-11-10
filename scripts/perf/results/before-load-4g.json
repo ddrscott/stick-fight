@@ -3,9 +3,10 @@
     "mode": "load",
     "throttle": 4,
     "net": "4g",
-    "readyMs": 2262,
-    "fcpMs": 1649,
-    "mainThreadMs": 755,
-    "kb": 758
+    "firstFrameMs": 1534,
+    "readyMs": 1534,
+    "fcpMs": 1041,
+    "mainThreadMs": 453,
+    "kb": 249
   }
 ]
