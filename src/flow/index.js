@@ -53,6 +53,7 @@ import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './
 import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
 import { profile, setName as saveName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
 import { createCrew, createCrewRoom, cleanSlug, crewLink } from '../net/crew.js';
+import { qrSvg } from '../qr.js';
 import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
@@ -519,6 +520,26 @@ export function createFlow(ctx) {
     root.appendChild(row);
     return items;
   }
+  /**
+   * The join link as a QR code, for a friend standing next to the screen (src/qr.js): a white tile with
+   * SCAN TO JOIN under it. It isn't a button, so the focus never lands on it. Until set(link) has a link
+   * (the host's room is still opening) it's an empty tile of the same size, so nothing moves when the code arrives.
+   */
+  function qrBox(link = '') {
+    const box = el('div', 'fl-qr fl-qrwait'), tile = el('div', 'fl-qrtile');
+    box.append(tile, el('div', 'fl-qrlabel', 'SCAN TO JOIN'));
+    let shown = '';
+    const set = (l) => {
+      if (l === shown) return;
+      const svg = l ? qrSvg(l) : null;   // null: a link too long for the encoder (a very long dev host name)
+      tile.textContent = '';
+      if (svg) tile.appendChild(svg);
+      shown = svg ? l : '';
+      box.classList.toggle('fl-qrwait', !svg);
+    };
+    set(link);
+    return { el: box, set };
+  }
   const mainMenuBtn = (guard = 0) => button('MAIN MENU', () => { if (t >= guard) mainMenu(); }, 'fl-violet');
   let startBtn = null;
   let titleUpdWatch = null;
@@ -949,20 +970,22 @@ export function createFlow(ctx) {
   }
   function screenHost() {
     const session = ++netSession;
-    let codeEl, linkEl, waitEl;
+    let codeEl, linkEl, waitEl, qr;
     ui.show('fl-host', (root) => {
-      root.append(el('h1', 'fl-h2', 'HOST A GAME'), el('div', 'fl-label', 'YOUR ROOM CODE'));
+      // the code, link and status on the left, the link's QR code on the right (an empty tile until the room opens)
+      const info = el('div', 'fl-hostinfo');
+      qr = qrBox();
       codeEl = el('div', 'fl-h1 fl-read', '····');   // a code to read out and type: no glow
       linkEl = el('div', 'fl-link', '');
       waitEl = el('div', 'fl-label fl-dots', 'OPENING A ROOM');
       statusEl = waitEl;
-      root.append(codeEl, linkEl, waitEl);
+      info.append(el('div', 'fl-label', 'YOUR ROOM CODE'), codeEl, linkEl, waitEl);
+      root.append(el('h1', 'fl-h2', 'HOST A GAME'), info, qr.el);
       const items = [];
       // spectators: on unless the host says no (kept for their next rooms; a crew's match is never watchable)
       const net0 = getNet();
       const specLabel = () => (net0.watchable && !net0.watchable() ? 'SPECTATORS: OFF  ·  NOBODY CAN WATCH' : 'SPECTATORS: ON  ·  YOUR MATCH SHOWS IN LIVE NOW');
       const spec = button(specLabel(), () => { if (!net0.setWatchable) return; net0.setWatchable(!net0.watchable()); spec.el.textContent = specLabel(); }, 'fl-mini fl-violet fl-spec');
-      if (net0.setWatchable) root.appendChild(spec.el);
       // send the link: the phone's share sheet where there is one, and the clipboard everywhere (both
       // wait for the room: dim, and skipped by the focus, until there's a link)
       const noLink = () => !linkEl.textContent;
@@ -985,7 +1008,7 @@ export function createFlow(ctx) {
       }
       items.push(button('CANCEL', () => go('onlineMenu'), 'fl-violet'), mainMenuBtn());
       btnRow(root, items, '17cqw');
-      if (net0.setWatchable) items.push(spec);
+      if (net0.setWatchable) { root.appendChild(spec.el); items.push(spec); }
       return { items, back: () => go('onlineMenu') };
     });
     const fallback = ui.focus;   // COPY LINK is dim until the room opens, so the focus starts on CANCEL
@@ -995,6 +1018,7 @@ export function createFlow(ctx) {
       if (session !== netSession) return;
       codeEl.textContent = code;
       linkEl.textContent = link || roomLink(code);
+      qr.set(linkEl.textContent);   // the same link COPY LINK copies
       if (/OPENING/.test(waitEl.textContent || '')) waitEl.textContent = 'WAITING FOR A FRIEND';
       ui.refresh();
       if (ui.focus === fallback) ui.setFocus(0);   // the player hasn't moved: COPY LINK, now it works
@@ -1791,7 +1815,7 @@ export function createFlow(ctx) {
       btns.append(pair, pair2);
       items.push(leave, main);
       right.appendChild(btns);
-      body.append(left, right);
+      body.append(left, right, qrBox(link).el);   // the crew's link again, for a camera
       root.appendChild(body);
       lob = { title, table, recent, status, play, noteUntil: crewNote ? performance.now() + 5000 : 0 };
       return { items, focus: 0, back: () => go('onlineMenu'), legend: [MOVE, SELECT, ['back', 'ONLINE MENU']] };
