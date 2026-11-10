@@ -92,10 +92,12 @@ export class Crew extends DurableObject<Env> {
   }
 
   /** The lobby's WebSocket (the Worker checked the slug and the join limit). */
-  async fetch(_req: Request): Promise<Response> {
+  async fetch(req: Request): Promise<Response> {
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
-    const reason = !this.exists() ? "no-crew" : this.ctx.getWebSockets().length >= MAX_SOCKETS ? "full" : "";
+    // a crew room has members, never spectators: its matches are the crew's own (README, Spectators)
+    const role = new URL(req.url).searchParams.get("role") || "";
+    const reason = role === "spectator" || role === "watch" ? "no-spectators" : !this.exists() ? "no-crew" : this.ctx.getWebSockets().length >= MAX_SOCKETS ? "full" : "";
     this.ctx.acceptWebSocket(server, [reason ? "refused" : "crew"]);
     if (reason) {
       server.send(JSON.stringify({ t: "error", reason }));
@@ -175,7 +177,7 @@ export class Crew extends DurableObject<Env> {
     const ready = this.sockets().map((w) => ({ w, a: this.att(w) })).filter((x) => x.a.mid && x.a.status === "ready").sort((x, y) => x.a.readyAt - y.a.readyAt);
     const first = ready[0], second = first && ready.find((x) => x.a.mid !== first.a.mid);
     if (!first || !second) return;
-    const code = await claimRoom(this.env);
+    const code = await claimRoom(this.env, true);   // private: a crew match is never open to spectators
     if (!code) return;   // no free code: they stay ready, the next press tries again
     const id = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, 10);
     const now = Date.now();

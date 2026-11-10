@@ -200,3 +200,90 @@ export function deepHash(sim) {
   walk(s);
   return h.toString(16);
 }
+
+// ---- a spectator: its own arena, rigs, sim and demo, and the real src/net/watch.js on the room's watch socket ----
+/**
+ * @param {{ name: string, seed: number, network: any, frames: { fps?: number, uneven?: boolean }, createWatch: any }} o
+ */
+export function createSpectator({ name, seed, network, frames, createWatch }) {
+  const rng = mulberry32(seed);
+  const arena = createArena('building');
+  const sp = arena.spawns;
+  const fighters = [createFighter({ color: '#f0f0f0', x: sp[0].x, y: sp[0].y, facing: sp[0].facing }), createFighter({ color: '#E85D00', x: sp[1].x, y: sp[1].y, facing: sp[1].facing })];
+  /** @type {any} */ let sim = null;
+  const makeRig = (color) => { const g = sim.units[0]; return createFighter({ color, x: g.x, y: g.y, facing: -1 }); };
+  sim = createCombat({ fighters, arena, input: { snapshot: () => EMPTY_INPUT, swallowHeld() {} }, onEvent: () => {}, makeRig, moves: MOVES, moveData: MOVE_DATA });
+  const life = createLife(); life.setFrameData(FRAME_DATA);
+  let lifeStep = -1, demoRunning = false;
+  const me = {
+    name, sim, frozenUntil: 0, hiddenUntil: 0,
+    /** @type {any} */ watch: null,
+    hashes: new Map(),            // `${match}:${frame}` -> this side's hash of every 30th frame it played
+    results: /** @type {Record<number, any>} */ ({}),
+    started: /** @type {number[]} */ ([]), overs: /** @type {string[]} */ ([]),
+    lagMs: 0, lagN: 0, liveFrames: 0, stalls: 0, catchUps: 0,
+    /** the host's frame right now (set by the session), for measuring how far behind this side plays */
+    hostFrame: /** @type {null | (() => number)} */ (null),
+  };
+  function demo() {
+    const r = roster(), a = r[Math.floor(rng() * r.length)], b = r[Math.floor(rng() * r.length)];
+    sim.setCharacters([a.id, b.id]);
+    sim.setAI(0, 1.0, { style: 'showcase' }); sim.setAI(1, 1.0, { style: 'showcase' });
+    arena.clearBodies();
+    sim.resetMatch({ seed: Math.floor(rng() * 4294967296) >>> 0, introTime: 1.2 });
+    sim.roundTime = 99; sim.winsNeeded = 2;
+    demoRunning = true;
+  }
+  let n = 0;
+  const watch = createWatch({
+    sim, now: () => sched.t,
+    openSocket: (code) => network.watchSocket(code, me),
+    // main.js setScene('online', o), exactly as a player's page does it
+    startMatch(o) {
+      demoRunning = false;
+      sim.setCharacters(o.chars);
+      sim.botchOn = o.botch !== false;
+      sim.roundTime = o.rules.roundTime; sim.winsNeeded = o.rules.winsNeeded;
+      arena.clearBodies();
+      sim.setController(0, 'net', o.lockstep.controller(0)); sim.setController(1, 'net', o.lockstep.controller(1));
+      sim.perfectSkip = 'winner';
+      sim.resetMatch({ seed: o.seed >>> 0, fresh: true });
+      life.reset();
+    },
+    endMatch() { demo(); },
+  });
+  me.watch = watch;
+  watch.on('start', (v) => { n = v.n; me.started.push(v.n); });
+  watch.on('end', (r) => { me.results[r.n] = r; });
+  watch.on('over', (reason) => { me.overs.push(String(reason)); });
+  let last = 0, wasState = '';
+  const interval = () => (frames.uneven ? (() => { const k = rng(); return k < 0.06 ? 40 + rng() * 90 : k < 0.2 ? 8 + rng() * 6 : 14 + rng() * 10; })() : (1000 / (frames.fps || 60)) * (0.97 + rng() * 0.06));
+  function frame() {
+    const t = sched.t, ms = Math.min(100, t - last); last = t;
+    if (watch.active) {
+      const slow = sim.koSlow > 0 ? (sim.finisher ? 0.25 : 0.5) : 1;
+      watch.advance(ms * slow);
+      for (const [f, h] of watch.hashes) me.hashes.set(`${n}:${f}`, h);
+      const st = watch.state;
+      if (st === 'live') { me.liveFrames++; if (me.hostFrame) { const hf = me.hostFrame(); if (hf >= 0) { me.lagMs += (hf - watch.stats().frame) * (1000 / 120); me.lagN++; } } }
+      if (st !== wasState) { if (st === 'buffering' && wasState === 'live') me.stalls++; if (st === 'catching') me.catchUps++; wasState = st; }
+    } else if (demoRunning) {
+      sim.step(ms);
+      if (sim.round > 1 || sim.phase === 'match') demo();
+    }
+    // the draw, as main.js does it (skipped while catching up)
+    if (!watch.catching) {
+      const lifeDt = sim.stepCount !== lifeStep ? Math.min(0.05, ms / 1000) : 0; lifeStep = sim.stepCount;
+      for (const u of sim.units) {
+        if (u.hidden) continue;
+        const joints = life.apply(u, u.rig.joints, sim, lifeDt);
+        const realJ = u.rig.joints; u.rig.joints = joints;
+        u.rig.draw(nullCtx);
+        u.rig.joints = realJ; u.rig.sway = null;
+      }
+    }
+    at(sched.t + interval(), frame, me, 'frame');
+  }
+  me.start = (t0) => { last = t0; demo(); at(t0, frame, me, 'frame'); };
+  return me;
+}

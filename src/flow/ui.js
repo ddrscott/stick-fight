@@ -394,6 +394,34 @@ function injectStyle() {
   .fl-orow { gap: 1.4cqw; margin-top: 0.6cqh; }
   .fl-orow .fl-btn { min-width: 14cqw; }
 
+  /* spectators: the LIVE list and the watch view (readable text never glows) */
+  .fl-spec { min-width: 0; margin-top: -0.4cqh; }
+  .fl-livelist { width: 66cqw; gap: 1cqh; }
+  .fl-liverow { min-width: 0; width: 100%; padding: 0.5cqw 1.4cqw 0.2cqw; text-shadow: none; }
+  .fl-lline { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; gap: 1.6cqw; width: 100%; }
+  .fl-lside { display: flex; align-items: baseline; gap: 0.9cqw; min-width: 0; white-space: nowrap; }
+  .fl-lside0 { justify-content: flex-end; } .fl-lside1 { flex-direction: row-reverse; justify-content: flex-end; }
+  .fl-lchar { font-weight: 600; color: var(--fc, var(--ink)); }
+  .fl-lname { font-style: normal; font-size: 2.1cqw; font-weight: 500; color: rgba(230,214,255,0.86); letter-spacing: 0.08em; }
+  .fl-lvs { font: normal 400 2.2cqw/1 'Bungee', sans-serif; color: var(--ink); }
+  /* the focused row keeps its dark ground, so the fighters stay in their own colors: a white edge marks it */
+  .fl-liverow.fl-focus { background: rgba(46,242,255,0.16); color: var(--ink); border-color: #fff; text-shadow: none; box-shadow: 0 0 1.4cqw var(--c); }
+  .fl-liverow small { color: #ffe0a8; opacity: 1; }
+  .fl-watch { pointer-events: none; justify-content: flex-end; }
+  .fl-wtag { text-shadow: none; font: normal 400 1.5cqw/1 'Bungee', sans-serif; letter-spacing: 0.06em; color: var(--deep); background: var(--amber); padding: 0.45cqw 0.7cqw 0.25cqw; }
+  .fl-wbar { position: absolute; left: 50%; bottom: 2.2cqh; transform: translateX(-50%); display: flex; align-items: center; gap: 1.2cqw; white-space: nowrap;
+    padding: 0.5cqw 1.1cqw 0.4cqw 0.6cqw; background: rgba(10,4,20,0.78); border: 2px solid rgba(255,176,46,0.7);
+    font-size: 2.2cqw; font-weight: 600; letter-spacing: 0.1em; line-height: 1; }
+  .fl-wnames { color: var(--ink); } .fl-wcount { color: #ffe0a8; } .fl-wnote { color: rgba(214,190,255,0.85); } .fl-wnote:empty { display: none; }
+  .fl-wnote.fl-warn { color: #ffc2f3; }
+  .fl-wbtns { position: absolute; right: 1.6cqw; bottom: 2cqh; gap: 0.8cqw; }
+  .fl-wbtns .fl-btn:not(.fl-focus) { background: rgba(10,4,20,0.78); }
+  .fl-watch-wait, .fl-watch-stop, .fl-watch-result { justify-content: center; }
+  .fl-wcard { pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 1.6cqh; max-width: 84cqw;
+    padding: 3cqh 3cqw 3.4cqh; background: rgba(10,4,20,0.86); border: 2px solid var(--cyan); }
+  .fl-watch-result .fl-wcard { margin-top: 34cqh; padding: 1.8cqh 2.4cqw 2.2cqh; gap: 1.1cqh; border-color: var(--amber); }
+  .fl-watch-result .fl-h2 { font-size: 3.2cqw; }
+
   /* the profile */
   .fl-pname { font-size: 6cqw; }
   .fl-pemail { text-transform: none; letter-spacing: 0.08em; }

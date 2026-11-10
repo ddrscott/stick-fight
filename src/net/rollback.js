@@ -440,6 +440,9 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     get confirmed() { return confirmedTop(); },
     get ackedByRemote() { return ackedByRemote; },
     get match() { return tag; },
+    /** player p's real input code for frame f (0: the host), or -1 if it isn't held. For frames up to
+     *  `confirmed` it's final: what the host sends the room for spectators (watchfeed.js) */
+    input(p, f) { return has(p, f) ? get(p, f) : -1; },
     /** the hash of a confirmed frame, if this side has it (tests) */
     confirmedHash(f) { return f <= confirmedTop() ? hashes.get(f) || null : null; },
     get lost() { return now() - lastPacket > LOST_MS; },

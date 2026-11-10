@@ -28,9 +28,10 @@
     // ROOMS: one per quick room, named by its four-letter code (worker/index.ts).
     // CREWS: one per crew room, named by its slug; keeps the crew's members and records in its
     // own SQLite storage (worker/crew.ts)
-    "bindings": [{ "name": "ROOMS", "class_name": "Room" }, { "name": "CREWS", "class_name": "Crew" }]
+    // LOBBY: one object, named "live": the LIVE list of quick matches anyone may watch (kept in its storage, two or three writes a match)
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }, { "name": "CREWS", "class_name": "Crew" }, { "name": "LOBBY", "class_name": "Lobby" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["Crew"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["Crew"] }, { "tag": "v3", "new_sqlite_classes": ["Lobby"] }],
   // Profiles kept by email (worker/auth.ts): accounts, sign-in codes (hashed), sessions (hashed),
   // and the send and guess counters. The match bookkeeping's all-time rollups live here too
   // (worker/stats.ts, migrations/0003_stats.sql): fighters and modes only, no player in them. Schema in migrations/; apply with

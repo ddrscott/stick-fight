@@ -10,7 +10,9 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
-    "types": []
+    "types": [],
+    // src/net/watchlog.js is shared with the pages (plain JavaScript, typed by inference)
+    "allowJs": true
   },
   "include": ["*.ts"]
 }

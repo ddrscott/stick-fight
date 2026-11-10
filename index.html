@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <script>
-  // The game used to live at this address. Old links (a room ?room=, a crew ?crew=, a test ?scene=, the
+  // The game used to live at this address. Old links (a room ?room=, a crew ?crew=, a match to watch ?watch=, a test ?scene=, the
   // sign-in email's #signin=...&code=...) and an app installed before the move go on to the game at
   // play/, with the query and the hash intact (README, "Site"). The iframe below loads play/ itself,
   // so this never runs inside it.
   (function () {
     var q = new URLSearchParams(location.search);
-    var game = ['room', 'crew', 'scene', 'pick', 'p1', 'p2', 'mirror', 'botch', 'tier', 'perf', 'relay', 'ice', 'netsim', 'blend'];
+    var game = ['room', 'crew', 'watch', 'scene', 'pick', 'p1', 'p2', 'mirror', 'botch', 'tier', 'perf', 'relay', 'ice', 'netsim', 'blend'];
     var app = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
     if (app || game.some(function (k) { return q.has(k); }) || /[#&](signin|code)=/.test(location.hash)) location.replace('./play/' + location.search + location.hash);
   })();
@@ -130,6 +130,15 @@
   <!--@roster-->
     </div>
     <div class="s-cta s-cta-center"><a class="s-btn s-btn-ghost s-btn-big" href="./fighters/">MEET THE WHOLE CAST</a></div>
+  </section>
+
+  <!-- LIVE NOW: quick online matches anyone can watch (site/site.js fills it from api/live; hidden while nothing is on). It sits over the books: what's being fought now, then what's been fought -->
+  <section class="s-section s-live" id="live" aria-labelledby="live-h" data-live hidden>
+    <div class="s-section-head">
+      <h2 class="s-h2" id="live-h"><i class="s-live-dot" aria-hidden="true"></i>LIVE NOW</h2>
+      <p class="s-live-note">Quick matches being fought right now. Pick one to watch, about 3 seconds behind the action.</p>
+    </div>
+    <div class="s-live-list" data-live-list></div>
   </section>
 
   <section class="s-section s-books" id="stats" aria-labelledby="stats-h" data-stats="home">
