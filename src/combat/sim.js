@@ -1747,10 +1747,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // A wake-up strike: it kicks toward the opponent, so a body lying with its head toward him turns over
   // first (the hip stays where it is; the drawing cross-fades the mirror), then the strike starts from the
   // rest pose like any other
-  const REST_HX = -128;   // the knockdown rest pose's hip, px behind the root (src/fighter: MOVE_DEFS.knockdown)
+  const REST_HX = -128, WAKE_SCOOT = 72;   // WAKE_SCOOT: the wake-up strikes' forward scoot (about 56px of hip) plus a margin   // the knockdown rest pose's hip, px behind the root (src/fighter: MOVE_DEFS.knockdown)
   function startWake(u, move) {
     const o = oppOf(u), hip = bodyX(u), want = o ? (-u.home || Math.sign(bodyX(o) - hip)) : 0;   // toward him, by the sides (lieSide)
-    if (want && want !== u.facing) { u.facing = want; u.x = hip - REST_HX * want * (u.rig.scale || 1); syncRig(u); rigUpd(u, 0); }
+    // the strike scoots the hip up to WAKE_SCOOT toward him: a man standing closer than that (over the head side) would
+    // be passed under, so the body starts that much further back (drawn as the turn-over's cross-fade)
+    const back = o && want ? Math.max(0, WAKE_SCOOT * (u.rig.scale || 1) - (o.x - hip) * want) : 0;
+    if (want && (want !== u.facing || back > 0)) { u.facing = want; u.x = hip - want * back - REST_HX * want * (u.rig.scale || 1); syncRig(u); rigUpd(u, 0); }
     u.buffer = null; u.bufferKeys = null; u.bufferName = '';
     startAttack(u, move);
     u.seq = null;
@@ -1839,8 +1842,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     {
       const o = oppOf(u);
       const stomping = u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].otg;   // the stomp's step goes in over the legs
-      if (o && u.grounded && !stomping && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx && sameLevel(u, o)) {
-        const ends = o.rag ? [Math.min(o.x, bodyX(o)), Math.max(o.x, bodyX(o))] : lieEnds(o), dir = Math.sign(u.vx), near = dir > 0 ? ends[0] : ends[1];
+      if (o && u.grounded && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx && sameLevel(u, o)) {
+        const ends = o.rag ? [Math.min(o.x, bodyX(o)), Math.max(o.x, bodyX(o))] : lieEnds(o), dir = Math.sign(u.vx);
+        // the stomp's step goes in over the legs, but never past the hip (HIP_GAP short of it, like a man standing there)
+        const near = stomping ? bodyX(o) - dir * (HIP_GAP - 24) : dir > 0 ? ends[0] : ends[1];
         const room = (near - u.x) * dir - 24;
         if ((near - u.x) * dir > -40 && room < u.vx * dir * DT) { u.vx = Math.max(0, room) / DT * dir; if (room <= 0) { u.vx = 0; u.chase = false; } }
       }
@@ -2559,7 +2564,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // hip: someone standing over its legs got stood up through, and came out on the wrong side. So a
   // standing body may reach only OVER px onto a lying one from its own side, and one the lying body
   // came to rest under is eased off it (KEEP_OFF px a step), not snapped.
-  const KEEP_OFF = 5;
+  const KEEP_OFF = 5, HIP_GAP = 10;
   function keepOff(a, b) {
     const lyingDown = (u) => (u.state === 'down' || u.state === 'roll' || (u.state === 'knockdown' && u.grounded) || wakeLying(u)) && !u.rag;
     const onFoot = (u) => u.grounded && !u.rag && !u.falling && u.state !== 'vault' && u.state !== 'jump' && !NOT_SOLID.has(u.state) && !wakeLying(u);
@@ -2568,7 +2573,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const hip = down.rig.joints.hip.x, [lo, hi] = lieEnds(down);
     // his own side: remembered from when both stood (going by where he is now pushed him the rest of the way across)
     const side = (oppOf(stand) === down && stand.home) || Math.sign((stand.prevBX != null ? stand.prevBX : stand.x) - (down.prevBX != null ? down.prevBX : hip)) || Math.sign(stand.x - hip) || 1;
-    const edge = side > 0 ? hi - OVER : lo + OVER;
+    // at the feet end he may stand OVER onto the body; at the hip end (its head side) he stops HIP_GAP short of the
+    // hip, so the body's side and where he stands never disagree (standing past the hip, every way up looked like a swap)
+    const edge = side > 0 ? (hi === hip ? hip + HIP_GAP : hi - OVER) : (lo === hip ? hip - HIP_GAP : lo + OVER);
     const inside = side > 0 ? edge - stand.x : stand.x - edge;
     if (inside <= 0) return;
     const bb = bandOf(stand);

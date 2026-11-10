@@ -125,6 +125,59 @@ if (mode === 'scene') {
     if (!r) break;
     out[k] = r; process.stderr.write(`${k} ${JSON.stringify(r)}\n`);
   }
+} else if (mode === 'swaps') {
+  // side swaps (README, Measurements (side swaps)): CPU vs CPU at --diff, --secs seconds a fight, one fight per pair and
+  // seed. Per 60fps frame (stepped quietly: the draw smoothing runs, nothing is drawn) the side of the two fighters by
+  // where each body is (a lying, rolling or rising body by its hip). A swap counts once the new side is 10px clear and
+  // holds 8 frames. Each swap is put down to: 'getup' (either one on the floor, rolling or rising in the last 30
+  // frames, and no crossing roll), 'cross' (a roll that crossed under him, on purpose), 'jump' (one was in the air), or
+  // 'other'. A getup swap with a drawn jump of either hip over 25px in a frame is counted as 'getupJump' too.
+  const secs = +opt('--secs', 60), d = +opt('--diff', 0.7), seeds = opt('--seeds', '1,2').split(',').map(Number);
+  const pairs = opt('--pairs', 'temp:courier,security:helpdesk,manager:intern,janitor:windowwasher,accountant:temp,courier:security,lawyer:chef,barista:salesrep,electrician:wellness,receptionist:hrrep,ceo:temp,intern:janitor').split(',');
+  const tot = { frames: 0, swaps: 0, getup: 0, getupJump: 0, cross: 0, jump: 0, other: 0, rolls: 0, crossRolls: 0, examples: [] };
+  for (const pr of pairs) for (const seed of seeds) {
+    const r = await pg.evaluate(({ pr, seed, secs, d }) => {
+      const g = window.__game, sim = g.sim, [a, b] = pr.split(':');
+      window.__gauntlet.setScene('ai-fight', { seed, chars: [a, b] });
+      sim.setAI(0, d); sim.setAI(1, d);
+      const FLOOR = /^(down|roll|getup|knockdown)$/;
+      const isWake = (u) => u.state === 'attack' && sim.FRAME_DATA[u.move] && sim.FRAME_DATA[u.move].wake;
+      const bx = (u) => (u.rag || /^(knockdown|down|ko|roll|getup)$/.test(u.state) || isWake(u)) ? u.rig.joints.hip.x : u.x;
+      const res = { frames: 0, swaps: 0, getup: 0, getupJump: 0, cross: 0, jump: 0, other: 0, rolls: 0, crossRolls: 0, examples: [] };
+      let hist = [], side = 0, cand = 0, held = 0, seen = new WeakSet(sim.log), lastFloor = [-999, -999], lastAir = [-999, -999], crossUntil = -999, jumpF = -999, prevHip = [null, null];
+      for (let f = 0; f < secs * 60; f++) {
+        g.stepQuiet(1000 / 60);
+        const [u, v] = sim.units;
+        for (const e of sim.log) { if (seen.has(e)) continue; seen.add(e); if (e.type === 'roll') { res.rolls++; if (e.cross) { res.crossRolls++; crossUntil = f + 60; } } if (e.type === 'rollEnd' && e.cross) crossUntil = f + 30; }
+        if (sim.phase !== 'fight' || u.hidden || v.hidden || (u.floor || 0) !== (v.floor || 0)) { side = 0; cand = 0; held = 0; continue; }
+        res.frames++;
+        if (f % 5 === 0) { hist.push(`${u.state[0]}${v.state[0]}${Math.round(bx(v) - bx(u))}`); if (hist.length > 10) hist.shift(); }
+        [u, v].forEach((w, i) => {
+          if (FLOOR.test(w.state) || isWake(w)) lastFloor[i] = f;
+          if (!w.grounded || w.rag) lastAir[i] = f;
+          const dh = g.drawn(w), h = dh && dh.hip;
+          if (h && prevHip[i] && Math.hypot(h.x - prevHip[i].x, h.y - prevHip[i].y) > 25 && !w.rag && w.grounded && w.hitstop <= 0) jumpF = f;
+          prevHip[i] = h ? { x: h.x, y: h.y } : null;
+        });
+        const dx = bx(v) - bx(u), s = Math.abs(dx) > 10 ? Math.sign(dx) : 0;
+        if (!side) { if (s) side = s; continue; }
+        if (s && s !== side) { if (cand === s) held++; else { cand = s; held = 1; } } else { cand = 0; held = 0; }
+        if (held >= 8) {
+          res.swaps++; side = s; cand = 0; held = 0;
+          const floor = f - Math.max(...lastFloor) <= 38, air = f - Math.max(...lastAir) <= 16, cross = f <= crossUntil;
+          const why = cross ? 'cross' : floor && !air ? 'getup' : air ? 'jump' : 'other';
+          res[why]++;
+          if (why === 'getup' && f - jumpF <= 10) res.getupJump++;
+          if ((why === 'getup' || why === 'other') && res.examples.length < 6) res.examples.push(`${pr}#${seed}@${f} ${why} ${u.state}${u.move ? ':' + u.move : ''}/${v.state}${v.move ? ':' + v.move : ''} ${hist.join(' ')}`);
+        }
+      }
+      return res;
+    }, { pr, seed, secs, d });
+    for (const k in tot) if (k !== 'examples') tot[k] += r[k];
+    tot.examples.push(...r.examples);
+    process.stderr.write(`${pr}#${seed} ${JSON.stringify(r)}\n`);
+  }
+  Object.assign(out, tot);
 } else if (mode === 'mash') {
   const N = +opt('--matches', 3), diffs = opt('--diffs', '0.3,0.7').split(',').map(Number), ch = opt('--char', 'temp');
   for (const kind of opt('--kinds', 'random,one').split(',')) for (const d of diffs) {

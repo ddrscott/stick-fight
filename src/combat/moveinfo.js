@@ -36,7 +36,7 @@ export const SHARED_INPUTS = [
   // not in resolveButton: the stomp is resolvePress (stompOK), the wake-up strikes wakeFor. `fix` blanks what the
   // standing measurement gets wrong: nobody blocks a stomp, and a wake-up strike springs from the floor (on block
   // is getup-test's measurement, in the note)
-  { button: '3', motion: 'over', move: 'stomp', name: 'STOMP', note: 'or ↓4, the other fighter on the floor in front of you', fix: { onBlock: null } },
+  { button: '4', motion: 'over', move: 'stomp', name: 'STOMP', note: 'the other fighter on the floor in front of you; ↓3 there is the low kick', fix: { onBlock: null } },
   { button: '1', motion: 'floor', move: 'wakeKick', name: 'WAKE KICK', note: 'or 3, while knocked down; can\'t be hit until it swings; 17 to 24 frames minus on block', fix: { onBlock: null, reach: null } },
   { button: '2', motion: 'floor', move: 'wakeSweep', name: 'WAKE SWEEP', note: 'or 4, or ↓ and any button, while knocked down; can\'t be hit until it swings; 17 to 24 frames minus on block', fix: { onBlock: null, reach: null } },
 ];
@@ -53,7 +53,8 @@ export const SYSTEM = [
   { name: 'RUN', input: '→→ hold', note: 'or Shift / R2; running costs stamina' },
   { name: 'THROW BREAK', input: '1+3', note: 'or 2+4, the moment you\'re grabbed' },
   { name: 'GET UP', input: '↑ on the floor', note: 'leave it and you stand by yourself after a second' },
-  { name: 'ROLL', input: '← or → on the floor', note: 'away or past, then stand' },
+  { name: 'ROLL', input: '← or → on the floor', note: 'away stays on your side; toward him standing near rolls under him to his other side' },
+  { name: 'GROUND HIT', input: 'a low on a body on the floor', note: 'one per knockdown, about half damage, if it visibly touches; after that it only grazes' },
   { name: 'AIR RECOVERY', input: 'any button, juggled', note: 'a beat after the last hit lands you on your feet; too early locks it out, so mashing never works' },
 ];
 

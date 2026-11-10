@@ -402,7 +402,7 @@ const PHASES = {
     { name: 'STOMP whiffs on a roll: open for the whole recovery', p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: wakeAt({ dx: 1 }, 118), dur: 300 },
     { name: 'STOMP lands, he wakes kicking at once: the stomper guards it', p1: [[10, D('rk')], [124, D('rk')]], p1f: over((me, o, t) => (t > 160 ? { back: true } : {})), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
     { name: "STOMP lands, the stomper doesn't guard: the wake kick punishes", p1: [[10, D('rk')], [124, D('rk')]], p1f: over(), p2: (me, o, t) => (me.state === 'down' && t > 150 && t % 3 === 0 ? { lk: true } : {}), dur: 320 },
-    { name: 'one ground hit per knockdown: a second stomp passes over him', p1: [[10, D('rk')], [124, D('rk')], [210, D('rk')]], p1f: over(), dur: 340 },
+    { name: 'one ground hit per knockdown: a second stomp only grazes him', p1: [[10, D('rk')], [124, D('rk')], [210, D('rk')]], p1f: over(), dur: 340 },
   ],
   // air-recovery-test: P1 launches P2 (d+2); P2 presses k steps after the last hit (techAt), or mashes. Then the
   // falling attacks: a second jab after a whiffed air attack, a press mid-swing tangling up, an attack off the vault

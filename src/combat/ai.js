@@ -117,14 +117,19 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // falling: the air recovery out of a juggle (once per hit, the step to press it), a second jab on the way
   // down after a whiffed air attack (once per jump), an air attack out of the vault's drop (once per vault)
   let techFor = -1, techAt = -1, fallFor = -1, vaultFor = -1;
-  function wakePlan(me, opp) {
-    const hip = me.rig.joints.hip.x, away = -(Math.sign(opp.x - hip) || 1), near = Math.abs(opp.x - hip) < 175 && opp.grounded;
+  // A roll's direction goes by the sides (sim.js startRoll, README Getting up): away (me.home, the side of him the
+  // body lies on) stays on that side; toward with him standing near crosses under him, so it's the escape when the
+  // wall leaves no room to roll away.
+  const rollAway = (me, opp) => me.home || -(Math.sign(opp.x - me.rig.joints.hip.x) || 1);
+  const walled = (me, dir, sim) => { const b = sim && sim.bounds; return !!b && (dir > 0 ? b.x1 - me.rig.joints.hip.x : me.rig.joints.hip.x - b.x0) < 90; };
+  function wakePlan(me, opp, sim) {
+    const hip = me.rig.joints.hip.x, away = rollAway(me, opp), near = Math.abs(opp.x - hip) < 175 && opp.grounded;
     const k = rng(), wait = 10 + irnd(show ? 60 : 12 + Math.round(70 * difficulty));
     if (k < 0.05 + 0.35 * (1 - difficulty) && !show) return [];   // lie there: the clock stands him up
     const r = rng();
     if (near && r < 0.18 + 0.27 * difficulty) return [move(0, wait), attack(chance(0.55) ? 'wakeKick' : 'wakeSweep')];
     if (r < 0.72) return [move(0, wait), { ...move(0, (m) => m.state !== 'down'), jump: true }];   // up: stand in place
-    return [move(0, wait), { ...move(chance(0.65) ? away : -away, 3), roll: true }];
+    return [move(0, wait), { ...move(near && walled(me, away, sim) ? -away : chance(0.65) ? away : -away, 3), roll: true }];
   }
   // the string table of the character this CPU plays (src/characters/), the shared one for TEMP
   const strs = (me) => (me.char && me.char.strings) || undefined;
@@ -361,10 +366,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       const floored = opp.state === 'down';
       if (dist > 100) return [move(toward, closer(90), true)];
       // a ground hit, once per knockdown: the stomp (real damage, but a body that rises through it punishes the
-      // whiff) when it reaches, now and then the old low poke at the feet; otherwise wait over him, guard up
+      // whiff) when it reaches, now and then the low kick at the feet (a ground hit for about half its damage); otherwise
+      // wait over him, guard up
       if (floored && !opp.otgHit) {
         if (sim.stompOK && sim.stompOK(me) && me.stamina > 30 && chance(0.3 + 0.35 * difficulty)) return [attack('stomp')];
-        if (chance(0.25)) return dist < 40 ? [attack('sweep')] : [move(toward, closer(36), true), attack('sweep')];
+        if (chance(0.25)) return dist < 40 ? [attack('lowKick')] : [move(toward, closer(36), true), attack('lowKick')];
         if (chance(0.25 + 0.4 * difficulty)) return [blockFor(10 + irnd(10))];
       }
       const mid = (sim.bounds.x0 + sim.bounds.x1) / 2;
@@ -624,7 +630,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (chance(show ? 0.9 : 0.2 + 0.6 * difficulty)) { queue = [blockFor(40 + irnd(20))]; act = null; }
     }
     // knocked down: the getup plan, once per knockdown (sim.js 'down')
-    if (me.state === 'down' && me.touchStep !== downFor) { downFor = me.touchStep; queue = wakePlan(me, opp); act = null; }
+    if (me.state === 'down' && me.touchStep !== downFor) { downFor = me.touchStep; queue = wakePlan(me, opp, sim); act = null; }
     // floored with him striking at the body, or open over it: rise through it with a wake-up strike (invulnerable
     // until live) or roll away; once per strike of his
     if (me.state === 'down' && saw.state === 'attack' && saw.attackId !== downSeen && still(saw, opp)) {
@@ -633,7 +639,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (coming || open) {
         downSeen = saw.attackId; relag();
         if (chance(show ? 0.8 : 0.1 + 0.6 * difficulty)) {
-          queue = open || chance(0.6) ? [attack(chance(0.6) ? 'wakeKick' : 'wakeSweep')] : [{ ...move(-(Math.sign(opp.x - hip) || 1), 3), roll: true }];
+          const away = rollAway(me, opp);
+          queue = open || chance(0.6) ? [attack(chance(0.6) ? 'wakeKick' : 'wakeSweep')] : [{ ...move(walled(me, away, sim) ? -away : away, 3), roll: true }];
           act = null;
         }
       }
