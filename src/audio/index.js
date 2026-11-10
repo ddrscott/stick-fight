@@ -188,7 +188,7 @@ function createGameAudio() {
         break;
       case 'wall': sfx.wallKnock({ strength: ev.strength, pan: p }); break;
       case 'land': sfx.land({ weight: ev.strength || 0.3, pan: p }); break;
-      case 'footstep': sfx.footstep({ weight: 0.4, pan: p }); break;
+      case 'footstep': sfx.footstep({ weight: 0.4, pan: p, stair: !!ev.stair }); break;   // on a flight: the tread's knock
       case 'dust': sfx.jump({ pan: p }); break;   // the sim's jump takeoff
       case 'callout':
         if (ev.kind === 'faint') sfx.gassed({ pan: pan(unitX(ev.by)) });

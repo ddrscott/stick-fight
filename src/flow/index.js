@@ -566,7 +566,7 @@ export function createFlow(ctx) {
       const row = el('div', 'fl-row fl-ctlrow');
       const right = el('div', 'fl-ctlcol');
       right.append(controlsTable(MENUS, 'MENUS'), el('div', 'fl-small fl-ctlnote', 'ON A TOUCH SCREEN THE LEFT THUMB STEERS, THE BUTTONS STRIKE AND GUARD, AND MENUS ARE TAPPED. THE PAUSE MENU AND THE FIGHTER SELECT HAVE EVERY FIGHTER\'S FULL MOVE LIST (F1, OR Y ON A PAD); IN A FIGHT F1 SHOWS A QUICK STRIP.'),
-        el('div', 'fl-small fl-ctlnote', 'PARRY: TAP TOWARD HIM JUST BEFORE A HIT LANDS (DOWN-FORWARD FOR A LOW). KNOCKED DOWN: UP STANDS, LEFT OR RIGHT ROLLS, A BUTTON STRIKES FROM THE FLOOR. OVER HIM ON THE FLOOR: DOWN + KICK STOMPS. JUGGLED: A BUTTON AT THE RIGHT MOMENT LANDS YOU ON YOUR FEET.'));
+        el('div', 'fl-small fl-ctlnote', 'PARRY: TAP TOWARD HIM JUST BEFORE A HIT LANDS (DOWN-FORWARD FOR A LOW). KNOCKED DOWN: UP STANDS, LEFT OR RIGHT ROLLS, A BUTTON STRIKES FROM THE FLOOR. OVER HIM ON THE FLOOR: DOWN + KICK STOMPS. JUGGLED: A BUTTON AT THE RIGHT MOMENT LANDS YOU ON YOUR FEET. STAIRS: WALK PAST THE FOOT TO GO UP; AT THE TOP, DOWN + TOWARD THE STEPS TO GO DOWN.'));
       row.append(controlsTable(FIGHT, 'FIGHT'), right);
       root.appendChild(row);
       const items = btnRow(root, [button('MAIN MENU', () => go('modeSelect'), 'fl-pink'), button('BACK', () => go('attract'), 'fl-violet')]);

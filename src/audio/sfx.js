@@ -241,11 +241,13 @@ export function createSfx({ context = null, destination = null } = {}) {
     hiss(v, { dur: 0.05, filter: 'highpass', f: 6500, q: 0.7, gain: 0.25 });
   }
   // feet: weight 0 to 1
-  function footstep({ weight = 0.4, pan = 0 } = {}) {
-    const v = voice(P.step, 0.07, pan, 2.2);
+  // stair: a step on a concrete tread with a steel nosing: a harder, higher knock with a short ring
+  function footstep({ weight = 0.4, pan = 0, stair = false } = {}) {
+    const v = voice(P.step, stair ? 0.1 : 0.07, pan, 2.2);
     if (!v) return;
-    hiss(v, { dur: vary(0.045), filter: 'lowpass', f: vary(800, 0.25), q: 0.7, gain: 0.07 + 0.1 * weight });
-    tone(v, { dur: 0.05, f: [vary(110), 55], gain: 0.05 + 0.08 * weight });
+    hiss(v, { dur: vary(0.045), filter: 'lowpass', f: vary(stair ? 1500 : 800, 0.25), q: 0.7, gain: 0.07 + 0.1 * weight });
+    tone(v, { dur: 0.05, f: [vary(stair ? 170 : 110), stair ? 80 : 55], gain: 0.05 + 0.08 * weight });
+    if (stair) tone(v, { dur: 0.08, f: [vary(620, 0.08), 560], gain: 0.025 + 0.03 * weight });
   }
   function land({ weight = 0.4, pan = 0 } = {}) {
     const v = voice(P.land, 0.14, pan, 1.4);

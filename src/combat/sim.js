@@ -49,7 +49,14 @@ const GRAB_PULL = 6;                // px a step a grabbed body is pulled in to 
 const HIT_SEP = 40;                 // a stumbling victim and his attacker may close to 40px (64 otherwise)
 const SOLID = new Set(['idle', 'walk', 'run', 'block', 'blockstun', 'attack', 'hitstun', 'getup']);   // a rising body pushes the man standing on it to range
 const LYING = new Set(['knockdown', 'ko', 'down', 'getup', 'roll']);
+const FEET = [['lFoot', 'lKnee'], ['rFoot', 'rKnee']];
 const LIE_PAD = 90, LIE_SLIDE = 300;   // px/s a resting body slides off a wall it lies too close to
+// the stairs (arena.stairs): a body on a flight stands on the line through its treads' middles
+const STAIR_HEAD_IN = 24, STAIR_HEAD_OUT = 40;   // the stair head: from 24px short of it to 40px down the flight, down + toward the flight steps onto it
+const STAIR_EXIT = 30;                            // a body on a flight walks off its head onto the main floor this far past it (no flicker at the line)
+const STAIR_EASY = 60;                            // down + toward the flight within this of the head walks on down (it doesn't crouch)
+const LEVEL_REACH = 170;                          // on one flight, or a flight and the floor at its foot: ground lines closer than this can touch
+const HEAD_REACH = 70;                            // the main floor meets a flight only this far down from its head (lower, he's in the hole, under the floor)
 let HAS_VAULT = false, HAS_THROWN = false, HAS_HITBODY = false, HAS_HITBACK = false, HAS_HITSTUN = false, HAS_HITLOW = false, MOVE_DATA_ = null;
 // four buttons, one per limb from the fighter's own point of view (lead = left, orthodox)
 const BUTTON_LIMB = { lp: 'lHand', rp: 'rHand', lk: 'lFoot', rk: 'rFoot' };
@@ -158,14 +165,107 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     const doors = dr && dr.length ? dr : [{ x: band.x0 + 30, y: f.y, side: -1 }, { x: band.x1 - 30, y: f.y, side: 1 }];
     return { y: f.y, walls, band, spawns, doors };
   }
-  // the stairwell opening in the main floor (arena.stairwell); until the arena has one, a fallback
-  // over the drawn staircase so the floor-break works
-  function stairwellNow() {
-    if (arena.stairwell) return arena.stairwell;
+  // the stairwell openings in the main floor (arena.stairwells; an older arena's one arena.stairwell); until
+  // the arena has one, a fallback over the drawn staircase so the floor-break works
+  function wellsNow() {
+    if (arena.stairwells && arena.stairwells.length) return arena.stairwells;
+    if (arena.stairwell) return [arena.stairwell];
     const fl = floorsNow();
-    if (fl.length < 2) return null;
+    if (fl.length < 2) return [];
     warnOnce('stairwell', 'no arena.stairwell yet, using a fallback opening at x 700..880');
-    return { x0: 700, x1: 880, y: fl[0].y, rail: { x0: 700, x1: 880, h: 46 }, toFloor: 1 };
+    return [{ x0: 700, x1: 880, y: fl[0].y, rail: { x0: 700, x1: 880, h: 46 }, toFloor: 1 }];
+  }
+  function stairwellNow() { return wellsNow()[0] || null; }
+  // the opening nearest x (the one a vault or a regroup goes for)
+  function wellNear(x) {
+    let best = null, bd = Infinity;
+    for (const w of wellsNow()) { const d = Math.max(0, w.x0 - x, x - w.x1); if (d < bd) { bd = d; best = w; } }
+    return best;
+  }
+  // ---- the stairs (arena.stairs) -------------------------------------------------------------
+  // A flight joins the main floor at its head to the lower floor at its foot. A body on one has u.stair set
+  // to its index and stands on the line through the treads' middles (clamped to the two floors), with its
+  // feet on the treads under them (slopePose). u.floor is the floor at the nearer end, so the old checks
+  // ("which floor is he on") still read sensibly; sameLevel() says whether two bodies can touch.
+  const stairsNow = () => arena.stairs || [];
+  const onStair = (u) => u.stair != null && u.stair >= 0 && !!stairsNow()[u.stair];
+  function stairY(k, x) { const st = stairsNow()[k]; return Math.max(st.top, Math.min(st.bottom, st.top + st.slope * (x - st.head) * st.dir)); }
+  function treadY(k, x) {
+    const st = stairsNow()[k], i = Math.floor((x - st.back0) * st.dir / st.run);
+    return i < 0 ? st.top : i >= (st.bottom - st.top) / st.rise ? st.bottom : st.top + i * st.rise;
+  }
+  // a flight's slope angle (the lying pose follows it), from the bit-identical trig
+  const stairAngle = (k) => { const st = stairsNow()[k]; return dm.atan(st.slope) * st.dir; };
+  const floorYOf = (i) => { const fl = floorsNow(); return (fl[i || 0] || fl[0]).y; };
+  // the ground under a body at x: its floor, or the flight it's on
+  const groundY = (u, x = u.x) => (onStair(u) ? stairY(u.stair, x) : floorYOf(u.floor));
+  // where a body's ground is, for telling who can touch whom (at its hip, for a body lying along a flight)
+  const levelY = (u) => (onStair(u) ? stairY(u.stair, bodyX(u)) : floorYOf(u.floor));
+  function sameLevel(a, b) {
+    const sa = onStair(a), sb = onStair(b);
+    if (!sa && !sb) return (a.floor || 0) === (b.floor || 0);
+    if (sa && sb) return a.stair === b.stair && Math.abs(levelY(a) - levelY(b)) < LEVEL_REACH;
+    // one on a flight, one on a floor: the main floor touches the top of the flight (anyone further down is
+    // in the hole, below the floor he walks on); the lower floor touches it from the foot up
+    const st = sa ? a : b, fl = sa ? b : a, S = stairsNow()[st.stair], y = levelY(st);
+    return (fl.floor || 0) === 0 ? y - S.top < HEAD_REACH : S.bottom - y < LEVEL_REACH;
+  }
+  // which floor a point on flight k counts as: the nearer end's
+  const stairFloor = (k, x) => { const st = stairsNow()[k]; return stairY(k, x) < (st.top + st.bottom) / 2 ? 0 : (st.toFloor != null ? st.toFloor : 1); };
+  // Walking on and off the flights, after a body's x has moved. Past a foot is the lower floor; on the lower
+  // floor, past a foot is the flight going up. Past a head (by STAIR_EXIT) is the main floor; the main floor
+  // only goes onto a flight by the stair head's input (stairHead). A body on the point simulation changes
+  // only at the foot (where it comes to rest on top decides the rest: restOnSurface).
+  function stairMembership(u) {
+    const S = stairsNow();
+    if (!S.length || (u.falling && !u.fellLanded && u.rag)) return false;   // a floor break's tumble belongs to the floor below until it comes to rest
+    if (onStair(u)) {
+      const st = S[u.stair], along = (u.x - st.head) * st.dir, len = (st.foot - st.head) * st.dir;
+      if (along > len) { u.stair = -1; u.floor = st.toFloor != null ? st.toFloor : 1; return true; }
+      if (along < -STAIR_EXIT && !u.rag) { u.stair = -1; u.floor = 0; return true; }
+      u.floor = stairFloor(u.stair, u.x);
+      return false;
+    }
+    if ((u.floor || 0) === 0) return false;
+    for (let k = 0; k < S.length; k++) {
+      const st = S[k];
+      if ((st.toFloor != null ? st.toFloor : 1) === (u.floor || 0) && (u.x - st.foot) * st.dir < 0) { u.stair = k; u.floor = stairFloor(k, u.x); return true; }
+    }
+    return false;
+  }
+  // The stair head: on the main floor within the head's reach, down + toward the flight steps onto it
+  // (only from his feet, walking, standing, crouching or guarding)
+  function stairHead(u, e) {
+    if (onStair(u) || (u.floor || 0) !== 0 || !u.grounded || u.rag || !e.down || !e.dx || u.faint > 0) return;
+    if (!(MOVE_STATES.has(u.state) || u.state === 'crouch' || u.state === 'block')) return;
+    const S = stairsNow();
+    for (let k = 0; k < S.length; k++) {
+      const st = S[k], along = (u.x - st.head) * st.dir;
+      if (e.dx === st.dir && along >= -STAIR_HEAD_IN && along <= STAIR_HEAD_OUT) {
+        u.stair = k; u.floor = 0;
+        note({ type: 'stairOn', unit: u.id, stair: k });
+        return;
+      }
+    }
+  }
+  // the solid ground the point simulation needs for a body that can land on a flight
+  const stairSolids = () => { const out = []; for (const st of stairsNow()) for (const q of st.solid || []) out.push(q); return out.length ? out : null; };
+  // A body that came to rest on the point simulation: which surface is it lying on? Over a flight (by its
+  // hip) and resting above the lower floor, the flight; past the head and level with the main floor, the
+  // main floor; otherwise the floor it was falling to.
+  function restOnSurface(u) {
+    const S = stairsNow(), hip = u.rig.joints && u.rig.joints.hip;
+    if (!S.length || !hip || u.ragFloor < floorYOf(1) - 1) return;   // a body on the main floor rests on it
+    const ry = u.rig.y;
+    for (let k = 0; k < S.length; k++) {
+      const st = S[k], along = (hip.x - st.head) * st.dir, len = (st.foot - st.head) * st.dir;
+      if (along >= len || ry > st.bottom - 4) continue;
+      if (along < 0 && ry <= st.top + 8) { u.stair = -1; u.floor = 0; u.y = st.top; u.ragFloor = st.top; return; }
+      if (along < -STAIR_EXIT) continue;
+      u.stair = k; u.floor = stairFloor(k, hip.x); u.y = stairY(k, u.x); u.ragFloor = u.y;
+      return;
+    }
+    u.stair = -1; u.floor = 1; u.y = u.ragFloor;
   }
   // where a body is: a lying or tumbling body's root can sit at its feet or be re-based when it settles,
   // so sides and facing go by its hip
@@ -211,7 +311,10 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     accumulator: 0, hitstopActive: 0, koSlow: 0, finisher: false, startHealth: 100, introTime: INTRO_TIME, seed: 1, horde: null, card: null,
     callouts: [], log: [],
     botchOn: true,   // mistimed presses botch (src/combat/botch.js); the settings toggle and ?botch=0 turn it off, online the host's setting rides the start message
-    floor: 0, floorBroken: false, floorInfo, get stairwell() { return stairwellNow(); },
+    floor: 0, floorBroken: false, floorInfo, get stairwell() { return stairwellNow(); }, get stairwells() { return wellsNow(); },
+    get stairs() { return stairsNow(); }, stairY, sameLevel, onStair, levelY, wellNear,
+    // the room the camera may show: the main floor's band (the flights and the lower room lie inside it)
+    get viewBounds() { const b = floorInfo(0).band; return b && b.x1 > b.x0 ? b : bounds; },
   };
   simRef = sim;
   // callouts (enders, counters, trick shots) for the HUD, which places them clear of the fighters;
@@ -242,6 +345,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       techLock: -1, // air recovery locked out until this step (a press too early)
       parryAt: -999, parryLow: false, parryLock: -1, pressAt: -999,   // the universal parry: the last counted tap toward him, with down or not, and its lockout
       wakeUp: 0,   // a wake-up strike from the floor: 1 lying, 2 rising (sim.js isWake)
+      stair: -1,   // the flight he's on (arena.stairs index), -1 on a floor
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
       shockT: 0, shockUsed: false, rootT: 0,   // character hooks: shock (extra stun), root (no walk or jump)
       dodgedId: -1,   // character hooks: the last strike an invuln move let pass (logged once)
@@ -326,7 +430,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.ragUsed = false;
     u.rag = false; u.ragLanded = false; u.queued = null; u.grabbedBy = -1; u.grabTo = null;
     u.combo = 0; u.comboBy = -1; u.airUsed = 0; u.landLag = 0; u.easeBand = false;
-    u.floor = 0; u.falling = false; u.breakOK = false; u.fellLanded = false; u.vaultPhase = null;
+    u.floor = 0; u.stair = -1; u.falling = false; u.breakOK = false; u.fellLanded = false; u.vaultPhase = null; u.fallWell = -1; u.vaultWell = -1;
     u.airHits = 0; u.gScale = 1; u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.splatT = 0; u.crouchEnd = null; u.glide = null;
     syncRig(u); u.rig.play('idle'); rigUpd(u, 0); u.rig.events.length = 0;
   }
@@ -388,7 +492,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (!door) { const mid = (info.band.x0 + info.band.x1) / 2; door = { x: p.x < mid ? info.band.x1 - 40 : info.band.x0 + 40, y: info.y }; }
     const j = info.doors.indexOf(door);
     if (j >= 0 && typeof arena.openDoor === 'function') arena.openDoor(H.floor, j, 1.2);
-    g.floor = H.floor; g.y = info.y; g.grounded = true;
+    g.floor = H.floor; g.stair = -1; g.y = info.y; g.grounded = true;
     g.x = Math.max(info.band.x0 + 20, Math.min(info.band.x1 - 20, door.x));
     g.facing = p.x >= g.x ? 1 : -1; g.vx = g.facing * WALK; syncRig(g); safePlay(g.rig, 'walk'); rigUpd(g, 0);
     g.health = H.goonHealth; g.maxHealth = H.goonHealth; g.hitstop = 0; g.flash = 0; g.hidden = false;
@@ -430,9 +534,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     callout('FLOOR CLEAR', 0, 'trick');
     onEvent({ type: 'floorClear', floor: H.floor, floorsCleared: H.floorsCleared, count: H.count, unit: p });
     note({ type: 'floorClear', floor: H.floor });
-    const sw = stairwellNow();
+    const sw = wellNear(p.x);
     if (sw && (H.floor === 0) && sw.toFloor != null) {
-      // down the stairwell to the next floor (the hero vaults as soon as he's free)
+      // down the nearer stairwell to the next floor (the hero vaults as soon as he's free; walking down the
+      // stairs gets him there too)
       H.transit = { kind: 'down', to: sw.toFloor, t: 0 };
       p.followDown = sw;
     } else {
@@ -445,11 +550,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (!H || !H.transit || sim.phase !== 'fight') return;
     const T = H.transit;
     if (T.kind === 'down') {
-      if ((p.floor || 0) === T.to && p.state !== 'vault') { H.floor = T.to; sim.floor = T.to; refreshBounds(); startWave(); }
+      if ((p.floor || 0) === T.to && p.state !== 'vault') { p.followDown = null; H.floor = T.to; sim.floor = T.to; refreshBounds(); startWave(); }
     } else if ((T.t -= DT) <= 0) {
       const info = floorInfo(T.to);
       H.floor = T.to; sim.floor = T.to; refreshBounds();
-      p.floor = T.to; p.y = info.y; p.x = info.spawns[0].x; p.vx = 0; p.grounded = true; p.state = 'idle';
+      p.floor = T.to; p.stair = -1; p.y = info.y; p.x = info.spawns[0].x; p.vx = 0; p.grounded = true; p.state = 'idle';
       if (typeof p.rig.reset === 'function') { syncRig(p); p.rig.reset(); }
       setState(p, 'idle'); syncRig(p); rigUpd(p, 0);
       onEvent({ type: 'land', x: p.x, y: p.y, dir: p.facing, strength: 0.4 });
@@ -495,7 +600,15 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function startRag(u, worldVx, vy, { wall = 'stop', spin = 300 } = {}) {
     if (typeof u.rig.launch !== 'function') return false;
     u.rig.walls = ragWalls(u);
-    if (!u.rag) { u.ragFloor = u.grounded ? u.y : floorUnder(u); u.lastHipY = null; u.ragAt = sim.stepCount; }
+    if (!u.rag) {
+      // a body on a flight or the lower floor flies over the lower floor with the flights as solid ground
+      // under it (it lands on the steps, or slides off them); one on the main floor over the main floor
+      const stairside = onStair(u) || ((u.floor || 0) > 0 && stairsNow().length > 0);
+      u.ragFloor = stairside ? floorYOf(Math.max(1, u.floor || 0)) : u.grounded ? u.y : floorUnder(u);
+      u.rig.slopes = stairside ? stairSolids() : null;
+      if (!u.falling) u.rig.treads = null;   // the stair treads are for a floor break's tumble
+      u.lastHipY = null; u.ragAt = sim.stepCount;
+    }
     u.rig.y = u.ragFloor;
     try { u.rig.launch({ vx: -worldVx * u.rig.facing, vy, spin, wall }); }
     catch (e) { warnOnce('launch', 'rig.launch threw: ' + e.message); return false; }
@@ -509,12 +622,18 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function ragWalls(u) {
     const w = floorInfo(u.floor || 0).walls;
     if (!(u.falling && !u.fellLanded)) return [w.left, w.right];
-    const sw = stairwellNow(), t = floorInfo(0), hipY = u.rig.joints && u.rig.joints.hip ? u.rig.joints.hip.y : t.y;
+    const sw = wellsNow()[u.fallWell] || stairwellNow(), t = floorInfo(0), hipY = u.rig.joints && u.rig.joints.hip ? u.rig.joints.hip.y : t.y;
     const outer = [Math.min(t.walls.left, w.left), Math.max(t.walls.right, w.right)];
     if (!sw) return outer;
     if (hipY < t.y + 25) return [sw.x0 + 4, sw.x1 - 4];
-    const T = arena.treads || [];
-    if (hipY < floorInfo(u.floor).y - 120 && T.length) return [Math.min(sw.x0, ...T.map(q => q.x0)) - 4, Math.max(sw.x1, ...T.map(q => q.x1)) + 4];
+    const T = (arena.treads || []).filter(q => q.flight == null || q.flight === sw.flight);
+    // through the flight: from the opening's head-side edge (beyond it is the shaft under the main floor's
+    // end) to the treads' far end
+    const st = sw.flight != null ? stairsNow()[sw.flight] : null;
+    if (hipY < floorInfo(u.floor).y - 120 && T.length) {
+      const lo = Math.min(sw.x0, ...T.map(q => q.x0)) - 4, hi = Math.max(sw.x1, ...T.map(q => q.x1)) + 4;
+      return st ? (st.dir > 0 ? [sw.x0 + 4, hi] : [lo, sw.x1 - 4]) : [lo, hi];
+    }
     return outer;
   }
   const inAir = (u) => (u.rag ? !u.ragLanded : !u.grounded);
@@ -537,16 +656,36 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const j = u.rig.joints, y0 = u.rig.y;
       for (const k in j) j[k] = { x: j[k].x, y: y0 + (j[k].y - y0) * CROUCH_SQUASH };
     }
+    slopePose(u);
+  }
+  // On a flight the rig's pose (made for a flat floor) is fitted to the steps, joints included, so the
+  // hurtboxes and hitboxes are where the body is drawn: each foot near the floor line goes down or up onto
+  // the tread under it (its knee half as far); a body lying on the floor is laid along the slope, turned
+  // about its hip and its hip set on the steps under it. In between (getting up) it blends by how high the
+  // hip is. Only on the ground: in the air the root is no floor line.
+  function slopePose(u) {
+    if (!onStair(u) || u.rag || !u.grounded) return;
+    const j = u.rig.joints, y0 = u.rig.y, hip = j && j.hip;
+    if (!hip) return;
+    const lie = Math.max(0, Math.min(1, (70 - (y0 - hip.y)) / 50));
+    if (lie > 0) {
+      const th = stairAngle(u.stair) * lie, c = dm.cos(th), sn = dm.sin(th);
+      const hx = hip.x, hy = hip.y, dyHip = (stairY(u.stair, hx) - y0) * lie;
+      for (const k in j) { const dx = j[k].x - hx, dy = j[k].y - hy; j[k] = { x: hx + dx * c - dy * sn, y: hy + dx * sn + dy * c + dyHip }; }
+    }
+    if (lie < 1) for (const [ft, kn] of FEET) {
+      const F = j[ft];
+      if (!F || F.y < y0 - 22) continue;   // a foot off the floor (a kick, a knee) keeps its height
+      const d = (treadY(u.stair, F.x) - y0) * (1 - lie);
+      j[ft] = { x: F.x, y: F.y + d };
+      if (j[kn]) j[kn] = { x: j[kn].x, y: j[kn].y + d * 0.5 };
+    }
   }
   sim.rigUpd = rigUpd;
   // The first walkable line at or below the feet that spans this x; off an edge, the
   // lowest floor catches everything.
-  // flat floors: a unit stands on the floor it is assigned to (stairs are scenery; bodies fall
-  // down the stairwell on the rig's point simulation)
-  function floorUnder(u) {
-    const fl = floorsNow();
-    return (fl[u.floor || 0] || fl[0]).y;
-  }
+  // a unit stands on the floor it is assigned to, or on the flight it's on (at its x)
+  function floorUnder(u) { return groundY(u); }
   function safePlay(rig, name, opt) {
     // a clip cut short takes its root step (play() commits a travelling clip's shift): the sim's root
     // goes with it, or the next syncRig put the root back and the drawn body snapped by the step
@@ -807,7 +946,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function stompOK(u) {
     const o = oppOf(u);
     return !!o && u.grounded && !u.rag && (o.state === 'down' || o.state === 'roll' || o.state === 'getup' || wakeLying(o)) && !o.rag &&
-      (o.floor || 0) === (u.floor || 0) && Math.abs(bodyX(o) - u.x) <= STOMP_RANGE;
+      sameLevel(o, u) && Math.abs(bodyX(o) - u.x) <= STOMP_RANGE;
   }
   sim.stompOK = stompOK;
 
@@ -1026,6 +1165,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.followDown && u.grounded && (MOVE_STATES.has(u.state) || u.state === 'block' || u.state === 'crouch' || u.state === 'landing' || (u.state === 'attack' && u.phase === 'recovery'))) {
       startVault(u, u.followDown); u.followDown = null;
     }
+    // the stair head: down + toward the flight steps onto it; just on it, down + toward it walks on down
+    stairHead(u, e);
+    if (onStair(u) && e.down && e.dx) { const st = stairsNow()[u.stair]; if (e.dx === st.dir && (u.x - st.head) * st.dir < STAIR_EASY) e.down = false; }
     // standing right over a body on the floor he keeps his facing (its hip drifts as it lies there); he turns once it's clearly behind him
     { const ox = bodyX(opp), turnAt = NOT_SOLID_BODY.has(opp.state) || opp.rag ? 30 : 4; if (FACE_STATES.has(u.state) && u.grounded && Math.abs(ox - u.x) > turnAt) u.facing = ox > u.x ? 1 : -1; }
     switch (u.state) {
@@ -1239,17 +1381,22 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.rag = false; u.falling = false; u.fellLanded = true; u.grounded = true; u.vx = 0; u.vy = 0; u.gScale = 1;
     u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.juggle = false;
     u.x = Math.max(bounds.x0 + 30, Math.min(bounds.x1 - 30, hip.x)); u.y = lowY; u.ragFloor = lowY;
+    // over a flight, on its steps (the hip where it was), not on the floor under them
+    u.stair = -1;
+    if ((u.floor || 0) > 0) stairMembership(u);
+    if (onStair(u)) { u.y = stairY(u.stair, u.x); u.ragFloor = u.y; }
     if (fell) { u.health = Math.max(u.state === 'ko' ? 0 : 1, u.health - FLOOR_DMG); u.flash = FLASH_STEPS; }
     syncRig(u);
     if (typeof u.rig.reset === 'function') u.rig.reset();
     u.rig.walls = [w.left, w.right];
+    u.rig.treads = null; u.rig.slopes = null;
     safePlay(u.rig, 'knockdown'); rigUpd(u, 2); u.rig.events.length = 0;
     // the one instant relocation left in a fight: the jammed body is set down flat on the floor, in the
     // rest pose; main.js marks both spots (a flash and an afterimage) so it never reads as a glitch
     onEvent({ type: 'relocate', unit: u, from, to: { x: u.rig.joints.hip.x, y: u.rig.joints.hip.y } });
     if (u.state === 'ko') u.koDone = true;
     else { toDown(u); u.otgHit = false; u.rolled = false; }
-    onEvent({ type: 'thud', x: u.x, y: lowY, dir: u.facing, strength: fell ? 1 : 0.5 });
+    onEvent({ type: 'thud', x: u.x, y: u.y, dir: u.facing, strength: fell ? 1 : 0.5 });
     note({ type: 'unwedge', def: u.id, hp: u.health, fell, ...at });
   }
   function floorStep(u) {
@@ -1260,12 +1407,14 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (sim.stepCount - u.fallTrack.at > 108 || sim.stepCount - (u.fallAt || 0) > 360) { unwedge(u); return; }
     }
     if (u.rag && sim.stepCount - (u.ragAt || 0) > 600) { unwedge(u); return; }
-    const sw = stairwellNow();
-    if (sw && u.breakOK && !sim.floorBroken && !sim.horde && (u.floor || 0) === 0 && sw.toFloor != null &&
-        (u.state === 'knockdown' || u.state === 'ko') && inAir(u)) {
-      // over the railing: the body crosses the opening above the rail's top
-      const hip = u.rig.joints.hip, railTop = sw.y - (sw.rail ? sw.rail.h : 40), x = u.rag ? hip.x : u.x;
-      if (x > sw.x0 + 10 && x < sw.x1 - 10 && hip.y < railTop + 40) breakFloor(u, sw);
+    if (u.breakOK && !sim.floorBroken && !sim.horde && (u.floor || 0) === 0 && !onStair(u) && (u.state === 'knockdown' || u.state === 'ko') && inAir(u)) {
+      // over either railing: the body crosses an opening above its rail's top
+      const hip = u.rig.joints.hip, x = u.rag ? hip.x : u.x;
+      for (const sw of wellsNow()) {
+        if (sw.toFloor == null) continue;
+        const railTop = sw.y - (sw.rail ? sw.rail.h : 40);
+        if (x > sw.x0 + 10 && x < sw.x1 - 10 && hip.y < railTop + 40) { breakFloor(u, sw); break; }
+      }
     }
     if (u.falling) {
       const lowY = floorsNow()[u.floor].y, hip = u.rig.joints.hip;
@@ -1311,24 +1460,27 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     return best;
   }
   function flightDir(sw, x) {
+    const st = sw.flight != null ? stairsNow()[sw.flight] : null;
+    if (st) return st.dir;   // the flight under the opening goes down this way
     const t = treadBelow(x, sw.y - 2);
     return t ? Math.sign((t.x0 + t.x1) / 2 - x) || 1 : 0;
   }
-  // Never stranded on two floors: nobody can climb back up, so when the two have been on different
-  // floors for 1.5s with neither falling nor vaulting, whoever is upstairs follows down. (The
-  // follow-down vault after a floor break normally does this; this catches anything that slips by.)
-  const REGROUP_STEPS = 180;
+  // Never stranded on two floors: the stairs go both ways, so either one can walk to the other (the CPU
+  // does). As a last resort against a stand-off, when the two have been on different floors for 6s with
+  // neither on the stairs, falling or vaulting, whoever is upstairs vaults down the nearer stairwell. (The
+  // follow-down vault after a floor break normally keeps them together.)
+  const REGROUP_STEPS = 720;
   function regroup() {
     if (sim.horde || sim.phase !== 'fight') return;
     const [a, b] = sim.units;
     if (!a || !b || a.hidden || b.hidden) return;
-    const busy = (u) => u.falling || u.state === 'vault' || u.followDown || u.rag;
+    const busy = (u) => u.falling || u.state === 'vault' || u.followDown || u.rag || onStair(u);
     if ((a.floor || 0) === (b.floor || 0) || busy(a) || busy(b)) { a.apartSteps = 0; return; }
     if (++a.apartSteps < REGROUP_STEPS) return;
     a.apartSteps = 0;
-    const sw = stairwellNow();
-    if (!sw) return;
     const up = (a.floor || 0) < (b.floor || 0) ? a : b;   // floor 0 is the top
+    const sw = wellNear(up.x);
+    if (!sw) return;
     up.followDown = sw;
     note({ type: 'regroup', unit: up.id });
   }
@@ -1337,10 +1489,15 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (!u.rag) { syncRig(u); startRag(u, u.vx, Math.min(u.vy, -60), { wall: 'stop', spin: 320 }); }   // a keyframed fall becomes a tumble
     // while it falls the stairwell is open to it: the outer walls of both floors; the lower floor's
     // own walls once it lands
-    u.floor = to; u.ragFloor = info.y; u.rig.y = info.y; u.falling = true; u.fellLanded = false; u.rig.walls = ragWalls(u);
-    // the stair treads, plus the main floor's slab either side of the opening (one-way from above)
-    const top = floorInfo(0);
-    u.rig.treads = [...(arena.treads || []), { x0: top.walls.left, x1: sw.x0, y: top.y }, { x0: sw.x1, x1: top.walls.right, y: top.y }];
+    u.fallWell = wellsNow().indexOf(sw);
+    u.floor = to; u.stair = -1; u.ragFloor = info.y; u.rig.y = info.y; u.falling = true; u.fellLanded = false; u.rig.walls = ragWalls(u);
+    // the stair treads, plus the main floor's slab either side of the openings (one-way from above)
+    const top = floorInfo(0), slab = [];
+    let x = top.walls.left;
+    for (const w of [...wellsNow()].sort((p, q) => p.x0 - q.x0)) { slab.push({ x0: x, x1: w.x0, y: top.y }); x = w.x1; }
+    slab.push({ x0: x, x1: top.walls.right, y: top.y });
+    u.rig.treads = [...(arena.treads || []), ...slab];
+    u.rig.slopes = null;   // the tumble clatters down tread by tread (the flights as one solid slope only slide it)
     // down the flight: the first steps under the opening are near floor level, so the body is sent
     // the way the stairs descend
     const dirDown = flightDir(sw, u.rig.joints.hip.x);
@@ -1358,6 +1515,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
   function startVault(u, sw) {
     const mid = (sw.x0 + sw.x1) / 2;
+    u.vaultWell = wellsNow().indexOf(sw);
     u.state = 'vault'; u.vaultPhase = 'approach'; u.vaultAt = sim.stepCount; u.move = null; u.phase = null; u.crouch = false; u.buffer = null; u.glide = null;
     u.vaultX = HAS_VAULT ? (u.x < mid ? sw.x0 - 24 : sw.x1 + 24) : (u.x < mid ? sw.x0 + 14 : sw.x1 - 14);
     u.facing = Math.sign(mid - u.x) || u.facing;
@@ -1367,7 +1525,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.vaultPhase === 'clip') {
       u.vx = 0;
       if (u.rig.current.move === 'vault' && !u.rig.current.done) return;
-      u.floor = u.vaultTo; u.y = floorInfo(u.floor).y; u.grounded = true;
+      // on the flight under the opening, or (past its foot) the floor below
+      const vw = wellsNow()[u.vaultWell];
+      u.floor = u.vaultTo; u.stair = vw && vw.flight != null && stairsNow()[vw.flight] ? vw.flight : -1; stairMembership(u);
+      u.y = groundY(u); u.grounded = true;
       // where the clip put him (the root took its travel when it ended: takeRoot); if that's past the
       // lower floor's fight band he eases in (no snap)
       u.easeBand = true;
@@ -1383,14 +1544,18 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (Math.abs(d) > 8 && !pinned) { u.vx = Math.sign(d) * RUN; u.facing = Math.sign(d); if (u.rig.current.move !== 'run') safePlay(u.rig, 'run'); return; }
     // over the rail and down: the rig's vault clip (hands on the rail, legs over, the drop) carries
     // the body; when it ends the sim takes its travel and the lower floor
-    const sw = stairwellNow(), to = sw ? sw.toFloor : 1;
+    const sw = wellsNow()[u.vaultWell] || stairwellNow(), to = sw ? sw.toFloor : 1;
     u.vx = 0;
+    // the drop: down to the flight under the opening where the clip lands him (its 56px step), or the floor
+    const flight = sw && sw.flight != null && stairsNow()[sw.flight] ? sw.flight : -1;
+    const landX = u.x + u.facing * 56 * (u.rig.scale || 1);
+    const landY = flight >= 0 ? stairY(flight, landX) : floorInfo(to).y;
     if (HAS_VAULT) {
       u.vaultPhase = 'clip'; u.vaultTo = to;
-      safePlay(u.rig, 'vault', { drop: floorInfo(to).y - floorInfo(u.floor || 0).y, railH: sw && sw.rail ? sw.rail.h : 44 });
+      safePlay(u.rig, 'vault', { drop: Math.max(20, landY - u.y), railH: sw && sw.rail ? sw.rail.h : 44 });
     } else {
       warnOnce('vault', "no 'vault' clip in the rig yet, the follow-down uses 'jump'");
-      u.vaultPhase = 'drop'; u.vx = u.facing * 110; u.vy = -VAULT_HOP_VY; u.grounded = false; u.floor = to;
+      u.vaultPhase = 'drop'; u.vx = u.facing * 110; u.vy = -VAULT_HOP_VY; u.grounded = false; u.floor = to; u.stair = flight;
       safePlay(u.rig, 'jump');
     }
     onEvent({ type: 'vault', x: u.x, y: u.y, dir: u.facing, unit: u });
@@ -1419,7 +1584,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
   // something is coming: the opponent's strike is winding up or out, or he is in the air nearby
   function threat(u, o) {
-    if (!o) return false;
+    if (!o || !sameLevel(u, o)) return false;
     const d = Math.abs(o.x - u.x);
     if (sim.stepCount - (u.blockedAt || -99) < 20) return true;   // just blocked: hold it a beat (a string's next hit)
     if (o.state === 'attack' && o.phase !== 'recovery' && FRAME_DATA[o.move]) {
@@ -1509,8 +1674,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // a press in the vault's drop: he lets go of the clip where the body is and throws an air attack on the way down
   function vaultFall(u, e) {
     const j = u.rig.joints, hipX = j.hip.x, feet = Math.max(j.lFoot.y, j.rFoot.y), to = u.vaultTo != null ? u.vaultTo : u.floor || 0;
-    const fy = floorInfo(to).y;
-    u.floor = to; u.vaultPhase = null; u.state = 'jump'; u.grounded = false; u.easeBand = true;
+    const vw = wellsNow()[u.vaultWell];
+    u.floor = to; u.stair = vw && vw.flight != null && stairsNow()[vw.flight] ? vw.flight : -1;
+    const fy = groundY(u, hipX);
+    u.vaultPhase = null; u.state = 'jump'; u.grounded = false; u.easeBand = true;
     u.y = Math.min(fy - 4, feet); u.vy = 240; u.vx = u.facing * 60; u.jumpVx = u.vx; u.jumpAt = sim.stepCount; u.airUsed = 0; u.airWhiffEarly = false;
     if (typeof u.rig.reset === 'function') u.rig.reset();
     u.x = hipX; syncRig(u); fallArc(u);
@@ -1537,6 +1704,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       u.vx = (nx - u.x) / DT; u.x = nx;
       u.vy = u.lastHipY != null ? (j.hip.y - u.lastHipY) / DT : 0; u.lastHipY = j.hip.y;
       u.y = u.ragFloor;
+      stairMembership(u);
       return;
     }
     if (u.state === 'splat' || u.state === 'grabbed') return;
@@ -1546,7 +1714,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     {
       const o = oppOf(u);
       const stomping = u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].otg;   // the stomp's step goes in over the legs
-      if (o && u.grounded && !stomping && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx) {
+      if (o && u.grounded && !stomping && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx && sameLevel(u, o)) {
         const dir = Math.sign(u.vx), near = dir > 0 ? Math.min(o.x, bodyX(o)) : Math.max(o.x, bodyX(o));
         const room = (near - u.x) * dir - 24;
         if ((near - u.x) * dir > -40 && room < u.vx * dir * DT) { u.vx = Math.max(0, room) / DT * dir; if (room <= 0) { u.vx = 0; u.chase = false; } }
@@ -1576,11 +1744,14 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     finishPhysics(u, wasAir);
   }
   function finishPhysics(u, wasAir) {
-    // floors
+    // floors, and the flights: walking onto, along and off one
+    const was = u.stair;
+    stairMembership(u);
     const fy = floorUnder(u);
     if (!u.grounded) {
       if (u.vy >= 0 && u.y >= fy) { u.y = fy; u.vy = 0; u.grounded = true; land(u); }
-    } else if (fy > u.y + 1) { u.grounded = false; }
+    } else if (onStair(u) || was !== u.stair) { u.y = fy; }   // on the steps the feet follow the treads' line, up or down
+    else if (fy > u.y + 1) { u.grounded = false; }
     if (wasAir && u.grounded && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air) airLanding(u);
     if (wasAir && u.grounded && u.state === 'vault' && u.vaultPhase === 'drop') { u.vaultPhase = null; u.vx = 0; setState(u, 'idle'); onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.6 }); }
     if (wasAir && u.grounded && u.state === 'jump' && u.rig.current.move === 'airTech') {   // out of an air recovery: a short absorb
@@ -1642,7 +1813,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
       else if (ev.type === 'recover' && u.state === 'attack') { u.phase = 'recovery'; if (u.recoverAt < 0) u.recoverAt = sim.stepCount; }
       else if (ev.type === 'stand' && isWake(u)) u.wakeUp = 2;   // a wake-up strike's body leaves the floor
-      else if (ev.type === 'footstep' && u.grounded) onEvent({ type: 'footstep', x: u.x, y: u.y, dir: u.facing });
+      else if (ev.type === 'footstep' && u.grounded) onEvent({ type: 'footstep', x: u.x, y: u.y, dir: u.facing, stair: onStair(u) });
       else if (ev.type === 'land' && u.rag) {
         if (u.rig.events.some(e2 => e2.type === 'bounce')) continue;
         u.ragLanded = true; u.landJoints = copyJoints(u.rig.joints, null);
@@ -1681,6 +1852,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // taking both as they are keeps the drawn body still: a clamped root or the old facing re-posed it
       // a body-length away and it slid there across the floor (a body too near the wall slides off it: physics)
       u.rag = false; u.x = u.rig.x; u.facing = u.rig.facing; u.y = u.ragFloor; u.grounded = true; u.vx = 0; u.vy = 0; u.gScale = 1;
+      // a floor break that came to rest on the steps before reaching the floor below still hurts
+      if (u.falling && !u.fellLanded) {
+        u.fellLanded = true; u.health = Math.max(u.state === 'ko' ? 0 : 1, u.health - FLOOR_DMG); u.flash = FLASH_STEPS;
+        note({ type: 'floorLand', def: u.id, hp: u.health, steps: true });
+      }
+      restOnSurface(u);   // on a flight, the floor below, or back on the main floor
       u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.falling = false;
       if (u.state === 'ko') u.koDone = true;
       else if (u.state === 'knockdown' || u.state === 'splat') { toDown(u); u.otgHit = false; u.rolled = false; }
@@ -1726,7 +1903,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (att.phase !== 'active' && !(att.phase === 'startup' && msToActive(att) <= earlyMs(att))) return null;
     if (def.hidden || INVULN.has(def.state) || def.state === 'grabbed' || sim.phase !== 'fight') return null;
     if (isWake(def) && def.phase === 'startup') return null;   // a wake-up strike rises through what's coming until it's live
-    if (def.falling || att.state === 'vault' || (att.floor || 0) !== (def.floor || 0)) return null;   // down the stairwell: out of reach
+    if (def.falling || att.state === 'vault' || !sameLevel(att, def)) return null;   // down the stairwell, or another floor: out of reach
     const fd = FRAME_DATA[att.move];
     if (fd.parry || fd.stance || fd.noHit) return null;   // a counter stance (parry hook), a stance or a step out never strikes on its own; its reversal or follow-ups do
     if ((def.state === 'knockdown' || def.state === 'ko') && !(def.state === 'knockdown' && def.juggle && inAir(def) && def.airHits < JUGGLE_MAX)) return null;   // juggles end by gravity and a hard cap
@@ -2045,7 +2222,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // the floor-break rule: an ender, a throw, a launcher or a heavy knockback can carry him over the railing
     // enders and throws use the whole approach to the opening; an ordinary launcher or heavy hit only
     // breaks it when he's already at the rail (within about 60px)
-    const swB = stairwellNow(), railGap = swB ? Math.max(0, swB.x0 - def.x, def.x - swB.x1) : Infinity;
+    const swB = wellNear(def.x), railGap = swB && !onStair(def) ? Math.max(0, swB.x0 - def.x, def.x - swB.x1) : Infinity;
     def.breakOK = !sim.horde && (!!fd.ender || !!fd.throw || ((!!fd.juggle || fd.kb.x >= 400) && railGap <= 60));
     if (move === 'spinKick' && wallGap(def, dir) < 230) { def.wallBounce = true; callout('WALL SPIN', att.id, 'ender'); }
     else if (fd.wallBounce && wallGap(def, dir) < 230) def.wallBounce = true;   // a character move's wall bounce
@@ -2070,8 +2247,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       def.state = 'knockdown'; def.landJoints = null; def.otgHit = false; def.rolled = false; safePlay(def.rig, 'knockdown');
       def.juggle = !!fd.juggle;
       def.launchedBy = att.id; def.launchStep = sim.stepCount;
-      const sw = stairwellNow(), towardWell = sw && !sim.floorBroken && (def.floor || 0) === 0 && sw.toFloor != null && !sim.horde &&
-        ((dir > 0 && def.x < sw.x1 && sw.x0 - def.x < 170) || (dir < 0 && def.x > sw.x0 && def.x - sw.x1 < 170));
+      const towardWell = !sim.floorBroken && (def.floor || 0) === 0 && !onStair(def) && !sim.horde && wellsNow().some(sw => sw.toFloor != null &&
+        ((dir > 0 && def.x < sw.x1 && sw.x0 - def.x < 170) || (dir < 0 && def.x > sw.x0 && def.x - sw.x1 < 170)));
       if (fd.throw && towardWell) {
         // thrown toward the stairwell: over the railing it goes
         syncRig(def); startRag(def, dir * 520, -420, { wall: 'stop', spin: 380 });
@@ -2247,7 +2424,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     syncRig(stand);
   }
   function separatePair(a, b) {
-    if ((a.floor || 0) !== (b.floor || 0) || a.falling || b.falling || a.state === 'vault' || b.state === 'vault') return;
+    if (!sameLevel(a, b) || a.falling || b.falling || a.state === 'vault' || b.state === 'vault') return;
     // an air strike's contact freeze: the jumper hangs over him for the hitstop, then they part
     const airFreeze = (u) => !u.grounded && u.hitstop > 0 && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air;
     if (airFreeze(a) || airFreeze(b)) return;
@@ -2435,7 +2612,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
       if (u.flash > 0) u.flash--;
       if (u.state === 'grabbed') {
-        if (u.grabTo != null) { const d = u.grabTo - u.x; u.x += Math.max(-GRAB_PULL, Math.min(GRAB_PULL, d)); if (Math.abs(d) <= GRAB_PULL) u.grabTo = null; syncRig(u); rigUpd(u, 0); }
+        if (u.grabTo != null) { const d = u.grabTo - u.x; u.x += Math.max(-GRAB_PULL, Math.min(GRAB_PULL, d)); if (Math.abs(d) <= GRAB_PULL) u.grabTo = null; stairMembership(u); if (u.grounded) u.y = groundY(u); syncRig(u); rigUpd(u, 0); }
         if ((e.attack === 'throw' || (e.attack && FRAME_DATA[e.attack].throw)) && !(u.faint > 0) && !u.grabNoBreak) breakThrow(u);
         else if (--u.grabT <= 0) landThrow(u);
         u.buffer = null;
@@ -2468,6 +2645,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     resolveHits();
     separate();
     regroup();
+    // the fight's floor (the camera's band, the walls the CPU reads) follows the two fighters once they're
+    // both on one floor
+    if (!sim.horde) { const [a, b] = sim.units; if (a && b && !onStair(a) && !onStair(b) && !a.falling && !b.falling && (a.floor || 0) === (b.floor || 0) && (a.floor || 0) !== sim.floor) { sim.floor = a.floor || 0; refreshBounds(); } }
     stepRagdolls();
     if (sim.card) { sim.card.t -= DT; if (sim.card.t <= 0) sim.card = null; }
     for (let i = sim.callouts.length - 1; i >= 0; i--) { sim.callouts[i].t -= DT; if (sim.callouts[i].t <= 0) sim.callouts.splice(i, 1); }

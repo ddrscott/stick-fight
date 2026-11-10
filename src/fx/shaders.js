@@ -433,6 +433,7 @@ uniform float u_vig, u_grain, u_grade, u_toe, u_black, u_hiLift;
 uniform vec3 u_lift;
 uniform float u_reflOn, u_reflY, u_reflStrength, u_reflFade, u_reflStretch, u_reflRipple, u_reflDepth;
 uniform vec4 u_reflMask; // screen x: (gap x0, gap x1, floor x0, floor x1): no mirror over a hole or past the walls
+uniform vec2 u_reflGap2; // screen x of a second hole (gap x0, gap x1): the building has a stairwell at each end
 uniform float u_fgOn, u_fgOpacity; uniform vec3 u_fgTint;
 
 float hash12(vec2 p) {
@@ -475,7 +476,7 @@ void main() {
 
   // Wet ground: mirror the scene about the water line, compressed (stretch) so a shallow
   // strip still shows the signs, smeared down a tall column, with horizontal ripple bands.
-  bool reflHere = px.x > u_reflMask.z && px.x < u_reflMask.w && (px.x < u_reflMask.x || px.x > u_reflMask.y);
+  bool reflHere = px.x > u_reflMask.z && px.x < u_reflMask.w && (px.x < u_reflMask.x || px.x > u_reflMask.y) && (px.x < u_reflGap2.x || px.x > u_reflGap2.y);
   if (u_reflOn > 0.5 && px.y > u_reflY && reflHere) {
     float dy = px.y - u_reflY;
     float fade = exp(-dy / u_reflFade);

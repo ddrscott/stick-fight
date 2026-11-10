@@ -229,14 +229,20 @@ const clean = (me, inp) => (sim.pressMistimed && sim.pressMistimed(me, { ...EMPT
 // P2's input (crouch, guard, down-back...) and presses P1's buttons at fixed steps, so heights,
 // strings, enders and trick shots can be measured deterministically. setScene(name, { only: k })
 // runs one phase; otherwise the phases cycle.
-const W0 = () => sim.bounds.x0, W1 = () => sim.bounds.x1;
+// The phases were written for the first building (1280 wide, its stairwell at 760..870); the building is
+// twice as wide now, so every phase's spots are moved over by SCENE_SHIFT, which puts the old default pair
+// (560, 650) just left of the middle with the left stairwell as far behind P1 as the old one was ahead.
+// W0() and W1() take the shift back off, so a spot by a wall is still by that wall. Spots written against
+// the new building (the stair and floor-break phases) say so with abs.
+const SCENE_SHIFT = 500;
+const W0 = () => sim.bounds.x0 - SCENE_SHIFT, W1 = () => sim.bounds.x1 - SCENE_SHIFT;
 function timeline(phases, o = {}) {
   let k = o.only != null ? +o.only : 0, t = 0;
   sim.phaseName = '';
   const begin = () => {
     const ph = phases[k];
     sim.startRound(1, { skipIntro: true });
-    const [x0, x1] = ph.at ? ph.at() : [560, 650];
+    const [a0, a1] = ph.at ? ph.at() : [560, 650], sh = ph.abs ? 0 : SCENE_SHIFT, x0 = a0 + sh, x1 = a1 + sh;
     place(0, x0, x0 < x1 ? 1 : -1); place(1, x1, x0 < x1 ? -1 : 1);
     if (ph.setup) ph.setup();
     sim.phaseName = ph.name; t = 0; sim.units.forEach(u => { u.reacted = 0; });
@@ -278,6 +284,20 @@ function timeline(phases, o = {}) {
 const B = (b, extra) => ({ [b]: true, ...(extra || {}) });
 const D = (b) => ({ [b]: true, down: true });
 const nearRight = () => [W1() - 150, W1() - 50];
+// spots measured from stairwell k's near edge, toward it (k 1, the right one: x0 + a; k 0, the left one: mirrored)
+const wellAt = (k, a, b) => { const w = sim.stairwells[k] || sim.stairwells[0]; return k === 0 ? [w.x1 - a, w.x1 - b] : [w.x0 + a, w.x0 + b]; };
+// stair-test: put fighter i on flight k at x (or on a floor, k -1), facing the given way
+function onFlight(i, k, x, facing) {
+  const u = sim.units[i];
+  place(i, x, facing);
+  if (k >= 0) { u.stair = k; u.y = sim.stairY(k, x); u.floor = u.y < (sim.floors[0].y + sim.floors[1].y) / 2 ? 0 : 1; }
+  else { u.stair = -1; u.floor = -k - 1; u.y = sim.floors[u.floor].y; }
+  u.rig.y = u.y; u.rig.update(0); sim.rigUpd(u, 0);
+}
+const LOWER = -2;   // onFlight's k for the lower floor
+// a fighter walks to x on whatever ground he's on, then stops
+const walkTo = (x) => (me) => (Math.abs(me.x - x) > 6 ? { dx: Math.sign(x - me.x) } : {});
+const stairX = (k, along) => { const st = sim.stairs[k]; return st.head + st.dir * along; };
 // botch-test and accident-test: press inp on the step the strike `move` is k steps past its key (rel: 'start',
 // 'active', 'recover', on the strike's own clock, sim.stepsSince), as the sim will see it when the press lands
 const since = (rel, k, inp, move) => (me, o, t) => (t < 0 ? (typeof inp === 'function' ? inp(me) : inp)
@@ -395,12 +415,40 @@ const PHASES = {
     { name: 'jab trade', at: () => [560, 646], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { lp: true } : {}), dur: 100 },
     { name: 'counter hit', at: () => [560, 646], p1: [[22, B('lp')]], p2: (me, o, t) => (t >= 20 && t < 23 ? { rk: true } : {}), dur: 100 },
   ],
-  // v3: knock him down the stairwell (fallback opening x 700..880 until the arena has one), the
-  // attacker vaults after him, and the fight goes on downstairs
+  // v3: knock him down a stairwell, the attacker vaults after him, and the fight goes on downstairs. The
+  // spots are the old scene's, measured from the right stairwell (wellAt), then the same into the left one.
   floorBreak: [
-    { name: 'SPIN HEEL into the stairwell', at: () => [500, 590], p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], chase: 420, dur: 760 },
-    { name: 'throw toward the stairwell', at: () => [600, 668], p1: [[10, { lp: true, lk: true }]], chase: 420, dur: 760 },
-    { name: 'NEON TORNADO by the stairwell', at: () => [640, 730], p1: [[10, B('lp')], [26, B('rp')], [46, B('lk')], [70, B('rk')]], chase: 420, dur: 760 },
+    { name: 'SPIN HEEL into the right stairwell', abs: true, at: () => wellAt(1, -260, -170), p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], chase: 420, dur: 760 },
+    { name: 'throw toward the right stairwell', abs: true, at: () => wellAt(1, -160, -92), p1: [[10, { lp: true, lk: true }]], chase: 420, dur: 760 },
+    { name: 'NEON TORNADO by the right stairwell', abs: true, at: () => wellAt(1, -120, -30), p1: [[10, B('lp')], [26, B('rp')], [46, B('lk')], [70, B('rk')]], chase: 420, dur: 760 },
+    { name: 'SPIN HEEL into the left stairwell', abs: true, at: () => wellAt(0, -260, -170), p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], chase: 420, dur: 760 },
+    { name: 'throw toward the left stairwell', abs: true, at: () => wellAt(0, -160, -92), p1: [[10, { lp: true, lk: true }]], chase: 420, dur: 760 },
+  ],
+  // the stairs: walking up and down both flights, how a fighter on the main floor starts down (down + toward
+  // the flight at its head), a fight on the steps (the higher man has the height), knockdowns lying along
+  // them, a throw and a sweep there, and the trip back up after a floor break
+  stairs: [
+    { name: 'up the left flight from the lower floor (walk past the foot)', abs: true, setup: () => { onFlight(0, LOWER, 1000, -1); onFlight(1, -1, 200, 1); },
+      p1: [], p1f: (me) => ((me.floor || 0) === 1 || me.stair >= 0 ? { dx: -1 } : {}), dur: 520 },
+    { name: 'up the right flight too, running', abs: true, setup: () => { onFlight(0, LOWER, 1660, 1); onFlight(1, -1, 2380, -1); },
+      p1: [], p1f: (me) => ((me.floor || 0) === 1 || me.stair >= 0 ? { dx: 1, run: true } : {}), dur: 300 },
+    { name: 'down at the head: down + toward the flight steps onto it', abs: true, setup: () => { onFlight(0, -1, stairX(0, -70), 1); onFlight(1, LOWER, 1300, -1); },
+      p1: [], p1f: (me, o, t) => (t < 30 ? walkTo(stairX(0, -15))(me) : me.stair >= 0 || (me.floor || 0) === 1 ? (Math.abs(me.x - 1000) > 8 ? { dx: 1 } : {}) : { dx: 1, down: true }), dur: 440 },
+    { name: 'crouching at the head (no forward) stays upstairs', abs: true, setup: () => { onFlight(0, -1, stairX(0, 0), 1); onFlight(1, -1, stairX(0, 260), -1); },
+      p1: [], hold1: { down: true }, dur: 120 },
+    { name: 'on the steps: the higher man\'s 1,2,4 knocks him down the flight', abs: true, setup: () => { onFlight(0, 0, stairX(0, 110), 1); onFlight(1, 0, stairX(0, 190), -1); },
+      p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], dur: 320 },
+    { name: 'on the steps: he guards a jab and a cross from above', abs: true, setup: () => { onFlight(0, 0, stairX(0, 120), 1); onFlight(1, 0, stairX(0, 196), -1); },
+      p2: { back: true }, p1: [[10, B('lp')], [40, B('rp')]], dur: 160 },
+    { name: 'from below: a sweep up the steps (the foot follows the treads)', abs: true, setup: () => { onFlight(0, 0, stairX(0, 300), -1); onFlight(1, 0, stairX(0, 228), 1); },
+      p1: [[10, D('rk')]], dur: 260 },
+    { name: 'a throw on the steps, then the stomp on the body lying along them', abs: true, setup: () => { onFlight(0, 1, stairX(1, 140), -1); onFlight(1, 1, stairX(1, 205), 1); },
+      p1: [[10, { lp: true, lk: true }], [150, D('rk')]], p1f: (me, o, t) => (t > 120 && t < 150 && o.state === 'down' && Math.abs(o.rig.joints.hip.x - me.x) > 120 ? { dx: Math.sign(o.rig.joints.hip.x - me.x) } : {}), dur: 320 },
+    { name: 'a jump on the steps lands on the tread under him', abs: true, setup: () => { onFlight(0, 1, stairX(1, 120), -1); onFlight(1, LOWER, 1500, 1); },
+      p1: [[10, (me) => ({ jump: true, dx: me.facing })], [70, (me) => ({ jump: true, dx: me.facing })]], dur: 220 },
+    { name: 'FLOOR BREAK over the left rail, then he climbs back up the flight', abs: true, at: () => wellAt(0, -160, -92), p1: [[10, { lp: true, lk: true }]],
+      p1f: (me, o, t) => (t > 150 && me.state !== 'vault' && (me.stair >= 0 || me.floor === 1) ? walkTo(1300)(me) : {}),   // after the vault, out of his way
+      p2: (me, o, t) => (t > 200 && me.state !== 'down' && me.state !== 'getup' && me.state !== 'knockdown' && !(me.stair < 0 && (me.floor || 0) === 0) ? { dx: -1, run: true } : {}), dur: 900 },
   ],
   // v3b: air and crouch attacks
   jumpIn: [
@@ -599,9 +647,8 @@ const scenes = {
     sim.setAI(0, 1.0, { style: 'showcase' }); sim.setAI(1, 1.0, { style: 'showcase' });
     if (arena.clearBodies) arena.clearBodies();   // the demo's pile doesn't grow forever
     sim.resetMatch({ seed: seedOf(o, (Math.random() * 4294967296) >>> 0), introTime: 1.2 });
-    // start them left of the stairwell (P2's spawn is right beside it), so the floor break comes
-    // out of the fight instead of the first exchange
-    place(0, 330, 1); place(1, 630, -1);
+    // the spawns are symmetric about the middle, a stairwell far behind each: the floor break comes out of
+    // the fight instead of the first exchange
   },
   'ai-fight-3'(o) { scenes['ai-fight']({ seed: seedOf(o, 1234) }); },
   // an arcade ladder stage (src/flow/ladder.js): you against a named CPU with its own difficulty and
@@ -671,6 +718,7 @@ const scenes = {
   'botch-test'(o) { timeline(PHASES.botch, o); },
   'accident-test'(o) { timeline(PHASES.accident, o); },
   'floor-break-test'(o) { timeline(PHASES.floorBreak, o); },
+  'stair-test'(o) { timeline(PHASES.stairs, o); },
   'jump-in-test'(o) { timeline(PHASES.jumpIn, o); },
   'anti-air-test'(o) { timeline(PHASES.antiAir, o); },
   'courier-test'(o) { timeline(PHASES.courier, o); },
@@ -978,7 +1026,8 @@ function updateCamera(dt, snap = false) {
   const z = camZoom, hw = W / 2 / z, hh = H / 2 / z, ze = camera.zoom, hhe = H / 2 / ze;
   // horizontal: centered on the bodies; the view may run 120px past either wall (the exterior is painted),
   // so a body thrown into the corner lands on screen
-  const wx0 = sim.bounds.x0 - 120 + hw, wx1 = sim.bounds.x1 + 120 - hw;
+  const vb = sim.viewBounds || sim.bounds;   // the whole building: a fight can spread over both floors and the stairs
+  const wx0 = vb.x0 - 120 + hw, wx1 = vb.x1 + 120 - hw;
   const fitX = (v, s = 0) => clamp(v, ex1 - (sx1 - s - W / 2) / ze, ex0 - (sx0 + s - W / 2) / ze);
   const mid = (xa + xb) / 2 - ((sx0 + sx1) / 2 - W / 2) / z;   // the pair's middle on the middle of that span
   const tx = fitX(wx1 > wx0 ? Math.max(wx0, Math.min(wx1, mid)) : (wx0 + wx1) / 2, CAM.soft);
@@ -1081,6 +1130,7 @@ function drawBlockSpark(s, ctx) {
 // redrawn and the FX is told to skip their upload: the far skyline is static (redrawn when the FX
 // resizes its layers for a quality tier, or on a scene change), and an empty body layer stays empty.
 let farDrawnW = 0, bodiesDrawn = true;
+const FAR_STEP = 64, farBase = { x: 0, y: 0 };
 const drawnOff = new Map(), NO_OFF = { x: 0, y: 0 };   // this frame's draw-smoothing offsets, for the status effects
 const drawOffsetNow = (u) => drawnOff.get(u) || NO_OFF;
 
@@ -1096,6 +1146,14 @@ function render() {
   for (const k of ['far', 'background', 'bodies', 'figures', 'emissive', 'foreground']) {
     const L = fx.layers[k];
     if (!L) continue;
+    if (k === 'far') {
+      // the skyline moves at the far parallax; across the wide building that's more than one screen of it, so
+      // it's redrawn shifted by a whole step (FAR_STEP px) when the camera has moved that far, and the
+      // compositor moves it the rest of the way (fx.far.base)
+      const par = (fx.far && fx.far.parallax) || arena.farParallax || 0.35, fbx = Math.round((camera.x - W / 2) * par / FAR_STEP) * FAR_STEP;
+      if (fbx !== farBase.x) { farBase.x = fbx; farDrawnW = 0; }
+      if (fx.far) fx.far.base = farBase;
+    }
     if (fx.skip && k === 'far' && farDrawnW === L.width) { fx.skip.far = true; continue; }
     if (fx.skip && k === 'bodies' && fx.skip.bodies) continue;
     const ctx = L.getContext('2d');
@@ -1106,7 +1164,7 @@ function render() {
     ctxs[k] = ctx;
   }
   // far first: the background leaves its window openings transparent so the skyline shows through
-  if (ctxs.far && arena.drawFar) { arena.drawFar(ctxs.far, camera); farDrawnW = fx.layers.far.width; }
+  if (ctxs.far && arena.drawFar) { arena.drawFar(ctxs.far, { ...camera, farBase }); farDrawnW = fx.layers.far.width; }
   bodiesDrawn = haveBodies;
   arena.drawBackground(ctxs.background, camera);
   if (arena.drawEmissive) arena.drawEmissive(ctxs.emissive, camera);
@@ -1355,14 +1413,15 @@ function applyLook(l) {
   const u = sim.units[1];
   if (l && u && u.rig) { u.rig.color = look.color || P2_COLOR; u.color = u.rig.color; }
 }
-// a fight that starts on another floor (the lower one has no way down, so no floor break)
+// a fight that starts on another floor (the stairs go back up, so the round's floor break is still there
+// once someone takes the fight upstairs)
 function startOnFloor(f) {
   const info = sim.floorInfo(f);
   if (!info) return;
-  sim.floor = f; sim.floorBroken = true;
+  sim.floor = f; sim.floorBroken = false;
   sim.units.forEach((u, i) => {
     const sp = info.spawns[Math.min(i, info.spawns.length - 1)];
-    u.floor = f; u.x = sp.x; u.y = sp.y; u.facing = sp.facing;
+    u.floor = f; u.stair = -1; u.x = sp.x; u.y = sp.y; u.facing = sp.facing;
     u.rig.x = sp.x; u.rig.y = sp.y; u.rig.facing = sp.facing; u.rig.update(0);
   });
 }
