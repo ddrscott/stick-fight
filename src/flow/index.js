@@ -115,6 +115,7 @@ const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
  * @property {{ swallowHeld(): void }} input
  * @property {(name: string, opts?: any) => void} scene   main.js setScene: 'attract', 'arcade' ({ stage }), 'horde', 'dummy'
  * @property {() => string} sceneName
+ * @property {{ begin: (meta: any) => void, end: () => void }} [book]   match bookkeeping (src/bookkeeping.js): begin a match after its scene starts, end it on the result
  * @property {() => boolean} touchUI
  * @property {() => boolean} padUI
  * @property {(kind?: string) => void} [click]            a menu click (src/audio/'s public actions.click)
@@ -385,7 +386,8 @@ export function createFlow(ctx) {
   function resume() { if (state === 'paused') go(resumeTo); }
   function mainMenu() { if (mode === 'online') netReset(); mode = null; go('modeSelect'); }
   function startArcade() { newRun('arcade'); run.ladder = buildLadder(sel.player, getCharacter); track('mode', ['arcade', sel.player]); go('stageIntro'); }
-  function startHorde() { newRun('horde'); track('mode', ['horde', sel.player]); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }
+  function hordeScene() { ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); if (ctx.book) ctx.book.begin({ mode: 'horde', local: 0 }); }   // the run is one entry in the books
+  function startHorde() { newRun('horde'); track('mode', ['horde', sel.player]); hordeScene(); go('fighting'); }
   function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }
   // ---- character select --------------------------------------------------------------------------------
   function toSelect(m) { sel.mode = m; sel.step = 'player'; go('charSelect'); }
@@ -403,8 +405,10 @@ export function createFlow(ctx) {
   }
   function pickChar(id) {
     if (state !== 'charSelect' || t < 0.15) return;
-    if (sel.step === 'dummy') { sel.dummy = id; startTraining(); return; }
+    // the books: every pick at a character select, by mode (the training dummy as its own)
+    if (sel.step === 'dummy') { sel.dummy = id; track('pick', ['dummy', id]); startTraining(); return; }
     rememberPick(id);
+    track('pick', [sel.mode, id]);
     if (sel.mode === 'arcade') startArcade();
     else if (sel.mode === 'horde') startHorde();
     else if (sel.mode === 'training') { sel.step = 'dummy'; t = 0; screenSelect(); }
@@ -621,7 +625,9 @@ export function createFlow(ctx) {
     run.stageStart = run.score;
     for (const u of sim.units) hp.delete(u);
     // each continue on this stage eases its CPU (src/flow/ladder.js retryDifficulty)
-    ctx.scene('arcade', { stage: { ...st, difficulty: retryDifficulty(st.difficulty, run.stageContinues) }, chars: [sel.player, st.char || TEMP_ID] });
+    const level = retryDifficulty(st.difficulty, run.stageContinues);
+    ctx.scene('arcade', { stage: { ...st, difficulty: level }, chars: [sel.player, st.char || TEMP_ID] });
+    if (ctx.book) ctx.book.begin({ mode: 'arcade', level, stage: st.n, local: 0 });   // the books: one match per stage fought
     ui.show('fl-stage', (root) => {
       root.append(el('div', 'fl-label', st.boss ? 'FINAL STAGE' : `STAGE ${st.n} OF ${ladder().length}`));
       const vs = el('div', 'fl-vs');
@@ -641,6 +647,7 @@ export function createFlow(ctx) {
   }
   function screenResult() {
     resultWin = sim.wins[0] > sim.wins[1];
+    if (ctx.book) ctx.book.end();   // the books: this stage's match (or the horde run) is finished
     sim.phaseTimer = 1e9;   // the sim would reset the match after its WINS card; the flow decides what's next
     if (mode === 'arcade') sim.banner = resultWin ? 'YOU WIN' : sim.wins[0] === sim.wins[1] ? 'DRAW' : 'YOU LOSE';
     ui.clear();
@@ -789,7 +796,7 @@ export function createFlow(ctx) {
       movesBtn.el.appendChild(el('small', '', 'EVERY MOVE, STRING AND INPUT'));
       items.push(movesBtn);
       if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
-      if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }));
+      if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); hordeScene(); go('fighting'); }));
       if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }));
       // botches on or off (src/combat/botch.js): remembered, and it takes effect from the next fight (online
       // the host's setting rides the start message; online never pauses anyway)
@@ -1160,7 +1167,12 @@ export function createFlow(ctx) {
       title: v.n === 0 ? `VS ${rivalLabel(v)}` : 'NEW CHARACTERS', sub: `${crewName ? `${crewName}  ·  ` : ''}MATCH ${v.n + 1}  ·  YOU ${tl.you} – ${tl.rival} ${rivalLabel(v)}  ·  ${host ? 'YOU START THE MATCH' : 'THE HOST STARTS THE MATCH'}`,
       roster: roster(), initial: sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), status, cls: 'fl-netpick',
       backLabel: crewMatch ? 'BACK TO CREW' : 'LEAVE ROOM', extra: startBtn ? [startBtn] : [],
-      onPick: (id) => { if (state !== 'onlineSelect' || t < 0.15) return; rememberPick(id); getNet().pick?.(id, true); paintBetween(); },
+      onPick: (id) => {
+        if (state !== 'onlineSelect' || t < 0.15) return;
+        const w = view();
+        if (!(w && w.mine.ready && w.mine.id === id)) track('pick', [crewMatch ? 'crew' : 'quick', id]);   // the books: a pick locked in, once
+        rememberPick(id); getNet().pick?.(id, true); paintBetween();
+      },
       onBack: () => { if (t >= 0.3) leaveRoom(); },
       // the back key un-readies (CHANGE); it never leaves the room by accident
       onBackKey: () => { const w = view(); if (w && w.mine.ready) { getNet().pick?.(w.mine.id, false); paintBetween(); } },

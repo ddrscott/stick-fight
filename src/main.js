@@ -24,6 +24,7 @@ import { botchEnabled, discover, techniques } from './flow/techniques.js';
 import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
 import { ACCIDENTS } from './combat/botch.js';
 import { perf, perfOverlay } from './perf.js';
+import { createBook } from './bookkeeping.js';   // match bookkeeping: one result per finished match (README, Analytics)
 import { track } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
 
 const W = 1280, H = 720;
@@ -104,6 +105,7 @@ let flow = null;                       // the arcade flow (see ---- arcade flow)
 function light(x, y, radius, color, intensity, ttl) { lights.push({ x, y, radius, color, intensity, ttl, max: ttl }); }
 function onEvent(ev) {
   if (!attract) gameAudio.event(ev);   // audio: every event also goes to the sound router (src/audio/index.js); the attract demo is silent
+  book.event(ev);                      // bookkeeping: hits, combos and unique moves for the match's result
   hud.event(ev); statusFX.event(ev);   // counter, armor, parry and accident flashes on the overhead tracks and the bodies
   switch (ev.type) {
     case 'hit':
@@ -198,7 +200,7 @@ function onEvent(ev) {
       // a technique found by a player on this machine goes in the book (the pause menu's list).
       // Its light comes from the glint statusFX draws over the head, not from here.
       const u = ev.unit, mine = u.kind === 'human' || (u.kind === 'net' && online.active && u.id === (online.role === 'host' ? 0 : 1));
-      if (mine && !attract && discover(ev.id)) { const t = techniques(); toast = { text: `TECHNIQUE FOUND  ${t.filter(x => x.found).length}/${t.length}`, t: 2.2 }; }
+      if (mine && !attract && discover(ev.id)) { track('technique', [ev.id, (u.char && u.char.id) || '']); const t = techniques(); toast = { text: `TECHNIQUE FOUND  ${t.filter(x => x.found).length}/${t.length}`, t: 2.2 }; }
       break;
     }
   }
@@ -208,12 +210,16 @@ function onEvent(ev) {
 // extra horde goons need their own rigs
 const makeRig = (color) => { const g = sim.units[0]; return createFighter({ color, x: g.x, y: g.y, facing: -1 }); };
 const sim = createCombat({ fighters, arena, input, onEvent, makeRig, moves: MOVES || [], moveData: MOVE_DATA || null });
+const book = createBook(sim);
 gameAudio.attach(sim);   // audio
 // online: net.host()/join(code)/openLobby(); a match runs as the 'online' scene, stepped by online.advance
 // endMatch goes to the flow (its VERSUS ONLINE end screen) when the flow is running, and only
 // falls back to the demo for a ?scene= page; online.js's own "rival left" panel is closed in favor of it
-const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()) }),
+const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), matchDetail: () => book.detail(), botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()) }),
   endMatch: (reason) => { if (flow && flow.on) { flow.netEnded(reason); setTimeout(() => online.closeLobby(), 0); } else setScene('attract'); } });
+// bookkeeping online: count this match's effects from its start; the result itself goes through the room (online.js matchOver)
+online.on('start', (m) => book.begin({ mode: m.crew ? 'crew' : 'quick', local: m.localIndex }));
+online.on('match-over', () => book.end());
 
 // ---- scenes ---------------------------------------------------------------------------
 // A scripted controller: walks into range, then presses each move in turn as soon as the
@@ -967,6 +973,7 @@ const PICKED_RULES = new Set(['arcade', 'horde', 'dummy']);
 function setScene(name, opts) {
   if (!scenes[name]) name = 'play';
   sceneName = name;
+  book.cancel();   // a match cut short (a restart, the menu, the demo) is never reported; whoever starts the next one begins it
   sim.setCharacters(pickChars(name, opts));
   syncMirror();
   attract = name === 'attract'; attractKO = false; idleMs = 0; lastPhase = '';
@@ -1627,7 +1634,7 @@ function startOnFloor(f) {
 const padUI = () => document.documentElement.classList.contains('pad-ui');
 setNet(adaptOnline(online));
 flow = createFlow({
-  sim, input,
+  sim, input, book,
   scene: (name, opts) => setScene(name, opts),
   sceneName: () => sceneName,
   touchUI, padUI,

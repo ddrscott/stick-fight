@@ -1,10 +1,12 @@
 // The site's script (README, "Site"): every page around the game loads it. It sends the page's visit, runs
 // the install hint and the row under the homepage's embedded game (FULL SCREEN), and on a fighter page
-// loads site/rigs.js for the live move animations. The roster cards' idle loops are CSS sprites (no script).
+// loads site/rigs.js for the live move animations. A page with a [data-stats] section (the homepage, a
+// fighter page) loads site/stats.js for the numbers. The roster cards' idle loops are CSS sprites (no script).
 import '../src/analytics.js';
 import { install } from '../src/install.js';
 
 if (document.querySelector('canvas[data-mode]')) import('./rigs.js');
+if (document.querySelector('[data-stats]')) import('./stats.js');   // the books: pick rates, win rates, the matchup chart
 
 // ---- install: the browser's own prompt where there is one, the how-to on an iPhone ---------------------------
 const box = document.querySelector('[data-install]');

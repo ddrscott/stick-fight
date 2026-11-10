@@ -50,7 +50,8 @@
 // 60 ms of round trip with 2% loss. ?relay=1 forces the relay.
 
 import { ROUND_TIMES, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF, winsFor } from '../flow/rules.js';
-import { track } from '../analytics.js';
+import { track, analyticsOn } from '../analytics.js';
+import { howEnded } from '../bookkeeping.js';
 import { createLink, createRoom } from './link.js';
 import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
@@ -121,6 +122,7 @@ export function createOnline(game) {
   // (pickFirst: the host's 'go' at match 0 instead of a start; a ?scene= lobby starts at once), and its all-time record is the
   // crew's, kept on the server, so this browser's per-rival record stays out of it
   let myName = '', rivalName = '', pickFirst = false, crewMode = false;
+  let matchSeed = 0;   // this match's seed: with the match number it names the match in the result both pages report
   const now = () => performance.now();
   /** @type {null | ((frame: number) => any)} */ let localSource = null;
   const params = new URLSearchParams(location.search);
@@ -193,7 +195,7 @@ export function createOnline(game) {
   function hostRules() { return cleanRules(typeof game.rulesSetting === 'function' ? game.rulesSetting() : null); }
   function begin(seed, chars = ['temp', 'temp'], botch = true, m = 1, rules = cleanRules(null)) {
     const localIndex = role === 'host' ? 0 : 1;
-    n = m; drain = null; stopTimer();
+    n = m; matchSeed = seed >>> 0; drain = null; stopTimer();
     endSent = ''; rivalEnd = null; endWait = 0;
     localChar = chars[localIndex] || localChar; remoteChar = chars[1 - localIndex] || remoteChar;
     mine = { want: null, focus: 'rematch', id: localChar, ready: false };
@@ -212,7 +214,7 @@ export function createOnline(game) {
     emit('connected', { mode: link.mode, role, code });
     game.startMatch({ seed, localIndex, lockstep, chars, botch, rules });
     if (localIndex === 0) track('online_match', [chars[0] || '', chars[1] || '', crewMode ? 'crew' : 'quick'], m);   // the host counts it once
-    emit('start', { seed, localIndex, chars, botch, n: m });
+    emit('start', { seed, localIndex, chars, botch, n: m, crew: crewMode });
     readout.show(true);
   }
 
@@ -250,6 +252,10 @@ export function createOnline(game) {
     const me = role === 'host' ? 0 : 1;
     if (!crewMode) addRivalResult(rivalPid, winner < 0 ? 'd' : winner === me ? 'w' : 'l');   // a crew keeps its own, on the server
     last = { n, winner, wins, chars: [(sim.units[0].char && sim.units[0].char.id) || '', (sim.units[1].char && sim.units[1].char.id) || ''], hash: hashSim(sim), frame: ls ? ls.frame : -1 };
+    // the books (README, Analytics): each page tells the room the result, and the room counts it only when the two
+    // agree (so a player whose browser asks not to be tracked keeps the match off the books for both). Everything outside x comes from the final state both sims hold; x is this page's own count of the effects
+    if (link && ls && analyticsOn) link.sendControl({ t: 'sys', ev: 'result', n, seed: matchSeed, mode: crewMode ? 'crew' : 'quick', chars: last.chars, wins, f: Math.max(0, ls.matchAt | 0), how: howEnded(sim),
+      x: typeof game.matchDetail === 'function' ? game.matchDetail() : {} });
     document.documentElement.classList.remove('online');
     readout.show(false);
     mine.want = null; mine.focus = 'rematch';
@@ -371,6 +377,7 @@ export function createOnline(game) {
 
   function finish(reason) {
     const was = !!lockstep || between();
+    if (lockstep && (reason === 'peer-left' || reason === 'lost')) track('online_drop', [reason, crewMode ? 'crew' : 'quick', localChar, remoteChar]);   // a match that never got a result
     lockstep = null; drain = null; stopTimer(); cd = null;
     if (link) { const l = link; link = null; if (reason === 'lost' && was) { try { l.sendControl({ t: 'lost' }); } catch { /* gone */ } } l.close(); }
     document.documentElement.classList.remove('online');
