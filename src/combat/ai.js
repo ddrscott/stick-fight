@@ -77,7 +77,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   const relag = () => { const b = baseLag(); lag = b + irnd(Math.max(1, Math.round(b * 0.2))); };
   function perceive(opp, step) {
     if (opp !== seenOpp || (seenHead >= 0 && step < seenStep[seenHead])) { seenStep.fill(-1); seenHead = -1; seenOpp = opp; }
-    seenHead = (seenHead + 1) % SEEN_N; Object.assign(seenRing[seenHead], opp); seenStep[seenHead] = step;
+    seenHead = (seenHead + 1) % SEEN_N; const rec = seenRing[seenHead]; for (const k in opp) rec[k] = opp[k]; seenStep[seenHead] = step;   // for-in: Object.assign allocated on every copy of a 140-field unit
     let best = seenHead;   // the newest record at least `lag` steps old, else the oldest kept
     for (let i = 1; i < SEEN_N; i++) { const k = (seenHead - i + SEEN_N) % SEEN_N; if (seenStep[k] < 0 || step - seenStep[best] >= lag) break; best = k; }
     return seenRing[best];

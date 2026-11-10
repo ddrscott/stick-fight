@@ -1,0 +1,22 @@
+[
+  {
+    "mode": "load",
+    "throttle": 1,
+    "net": "local",
+    "firstFrameMs": 409,
+    "readyMs": 409,
+    "fcpMs": 251,
+    "mainThreadMs": 130,
+    "kb": 249
+  },
+  {
+    "mode": "load",
+    "throttle": 4,
+    "net": "local",
+    "firstFrameMs": 777,
+    "readyMs": 777,
+    "fcpMs": 487,
+    "mainThreadMs": 460,
+    "kb": 249
+  }
+]

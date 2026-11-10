@@ -123,11 +123,11 @@ Timing is in 60fps frames from the rig's clips, as the sim reads them: startup i
 | `/play/` alone | 4.3 s | 8.2 s | 20 fps | 243 KB |
 | `/fighters/ceo/` (live move rigs) | 0.44 s | 0.41 s | 120 fps | 100 KB |
 
-The embedded game is what saturates a slow phone's main thread on the homepage, the same as `/play/` on its own; the cards are a small share either way. Sprites take script out of the cards entirely and hold the frame rate, at the price of image bytes.
+That table predates the performance pass, and its frame rates came from headless software GL, so they say nothing about a real phone; see Performance for the game's numbers since. The embedded game is what saturates a slow phone's main thread on the homepage, the same as `/play/` on its own; the cards are a small share either way. Sprites take script out of the cards entirely and hold the frame rate, at the price of image bytes.
 
 **Share image.** `public/og.jpg` (1200x630) is a real frame of the game (COURIER against a fainted SECURITY, `?scene=ai-fight&p1=courier&p2=security`) under the title; `public/screenshot.jpg` is the same frame on the homepage. Every page has a title, a description, a canonical URL and Open Graph tags pointing at it; the homepage adds `VideoGame` structured data.
 
-**Old links.** The game used to be the homepage, so an inline script at the top of `index.html` forwards to `play/` with the query and hash intact when the URL has a game parameter (`room`, `crew`, `scene`, `pick`, `p1`, `p2`, `mirror`, `botch`, `tier`, `relay`, `ice`, `netsim`, `blend`) or a `#signin=` / `#code=` hash, and whenever it's running as an installed app. New share links already point at `play/`: `online.js` and `crew.js` build them from the game page's own address, and `worker/auth.ts` builds the sign-in link as `/stick-fight/play/#signin=...`.
+**Old links.** The game used to be the homepage, so an inline script at the top of `index.html` forwards to `play/` with the query and hash intact when the URL has a game parameter (`room`, `crew`, `scene`, `pick`, `p1`, `p2`, `mirror`, `botch`, `tier`, `perf`, `relay`, `ice`, `netsim`, `blend`) or a `#signin=` / `#code=` hash, and whenever it's running as an installed app. New share links already point at `play/`: `online.js` and `crew.js` build them from the game page's own address, and `worker/auth.ts` builds the sign-in link as `/stick-fight/play/#signin=...`.
 
 **PLAY AS.** A fighter page's button opens `play/?pick=<id>`: the game starts on the title as usual and the select screen opens with that fighter under the cursor.
 
@@ -146,6 +146,7 @@ Cookieless and with no player ids, names or emails: the page sends small events 
 | `online_match` | host's fighter, guest's fighter, crew / quick | match number | the host, once per match |
 | `room_create`, `crew_create` | | | the Worker |
 | `crew_match` | host's fighter, guest's fighter, win / draw | | the crew room, per recorded result |
+| `perf` | the tier the session settled on (`t1`..`t3`), the tier it started on (`start t2`), touch or mouse, frame time p95 (`p95 18`, ms) | frame time p50, ms | the game, once a session: 30 s in with the tier unchanged for 15 s, or sooner (after 10 s) when the tab is hidden or closed (see Performance) |
 
 The last blob is the visitor's country (from Cloudflare). Query with the SQL API using a token with **Account Analytics Read**:
 
@@ -841,11 +842,130 @@ Two players, each on their own phone or computer, fight online. One hosts a room
 - **In a browser** (2026-11-09, `npm run build` and `wrangler dev`, two headless Chromium pages, `?netsim=90,25,6` on both): the guest's P1 moved a pixel from the console; the host saw the mismatch at the next hash, sent its state (16.6 KB in 2 parts), the guest loaded it and ran 34 frames back to the present in 3.7 ms, its readout showed RESYNC, and every hash after matched.
 - **Testing it yourself.** `?netsim=LATENCY,JITTER,LOSS` on the URL delays everything this side sends by LATENCY ms (one way), give or take JITTER, and drops LOSS percent of game packets; put it on both pages (`?netsim=30,5,2` on each is about 60 ms of round trip). `net.setLocalSource(fn)`, `net.haltAt(frame)`, `net.stats()` (rollbacks, depths, costs, held and late events, confirmed frame) and `net.netcode.hashes` drive and check a scripted match.
 
+## Performance
+
+The target is a steady 60 fps (every frame under 16.7 ms, no long-frame spikes) on a mid-range phone about three years old (iPhone 12 or 13, Pixel 6a class), and playable on a $150 Android. **No real phone was measured for this pass.** Every number below comes from this repo's harness on an Apple M3 Pro, and each table says which stand-in it used. `?perf=1` (below) is how to check a real phone.
+
+### The overlay: `?perf=1`
+
+`play/?perf=1` (also forwarded from the homepage) shows a small panel over the game, refreshed four times a second: the frame interval (p50, p95 and p99 over the last 10 s, and fps), the main-thread work inside the frame and its split into sim, 2D draw, GL and HUD, long frames (over 25 ms) a minute, the last and the worst rollback re-sim (ms and frames), the tier (and whether it's adaptive or pinned), the device pixel ratio, the HUD canvas's scale and the GL canvas's size. It's `src/perf.js`: a few `performance.now()` reads a frame into fixed typed-array rings, always on (so `window.__perf.summary()` works on any page), with no garbage per frame. `?tier=1|2|3` pins a tier, as before, and `?cache=0` turns the scenery caches off for a comparison.
+
+### What changed, and why
+
+- **The attract demo was choking on its own title.** The HUD drew every neon label with a live `shadowBlur`, and the attract card's 70 px "STICK FIGHT" with a 35-50 px blur that changes every frame made Chrome's canvas flush (`Canvas2DResourceProviderSharedImage::ProduceCanvasResource`) take ~3.1 s of every 4 s on the main thread: 10 fps at a 4x CPU throttle on the demo the owner saw at 20 fps on a Pixel 7. Neon text is now drawn once into a small bitmap at the HUD's resolution and stamped from then on (`neonText` in `src/combat/hud.js`: keyed by text, size, color, font, weight and glow in 0.05 steps, the 96 most recent kept, emptied when a web font finishes loading; text widths are cached the same way). Under any transform but the HUD's own, a label draws live as before.
+- **Static scenery is cached** (`src/arena/cache.js`). Both floors of the building and the still part of its glow are drawn into world-space bitmaps covering the view plus a 50% margin, at the camera's zoom rounded up to the next 1/8 octave (never stretched, so they stay crisp at the close framing). They're redrawn only when the camera leaves the region, the zoom moves out of the bitmap's range (it draws a step ahead when zooming in, and serves until it's 30% bigger than needed), or the key changes (the mirror, the palette). The background goes straight to the compositor as a texture with a uv map (`fx.bgSource`, `u_bgMap` in the scene shader), so it's neither drawn nor uploaded per frame; a door swinging open (horde) draws it live for that second. The glow cache is one `drawImage` into the emissive layer, and what moves is drawn live over it (`drawBuildingEmissive(ctx, cam, lights, 'static' | 'live')`): the city's lit windows (now one prebuilt `Path2D` per tower instead of a hash and an occlusion test per window per frame), the flickering tubes, the vending machine and the fairy lights. A redraw is 0.3-0.5 ms of main thread at a 6x throttle (the first one, up to 37 ms); in a CPU fight it happens about every 1-2 s. The far skyline already had its own cache.
+- **The scene shader walks the lights once.** The background light (with contact shadows), the figures' light and rim, and the haze were three loops over the same light array per pixel; they're one now (`lightAll` in `src/fx/shaders.js`), with the same sums, and the figure terms only where there's a figure.
+- **The HUD canvas is no bigger than the screen it covers.** It was 2x the 1280x720 stage everywhere; a Pixel 7 held sideways shows the stage about 1920 device px wide, so it drew 2560 and shrank it. Now it's the stage's real width in device px (in 0.25 steps, 1x to 2x). The GL canvas stays 1280x720 (`createFX` sizes it), upscaled by the browser.
+- **Less garbage.** Particle lighting (`fx.lightAt` per particle, over every light, with `Math.hypot`) and the particles' screen positions now write into scratch arrays: a 1v1 allocates 22 MB a second instead of 42 (Chrome's sampling heap profiler, `scripts/perf/profile.mjs --alloc`). What's left is spread thin: particle spawns, HUD color strings.
+- **Rollback.** The reach table (~190 entries) was copied into every snapshot and rewritten by every active hit test; it now has a version that changes only when a value does, and snapshots of one version share one frozen copy (`touchReach` in `src/combat/snapshot.js`, the version kept off the snapshot in a WeakMap so a snapshot's content is still exactly the state). `saveState` 42 → 17 µs, `loadState` 43 → 18 µs. `segSeg`'s closure is hoisted, `penetration` walks index loops instead of destructuring iterators (100 pairs a step), and the CPU copies its opponent with `for...in` instead of `Object.assign`: a sim step 0.061 → 0.037 ms at the median (Node, M3, `scripts/perf/simbench.mjs`). Draw-only work (the life layer, cloth, `frameDraw`) runs from `render()` only, never from `sim.tick()`, so a re-sim never pays for it. The sim is unchanged: 48,000 steps of seeded CPU bouts hash the same as before, and `npm run netsim:proof` passes (0 of 5,587 restored steps and 0 of 4,320 resynced steps differ). No `NET_VERSION` bump.
+- **Load.** The two faces are self-hosted (Latin subsets, 30 KB, `public/fonts/`, with their OFL files) and preloaded, instead of a render-blocking stylesheet from another origin, and the first frame no longer waits up to 2.5 s for them: the game draws at once and the HUD redraws in the real faces when they land. `__gauntlet.ready` still waits for the fonts, so captures see no load race. The bundle is all game code; the online code could be split out, but `main.js` uses it synchronously and that refactor wasn't worth the ~40 KB.
+- **Tiers.** Each step down is a deliberate trade, not a blur (`TIERS` in `src/fx/index.js`): tier 2 drops the contact shadows and star streaks, keeps 20 lights and lights the scene at 0.8 of the canvas (64% of the pixels); tier 1 also drops the haze and the widest glow, keeps 12 lights, and draws the scene and the backdrop at half size but the fighters at 0.75, so their edges and outlines stay sharper than a uniform half-size tier. That costs about 10% more GPU work than the old all-half tier 1 (the SwiftShader table below), set in `TIERS[1].figScale`. Tier 2 used to be only 6% cheaper than tier 3; now it's about 25% cheaper. `scripts/perf/results/tiers.png` shows the three side by side.
+- **The adaptive tier.** Phones still start at tier 2. Frame intervals are judged every half second; a window is slow only when both its average and its median miss ~55 fps, so one long frame (a GC, a cache redraw) never counts, and under ~33 fps it's very slow. One very slow window or two slow ones step down. A tier that failed becomes the ceiling (so it never flaps back and forth); a tier under the ceiling is climbed back to after 5 good seconds, and a failed tier gets one retry after a good minute. The window after a change is skipped while the canvases resize. Tested with a scripted per-frame load: 0 ms then 22 ms then a single 300 ms hitch then 9 ms. It stepped down from tier 3 to 2 within a second of the load and to 1 a second and a half later, the hitch changed nothing, and it never flapped.
+- **What players get.** The `perf` analytics event (see Analytics) sends, once a session, the tier it settled on, where it started, touch or mouse, and the frame time p95 and p50. For example: `SELECT blob2 AS tier, blob4 AS input, count() AS n, avg(double1) AS p50 FROM stick_fight_events WHERE blob1 = 'perf' GROUP BY tier, input`.
+
+### Measured
+
+`npm run build`, then `node scripts/perf/run.mjs` serves `dist/` (gzipped, as Cloudflare compresses it) and plays each scenario in headless Chromium on the Mac's real GPU (ANGLE Metal), emulating a Pixel 7 held sideways (915x412 CSS px at DPR 2.625, touch), with the CPU throttled through DevTools (1x, 4x and 6x; 4x is the usual stand-in for a mid-range phone, 6x for a cheap one), after a 3 s warm-up (12 s for horde, so the pile builds). "Before" is `main` at 88bbc8a with only the profiler added. The scenarios: **close**, a CPU 1v1 (THE MANAGER v WELLNESS COACH, cloth on both) that spends most of its time in the close framing; **horde**, `horde-ai` with two goons and a growing pile; **rain**, CHEF v RECEPTIONIST under the default night-rain look (every stage rains through the smashed pane); **floor**, `floor-break-test`; **attract**, the demo. Headless Chromium runs rAF at 120 Hz, so an unthrottled frame is 8.3 ms; a phone runs 60 to 120.
+
+Read the work columns as the CPU cost (time inside the frame on the main thread), and the frame columns as the cadence that results. Neither shows the phone's GPU: the M3's GPU is several times faster than a phone's, so these runs aren't GPU-bound.
+
+| Scenario | CPU | Tier | Frame p50 / p95 / p99 ms, before → after | Long frames a minute | Main-thread work p50 / p95 ms | fps |
+|---|---|---|---|---|---|---|
+| close | 1x | 3 | 8.4 / 41.0 / 91.6 → 8.3 / 9.1 / 10.2 | 405 → 0 | 3.2 / 8.9 → 0.5 / 0.7 | 75 → 120 |
+| close | 1x | 2 | 8.3 / 9.2 / 9.4 → 8.3 / 9.6 / 10.3 | 60 → 0 | 1.7 / 2.4 → 0.5 / 0.8 | 120 → 120 |
+| close | 4x | 3 | 8.4 / 24.9 / 33.4 → 8.3 / 9.9 / 10.3 | 206 → 0 | 7.8 / 11.5 → 0.6 / 3.5 | 90 → 119 |
+| close | 4x | 2 | 8.4 / 24.1 / 33.5 → 8.3 / 10.0 / 10.3 | 172 → 0 | 7.8 / 11.7 → 0.6 / 3.5 | 91 → 119 |
+| close | 6x | 3 | 16.6 / 33.2 / 50.0 → 8.3 / 9.9 / 16.1 | 292 → 24 | 12.1 / 17.5 → 0.8 / 5.6 | 61 → 118 |
+| close | 6x | 2 | 16.6 / 33.2 / 50.6 → 8.3 / 10.0 / 16.6 | 308 → 0 | 12.1 / 17.1 → 0.7 / 5.4 | 62 → 119 |
+| horde | 1x | 3 | 8.3 / 9.3 / 9.4 → 8.3 / 9.3 / 10.2 | 0 → 0 | 2.6 / 3.4 → 0.7 / 1.0 | 120 → 120 |
+| horde | 1x | 2 | 8.3 / 9.3 / 9.4 → 8.3 / 9.5 / 10.3 | 0 → 0 | 2.1 / 3.5 → 0.7 / 1.1 | 120 → 120 |
+| horde | 4x | 3 | 8.4 / 17.5 / 25.1 → 8.3 / 10.0 / 10.3 | 90 → 0 | 8.4 / 12.0 → 0.9 / 4.1 | 90 → 120 |
+| horde | 4x | 2 | 8.4 / 24.9 / 25.2 → 8.3 / 9.7 / 10.2 | 103 → 0 | 8.8 / 12.7 → 1.2 / 4.0 | 86 → 120 |
+| horde | 6x | 3 | 16.7 / 33.3 / 41.7 → 8.3 / 10.2 / 16.7 | 442 → 12 | 13.6 / 20.9 → 2.5 / 7.2 | 55 → 117 |
+| horde | 6x | 2 | 16.7 / 33.3 / 41.7 → 8.3 / 10.1 / 16.9 | 480 → 12 | 14.2 / 21.4 → 2.5 / 7.2 | 53 → 117 |
+| rain | 1x | 3 | 8.3 / 9.3 / 9.4 → 8.3 / 9.2 / 10.0 | 0 → 0 | 2.4 / 3.2 → 0.5 / 0.8 | 120 → 120 |
+| rain | 1x | 2 | 8.3 / 9.3 / 9.3 → 8.3 / 9.3 / 10.1 | 0 → 0 | 2.3 / 3.2 → 0.5 / 0.8 | 120 → 120 |
+| rain | 4x | 3 | 8.4 / 17.3 / 25.0 → 8.3 / 9.9 / 10.3 | 83 → 0 | 8.6 / 11.4 → 0.6 / 3.6 | 92 → 120 |
+| rain | 4x | 2 | 8.4 / 17.5 / 25.1 → 8.3 / 10.1 / 10.3 | 124 → 0 | 8.9 / 12.0 → 0.6 / 3.5 | 89 → 120 |
+| rain | 6x | 3 | 16.7 / 33.2 / 41.7 → 8.3 / 10.0 / 16.6 | 353 → 24 | 14.0 / 19.4 → 1.8 / 5.6 | 57 → 118 |
+| rain | 6x | 2 | 16.7 / 33.3 / 41.7 → 8.3 / 10.0 / 16.6 | 435 → 0 | 14.5 / 19.9 → 1.9 / 5.6 | 55 → 118 |
+| floor | 1x | 3 | 8.3 / 9.2 / 9.3 → 8.3 / 9.4 / 10.1 | 0 → 0 | 1.4 / 2.1 → 0.4 / 0.7 | 120 → 120 |
+| floor | 1x | 2 | 8.3 / 9.1 / 9.3 → 8.3 / 9.1 / 9.3 | 0 → 0 | 1.5 / 2.2 → 0.5 / 0.9 | 120 → 120 |
+| floor | 4x | 3 | 8.3 / 9.3 / 17.5 → 8.3 / 9.2 / 9.3 | 34 → 0 | 5.9 / 9.3 → 0.8 / 3.2 | 114 → 120 |
+| floor | 4x | 2 | 8.4 / 17.4 / 25.8 → 8.3 / 9.1 / 10.4 | 88 → 12 | 6.9 / 13.0 → 1.1 / 4.0 | 98 → 119 |
+| floor | 6x | 3 | 8.9 / 24.9 / 33.3 → 8.3 / 9.1 / 9.4 | 110 → 0 | 9.9 / 15.7 → 1.1 / 5.4 | 79 → 118 |
+| floor | 6x | 2 | 16.7 / 33.3 / 41.6 → 8.3 / 9.1 / 16.6 | 526 → 24 | 12.5 / 23.4 → 0.8 / 5.2 | 57 → 118 |
+| attract | 1x | 3 | 16.7 / 33.3 / 41.2 → 8.3 / 9.1 / 9.3 | 511 → 0 | 3.2 / 6.6 → 0.6 / 0.9 | 55 → 120 |
+| attract | 1x | 2 | 16.7 / 32.8 / 40.8 → 8.3 / 8.8 / 9.3 | 497 → 0 | 4.2 / 6.0 → 0.6 / 0.9 | 55 → 120 |
+| attract | 4x | 3 | 99.9 / 124.9 / 141.1 → 8.3 / 9.1 / 9.4 | 612 → 0 | 23.1 / 36.9 → 1.6 / 4.0 | 10 → 119 |
+| attract | 4x | 2 | 91.6 / 122.8 / 143.0 → 8.3 / 9.1 / 9.4 | 654 → 0 | 22.9 / 39.7 → 1.0 / 3.0 | 11 → 120 |
+| attract | 6x | 3 | 141.6 / 166.9 / 191.7 → 8.3 / 9.3 / 16.7 | 424 → 12 | 28.4 / 55.7 → 2.0 / 5.8 | 7 → 116 |
+| attract | 6x | 2 | 142.2 / 175.0 / 191.5 → 8.3 / 9.1 / 16.7 | 409 → 0 | 39.6 / 56.6 → 1.9 / 5.8 | 7 → 118 |
+
+**The rollback burst** is the worst correction: load a snapshot, then 12 steps (`MAX_ROLLBACK`), each saving a snapshot first as the netcode does, on a live fight in the page (`run.mjs --rollback`, 40 bursts). At 6x the first after-run's worst was one 68.7 ms burst; two reruns gave 7.8 / 6.1 ms (close) and 8.0 / 9.5 ms (horde) worst, and 0.5-5.7 ms at the median. The in-page timings at 6x swing a lot from run to run.
+
+| Rollback burst (12 steps) | CPU | p50 ms before → after | worst ms before → after |
+|---|---|---|---|
+| close | 1x | 2.2 → 0.5 | 5.8 → 0.9 |
+| close | 4x | 6.2 → 3.0 | 21.0 → 7.9 |
+| close | 6x | 12.1 → 8.0 | 31.1 → 68.7 |
+| horde | 1x | 3.1 → 1.0 | 6.1 → 1.8 |
+| horde | 4x | 5.4 → 3.9 | 17.4 → 7.0 |
+| horde | 6x | 7.1 → 5.2 | 15.9 → 10.6 |
+
+**Load** is a cold `/play/` (cache off, three runs averaged; `run.mjs --load`, `--net` for a phone's 4G: 150 ms round trip, 9 Mbps). "First frame" is the game's first drawn frame (`performance.mark('sf:first-frame')`; before this pass it was the moment fonts arrived and the first render ran). First paint got a little later, the main thread is busier during load because the game now renders while the fonts arrive instead of waiting on them, and the 282 KB includes the fonts (the Google-hosted ones weren't counted before, being cross-origin).
+
+| Load `/play/` | CPU | Network | First frame ms | First paint ms | Main thread ms | KB |
+|---|---|---|---|---|---|---|
+| cold | 1x | local | 409 → 206 | 251 → 160 | 130 → 160 | 249 → 282 |
+| cold | 4x | local | 777 → 485 | 487 → 584 | 460 → 611 | 249 → 282 |
+| cold | 4x | 4g | 1534 → 1139 | 1041 → 1248 | 453 → 632 | 249 → 282 |
+
+**GPU work** can't be seen on the M3 (its GPU finishes in ~3 ms, under the sync's own overhead), so it's measured with SwiftShader, Chrome's software GL, whose time grows with the shader work per pixel: relative, between builds and tiers, as a stand-in for a phone GPU's fill cost (`run.mjs --gpu --angle swiftshader`: each frame is stepped, drawn, and followed by a 1-pixel `readPixels` that waits for it).
+
+| GPU work (SwiftShader, ms a frame) | Tier | p50 before → after | p95 before → after |
+|---|---|---|---|
+| close | 3 | 305 → 234 | 426 → 280 |
+| close | 2 | 286 → 179 | 319 → 211 |
+| close | 1 | 112 → 113 | 126 → 140 |
+| horde | 3 | 346 → 300 | 382 → 394 |
+| horde | 2 | 320 → 234 | 355 → 335 |
+| horde | 1 | 128 → 138 | 144 → 190 |
+| attract | 3 | 302 → 248 | 324 → 275 |
+| attract | 2 | 275 → 188 | 302 → 220 |
+| attract | 1 | 105 → 127 | 119 → 175 |
+
+**The adaptive tier** on the same Mac, from the phone's starting tier 2 (`--tier auto`). The M3's GPU has the headroom, so it climbs to 3; the step-down was tested with the scripted load above.
+
+| Adaptive tier (phone start: 2) | CPU | settled on | fps | p95 ms |
+|---|---|---|---|---|
+| attract | 4x | tier 3 | 119 | 9.2 |
+| attract | 6x | tier 3 | 116 | 9.2 |
+| close | 4x | tier 3 | 115 | 9.3 |
+| close | 6x | tier 3 | 109 | 16.7 |
+| horde | 4x | tier 3 | 119 | 9.1 |
+| horde | 6x | tier 3 | 113 | 16.5 |
+
+**The look at tier 3** is unchanged: `node scripts/perf/compare.mjs <main's dist> <out>` steps the same seeded scenes frame by frame in both builds, with `Math.random`, the particles and the arena clock seeded, and compares the screenshots. RMSE against main is 0.004 to 0.024 (main against itself: 0.0005 to 0.0075). The differences are sub-pixel: the cached background is sampled rather than drawn at the exact zoom, the city windows are antialiased as one path, and HUD text is stamped on whole device pixels. `scripts/perf/results/tier3-before-after.jpg` shows three scenes side by side. Fighters don't glow.
+
+**Not done, and worth doing with a real phone in hand:** a GPU trace on an actual Mali or Apple GPU (the SwiftShader numbers are relative only), the HUD's other `shadowBlur`s (the bars and the timer ring, which change size every frame), and pooling particle objects.
+
+### The tools
+
+All in `scripts/perf/`, against `npm run build`'s `dist/`; results in `scripts/perf/results/`.
+- `run.mjs`: the frame table (`--throttle 1,4,6 --tier 3,2|auto --scenes close,horde,rain,floor,attract --secs 8`), `--gpu` (`--angle swiftshader`, `--off bloom,up:figures` to drop a pass or an upload), `--rollback`, `--load` (`--net`), `--dist <dir>` for another build, `--json <file>`.
+- `table.mjs`: the before/after tables above from the results.
+- `simbench.mjs`: the sim's step, save, load, hash and burst in Node.
+- `profile.mjs`: a CPU profile of a scenario (`--load` for the page load, `--alloc` for allocations by function).
+- `trace.mjs`: main-thread timeline events by total time (how the HUD flush was found).
+- `compare.mjs`: the seeded before/after screenshots. `tiers.mjs`: tiers 3, 2 and 1 side by side.
+
 ## Layout
 
 - `play/index.html`, `src/main.js` — the game. Wires the modules below.
 - `index.html` (the homepage), `site/` (the fighter pages' generator, templates, styles and script) — the site around the game (see Site).
 - `src/root.js` — the app's root URL for any page depth (the API, `sw.js`, `version.json`, `vendor/`).
+- `src/perf.js` — the frame profiler and the `?perf=1` overlay; `src/arena/cache.js` — the scenery's world bitmaps; `scripts/perf/` — the performance harness (see Performance).
 - `src/fighter/` — stick figure rig, poses, animation. Draws to a 2D context.
 - `src/fx/` — lighting and effects compositor (WebGL), particles, camera shake.
 - `src/combat/` — input, state machine, frame data (heights, stamina costs, enders), the string table (`strings.js`), hitboxes, AI, the neon HUD, rounds.
@@ -979,7 +1099,7 @@ The tracks share one theme (`THEME`, a four-bar call, answer, fall and rest), on
 The game is free software under the GNU Affero General Public License v3.0 or later; see `LICENSE`. If you serve a modified version to players, the AGPL asks you to offer them its source.
 
 - **Music engine:** [Strudel](https://strudel.cc) by the Strudel contributors, AGPL-3.0-or-later, source at https://codeberg.org/uzu/strudel. The seven tracks in `src/audio/tracks.js` are written as Strudel patterns and played by it.
-- **Fonts:** [Bungee](https://fonts.google.com/specimen/Bungee) by David Jonathan Ross and [Teko](https://fonts.google.com/specimen/Teko) by the Indian Type Foundry, both SIL Open Font License, loaded from Google Fonts.
+- **Fonts:** [Bungee](https://fonts.google.com/specimen/Bungee) by David Jonathan Ross and [Teko](https://fonts.google.com/specimen/Teko) by the Indian Type Foundry, both SIL Open Font License. The game (`play/`) serves its own Latin subsets from `public/fonts/` with their license files (`OFL-Bungee.txt`, `OFL-Teko.txt`); the site's other pages still load them from Google Fonts.
 - **Inspiration:** the animation bar is Xiao Xiao, Zhu Zhiqiang's stick-figure fight series. No art from it ships with the game.
 
 The sound panel and the attract screen link back here.

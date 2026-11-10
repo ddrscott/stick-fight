@@ -88,10 +88,16 @@ function smoothstep(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - 
 
 // Quality tiers. 3 is the full look (what every capture and critic saw); lower tiers drop the
 // costliest passes for phones. The adaptive controller moves between them on frame time.
+// Each step down is a deliberate trade, not a blur (README, Performance): the fighters' layer stays at full
+// resolution on tiers 3 and 2 (0.75 on tier 1), so a fighter's edge, outline and rim stay sharp; what goes first is what reads
+// least in motion. Tier 2 drops the contact shadows and star streaks, keeps 20 lights and lights the scene at
+// 0.8 of the canvas (64% of the pixels). Tier 1 also drops the haze and the widest glow, keeps 12 lights, lights
+// the scene at half size (a quarter of the pixels), the backdrop layers at half size and the fighters at 0.75
+// (sharper edges and outline than half size, for about 10% more GPU work than an all-half tier 1).
 const TIERS = {
-  3: { name: 'full', shadows: true, stars: true, wideLight: true, haze: true, sceneScale: 1, layerScale: 1, maxLights: 32 },
-  2: { name: 'mid', shadows: false, stars: false, wideLight: true, haze: true, sceneScale: 1, layerScale: 1, maxLights: 24 },
-  1: { name: 'low', shadows: false, stars: false, wideLight: false, haze: false, sceneScale: 0.5, layerScale: 0.5, maxLights: 16 },
+  3: { name: 'full', shadows: true, stars: true, wideLight: true, haze: true, sceneScale: 1, layerScale: 1, figScale: 1, maxLights: 32 },
+  2: { name: 'mid', shadows: false, stars: false, wideLight: true, haze: true, sceneScale: 0.8, layerScale: 1, figScale: 1, maxLights: 20 },
+  1: { name: 'low', shadows: false, stars: false, wideLight: false, haze: false, sceneScale: 0.5, layerScale: 0.5, figScale: 0.75, maxLights: 12 },
 };
 const PREC_BLOCK = /#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif/;
 
@@ -149,7 +155,10 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     foreground: texture(gl, W, H),
     far: texture(gl, W, H),
     bodies: texture(gl, W, H),
+    bgCache: texture(gl, 1, 1),   // fx.bgSource: the background as a world bitmap, uploaded only when it's redrawn
   };
+  let bgCacheVersion = -1, bgCacheCanvas = null;
+  const bgMapIdentity = [1, 1, 0, 0];
   const hw = Math.max(1, W >> 1), hh = Math.max(1, H >> 1), qw = Math.max(1, W >> 2), qh = Math.max(1, H >> 2), ew = Math.max(1, W >> 3), eh = Math.max(1, H >> 3);
   const fb = {
     scene: framebuffer(gl, W, H),
@@ -187,7 +196,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
   const pinned = params.has('tier') ? Math.max(1, Math.min(3, +params.get('tier') || 3)) : null;
   let tier = pinned || (automated ? 3 : coarse ? 2 : 3);
   const adapt = { on: !pinned && !automated, intervals: [], last: 0, windowStart: 0, good: 0, ceiling: 3, lastChange: 0, lastDown: -1e9 };
-  const frameStats = { avg: 0, worst: 0 };
+  const frameStats = { avg: 0, worst: 0, median: 0 };
   let sceneScaleNow = 1, layerScaleNow = 1;
   function applyTier() {
     const T = TIERS[tier];
@@ -199,7 +208,8 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     const ls = layerScaling ? T.layerScale : 1;
     if (ls !== layerScaleNow) {
       // Callers draw with ctx scale layer.width / W (src/main.js applyCamera), so a smaller canvas just works.
-      for (const k in layers) { layers[k].width = Math.round(W * ls); layers[k].height = Math.round(H * ls); }
+      // The figures layer keeps its own scale (full on every tier: the fighters stay sharp).
+      for (const k in layers) { const sc = k === 'figures' ? (layerScaling ? T.figScale : 1) : ls; layers[k].width = Math.round(W * sc); layers[k].height = Math.round(H * sc); }
       layerScaleNow = ls;
     }
   }
@@ -219,11 +229,17 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
   const flash = { a: 0, x: W / 2, y: H / 2, r: 200, col: [1, 0.9, 0.75] };
   let lastCam = { x: W / 2, y: H / 2, zoom: 1 };
 
-  // Frame timing and the adaptive tier. Intervals between render() calls over 1s windows: step down
-  // when the average misses ~55fps, step back up after 5 good seconds, and stop climbing to a tier
-  // that already failed within 20s of reaching it.
+  // Frame timing and the adaptive tier (README, Performance). The intervals between render() calls are judged
+  // every half second. A window is slow when both its average and its median miss ~55 fps, so one long frame (a
+  // GC, a scenery cache redraw) never counts; under ~33 fps it is very slow. One very slow window or two slow
+  // ones in a row step down a tier. A tier that failed becomes the ceiling, so it never flaps back and forth; a
+  // tier below the ceiling is climbed back to after 5 good seconds, and a failed tier gets one retry after a good
+  // minute at the ceiling. The window after a
+  // change is skipped (resizing the canvases takes a frame or two).
   // A tier change resizes canvases (which clears them), so it is applied after the frame is composited.
-  let tierPending = false;
+  let tierPending = false, slowRun = 0, skipWindow = 1;
+  const retried = new Set();
+  const ivSorted = [];
   function frameTick() {
     const now = performance.now();
     if (adapt.last) {
@@ -232,18 +248,30 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     }
     adapt.last = now;
     if (!adapt.windowStart) adapt.windowStart = now;
-    if (now - adapt.windowStart < 1000) return;
+    if (now - adapt.windowStart < 500) return;
     const iv = adapt.intervals;
-    frameStats.avg = iv.length ? iv.reduce((a, b) => a + b, 0) / iv.length : 0;
-    frameStats.worst = iv.length ? Math.max(...iv) : 0;
+    let sum = 0, worst = 0;
+    ivSorted.length = 0;
+    for (const v of iv) { sum += v; if (v > worst) worst = v; ivSorted.push(v); }
+    ivSorted.sort((a, b) => a - b);
+    frameStats.avg = iv.length ? sum / iv.length : 0;
+    frameStats.worst = worst;
+    frameStats.median = iv.length ? ivSorted[iv.length >> 1] : 0;
     adapt.intervals = []; adapt.windowStart = now;
     if (diagEl) updateDiag();
-    if (!adapt.on || !frameStats.avg) return;
-    if (frameStats.avg > 18 && tier > 1) {
-      if (now - adapt.lastChange < 20000) adapt.ceiling = tier - 1; // the tier we just climbed to cannot hold
-      tier--; adapt.lastChange = now; adapt.good = 0; tierPending = true;
-    } else if (frameStats.avg < 17.4) {
-      if (++adapt.good >= 5 && tier < adapt.ceiling) { tier++; adapt.lastChange = now; adapt.good = 0; tierPending = true; }
+    if (!adapt.on || iv.length < 5) return;
+    if (skipWindow > 0) { skipWindow--; return; }
+    const slow = frameStats.avg > 18 && frameStats.median > 17.5, verySlow = frameStats.avg > 30 && frameStats.median > 28;
+    slowRun = slow ? slowRun + 1 : 0;
+    if (tier > 1 && (verySlow || slowRun >= 2)) {
+      adapt.ceiling = Math.min(adapt.ceiling, tier - 1);   // this tier can't hold: never climb back to it
+      tier--; adapt.lastChange = now; adapt.lastDown = now; adapt.good = 0; slowRun = 0; skipWindow = 1; tierPending = true;
+    } else if (!slow && frameStats.avg < 17.4) {
+      ++adapt.good;
+      // a minute of good frames at the ceiling earns the failed tier above it one more try (a phone that was hot,
+      // or a notification); a tier that fails its retry stays out for the session
+      if (adapt.good >= 120 && tier === adapt.ceiling && tier < 3 && !retried.has(tier + 1)) { retried.add(tier + 1); adapt.ceiling = tier + 1; }
+      if (adapt.good >= 10 && tier < adapt.ceiling) { tier++; adapt.lastChange = now; adapt.good = 0; skipWindow = 1; tierPending = true; }
     } else adapt.good = 0;
   }
 
@@ -297,6 +325,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     tune: { bloomA: 1.0, bloomB: 0.05, bloomC: 0.03, star: 0.08, vignette: 0.26, grain: 0.03, haze: 0.03, shadow: 0.5, figAmb: 0.95, figGain: 0.25, rim: 0.6, emiGain: 1.0, coreWhite: 0.0, outline: 0.5, emiBloom: 1.5, shaftBloom: 0.5, hazeBloom: 0.2, blurRadius: 0.6, lift: [0.008, 0.004, 0.014], toe: 0.5, black: 0.0, lightGain: 1.0, maxDebris: 60, shakeMax: 24, punch: 16, punchHold: 0.045, aberration: 0.005, emiLight: 0.0, emiLightA: 0.5, emiLightC: 1.0, coreCap: 1.0, hiLift: 0, fgCut: 0.12, bodyAmb: 0.5, bodyGain: 0.8 },
     shake: { x: 0, y: 0 },
     skip: {},              // { layerName: true } = unchanged since the last frame, do not re-upload
+    bgSource: null,        // { canvas, version, map: [ax, ay, bx, by] }: the background from a world bitmap instead of fx.layers.background
     get tier() { return tier; },
     setTier(t) { tier = Math.max(1, Math.min(3, t | 0)); adapt.on = false; applyTier(); },
     get adaptive() { return adapt.on; },
@@ -395,16 +424,20 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     },
 
     // Light (ambient + point lights) at a world position, as [r,g,b].
-    lightAt(x, y) {
-      const a = fx.ambient;
+    lightAt(x, y, out) {
+      const a = fx.ambient, gain = fx.tune.lightGain;
       let r = a[0], g = a[1], b = a[2];
       for (const L of fx.lights) {
-        const d = Math.hypot(L.x - x, L.y - y) / (L.radius || 200);
+        const R = L.radius || 200, dx = L.x - x, dy = L.y - y;
+        if (dx > R || dx < -R || dy > R || dy < -R) continue;   // out of reach: skip the square root
+        const d = Math.sqrt(dx * dx + dy * dy) / R;
         if (d >= 1) continue;
-        const f = falloffJS(d) * (L.intensity ?? 1) * fx.tune.lightGain;
+        const f = falloffJS(d) * (L.intensity ?? 1) * gain;
         r += L.color[0] * f; g += L.color[1] * f; b += L.color[2] * f;
       }
-      return [r, g, b];
+      out = out || [0, 0, 0];   // the particles pass a scratch array: no garbage per particle
+      out[0] = r; out[1] = g; out[2] = b;
+      return out;
     },
 
     render(camera) {
@@ -423,7 +456,12 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       // caller knows; the compositor cannot without reading the canvas back). Uploads are the most
       // expensive per-frame cost on phones.
       const up = (k) => { if (!fx.skip[k]) uploadCanvas(gl, tex[k], layers[k]); };
-      up('background');
+      // fx.bgSource { canvas, version, map }: the background comes from a world-space bitmap (src/arena/cache.js),
+      // re-uploaded only when its version changes, and the scene pass samples it through map
+      const bs = fx.bgSource;
+      if (bs) {
+        if (bs.version !== bgCacheVersion || bs.canvas !== bgCacheCanvas) { uploadCanvas(gl, tex.bgCache, bs.canvas); bgCacheVersion = bs.version; bgCacheCanvas = bs.canvas; }
+      } else up('background');
       up('figures');
       up('emissive');
       const fgOn = o.foreground && fx.foreground.on;
@@ -491,7 +529,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       //    emissive) is also the near-field light the scene pass reads, so bloom runs before the scene.
       let built = null;
       if (on && o.particles && particles.count > 0) {
-        built = particles.build(toScreen, z);
+        built = particles.build((x, y, out) => { out[0] = (x - cam.x) * z + W / 2; out[1] = (y - cam.y) * z + H / 2; return out; }, z);
         gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
         gl.bufferData(gl.ARRAY_BUFFER, built.verts, gl.DYNAMIC_DRAW);
       }
@@ -591,7 +629,9 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
         target(fb.scene);
         bindQuad(P);
         setCommon(P);
-        bindTex(0, tex.background, P.u.u_bg);
+        bindTex(0, bs ? tex.bgCache : tex.background, P.u.u_bg);
+        const bm = bs ? bs.map : bgMapIdentity;
+        gl.uniform4f(P.u.u_bgMap, bm[0], bm[1], bm[2], bm[3]);
         bindTex(1, tex.figures, P.u.u_fig);
         bindTex(2, tex.emissive, P.u.u_emi);
         bindTex(3, tex.far, P.u.u_far);
@@ -755,7 +795,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     },
   };
 
-  particles.lightAt = (x, y) => fx.lightAt(x, y);
+  particles.lightAt = (x, y, out) => fx.lightAt(x, y, out);
   if (diagEl) updateDiag();
   fx.preset('night');
   return fx;

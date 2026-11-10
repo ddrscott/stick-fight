@@ -423,8 +423,9 @@ export function createArena(name = 'building') {
       def.drawForeground(ctx, arena.palette, lights);
     },
 
-    drawEmissive(ctx, camera = DEFAULT_CAMERA) {
-      def.drawEmissive(ctx, camera, lights);
+    // part: 'all', or 'static' / 'live' for src/arena/cache.js (see drawBuildingEmissive)
+    drawEmissive(ctx, camera = DEFAULT_CAMERA, part = 'all') {
+      def.drawEmissive(ctx, camera, lights, part);
     },
   };
 

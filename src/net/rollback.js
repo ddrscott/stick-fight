@@ -33,6 +33,7 @@
 import { hashSim, dumpSim, diffDumps } from './hash.js';
 import { encodeState, decodeState } from './state.js';
 import { encodeInput, decodeInput, inputPacket, clockPacket, parsePacket, PKT_INPUT, PKT_PING, PKT_PONG, NO_FRAME, MAX_INPUTS_PER_PACKET } from './codec.js';
+import { perf as profiler } from '../perf.js';   // the worst re-sim burst, for the ?perf=1 overlay
 
 const STEP_MS = 1000 / 120;          // the sim's fixed step
 const HISTORY = 1024;                // frames of input history kept per player (8.5 s)
@@ -190,6 +191,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     const ms = perf() - t0;
     rb.count++; rb.frames += depth; rb.lastDepth = depth; rb.maxDepth = Math.max(rb.maxDepth, depth);
     rb.ms += ms; rb.maxMs = Math.max(rb.maxMs, ms);
+    profiler.rollback(ms, depth);
   }
 
   // the newest confirmed frame: simulated, with the real input on both sides, and no correction

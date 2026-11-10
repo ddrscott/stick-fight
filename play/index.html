@@ -15,10 +15,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Stick Fight">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Teko:wght@500;600&display=swap">
+<!-- the two faces, self-hosted (Latin only, 30 KB, OFL: fonts/OFL-*.txt) and fetched with the page instead of after
+     a stylesheet from another origin; the game draws its first frame without waiting for them (README, Performance) -->
+<link rel="preload" href="../fonts/bungee-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/teko-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+  @font-face { font-family: 'Bungee'; font-style: normal; font-weight: 400; font-display: swap; src: url(../fonts/bungee-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Teko'; font-style: normal; font-weight: 300 700; font-display: swap; src: url(../fonts/teko-latin.woff2) format('woff2'); }
   html, body { margin: 0; height: 100%; background: #07020f; overflow: hidden; font-family: 'Teko', 'Arial Narrow', system-ui, sans-serif; }
   body { display: flex; align-items: center; justify-content: center; }
   #stage { position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }

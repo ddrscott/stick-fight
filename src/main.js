@@ -7,6 +7,7 @@ import { createLife } from './fighter/life.js';   // the life layer: eyeline, sp
 import { createFX } from './fx/index.js';
 import { createStatusFX, hitWeight, blockWeight } from './fx/status.js';   // state read off the bodies: stun halo, guard glint, dizzy stars, breath
 import { createArena, drawJoints } from './arena/index.js';
+import { createWorldCache, viewRect } from './arena/cache.js';   // the building's still art as bitmaps (README, Performance)
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
 import { createHUD, HUD_TOP } from './combat/hud.js';
@@ -20,12 +21,18 @@ import { roster, getCharacter, TEMP_ID } from './characters/index.js';   // regi
 import { botchEnabled, discover, techniques } from './flow/techniques.js';
 import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
 import { ACCIDENTS } from './combat/botch.js';
+import { perf, perfOverlay } from './perf.js';
+import { track } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
 const glCanvas = document.getElementById('game');
 const hudCanvas = document.getElementById('hud');
-const dpr = Math.min(2, window.devicePixelRatio || 1);
+// The HUD canvas is never bigger than the screen pixels the stage covers (held sideways, the way the game is
+// played): a Pixel 7's stage is about 1920 device px wide, so a 2x HUD (2560) was drawn and then shrunk.
+// Up to 2x on a big screen, never under 1x. (The GL canvas is always 1280x720: createFX sizes it.)
+const stageCss = Math.min(Math.max(innerWidth, innerHeight), Math.min(innerWidth, innerHeight) * 16 / 9);
+const dpr = Math.max(1, Math.min(2, Math.round(stageCss * (window.devicePixelRatio || 1) / W * 4) / 4));
 glCanvas.width = W * dpr; glCanvas.height = H * dpr;
 hudCanvas.width = W * dpr; hudCanvas.height = H * dpr;
 
@@ -1180,6 +1187,17 @@ function drawBlockSpark(s, ctx) {
 // resizes its layers for a quality tier, or on a scene change), and an empty body layer stays empty.
 let farDrawnW = 0, bodiesDrawn = true;
 const FAR_STEP = 64, farBase = { x: 0, y: 0 };
+// The building's still art (both floors) and the still part of its glow live in world bitmaps (src/arena/cache.js),
+// redrawn only when the camera leaves them or zooms to another step. The background goes straight to the
+// compositor as a texture (fx.bgSource, no per-frame upload); the glow is one drawImage into the emissive
+// layer, with the city's lights and the flickering tubes drawn live over it. A door swinging open (horde)
+// draws the background live for that second. ?cache=0 turns both off, for comparisons.
+const SCENERY = { x0: -260, y0: -260, x1: 2820, y1: 980 };
+const bgCache = createWorldCache(SCENERY), emiCache = createWorldCache(SCENERY);
+const useCache = params.get('cache') !== '0';
+const bgMap = [1, 1, 0, 0], viewNow = { x0: 0, y0: 0, x1: 0, y1: 0 };
+const bgSource = { canvas: bgCache.canvas, version: 0, map: bgMap };
+function doorsMoving() { for (const k in arena.doorState) if (arena.doorState[k].t > 0) return true; return false; }
 const drawnOff = new Map(), NO_OFF = { x: 0, y: 0 };   // this frame's draw-smoothing offsets, for the status effects
 const drawOffsetNow = (u) => drawnOff.get(u) || NO_OFF;
 
@@ -1192,6 +1210,14 @@ function render() {
   const ctxs = {};
   const haveBodies = !arena.bodiesInBackground && arena.bodies && arena.bodies.length > 0;
   if (fx.skip) { fx.skip.far = false; fx.skip.bodies = !haveBodies && !bodiesDrawn; }
+  // the still scenery from its caches, when they can hold this view (both at the layers' resolution times the zoom)
+  const sceneScale = camera.zoom * (fx.layers.background.width / W), sceneKey = (camera.mirror ? 'm' : '') + arena.style;
+  viewRect(camera, W, H, viewNow);
+  const bgCached = useCache && !doorsMoving() && bgCache.ensure(viewNow, sceneScale, sceneKey, (c) => arena.drawBackground(c, camera));
+  if (bgCached) { bgSource.version = bgCache.version; bgCache.map(camera, W, H, bgMap); fx.bgSource = bgSource; }
+  else fx.bgSource = null;
+  if (fx.skip) fx.skip.background = bgCached;
+  const emiCached = useCache && !!arena.drawEmissive && emiCache.ensure(viewNow, sceneScale, sceneKey, (c) => arena.drawEmissive(c, camera, 'static'));
   for (const k of ['far', 'background', 'bodies', 'figures', 'emissive', 'foreground']) {
     const L = fx.layers[k];
     if (!L) continue;
@@ -1205,6 +1231,7 @@ function render() {
     }
     if (fx.skip && k === 'far' && farDrawnW === L.width) { fx.skip.far = true; continue; }
     if (fx.skip && k === 'bodies' && fx.skip.bodies) continue;
+    if (k === 'background' && bgCached) continue;
     const ctx = L.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, L.width, L.height);
     // far: identity camera, the FX applies its own parallax and haze; foreground: harder follow
@@ -1215,8 +1242,9 @@ function render() {
   // far first: the background leaves its window openings transparent so the skyline shows through
   if (ctxs.far && arena.drawFar) { arena.drawFar(ctxs.far, { ...camera, farBase }); farDrawnW = fx.layers.far.width; }
   bodiesDrawn = haveBodies;
-  arena.drawBackground(ctxs.background, camera);
-  if (arena.drawEmissive) arena.drawEmissive(ctxs.emissive, camera);
+  if (!bgCached) arena.drawBackground(ctxs.background, camera);
+  if (emiCached) { emiCache.blit(ctxs.emissive); arena.drawEmissive(ctxs.emissive, camera, 'live'); }
+  else if (arena.drawEmissive) arena.drawEmissive(ctxs.emissive, camera);
   // the pile goes on the FX bodies layer (lit like the room, so corpses take the scene's color),
   // under the live fighters; older FX without that layer get it on the figures layer
   if (!arena.bodiesInBackground && arena.drawBodies && !(fx.skip && fx.skip.bodies)) arena.drawBodies(ctxs.bodies || ctxs.figures);
@@ -1254,12 +1282,15 @@ function render() {
   const statusLights = statusFX.draw(ctxs.emissive, sim, { dt: lastFrameMs / 1000, tier: fx.tier || 3, offset: drawOffsetNow });
   if (arena.drawForeground) arena.drawForeground(ctxs.foreground || ctxs.figures);
   fx.lights = [...(arena.lights || []), ...lights.map(l => ({ x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity * (l.ttl / l.max) })), ...statusLights];
+  perf.mark('draw');
   fx.render(camera);
+  perf.mark('gl');
   const fl = flow && flow.on ? flow.hud() : null;   // flow: score, names, no HUD under a menu, the title card only on the title
   if (toast) { toast.t -= lastFrameMs / 1000; if (toast.t <= 0) toast = null; }
   const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help, toast, found: help ? techniques().filter(t => t.found) : null,
     attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl });
   if (fl) flow.frame(layout);
+  perf.mark('hud');
 }
 // the joints each body is drawn with this frame: the draw smoothing (frameDraw, already in drawnNow), then the life
 // layer on top, then the floor guard, drawn only
@@ -1567,7 +1598,7 @@ window.__gauntlet = {
   step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
   ready: false,   // true once fonts are in and the first frame has rendered
 };
-window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
+window.__game = { caches: { bg: bgCache, emi: emiCache }, drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
   // measurement hooks: a frame stepped without drawing (the draw smoothing still runs), and where a body is drawn
   stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); fitCameraToDrawn(); },
   drawn: (u) => drawnPoints(u), poseState, life,
@@ -1582,15 +1613,12 @@ window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharac
     const figs = figureJoints(drawnNow, lifeDt);
     try { if (fn) fn(figs); } finally { for (const u of sim.units) if (u.rig) u.rig.cloth = null; }
   } };
-// no load race for captures: fonts first, then one real rendered frame, then ready
-// the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
-// loads on its own); offline, the system fallbacks are used after a short wait
-try {
-  if (document.fonts && document.fonts.load) await Promise.race([Promise.all(['40px Bungee', '600 20px Teko', '500 20px Teko'].map(f => document.fonts.load(f))), new Promise(r => setTimeout(r, 2500))]);
-  await document.fonts.ready;
-} catch (e) { /* no font API */ }
+// The first frame doesn't wait for the web fonts (it used to, for up to 2.5 s): the game draws at once, and the
+// HUD's canvas text, cached as bitmaps, is redrawn in the real faces when they arrive (hud.js empties its text
+// cache on the fonts' loadingdone). Captures still get no load race: __gauntlet.ready turns true only once the
+// two faces are in (or a short wait passed, offline) and a frame has rendered with them.
 render();
-await new Promise(r => requestAnimationFrame(r));
+try { performance.mark('sf:first-frame'); } catch (e) { /* old browser */ }   // the load harness times this (scripts/perf/run.mjs --load)
 // Embedded in the homepage (an iframe), the page tells the game when its frame scrolls off screen
 // ({ type: 'sf:visible', visible }); while it's hidden, the demo and menus stop simulating and drawing
 // so the page around it scrolls smoothly. A match (and anything online) never pauses this way.
@@ -1600,10 +1628,43 @@ window.addEventListener('message', (e) => {
   embedHidden = !e.data.visible;
 });
 function frame(now) {
-  const ms = Math.min(100, now - last); last = now;
+  const ms = Math.max(0, Math.min(100, now - last)); last = now;   // rAF's timestamp can be a little before the performance.now() it follows
   const idle = embedHidden && !online.active && flow && flow.on && flow.demo;
-  if (!driven && !idle) { lastFrameMs = ms; advance(ms); render(); }
+  perf.begin(now);
+  if (!driven && !idle) { lastFrameMs = ms; advance(ms); perf.mark('sim'); render(); }
+  perf.end();
   requestAnimationFrame(frame);
 }
+last = performance.now();
 requestAnimationFrame(frame);
+// the HUD asks for its two faces by name (an unused web font never loads on its own)
+try {
+  if (document.fonts && document.fonts.load) await Promise.race([Promise.all(['40px Bungee', '600 20px Teko', '500 20px Teko'].map(f => document.fonts.load(f))), new Promise(r => setTimeout(r, 2500))]);
+  await document.fonts.ready;
+} catch (e) { /* no font API */ }
+await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 window.__gauntlet.ready = true;
+// what the profiler reports alongside the times: the tier, the DPR and the size the GL canvas draws at
+const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height });
+perfInfo(); setInterval(perfInfo, 1000);
+// What real players get (README, Analytics, 'perf'): once a session, after 30 s on the page with the tier unchanged for
+// the last 15 s, the tier it settled on, the one it started on, touch or mouse, the frame time p95 (ms, as a label)
+// and the p50 as the number. A tab that's hidden or closed sooner sends what it had after 10 s.
+{
+  const t0 = performance.now(), startTier = fx.tier;
+  let tierNow = fx.tier, tierSince = t0, sent = false;
+  const send = () => {
+    if (sent || performance.now() - t0 < 10000) return;
+    sent = true;
+    const s = perf.summary();
+    track('perf', [`t${fx.tier}`, `start t${startTier}`, matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse', `p95 ${Math.round(s.iv.p95)}`], Math.round(s.iv.p50 * 10) / 10);
+  };
+  const tick = setInterval(() => {
+    const now = performance.now();
+    if (fx.tier !== tierNow) { tierNow = fx.tier; tierSince = now; }
+    if (now - t0 > 30000 && now - tierSince > 15000 && !document.hidden) { send(); clearInterval(tick); }
+  }, 1000);
+  addEventListener('pagehide', send);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) send(); });
+}
+if (params.get('perf') === '1') perfOverlay(document.getElementById('stage'));

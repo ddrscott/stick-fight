@@ -1,0 +1,101 @@
+[
+  {
+    "scenario": "close",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "3",
+    "off": "",
+    "cpu50": 2.5,
+    "synced50": 304.5,
+    "synced95": 426,
+    "gpuWait50": 301.9
+  },
+  {
+    "scenario": "close",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "2",
+    "off": "",
+    "cpu50": 2.6,
+    "synced50": 285.9,
+    "synced95": 318.5,
+    "gpuWait50": 283.3
+  },
+  {
+    "scenario": "close",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "1",
+    "off": "",
+    "cpu50": 2.3,
+    "synced50": 112.2,
+    "synced95": 125.8,
+    "gpuWait50": 110
+  },
+  {
+    "scenario": "horde",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "3",
+    "off": "",
+    "cpu50": 2.8,
+    "synced50": 345.5,
+    "synced95": 381.8,
+    "gpuWait50": 342.8
+  },
+  {
+    "scenario": "horde",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "2",
+    "off": "",
+    "cpu50": 2.9,
+    "synced50": 320.1,
+    "synced95": 355.4,
+    "gpuWait50": 317.4
+  },
+  {
+    "scenario": "horde",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "1",
+    "off": "",
+    "cpu50": 2.8,
+    "synced50": 128.3,
+    "synced95": 144.2,
+    "gpuWait50": 125.7
+  },
+  {
+    "scenario": "attract",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "3",
+    "off": "",
+    "cpu50": 2.9,
+    "synced50": 301.5,
+    "synced95": 323.8,
+    "gpuWait50": 298.6
+  },
+  {
+    "scenario": "attract",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "2",
+    "off": "",
+    "cpu50": 2.7,
+    "synced50": 275.4,
+    "synced95": 302,
+    "gpuWait50": 272.5
+  },
+  {
+    "scenario": "attract",
+    "mode": "gpu",
+    "angle": "swiftshader",
+    "tier": "1",
+    "off": "",
+    "cpu50": 2.3,
+    "synced50": 105,
+    "synced95": 119.2,
+    "gpuWait50": 102.7
+  }
+]
