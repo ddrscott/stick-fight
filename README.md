@@ -173,7 +173,7 @@ Plain `play/index.html` (the game, at `/stick-fight/play/`) runs like a cabinet.
 
 **Mode select.** ARCADE, VERSUS ONLINE, HORDE, TRAINING, the two match rules (ROUNDS and TIME, below), and BACK to the title. The mouse hovers and clicks, and a tap picks.
 
-**Character select** (`src/flow/select.js`, the `charSelect` state) comes after every offline mode (arcade, horde, training; online play picks in the room instead, below). A grid of the registered roster (see Characters), six columns of tall cards so three rows hold all 18 fighters beside the sheet (a character still `null` simply isn't there; a name over nine letters goes smaller and may wrap to two lines), each card a live idle rig in that character's neon, and a sheet for the one under the cursor: a bigger rig that throws one of its unique moves every few seconds, the name and tagline, stat bars (power, speed, health, stamina, weight) and its unique moves with their inputs. Keys, D-pad and stick move the cursor; Enter, A or the PICK button picks; Esc, B or the BACK button goes back. A tap only focuses a card and a second tap picks it, so a stray touch never starts a fight. Arcade goes on to the first stage card, horde straight into the run (the goons stay TEMPs), and training asks a second time, PICK YOUR DUMMY. The cursor starts on your last pick, in any mode and online too (kept in localStorage as `stick-fight-last-pick`, so it survives a reload); a `?pick=` link beats it for that visit. The cards it isn't on sit back (a faint border in the fighter's color, no glow, the rig dimmed), and the focused card lifts, scales up a touch and glows with a fill in its color, the same for mouse, keys, pad and touch. On the online pick screen your card is tagged YOU and the rival's carries an amber dashed frame and a RIVAL tag (lime when ready), and both read when you're on the same card. MOVE LIST (the footer button, F1, or pad Y) opens the highlighted fighter's full move list over the screen (see Controls, Move list).
+**Character select** (`src/flow/select.js`, the `charSelect` state) comes after every offline mode (arcade, horde, training; online play picks in the room instead, below). A grid of the registered roster (see Characters), six columns of tall cards so three rows hold all 18 fighters beside the sheet (a character still `null` simply isn't there; a name over nine letters goes smaller and may wrap to two lines), each card a live idle rig in that character's neon, and a sheet for the one under the cursor: a bigger rig that throws one of its unique moves every few seconds, the name and tagline, stat bars (power, speed, health, stamina, weight) and its unique moves with their inputs. Keys, D-pad and stick move the cursor; Enter, A or the PICK button picks; Esc, B or the BACK button goes back. A tap only focuses a card and a second tap picks it, so a stray touch never starts a fight; the focus lands when the finger does (`pointerdown`), not when it lifts. The cursor is instant by any device: the card's highlight doesn't ease in (the card it left fades out over 90 ms), and the sheet is redrawn in the same frame as the highlight (see Performance, The character select). Arcade goes on to the first stage card, horde straight into the run (the goons stay TEMPs), and training asks a second time, PICK YOUR DUMMY. The cursor starts on your last pick, in any mode and online too (kept in localStorage as `stick-fight-last-pick`, so it survives a reload); a `?pick=` link beats it for that visit. The cards it isn't on sit back (a faint border in the fighter's color, no glow, the rig dimmed), and the focused card lifts, scales up a touch and glows with a fill in its color, the same for mouse, keys, pad and touch. On the online pick screen your card is tagged YOU and the rival's carries an amber dashed frame and a RIVAL tag (lime when ready), and both read when you're on the same card. MOVE LIST (the footer button, F1, or pad Y) opens the highlighted fighter's full move list over the screen (see Controls, Move list).
 
 **Match rules.** ROUNDS cycles BEST OF 3 (the default), 5 and 1; TIME cycles 99 seconds (the default), NO LIMIT, 30 and 60. Each press steps to the next choice and remembers it (`src/flow/rules.js`, localStorage `stick-fight-best-of` and `stick-fight-round-time`). Both buttons are on the mode select and in the pause menu (not in horde, which has no rounds), and take effect from the next fight. `setScene()` in `src/main.js` puts them on the sim as `sim.winsNeeded` (2 for a best of 3) and `sim.roundTime` (0 for no limit: the clock never runs and never times out) for the arcade, horde and training fights; online uses the host's (they ride the start message), and the attract demo and every `?scene=` page use the defaults, so the test timelines don't change with a player's settings. A match ends when someone has `winsNeeded` rounds, or after `2 × winsNeeded − 1` rounds when the last one is a draw. Horde uses the round time for each goon's clock. `sim.roundClock` counts the seconds fought in a round whatever the limit (the demo AI saves the floor break for after the first 14).
 
@@ -384,6 +384,8 @@ One scheme on every screen, kept in `src/flow/controls.js` (the same table is at
 | Move list (pause menu, character select, NEW CHARACTERS) | F1 | Y / △ | the MOVE LIST button |
 | Nothing | - | X anywhere else, Y where there's no move list, bumpers, triggers, R3 | - |
 
+- A direction moves the focus on the press. Held on a pad it repeats after 250 ms and then every 80 ms (`REPEAT_FIRST` and `REPEAT_EVERY` in `menuInput.js`; 250 ms is longer than a tap, so one tap is one step); a held key repeats at the OS's own rate.
+- An item taking the focus lights at once, with no fade in; the one losing it fades out (80 to 90 ms).
 - B never confirms and A never backs out. Screens with nothing behind them (the title, a stage card, stage clear, CONTINUE?, game over, initials, the ending) ignore back instead of guessing.
 - Every screen opens with the focus on its main action, the focus never lands on a dim item (JOIN before the code is whole, COPY LINK before the room opens), and the D-pad reaches every button (the walkthrough checks this by searching every direction from every item).
 - **The legend** along the bottom of each screen lists that screen's actions in the glyphs of the device in use: keycaps (ENTER SELECT · ESC BACK) after a key or a mouse click, round face buttons in the standard colors (A green, B red, X blue, Y yellow; PlayStation ✕ ○ □ △) and a START or OPTIONS pill after a pad press, and nothing on touch, where the buttons are tapped. It switches the moment the player picks up something else (`<html>` gets `dev-key`, `dev-pad` or `dev-touch`, plus `pad-ps`). In a fight there's no legend, only the small corner hint (ESC PAUSE, or START PAUSE on a pad), so nothing covers the fighters.
@@ -995,6 +997,44 @@ Read the work columns as the CPU cost (time inside the frame on the main thread)
 
 **Not done, and worth doing with a real phone in hand:** a GPU trace on an actual Mali or Apple GPU (the SwiftShader numbers are relative only), the HUD's other `shadowBlur`s (the bars and the timer ring, which change size every frame), and pooling particle objects.
 
+### The character select
+
+Moving the cursor felt late, and the cause was the frame rate, not the input: the select screen ran at about 16 fps on a desktop. Every rig on it (18 cards and the sheet's big one) was drawn with a live `shadowBlur`, and a canvas shadow is blurred per draw call, so every limb, joint and prop got its own blur: about thirty a rig, nineteen rigs a frame. The game's own JavaScript took 3 ms a frame; Chrome's GPU process then spent 37 ms of CPU a frame on the blurs. A press was handled at once and then waited for a 50 to 60 ms frame, the highlight eased in over another 90 ms, and on touch the focus only moved on `click`, a tap's length after the finger landed.
+
+What changed (`src/flow/select.js`, `ui.js`, `menuInput.js`):
+
+- **One blur a rig.** The rig is drawn plain into a scratch canvas, and that canvas is stamped once with the shadow on (the same 9 px blur in the fighter's color) into a glow layer. A frame is the floor glow, the glow layer (two coats, to match the weight thirty overlapping shadows had) and the rig on top. The sheet's rig and the card under the cursor remake their glow every frame. The other cards only breathe, so their glow is remade every 0.1 s and they redraw 30 times a second, both in turns, so a frame draws a handful of rigs.
+- **The sheet changes in place.** The stat and move rows are built once and rewritten, each fighter's big rig is built the first time the cursor lands on them and kept (it was a new `createFighter` and `setBody` per move), and the sheet's canvas is drawn inside the focus change, so the highlight and the sheet are always the same frame (a pad's poll can run after the game's frame).
+- **No ease in.** A card or button taking the focus has no transition; the one losing it keeps its fade.
+- **Touch focuses on `pointerdown`.** The first tap still only focuses and the second still picks.
+- **Pad repeat** 380 / 110 ms is now 250 / 80 ms.
+
+Measured with `node scripts/perf/select.mjs` (headless Chromium, Apple M3 Pro, 1440x810 at DPR 2, a 120 Hz frame clock; before is `main` at d75b305). The machine was busy with other test runs the whole time, so the first table is CPU time, which doesn't care, and the wall-clock table is from the quietest run (load average 17 on 12 cores) with no throttle. Read its numbers as upper bounds.
+
+| CPU time per select-screen frame | before | after | the mode select, for scale |
+|---|---|---|---|
+| GPU process | 36.7 ms | 5.2 ms | 6.3 ms |
+| Renderer process (all threads) | 3.6 ms | 2.2 ms | 3.1 ms |
+| Frames a second it managed under that load | 11 | 105 | - |
+
+| Wall clock, no throttle, p50 / p95 | before | after |
+|---|---|---|
+| Idle frame interval | 58.5 / 84 ms (16 fps) | 8.3 / 9.2 ms (120 fps) |
+| Idle main-thread work a frame (of it, the select's tick) | 3.0 (2.0) ms | 1.6 (0.7) ms |
+| Long frames a minute (over 25 ms) | 944 | 0 |
+| Keyboard: press to the sheet drawn | 50.7 / 116 ms | 4.9 / 9.0 ms |
+| Gamepad: press to the sheet drawn | 40.8 / 98 ms | 6.5 / 9.1 ms |
+| Mouse: hover to the sheet drawn | 54.3 / 206 ms | 11.2 / 69 ms |
+| Touch: finger down to the sheet drawn | 496 / 598 ms | 31 / 91 ms (22 of it before any page code runs) |
+| Keyboard: press to the card at full size | 245 / 335 ms | 7.7 / 11.9 ms |
+| Keyboard: Chrome's Event Timing, press to next paint | 384 / 488 ms | 40 / 56 ms |
+
+Every keyboard, pad and mouse press was drawn in the first animation frame after it, before and after; the difference is how long that frame takes. Event Timing reads 32 ms (p50) for the same key on the mode select, a plain menu of six buttons, so about 32 ms is this headless browser's floor for "press to paint" and the select screen is now within a frame of it.
+
+**At 4x CPU throttle the numbers here are not good enough to quote as a result.** The throttled runs were taken at load averages of 17 to 68 and swing by 5x from run to run. What holds: DevTools throttling slows the page's main thread only, and that was never the bottleneck. The 37 ms a frame was in the GPU process, which a slow phone has less of, not more. The main thread's share is 1.6 ms a frame unthrottled, so about 6.4 ms at 4x (it was 3.0, about 12 ms), under the 16.7 ms budget with the demo fight still running behind the menu. The one throttled run at load 17 had keyboard presses drawn in the first frame, 19.6 ms p50 after the press (14.7 ms of that waiting for the frame in progress to finish). Run the harness on a quiet machine before trusting a 4x number.
+
+The move list's rig (`movelist.js`) still uses a live `shadowBlur`: it's one rig, not nineteen. The demo fight still runs behind the menu at full cost, which is the same 5 to 6 ms of GPU-process time a frame every menu pays.
+
 ### The tools
 
 All in `scripts/perf/`, against `npm run build`'s `dist/`; results in `scripts/perf/results/`.
@@ -1003,6 +1043,7 @@ All in `scripts/perf/`, against `npm run build`'s `dist/`; results in `scripts/p
 - `simbench.mjs`: the sim's step, save, load, hash and burst in Node.
 - `profile.mjs`: a CPU profile of a scenario (`--load` for the page load, `--alloc` for allocations by function).
 - `trace.mjs`: main-thread timeline events by total time (how the HUD flush was found).
+- `select.mjs`: the character select's idle frame and press to paint by keyboard, a fake gamepad, touch and mouse (`--throttle 1,4 --device desktop|pixel7 --n 30 --online --shot file.png`), with a control row from the mode select.
 - `compare.mjs`: the seeded before/after screenshots. `tiers.mjs`: tiers 3, 2 and 1 side by side.
 
 ## Layout

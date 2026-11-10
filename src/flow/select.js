@@ -23,13 +23,15 @@ const clamp01 = (v) => Math.max(0.06, Math.min(1, v));
 // The glow. A live shadowBlur on the rig's own strokes blurs every limb, joint and prop separately (about
 // thirty blurs a rig, nineteen rigs a frame), and Chrome's canvas flush for that held the whole screen to
 // 20 fps on a desktop: every press waited for a 50 ms frame. So the glow is its own layer: the rig drawn
-// plain into a scratch canvas, and that canvas's shadow alone (the same 9 px blur in the fighter's color,
-// one blur for the whole figure) stamped into a glow canvas. A frame is then the floor, the glow layer and
+// plain into a scratch canvas, and that canvas stamped with its shadow (the same 9 px blur in the fighter's
+// color, one blur for the whole figure) into a glow canvas. A frame is then the floor, the glow layer and
 // the rig on top. The sheet's rig and the card under the cursor remake their glow every frame; the other
 // cards only breathe, so theirs is remade every GLOW_EVERY seconds, a few cards a frame.
 // The cards the cursor isn't on (dimmed, breathing) are also redrawn 30 times a second, not every frame, in four
 // groups that take turns, so a frame draws a handful of rigs, not nineteen.
-const GLOW = 9, GLOW_EVERY = 0.1, CARD_STEP = 1 / 30;
+// One shadow of the whole figure is thinner than thirty overlapping ones were, so the glow layer goes down
+// GLOW_COATS times (plain blits, no more blurring) to bring the halo back to the weight it had.
+const GLOW = 9, GLOW_COATS = 2, GLOW_EVERY = 0.1, CARD_STEP = 1 / 30;
 
 // a rig drawn into its own canvas, glowing in the character's color
 function rigView(canvas, c, zoom) {
@@ -43,12 +45,12 @@ function rigView(canvas, c, zoom) {
   const layer = () => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; return cv; };
   const plain = layer(), pctx = plain.getContext('2d');
   const glow = layer(), gctx = glow.getContext('2d');
-  // the shadow without the thing casting it: the figure is stamped a canvas-width off to the left and its shadow offset back
-  gctx.shadowColor = c.color; gctx.shadowBlur = GLOW; gctx.shadowOffsetX = w;
+  gctx.shadowColor = c.color; gctx.shadowBlur = GLOW;
   // a floor glow under the feet
   const floor = ctx.createRadialGradient(w / 2, h * 0.93, 2, w / 2, h * 0.93, w * 0.42);
   floor.addColorStop(0, c.color + '55'); floor.addColorStop(1, 'transparent');
   const pose = (x) => { x.setTransform(zoom, 0, 0, zoom, w / 2, h * 0.93); rig.draw(x); x.setTransform(1, 0, 0, 1, 0, 0); };
+  const halo = () => { for (let k = 0; k < GLOW_COATS; k++) ctx.drawImage(glow, 0, 0); };
   return {
     rig,
     age: Infinity,   // seconds since the glow was remade
@@ -65,9 +67,9 @@ function rigView(canvas, c, zoom) {
       if (remake) {
         this.age = -this.lead; this.lead = 0;
         pctx.clearRect(0, 0, w, h); pose(pctx);
-        gctx.clearRect(0, 0, w, h); gctx.drawImage(plain, -w, 0);
-        ctx.drawImage(glow, 0, 0); ctx.drawImage(plain, 0, 0);
-      } else { ctx.drawImage(glow, 0, 0); pose(ctx); }
+        gctx.clearRect(0, 0, w, h); gctx.drawImage(plain, 0, 0);
+        halo(); ctx.drawImage(plain, 0, 0);
+      } else { halo(); pose(ctx); }
     },
   };
 }
