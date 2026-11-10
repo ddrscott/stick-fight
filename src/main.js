@@ -1192,7 +1192,7 @@ function render() {
     } finally {
       // the real joints go back whatever happened: the rig's joints feed the hitboxes and the online hash
       ctxs.figures.restore();
-      u.rig.joints = realJ; u.rig.sway = null;
+      u.rig.joints = realJ; u.rig.cloth = null;
     }
   }
   drawGhosts(ctxs.figures, ctxs.emissive);

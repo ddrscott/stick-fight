@@ -56,9 +56,8 @@ const closingArgument = { blend: 40, limb: 'rHand', shift: 18, keys: [
   K({ ...F(18, HIP - 1, LF + 18, RF + 18), torso: 6, head: -4 }, 0, 'sine'),
 ] };
 
-// round, rimless reading glasses on the nose (two lens glints and a bridge) and the briefcase in the rear
-// hand: hanging from the handle when the arm is down, swinging out along the forearm when it swings
-function glassesAndBriefcase(ctx, J, o) {
+// round, rimless reading glasses on the nose (two lens glints and a bridge)
+function glasses(ctx, J, o) {
   const h = J.head, n = J.neck, r = o.headR, s = o.scale;
   let ux = h.x - n.x, uy = h.y - n.y; const Ln = Math.hypot(ux, uy) || 1; ux /= Ln; uy /= Ln;
   const fx = -uy * o.facing, fy = ux * o.facing;
@@ -69,11 +68,20 @@ function glassesAndBriefcase(ctx, J, o) {
   ctx.strokeStyle = o.accent; ctx.lineWidth = 1.4 * s;
   ctx.beginPath(); ctx.arc(gx + fx * r * 0.16, gy + fy * r * 0.16, r * 0.26, 0, Math.PI * 2); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(gx - fx * r * 0.1, gy - fy * r * 0.1); ctx.lineTo(gx - fx * r * 0.7, gy - fy * r * 0.7 + uy * 0); ctx.stroke();   // the arm back to the ear
-  // the briefcase: a dark box with a lit rim and a clasp, the handle in the rear hand
+}
+// the briefcase in the rear hand, a cloth chain of one link (below): its rest hangs from the handle when the
+// arm is down and swings out along the forearm when it swings, and the case swings on the handle round that
+const caseRest = (J) => {
   const hand = J.rHand, el = J.rElbow;
   let ax = hand.x - el.x, ay = hand.y - el.y; const al = Math.hypot(ax, ay) || 1; ax /= al; ay /= al;
   const w = Math.max(0, Math.min(1, (ay + 0.5) / 0.7));   // forearm pointing up: it hangs; level or down: it follows the swing
-  let dx = ax * 0.9 * w, dy = 1 + ay * 0.9 * w; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+  const dx = ax * 0.9 * w, dy = 1 + ay * 0.9 * w, dl = Math.hypot(dx, dy) || 1;
+  return { x: dx / dl, y: dy / dl };
+};
+function briefcase(ctx, P, o) {
+  const s = o.scale, hand = P[0];
+  let dx = P[1].x - hand.x, dy = P[1].y - hand.y; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const px = -dy, py = dx, len = 15 * s, half = 10 * s, top = 3 * s;
   const c0x = hand.x + dx * top, c0y = hand.y + dy * top;
   const pts = [[c0x - px * half, c0y - py * half], [c0x + px * half, c0y + py * half], [c0x + px * half + dx * len, c0y + py * half + dy * len], [c0x - px * half + dx * len, c0y - py * half + dy * len]];
@@ -107,7 +115,8 @@ export default {
   altPants: '#ff5fd2',
   // average everything; the edge is the close game, not the stats
   stats: { health: 100, walk: 0.98, backWalk: 1, run: 0.98, jump: 1, dash: 1, weight: 1, stamina: 1, regen: 1.05, damage: 1 },
-  body: { scale: 1, headR: 14.6, limbW: 11.6, limbTip: 8.8, torsoW: 15, hipW: 11.4, lean: 2, accessory: glassesAndBriefcase },
+  body: { scale: 1, headR: 14.6, limbW: 11.6, limbTip: 8.8, torsoW: 15, hipW: 11.4, lean: 2, accessory: glasses },
+  cloth: [{ draw: briefcase, axis: ['rElbow', 'rHand'], at: 1, dir: caseRest, len: 18, seg: 1, hz: 3.2, damping: 0.35, gravity: 400, limit: 1.6 }],
   moves: {
     // the stance never strikes (noHit); a throw or command grab landing in its startup or active frames is caught
     lawyer_objection: { rig: objection, frame: { limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', cost: 14, reach: 60, flashR: 0,

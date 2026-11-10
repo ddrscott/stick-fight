@@ -26,7 +26,7 @@ function rigView(canvas, c, zoom) {
   rig.pants = c.pants || null;
   rig.setBody(c.body, { accent: c.accent });
   rig.speedLines = false;
-  rig.charDef = c;   // its prop (TEMP's lanyard, THE MANAGER's tie) hangs at rest
+  rig.charDef = c;   // its cloth (a tie, a lanyard, an apron's hem) hangs at rest
   const ctx = canvas.getContext('2d');
   return {
     rig,

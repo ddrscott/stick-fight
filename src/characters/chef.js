@@ -5,6 +5,7 @@
 // two-handed upward flick out of the hip that launches, in a big flash), and one unique string,
 // EIGHTY-SIX (1, 1, 4), ending in a kitchen-door push kick that sends him into the wall. Drops SKY SPIKE.
 import { RIG_KIT } from '../fighter/index.js';
+import { chainPath, ribbonPath } from '../fighter/cloth.js';
 
 const { K, F, L, leg, LF, RF, HIP } = RIG_KIT;
 
@@ -49,6 +50,24 @@ const eightySix = { blend: 40, limb: 'rFoot', shift: 26, keys: [
   K({ ...F(26, HIP - 1, LF + 26, RF + 26), torso: 6, head: -4 }, 0, 'sine'),
 ] };
 
+// the apron's skirt from the waist to the hem (a cloth chain down its middle: it flexes and ripples at the
+// hem while the bib stays on the body), then the tie across the waist over it
+function skirt(ctx, P, o) {
+  const s = o.scale, J = o.J, n = J.neck, hip = J.hip;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ribbonPath(ctx, P, o.facing, (t) => (6.7 + 2.3 * t) * s);
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#1a0a10'; ctx.lineWidth = 2 * s; ctx.fill(); ctx.stroke();
+  let tx = n.x - hip.x, ty = n.y - hip.y; const LT = Math.hypot(tx, ty) || 1; tx /= LT; ty /= LT;
+  const ax = -ty * o.facing, ay = tx * o.facing;
+  const wx = hip.x + tx * 8 * s, wy = hip.y + ty * 8 * s;
+  ctx.strokeStyle = o.accent; ctx.lineWidth = 2.2 * s;
+  ctx.beginPath(); ctx.moveTo(wx - ax * 8 * s, wy - ay * 8 * s); ctx.lineTo(wx + ax * 7 * s, wy + ay * 7 * s); ctx.stroke();
+}
+// the bow's tail, out behind the waist
+function bowTail(ctx, P, o) {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = o.accent; ctx.lineWidth = 2.2 * o.scale;
+  chainPath(ctx, P); ctx.stroke();
+}
 // a chef's toque (a tall pleated hat with a band) and an apron tied over the shirt, in strokes, with a dark
 // edge so the white hat reads on the white body; the red band and strings in the accent
 function toqueAndApron(ctx, J, o) {
@@ -56,22 +75,16 @@ function toqueAndApron(ctx, J, o) {
   let ux = h.x - n.x, uy = h.y - n.y; const L0 = Math.hypot(ux, uy) || 1; ux /= L0; uy /= L0;
   const fx = -uy * o.facing, fy = ux * o.facing;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  // the apron: a bib from the chest down past the hips on his front, tied at the waist
+  // the apron's bib: from the chest down to the waist tie on his front (the skirt under it is cloth, below)
   let tx = n.x - hip.x, ty = n.y - hip.y; const LT = Math.hypot(tx, ty) || 1; tx /= LT; ty /= LT;
   const ax = -ty * o.facing, ay = tx * o.facing;   // toward his front
   const top = { x: hip.x + tx * LT * 0.78 + ax * 5 * s, y: hip.y + ty * LT * 0.78 + ay * 5 * s };
-  const bot = { x: hip.x - tx * 22 * s + ax * 9 * s, y: hip.y - ty * 22 * s + ay * 9 * s };
-  const w0 = 5 * s, w1 = 9 * s;
-  const apron = () => {
-    ctx.beginPath();
-    ctx.moveTo(top.x - ty * w0, top.y + tx * w0); ctx.lineTo(top.x + ty * w0, top.y - tx * w0);
-    ctx.lineTo(bot.x + ty * w1, bot.y - tx * w1); ctx.lineTo(bot.x - ty * w1, bot.y + tx * w1); ctx.closePath();
-  };
-  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#1a0a10'; ctx.lineWidth = 2 * s; apron(); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = o.accent; ctx.lineWidth = 2.2 * s;
-  const wx = hip.x + tx * 8 * s, wy = hip.y + ty * 8 * s;
-  ctx.beginPath(); ctx.moveTo(wx - ax * 8 * s, wy - ay * 8 * s); ctx.lineTo(wx + ax * 7 * s, wy + ay * 7 * s); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(wx - ax * 8 * s, wy - ay * 8 * s); ctx.lineTo(wx - ax * 13 * s - tx * 7 * s, wy - ay * 13 * s - ty * 7 * s); ctx.stroke();   // the bow's tail behind
+  const wst = { x: hip.x + tx * 8 * s + ax * 6.7 * s, y: hip.y + ty * 8 * s + ay * 6.7 * s };
+  const w0 = 5 * s, w1 = 6.7 * s;
+  ctx.beginPath();
+  ctx.moveTo(top.x - ty * w0, top.y + tx * w0); ctx.lineTo(top.x + ty * w0, top.y - tx * w0);
+  ctx.lineTo(wst.x + ty * w1, wst.y - tx * w1); ctx.lineTo(wst.x - ty * w1, wst.y + tx * w1); ctx.closePath();
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#1a0a10'; ctx.lineWidth = 2 * s; ctx.fill(); ctx.stroke();
   // the toque: a band round the crown, then a tall puffed top leaning back a little
   const bx = h.x + ux * r * 0.55, by = h.y + uy * r * 0.55;
   const crown = { x: h.x + ux * r * 2.05 - fx * r * 0.18, y: h.y + uy * r * 2.05 - fy * r * 0.18 };
@@ -115,6 +128,10 @@ export default {
   // heavy and slow: more health and a heavier body, a slow walk and jump, a bit less regen
   stats: { health: 100, walk: 0.82, backWalk: 0.88, run: 0.86, jump: 0.9, dash: 0.9, weight: 1.12, stamina: 1, regen: 0.88, damage: 0.9 },
   body: { scale: 1.08, headR: 15, upperArm: 22.5, lowerArm: 21, upperLeg: 29, lowerLeg: 28.5, lowerTorso: 18, upperTorso: 20, limbW: 11, limbTip: 8.4, torsoW: 19, hipW: 13.5, lean: 3, stance: 3, accessory: toqueAndApron },
+  cloth: [
+    { draw: skirt, axis: ['neck', 'hip'], at: 1, off: [6.7, -8], dir: [0.077, 1], len: 30, seg: 3, hz: 2.2, damping: 0.45, side: 'front', clear: 4, limit: 1.1 },
+    { draw: bowTail, layer: 'back', axis: ['neck', 'hip'], at: 1, off: [-8, -8], dir: [-0.58, 0.81], len: 8.6, seg: 2, hz: 2.2, damping: 0.25, limit: 2 },
+  ],
   moves: {
     chef_cleaver: { rig: cleaver, frame: { limb: 'hand', damage: 13, kb: { x: 240, y: 260 }, hitstun: 0, blockstun: 10, hitstop: 10, knockdown: true, height: 'overhead',
       armor: { hits: 1, dmg: 0.5 }, travel: { vx: 160, at: 300, ms: 90 }, cost: 26, reach: 85, flashR: 42, callout: 'CLEAVER' } },

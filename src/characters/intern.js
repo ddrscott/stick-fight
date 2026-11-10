@@ -5,6 +5,7 @@
 // hand), and one unique string, REPLY ALL (1, 2, 2), whose ender is a wild haymaker he overcommits to.
 // Paper Cut replaces LOW RUSH (d+1, d+1, d+3 now finishes with the low kick off the paper cuts).
 import { RIG_KIT } from '../fighter/index.js';
+import { chainPath } from '../fighter/cloth.js';
 
 const { K, F, LF, RF, HIP, CH, crouchP } = RIG_KIT;
 
@@ -68,26 +69,27 @@ const replyAll = { blend: 40, limb: 'rHand', shift: 28, keys: [
 ] };
 
 // an ID badge on a lanyard: the cord round the neck and down the front of the chest, the badge hanging
-// from it (it hangs straight down whatever the body does)
-function lanyard(ctx, J, o) {
-  const s = o.scale, n = J.neck, c = J.chest, h = J.hip;
+// from its clip. A cloth chain (below): the cord swings with him and the badge swings on the clip under it
+function lanyard(ctx, P, o) {
+  const J = o.J, s = o.scale, n = J.neck, h = J.hip;
   let ux = n.x - h.x, uy = n.y - h.y; const Lt = Math.hypot(ux, uy) || 1; ux /= Lt; uy /= Lt;   // up the spine
   const fx = -uy * o.facing, fy = ux * o.facing;                                                  // forward, across it
   const w = (o.R.torsoW || 15) * s * 0.5;
   const back = { x: n.x - fx * w * 0.5 + ux * 1 * s, y: n.y - fy * w * 0.5 + uy * 1 * s };
-  const front = { x: n.x + fx * w * 0.8, y: n.y + fy * w * 0.8 };
-  const tip = { x: c.x + fx * (w + 3 * s) + (n.x - c.x) * 0.15, y: c.y + fy * (w + 3 * s) + (n.y - c.y) * 0.15 };
+  const front = P[0], tip = P[2], clip = P[3];
   ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = o.accent; ctx.fillStyle = o.accent;
   ctx.lineWidth = 1.8 * s;
   ctx.beginPath(); ctx.moveTo(back.x, back.y); ctx.quadraticCurveTo(front.x + fx * 2 * s, front.y + fy * 2 * s, tip.x, tip.y); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(front.x, front.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
-  // the clip and the badge, straight down from it
-  const bw = 7 * s, bh = 9 * s, bx = tip.x - bw / 2, by = tip.y + 2.5 * s;
-  ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(tip.x, by); ctx.stroke();
-  ctx.fillRect(bx, by, bw, bh);
+  chainPath(ctx, P.slice(0, 3)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(clip.x, clip.y); ctx.stroke();
+  // the badge hangs from the clip, swinging on it
+  const bw = 7 * s, bh = 9 * s;
+  ctx.save(); ctx.translate(clip.x, clip.y); ctx.rotate(Math.atan2(clip.y - tip.y, clip.x - tip.x) - Math.PI / 2);
+  ctx.fillRect(-bw / 2, 0, bw, bh);
   ctx.fillStyle = '#1a0f05';   // the photo and a name line, dark on the badge
-  ctx.fillRect(bx + 1.4 * s, by + 1.6 * s, bw * 0.38, bh * 0.4);
-  ctx.fillRect(bx + 1.4 * s, by + bh * 0.68, bw - 2.8 * s, 1.2 * s);
+  ctx.fillRect(-bw / 2 + 1.4 * s, 1.6 * s, bw * 0.38, bh * 0.4);
+  ctx.fillRect(-bw / 2 + 1.4 * s, bh * 0.68, bw - 2.8 * s, 1.2 * s);
+  ctx.restore();
 }
 
 // The celebration (registry `dance`, played by the match winner under the WINS banner): Unpaid and over the moon: a crouch, a star jump with both arms up, a hop that turns all the way round,
@@ -119,7 +121,9 @@ export default {
   stats: { health: 96, walk: 1.04, backWalk: 1, run: 1.05, jump: 1.02, dash: 1.05, weight: 0.95, stamina: 1, regen: 1.15, damage: 0.97 },
   // a touch smaller all over (scale), the head a bit big for the body; same proportions otherwise, so his
   // reach is a little short of TEMP's
-  body: { scale: 0.95, headR: 15.5, limbW: 11.5, limbTip: 8.8, torsoW: 14, lean: 2, accessory: lanyard },
+  body: { scale: 0.95, headR: 15.5, limbW: 11.5, limbTip: 8.8, torsoW: 14, lean: 2 },
+  // the lanyard: the cord from the collar to the clip, then the badge on a short clip that swings on its own
+  cloth: [{ draw: lanyard, axis: ['neck', 'chest'], off: [5.6, 0], dir: [[0.263, 0.965], [0.263, 0.965], [0, 1]], len: [8.35, 8.35, 2.5], hz: 2.4, damping: 0.22, side: 'front', clear: 5 }],
   moves: {
     coffeeRun: { rig: coffeeRun, frame: { limb: 'hand', damage: 11, kb: { x: 340, y: 0 }, hitstun: 30, blockstun: 8, hitstop: 7, height: 'mid',
       travel: { vx: 420, at: 40, ms: 160 }, cost: 19, reach: 90, flashR: 34, callout: 'COFFEE RUN' } },

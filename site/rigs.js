@@ -21,7 +21,7 @@ function makeRig(c, color = c.color, pants = c.pants || null) {
   rig.pants = c.id === TEMP_ID ? null : pants;
   rig.setBody(c.body, { accent: c.accent });
   rig.speedLines = false;
-  rig.charDef = c;   // its prop (a lanyard, a tie) hangs at rest: the life layer is the game's only
+  rig.charDef = c;   // its cloth (a tie, a lanyard, an apron's hem) hangs at rest: the life layer is the game's only
   return rig;
 }
 function safePlay(rig, name, opt) { try { rig.play(name, opt); return true; } catch { return false; } }
@@ -95,7 +95,7 @@ class MoveView {
 }
 
 // the fighter page's big rig: guard, then one of its moves, round and round. Between moves it stands with the
-// game's life layer on top (src/fighter/life.js): the character's own sway, bounce and breath, its prop swinging,
+// game's life layer on top (src/fighter/life.js): the character's own sway, bounce and breath, its cloth swinging,
 // and now and then one of its idle habits, which the next move waits for.
 class ShowcaseView {
   constructor(canvas, c, seqs) {
@@ -126,7 +126,7 @@ class ShowcaseView {
     const real = rig.joints, J = REDUCED ? real : this.life.apply(this.unit, real, this.sim, dt);
     rig.joints = J;
     s.rig(rig, c.color, x, y, zoom, 12);
-    rig.joints = real; rig.sway = null;
+    rig.joints = real; rig.cloth = null;
   }
 }
 

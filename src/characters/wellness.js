@@ -7,6 +7,7 @@
 // Exhale (step out of it). One unique string, SUN SALUTATION (1, 3, 4), ending in a backbend over a
 // vertical split kick that comes down on top of him (an overhead). Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { chainPath, ribbonPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP, deepKeys, base } = RIG_KIT;
 
@@ -66,7 +67,7 @@ const sunSalutation = { blend: 40, limb: 'rFoot', shift: 18, keys: [
   K({ ...F(18, HIP - 1, LF + 18, RF + 18), torso: 6, head: -3 }, 0, 'sine'),
 ] };
 
-// a headband with its tails flying off the back, and a rolled yoga mat slung across the back on a strap
+// a headband (its tails and the ponytail under it are cloth, below), and a rolled yoga mat slung across the back on a strap
 function headbandAndMat(ctx, J, o) {
   const h = J.head, n = J.neck, hip = J.hip, s = o.scale, r = o.headR;
   let ux = h.x - n.x, uy = h.y - n.y; const L0 = Math.hypot(ux, uy) || 1; ux /= L0; uy /= L0;
@@ -87,9 +88,22 @@ function headbandAndMat(ctx, J, o) {
   ctx.strokeStyle = o.accent; ctx.lineWidth = 3.4 * s;
   ctx.beginPath(); ctx.arc(h.x, h.y, r * 0.98, a - 1.15, a + 1.15); ctx.stroke();
   const kx = h.x - fx * r * 0.95 + ux * r * 0.35, ky = h.y - fy * r * 0.95 + uy * r * 0.35;
-  ctx.lineWidth = 2.2 * s;
-  ctx.beginPath(); ctx.moveTo(kx, ky); ctx.quadraticCurveTo(kx - fx * r * 0.6, ky - fy * r * 0.6 + 2 * s, kx - fx * r * 1.1 - ux * r * 0.3, ky - fy * r * 1.1 - uy * r * 0.3); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(kx, ky); ctx.quadraticCurveTo(kx - fx * r * 0.5, ky - fy * r * 0.5 - 4 * s, kx - fx * r * 0.9 - ux * r * 0.7, ky - fy * r * 0.9 - uy * r * 0.7); ctx.stroke();
+  ctx.fillStyle = o.accent; ctx.beginPath(); ctx.arc(kx, ky, 2.4 * s, 0, Math.PI * 2); ctx.fill();   // the knot
+}
+// the headband's two tails, cloth chains off the knot (below): they stream and flick behind her head
+function bandTail(ctx, P, o) {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = o.accent; ctx.lineWidth = 2.2 * o.scale;
+  chainPath(ctx, P); ctx.stroke();
+}
+// a ponytail gathered under the knot, in the body's neon like the head (flat, a dark edge to part it from the
+// head; over the mat, so it's drawn on the front layer): a cloth chain of four links that swings from the
+// head, so it lags a jump and whips on a launch
+function ponytail(ctx, P, o) {
+  const s = o.scale;
+  ctx.lineJoin = 'round';
+  ribbonPath(ctx, P, o.facing, (t) => (4.2 - 2.8 * t) * s, true);
+  ctx.strokeStyle = '#0a0414'; ctx.lineWidth = 1.4 * s; ctx.stroke();
+  ctx.fillStyle = o.color; ctx.fill();
 }
 
 // the tree's buttons: 4 the crane kick, 3 the sweep, 2 a step out; let go of 1 and she steps out too
@@ -118,6 +132,11 @@ export default {
   // a lighter body and quick stamina, everything else about average
   stats: { health: 104, walk: 1.02, backWalk: 1.05, run: 1.02, jump: 1.08, dash: 1, weight: 0.98, stamina: 1, regen: 1.2, damage: 1.03 },
   body: { scale: 0.98, headR: 14.5, upperArm: 24, lowerArm: 23, upperLeg: 33.5, lowerLeg: 32.5, lowerTorso: 17, upperTorso: 19, limbW: 10.8, limbTip: 8.5, torsoW: 13, hipW: 10.5, lean: -1, accessory: headbandAndMat },
+  cloth: [
+    { draw: ponytail, axis: ['head', 'neck'], off: [-13, -3.5], dir: [-0.5, 1], len: 27, seg: 4, hz: 1.7, damping: 0.28, gravity: 350, side: 'back', clear: 9, kick: 1.2 },
+    { draw: bandTail, layer: 'back', axis: ['head', 'neck'], off: [-13.8, -5.1], dir: [-0.965, 0.262], len: 16.6, seg: 2, hz: 2.4, damping: 0.3, gravity: 250, limit: 1.8 },
+    { draw: bandTail, layer: 'back', axis: ['head', 'neck'], off: [-13.8, -5.1], dir: [-0.787, 0.617], len: 16.6, seg: 2, hz: 2.2, damping: 0.3, gravity: 250, limit: 1.8 },
+  ],
   moves: {
     wellness_treePose: { rig: treePose, frame: { limb: 'foot', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', cost: 10, reach: 60, flashR: 0,
       stance: TREE_STANCE } },

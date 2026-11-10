@@ -5,6 +5,7 @@
 // that hops lows and launches whatever it meets, the anti-air), and one unique string, STREAK FREE
 // (1, 3, 4), whose ender is a two-footed dropkick that pins him to the glass near a wall.
 import { RIG_KIT } from '../fighter/index.js';
+import { chainPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP } = RIG_KIT;
 
@@ -64,7 +65,14 @@ const streakFree = { blend: 40, limb: 'rFoot', shift: 20, keys: [
 
 // A climbing harness in the accent neon: shoulder straps down the chest to a waist belt, a D-ring at the
 // back of the belt with a short safety line and its carabiner hanging off it, and a squeegee holstered on
-// the hip. Drawn from the joints, so it rides every pose.
+// the hip. Drawn from the joints, so it rides every pose; the safety line is a cloth chain (below) that swings.
+function safetyLine(ctx, P, o) {
+  const s = o.scale, b = P[P.length - 1], a = P[P.length - 2];
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = o.accent; ctx.lineWidth = 1.6 * s;
+  chainPath(ctx, P); ctx.stroke();
+  const ang = Math.atan2(b.y - a.y, b.x - a.x);
+  ctx.beginPath(); ctx.ellipse(b.x + Math.cos(ang) * 3.2 * s, b.y + Math.sin(ang) * 3.2 * s, 3.4 * s, 2 * s, ang, 0, Math.PI * 2); ctx.stroke();
+}
 function harness(ctx, J, o) {
   const s = o.scale, c = J.chest, n = J.neck, h = J.hip;
   let ux = n.x - h.x, uy = n.y - h.y; const Lt = Math.hypot(ux, uy) || 1; ux /= Lt; uy /= Lt;   // up the spine
@@ -86,9 +94,6 @@ function harness(ctx, J, o) {
   const dx = belt.x - fx * w * 1.3, dy = belt.y - fy * w * 1.3;
   ctx.lineWidth = 1.6 * s;
   ctx.beginPath(); ctx.arc(dx, dy, 2.6 * s, 0, Math.PI * 2); ctx.stroke();
-  const ex = dx - fx * 7 * s, ey = dy + 13 * s;
-  ctx.beginPath(); ctx.moveTo(dx, dy + 2.6 * s); ctx.quadraticCurveTo(dx - fx * 2 * s, dy + 10 * s, ex, ey); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(ex, ey + 3.2 * s, 2 * s, 3.4 * s, 0, 0, Math.PI * 2); ctx.stroke();
   // the squeegee in its holster on the front hip: a short handle and the blade across its end
   const qx = belt.x + fx * w * 1.25, qy = belt.y + fy * w * 1.25;
   const hx = qx + fx * 2 * s - ux * 11 * s, hy = qy + fy * 2 * s - uy * 11 * s;
@@ -129,6 +134,7 @@ export default {
   stats: { health: 94, walk: 1.05, backWalk: 0.95, run: 1.06, jump: 1.15, dash: 1.05, weight: 0.88, stamina: 1, regen: 1.05, damage: 0.97 },
   // rangy legs on a light frame, thin limbs; the arms stay TEMP's length so the punches don't out-poke anyone
   body: { scale: 1, headR: 14.5, upperLeg: 32.5, lowerLeg: 31.5, limbW: 11.2, limbTip: 8.5, torsoW: 13.5, hipW: 10, lean: 2, accessory: harness },
+  cloth: [{ draw: safetyLine, axis: ['neck', 'hip'], at: 1, off: [-8.8, -3.4], dir: [-0.56, 0.83], hang: 0.5, len: 12.5, seg: 3, hz: 2, damping: 0.25, gravity: 400 }],
   mechanics: { airJumps: 1, wallJump: true, airJumpClip: 'wwAirJump' },
   moves: {
     wwAirJump: { rig: airJump },

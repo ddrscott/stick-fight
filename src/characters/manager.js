@@ -6,6 +6,7 @@
 // unique string, TOP-DOWN (3, 2, 3), which ends in the axe kick. Drops TRIPLE JAB (he doesn't jab three
 // times when he could hit you once).
 import { RIG_KIT } from '../fighter/index.js';
+import { ribbonPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP } = RIG_KIT;
 
@@ -55,32 +56,16 @@ const downsizing = { blend: 50, limb: 'lFoot', shift: 30, keys: [
 ] };
 
 // a necktie: the knot at the collar, the blade down the front of the shirt, in the accent neon with a dark
-// edge so it reads on the red body. It's his prop (below), so the life layer swings the blade's tip (o.sway)
-function tie(ctx, J, o) {
-  const n = J.neck, c = J.chest, s = o.scale;
-  let dx = c.x - n.x, dy = c.y - n.y; const L0 = Math.hypot(dx, dy) || 1; dx /= L0; dy /= L0;
-  const fx = dy * o.facing, fy = -dx * o.facing;   // toward his front, across the torso
-  const off = 3.6 * s;
-  const kx = n.x + dx * 4 * s + fx * off, ky = n.y + dy * 4 * s + fy * off;
-  const len = L0 * 1.05;
-  const sw = o.sway || { x: 0, y: 0 };
-  const tx = kx + dx * len + fx * 2.5 * s + sw.x, ty = ky + dy * len + fy * 2.5 * s + sw.y;
-  const w = 3.2 * s;
-  const path = () => {
-    ctx.beginPath();
-    ctx.moveTo(kx - dy * w * 0.8, ky + dx * w * 0.8);
-    ctx.lineTo(kx + dy * w * 0.8, ky - dx * w * 0.8);
-    ctx.lineTo(tx + dy * w * 1.3 - dx * w, ty - dx * w * 1.3 - dy * w);
-    ctx.lineTo(tx, ty);
-    ctx.lineTo(tx - dy * w * 1.3 - dx * w, ty + dx * w * 1.3 - dy * w);
-    ctx.closePath();
-  };
+// edge so it reads on the red body. It's a cloth chain (below): the blade flips and settles from the knot
+function tie(ctx, P, o) {
+  const s = o.scale, w = 3.2 * s;
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#1a0408'; ctx.lineWidth = 2.4 * s; path(); ctx.stroke();
-  ctx.fillStyle = o.accent; path(); ctx.fill();
+  ribbonPath(ctx, P, o.facing, (t) => w * (0.8 + 0.5 * t), true);
+  ctx.strokeStyle = '#1a0408'; ctx.lineWidth = 2.4 * s; ctx.stroke();
+  ctx.fillStyle = o.accent; ctx.fill();
   // the knot
   ctx.fillStyle = o.accent; ctx.strokeStyle = '#1a0408'; ctx.lineWidth = 1.4 * s;
-  ctx.beginPath(); ctx.arc(kx, ky, 2.6 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(P[0].x, P[0].y, 2.6 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 }
 
 // the earlier hooks of Performance Review (frame data `rush`, the multi-hit hook): light hits that keep him
@@ -112,7 +97,7 @@ export default {
   stats: { health: 104, walk: 0.88, backWalk: 0.88, run: 0.9, jump: 0.9, dash: 0.92, weight: 1.15, stamina: 1, regen: 0.95, damage: 1.04 },
   body: { scale: 1.06, headR: 14.5, upperArm: 23, lowerArm: 21.5, upperLeg: 29.5, lowerLeg: 29, lowerTorso: 17.5, upperTorso: 19.5, limbW: 11.5, limbTip: 9, torsoW: 17.5, hipW: 12.5, lean: 3, stance: 2 },
   // drawn over the chest; its tip swings on the life layer's spring (src/fighter/life.js)
-  prop: { draw: tie, at: 0.1, len: 21, hz: 1.8, damping: 0.25 },
+  cloth: [{ draw: tie, axis: ['neck', 'chest'], off: [3.6, 4], dir: [0.12, 1], len: 20.5, seg: 3, hz: 1.8, damping: 0.25, side: 'front', clear: 3.6 }],
   moves: {
     performanceReview: { rig: performanceReview, frame: { limb: 'hand', damage: 10, kb: { x: 520, y: 300 }, hitstun: 0, blockstun: 14, hitstop: 10, knockdown: true, ender: true, height: 'mid',
       hits: 4, rush: PR_RUSH, travel: { vx: 300, at: 40, ms: 150 }, cost: 26, reach: 80, flashR: 42, callout: 'PERFORMANCE REVIEW' } },

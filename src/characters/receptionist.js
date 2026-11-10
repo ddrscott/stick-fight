@@ -6,6 +6,7 @@
 // unique string, HANG UP (3, 1, 1), ending in the handset swung over the top and down on him (an overhead).
 // Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { coilPath } from '../fighter/cloth.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
 
@@ -50,6 +51,12 @@ const hangUp = { blend: 40, limb: 'lHand', shift: 8, keys: [
   K({ ...F(8, HIP - 1, LF + 8, RF + 8), torso: 6, head: -4 }, 0, 'sine'),
 ] };
 
+// the coiled cord from the base clipped at the hip up to the hand: a cloth chain pinned at both ends, so it
+// sags and swings between them and pulls straight when the hand reaches past its length
+function cord(ctx, P, o) {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = o.accent; ctx.lineWidth = 1.2 * o.scale;
+  coilPath(ctx, P, 0.13, 2.2 * o.scale);
+}
 // a slim office headset (a thin band over the crown, a small ear pad, a short boom to the cheek) and the
 // desk phone's handset in the lead hand on its coiled cord, which runs down to the base clipped at her hip.
 // In Please Hold the handset flies out to the end of the cord (the pose's ext), the coils pulled nearly straight.
@@ -70,16 +77,13 @@ function headsetAndPhone(ctx, J, o) {
   let dx = hand.x - el.x, dy = hand.y - el.y; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
   const ext = (o.pose && o.pose.ext) || 0, out = ext > 4 ? ext * s : 0;
   const px = hand.x + dx * (out + 4 * s), py = hand.y + dy * (out + 4 * s);
-  // the cord: from the base at the hip to the hand, then (flung) from the hand out to the handset
+  // the cord flung from the hand out to the handset (the cord from the base at the hip to the hand is cloth, below)
   const coil = (x0, y0, x1, y1, turns, amp) => {
     const cx = x1 - x0, cy = y1 - y0, cl = Math.hypot(cx, cy) || 1, nx = -cy / cl, ny = cx / cl;
     ctx.beginPath(); ctx.moveTo(x0, y0);
     for (let i = 1; i <= turns * 2; i++) { const t = i / (turns * 2), w = (i % 2 ? 1 : -1) * amp * Math.sin(Math.PI * t); ctx.lineTo(x0 + cx * t + nx * w, y0 + cy * t + ny * w); }
     ctx.lineTo(x1, y1); ctx.stroke();
   };
-  ctx.strokeStyle = o.accent; ctx.lineWidth = 1.2 * s;
-  const bx = J.hip.x - fx * 0 + (J.hip.x - J.chest.x) * 0.1, by = J.hip.y + 2 * s;
-  coil(bx, by, hand.x, hand.y, 5, 2.2 * s);
   if (out) { ctx.lineWidth = 1.3 * s; coil(hand.x, hand.y, px, py, 6, Math.max(0.6, 3.2 - ext / 40) * s); }
   // the handset itself: a short bar across the cord with an earpiece and a mouthpiece
   const qx = -dy, qy = dx, hl = 7 * s;
@@ -116,6 +120,7 @@ export default {
   stats: { health: 102, walk: 1.04, backWalk: 1.08, run: 1.0, jump: 1, dash: 1, weight: 0.96, stamina: 1, regen: 1.1, damage: 1.06 },
   // TEMP's arms and legs on a slim frame: her reach is the cord, not the limbs
   body: { scale: 0.98, headR: 14.5, limbW: 11, limbTip: 8.4, torsoW: 14, hipW: 11, lean: 1, accessory: headsetAndPhone },
+  cloth: [{ draw: cord, axis: ['chest', 'hip'], at: 1.1, off: [0, 2], end: 'lHand', len: 40, seg: 4, hz: 1.2, damping: 0.3, gravity: 500 }],
   moves: {
     receptionist_pleaseHold: { rig: pleaseHold, frame: { limb: 'hand', damage: 10, kb: { x: 300, y: 0 }, hitstun: 30, blockstun: 9, hitstop: 6, knockdown: false, height: 'mid',
       cost: 20, reach: 180, flashR: 24, callout: 'PLEASE HOLD' } },
