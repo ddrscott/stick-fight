@@ -62,7 +62,7 @@ const TRANSITIONS = {
   controls: ['attract', 'modeSelect'],
   install: ['attract', 'modeSelect'],
   modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry'],
-  charSelect: ['modeSelect', 'stageIntro', 'fighting', 'onlineMenu', 'onlineJoin', 'attract'],
+  charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
   stageIntro: ['fighting', 'modeSelect'],
   fighting: ['roundEnd', 'result', 'paused', 'attract'],
   roundEnd: ['fighting', 'result', 'paused'],
@@ -73,19 +73,19 @@ const TRANSITIONS = {
   enterInitials: ['highScores'],
   ending: ['enterInitials', 'highScores', 'modeSelect'],
   paused: ['fighting', 'roundEnd', 'stageIntro', 'attract', 'modeSelect'],
-  onlineMenu: ['modeSelect', 'charSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract', 'profile', 'crewCreate', 'crewJoin', 'crewLobby', 'nameEntry'],
-  onlineHost: ['onlineMenu', 'onlineFighting', 'onlineEnd', 'modeSelect'],
+  onlineMenu: ['modeSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract', 'profile', 'crewCreate', 'crewJoin', 'crewLobby', 'nameEntry'],
+  onlineHost: ['onlineMenu', 'onlineSelect', 'onlineFighting', 'onlineEnd', 'modeSelect'],
   onlineJoin: ['onlineMenu', 'onlineConnecting', 'attract'],
-  onlineConnecting: ['onlineJoin', 'onlineFighting', 'onlineEnd', 'modeSelect'],
+  onlineConnecting: ['onlineJoin', 'onlineSelect', 'onlineFighting', 'onlineEnd', 'modeSelect'],
   onlineFighting: ['onlineEnd', 'onlinePost'],
   onlinePost: ['onlineFighting', 'onlineSelect', 'onlineEnd', 'onlineMenu', 'modeSelect', 'crewLobby'],
   onlineSelect: ['onlineFighting', 'onlineEnd', 'onlineMenu', 'modeSelect', 'crewLobby'],
   onlineEnd: ['onlineMenu', 'onlineHost', 'onlineConnecting', 'modeSelect', 'attract', 'crewLobby'],
   // profiles and crew rooms (src/net/profile.js, src/net/crew.js)
-  nameEntry: ['charSelect', 'crewLobby', 'onlineMenu', 'profile', 'modeSelect', 'attract', 'signInEmail'],
+  nameEntry: ['onlineJoin', 'crewLobby', 'onlineMenu', 'profile', 'modeSelect', 'attract', 'signInEmail'],
   profile: ['nameEntry', 'signInEmail', 'onlineMenu', 'modeSelect', 'attract'],
   signInEmail: ['signInCode', 'profile', 'modeSelect', 'nameEntry'],
-  signInCode: ['profile', 'signInEmail', 'modeSelect', 'nameEntry', 'charSelect', 'crewLobby'],
+  signInCode: ['profile', 'signInEmail', 'modeSelect', 'nameEntry', 'onlineMenu', 'onlineJoin', 'crewLobby'],
   crewCreate: ['crewLobby', 'onlineMenu', 'modeSelect'],
   crewJoin: ['crewLobby', 'onlineMenu', 'modeSelect'],
   crewLobby: ['crewLinking', 'onlineMenu', 'modeSelect'],
@@ -148,9 +148,14 @@ export function createFlow(ctx) {
   const hp = new WeakMap ();
   // the character select: which mode it's for, whether it's picking the player or (training) the dummy,
   // the picks (kept between runs, so the cursor starts on your last fighter), and the live screen
-  const sel = { mode: null, step: 'player', player: TEMP_ID, dummy: TEMP_ID, join: false };
-  // ?pick=<id> (PLAY AS on a fighter's page, README "Site"): the select screen opens on that fighter
-  try { const want = new URLSearchParams(location.search).get('pick'); if (want && roster().some((c) => c.id === want)) sel.player = want; } catch { /* no location */ }
+  const sel = { mode: null, step: 'player', player: TEMP_ID, dummy: TEMP_ID };
+  // the last fighter you picked on this device (any mode, online too) is where every select opens;
+  // ?pick=<id> (PLAY AS on a fighter's page, README "Site") beats it for this visit
+  const LAST_PICK = 'stick-fight-last-pick';
+  const known = (id) => !!id && roster().some((c) => c.id === id);
+  try { const last = localStorage.getItem(LAST_PICK); if (known(last)) sel.player = /** @type {string} */ (last); } catch { /* storage off */ }
+  try { const want = new URLSearchParams(location.search).get('pick'); if (want && known(want)) sel.player = want; } catch { /* no location */ }
+  function rememberPick(id) { sel.player = id; try { localStorage.setItem(LAST_PICK, id); } catch { /* storage off: this page only */ } }
   let selCtl = null;
   let ml = null;   // the MOVE LIST overlay while it's up (openMoves)
   const ladder = () => run.ladder || LADDER;
@@ -383,33 +388,31 @@ export function createFlow(ctx) {
   function startHorde() { newRun('horde'); track('mode', ['horde', sel.player]); ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); go('fighting'); }
   function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }
   // ---- character select --------------------------------------------------------------------------------
-  function toSelect(m) {
-    // the first time online, a name first (other players see it); it's remembered after that
-    if (m === 'online' && !profile().name) { askName(() => toSelect('online'), () => go('modeSelect')); return; }
-    sel.mode = m; sel.step = 'player'; sel.join = false; go('charSelect');
+  function toSelect(m) { sel.mode = m; sel.step = 'player'; go('charSelect'); }
+  // VERSUS ONLINE goes straight to the online menu: you get into a room first, and both pick there
+  // (onlineSelect). The first time online, a name first (other players see it); it's remembered after that
+  function toOnline() {
+    if (!profile().name) { askName(() => go('onlineMenu'), () => go('modeSelect')); return; }
+    go('onlineMenu');
   }
   function screenSelect() {
     const dummy = sel.step === 'dummy';
-    const sub = { arcade: `ARCADE  ·  ${LADDER.length} STAGES UP THE BUILDING`, online: 'VERSUS ONLINE  ·  YOUR RIVAL PICKS TOO', horde: 'HORDE  ·  FLOOR BY FLOOR', training: 'TRAINING  ·  STEP 1 OF 2' }[sel.mode] || '';
+    const sub = { arcade: `ARCADE  ·  ${LADDER.length} STAGES UP THE BUILDING`, horde: 'HORDE  ·  FLOOR BY FLOOR', training: 'TRAINING  ·  STEP 1 OF 2' }[sel.mode] || '';
     selCtl = openSelect(ui, { title: dummy ? 'PICK YOUR DUMMY' : 'SELECT FIGHTER', sub: dummy ? 'TRAINING  ·  STEP 2 OF 2  ·  WHO TAKES THE HITS' : sub,
       roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack, onMoves: openMoves });
   }
   function pickChar(id) {
     if (state !== 'charSelect' || t < 0.15) return;
     if (sel.step === 'dummy') { sel.dummy = id; startTraining(); return; }
-    sel.player = id;
+    rememberPick(id);
     if (sel.mode === 'arcade') startArcade();
     else if (sel.mode === 'horde') startHorde();
     else if (sel.mode === 'training') { sel.step = 'dummy'; t = 0; screenSelect(); }
-    else if (sel.mode === 'online') {
-      try { const n = getNet(); if (n.setCharacter) n.setCharacter(id); } catch { /* stub */ }
-      go(sel.join ? 'onlineJoin' : 'onlineMenu');
-    }
   }
   function selBack() {
     if (state !== 'charSelect') return;
     if (sel.step === 'dummy') { sel.step = 'player'; screenSelect(); }
-    else go(sel.join ? 'attract' : 'modeSelect');
+    else go('modeSelect');
   }
   // the MOVE LIST for a fighter, over the pause menu or a pick screen; closing it hands the keys back
   function openMoves(c) {
@@ -580,7 +583,7 @@ export function createFlow(ctx) {
       const mk = (label, sub, act, cls = '') => { const b = button(label, act, cls); b.el.appendChild(el('small', '', sub)); list.appendChild(b.el); return b; };
       const items = [
         mk('ARCADE', `${LADDER.length} STAGES UP THE BUILDING`, () => toSelect('arcade'), 'fl-pink'),
-        mk('VERSUS ONLINE', 'PLAY A FRIEND', () => toSelect('online')),
+        mk('VERSUS ONLINE', 'PLAY A FRIEND', toOnline),
         mk('HORDE', 'FLOOR BY FLOOR, AS MANY AS YOU CAN', () => toSelect('horde'), 'fl-amber'),
         mk('TRAINING', 'A DUMMY THAT NEVER HITS BACK', () => toSelect('training'), 'fl-violet'),
       ];
@@ -847,7 +850,7 @@ export function createFlow(ctx) {
         if (state === 'onlineFighting') go('onlinePost');
       })),
       net.on('session', guard((v) => {
-        if ((state === 'onlinePost' || state === 'crewLinking') && v && v.phase === 'select') go('onlineSelect');
+        if ((state === 'onlinePost' || state === 'crewLinking' || state === 'onlineHost' || state === 'onlineConnecting') && v && v.phase === 'select') go('onlineSelect');
         else if (BETWEEN.has(state)) paintBetween(v);
       })),
       net.on('peer-left', guard(() => netFail('YOUR RIVAL LEFT'))),
@@ -875,7 +878,6 @@ export function createFlow(ctx) {
   // (HOST and JOIN with a four-letter code), and the profile under them
   function screenOnline() {
     const p = profile();
-    const backToPick = () => { sel.mode = 'online'; sel.step = 'player'; sel.join = false; go('charSelect'); };
     ui.show('fl-online', (root) => {
       const who = el('div', 'fl-label', `PLAYING AS ${p.name || '???'}${p.email ? '  ·  PROFILE SAVED' : ''}`);
       root.append(el('h1', 'fl-h2', 'VERSUS ONLINE'), who);
@@ -893,12 +895,11 @@ export function createFlow(ctx) {
       cols.append(left, right);
       root.appendChild(cols);
       const prof = button('PROFILE', () => go('profile'), 'fl-mini');
-      const back = button('BACK', backToPick, 'fl-violet fl-mini');
       const main = button('MAIN MENU', () => go('modeSelect'), 'fl-violet fl-mini');
-      const row = el('div', 'fl-row fl-orow'); row.append(prof.el, back.el, main.el); root.appendChild(row);
-      const items = [...crews, create, joinCrew, host, join, prof, back, main];
+      const row = el('div', 'fl-row fl-orow'); row.append(prof.el, main.el); root.appendChild(row);
+      const items = [...crews, create, joinCrew, host, join, prof, main];
       // a crew to go back to is the likeliest press; otherwise HOST A GAME, as before
-      return { items, focus: crews.length ? 0 : items.indexOf(host), back: backToPick };
+      return { items, focus: crews.length ? 0 : items.indexOf(host), back: () => go('modeSelect') };
     });
     // who's signed in on this browser (a session from another visit, or one that ended): repaint if it changed
     const shown = ui.screen;
@@ -944,7 +945,8 @@ export function createFlow(ctx) {
     });
     const fallback = ui.focus;   // COPY LINK is dim until the room opens, so the focus starts on CANCEL
     listen(session);
-    getNet().host().then(({ code, link }) => {
+    readyPick();
+    getNet().host({ pickFirst: true }).then(({ code, link }) => {
       if (session !== netSession) return;
       codeEl.textContent = code;
       linkEl.textContent = link || roomLink(code);
@@ -953,6 +955,8 @@ export function createFlow(ctx) {
       if (ui.focus === fallback) ui.setFocus(0);   // the player hasn't moved: COPY LINK, now it works
     }).catch((e) => { if (session !== netSession) return; netFail(String((e && e.message) || e).toUpperCase()); });
   }
+  /** a quick room opens on the pick screen (pickFirst), with the cursor on your last fighter */
+  function readyPick() { try { getNet().setCharacter?.(sel.player); } catch { /* stub */ } }
   let codeSlots = [], joinBtn = null;
   function screenJoin() {
     ui.show('fl-join', (root) => {
@@ -998,7 +1002,8 @@ export function createFlow(ctx) {
       return { items, back: () => go('onlineJoin') };
     });
     listen(session);
-    getNet().join(joinCode).then(() => { if (session === netSession && /^CONNECTING/.test(msg.textContent || '')) msg.textContent = 'FINDING THE ROOM'; })
+    readyPick();
+    getNet().join(joinCode, { pickFirst: true }).then(() => { if (session === netSession && /^CONNECTING/.test(msg.textContent || '')) msg.textContent = 'FINDING THE ROOM'; })
       .catch((e) => { if (session !== netSession) return; netFail(String((e && e.message) || e).toUpperCase()); });
   }
   // ---- between online matches ------------------------------------------------------------------------------
@@ -1149,11 +1154,13 @@ export function createFlow(ctx) {
     }
     pickUi = { host, youEl, rivalEl, startBtn };
     const tl = v.tally;
+    const crewName = crewMatch ? String((crewCli && crewCli.state && crewCli.state.crew && crewCli.state.crew.name) || 'CREW MATCH').toUpperCase() : '';
     selCtl = openSelect(ui, {
-      title: v.n === 0 ? `VS ${rivalLabel(v)}` : 'NEW CHARACTERS', sub: `MATCH ${v.n + 1}  ·  YOU ${tl.you} – ${tl.rival} ${rivalLabel(v)}  ·  ${host ? 'YOU START THE MATCH' : 'THE HOST STARTS THE MATCH'}`,
+      // the first pick (straight from the room) says who you're up against, and in a crew match which crew
+      title: v.n === 0 ? `VS ${rivalLabel(v)}` : 'NEW CHARACTERS', sub: `${crewName ? `${crewName}  ·  ` : ''}MATCH ${v.n + 1}  ·  YOU ${tl.you} – ${tl.rival} ${rivalLabel(v)}  ·  ${host ? 'YOU START THE MATCH' : 'THE HOST STARTS THE MATCH'}`,
       roster: roster(), initial: sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), status, cls: 'fl-netpick',
       backLabel: crewMatch ? 'BACK TO CREW' : 'LEAVE ROOM', extra: startBtn ? [startBtn] : [],
-      onPick: (id) => { if (state !== 'onlineSelect' || t < 0.15) return; sel.player = id; getNet().pick?.(id, true); paintBetween(); },
+      onPick: (id) => { if (state !== 'onlineSelect' || t < 0.15) return; rememberPick(id); getNet().pick?.(id, true); paintBetween(); },
       onBack: () => { if (t >= 0.3) leaveRoom(); },
       // the back key un-readies (CHANGE); it never leaves the room by accident
       onBackKey: () => { const w = view(); if (w && w.mine.ready) { getNet().pick?.(w.mine.id, false); paintBetween(); } },
@@ -1689,8 +1696,8 @@ export function createFlow(ctx) {
     } else if (crew) { demo(); openCrew(crew); }   // a crew link: the lobby (a name first, the first time)
     else if (code) {
       demo(); joinCode = code;
-      const pick = () => { sel.mode = 'online'; sel.step = 'player'; sel.join = true; go('charSelect'); };   // pick a fighter, then JOIN with the code filled in
-      if (!profile().name) askName(pick, () => go('attract')); else pick();
+      const toJoin = () => go('onlineJoin');   // JOIN with the code filled in; the fighters are picked in the room
+      if (!profile().name) askName(toJoin, () => go('attract')); else toJoin();
     } else go('attract');
   }
 
