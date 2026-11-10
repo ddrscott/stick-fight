@@ -347,7 +347,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       hitstop: 0, flash: 0, stun: 0, downTimer: 0, buffer: null, bufferAge: 0,
       health: 100, hidden: false, controller: null, kind: 'none', home: 0, prevX: 0, prevBX: 0, apartSteps: 0,
       last: EMPTY_INPUT, tapDir: 0, tapTimer: 0, running: false, koDone: false, prevJoints: null,
-      stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, crouch: false, backHeld: false, downHeld: false,
+      stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, paid: 0, refundId: 0, faintPending: 0, refundMove: '', refundRep: 0, refundAt: -999, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
       downPin: 0,  // steps a stomped body is held on the floor
@@ -428,7 +428,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.maxHealth = (sim.horde && i >= 1) ? sim.horde.goonHealth : u.char.stats.health === 100 ? sim.startHealth : Math.round(sim.startHealth * u.char.stats.health / 100);
     u.health = u.maxHealth; u.hidden = false; u.koDone = false; u.running = false; u.hitConfirmed = false;
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
-u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.crouch = false; u.seq = null; u.bufferKeys = null;
+u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.paid = 0; u.refundId = 0; u.faintPending = 0; u.refundMove = ''; u.refundRep = 0; u.refundAt = -999; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
     u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1; u.parryAt = -999; u.parryLow = false; u.parryLock = -1; u.pressAt = -999;
     u.shockT = 0; u.shockUsed = false; u.rootT = 0;
@@ -727,16 +727,52 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // Stamina: every action spends, and at 0 the fighter faints. The strike (or jump) that emptied
   // the bar still comes out, but nothing cancels out of it; the faint itself starts when he is back
   // on his feet (see regen). Blocking spends too, but never takes the last point.
+  // A strike (not a botch) that empties the bar defers the faint until it resolves (`pend`): it hits, and he's
+  // left on 1 plus the refund (credit); it's blocked, parried, broken or whiffs, and he faints then (settle).
   const FAINT_STEPS = Math.round(STAMINA.faintTime * 120);
-  function spend(u, n, { noFaint = false } = {}) {
+  function spend(u, n, { noFaint = false, pend = false } = {}) {
     if (!n) return;
+    const was = u.stamina;
     u.stamina = Math.max(noFaint ? Math.min(u.stamina, 1) : 0, u.stamina - n);
+    u.paid = was - u.stamina;   // what this press actually took (a strike's refund is a share of it)
     u.regenAt = sim.stepCount + Math.round(STAMINA.delay * 120);
     if (u.stamina <= 0 && !(u.faint > 0)) {
-      u.faint = FAINT_STEPS; u.faintDmg = 0; u.faintAt = sim.stepCount; u.running = false; u.queued = null;
-      callout('FAINT', u.id, 'faint');
-      note({ type: 'faint', def: u.id });
+      // the save needs the bar to have held at least saveShare of the price: pressed on fumes, he faints at once
+      if (pend && was >= n * STAMINA.saveShare) u.faintPending = u.attackId;
+      else faintNow(u);
     }
+  }
+  function faintNow(u) {
+    u.faintPending = 0;
+    u.faint = FAINT_STEPS; u.faintDmg = 0; u.faintAt = sim.stepCount; u.running = false; u.queued = null;
+    callout('FAINT', u.id, 'faint');
+    note({ type: 'faint', def: u.id });
+  }
+  // A strike that connects gives back part of its price, once per strike, clamped to the bar: refundHit of
+  // what it took on a hit, refundBlock on a block (frame data STAMINA). A botch gives nothing back. The
+  // repeat decay: the same move refunded again within refundRepeat seconds of the last refund gives back half
+  // as much each time (jab, jab, jab: 50%, 25%, 12.5%), so one button mashed doesn't pay for itself; a string
+  // of different moves keeps it all. The press that emptied the bar: a hit leaves him on at least 1 (no
+  // faint), anything else and he faints now.
+  function credit(att, fd, blocked, move = att.move) {
+    if (att.refundId === att.attackId || fd.botch) return;
+    att.refundId = att.attackId;
+    const pending = att.faintPending && att.faintPending === att.attackId;
+    if (pending && blocked) { att.stamina = 0; faintNow(att); return; }
+    att.refundRep = move === att.refundMove && sim.stepCount - (att.refundAt || 0) <= STAMINA.refundRepeat * 120 ? (att.refundRep || 0) + 1 : 0;
+    att.refundMove = move; att.refundAt = sim.stepCount;
+    const smax = att.staminaMax || STAMINA.max, back = (att.paid || 0) * (blocked ? STAMINA.refundBlock : STAMINA.refundHit) / (1 << Math.min(8, att.refundRep));
+    const was = att.stamina;
+    att.stamina = Math.min(smax, Math.max(pending ? 1 : 0, att.stamina + back));
+    if (pending) att.faintPending = 0;
+    if (att.stamina > was) onEvent({ type: 'refund', unit: att, amount: att.stamina - was, blocked });
+  }
+  // the press that emptied the bar and hasn't connected: it whiffed (recovery with no contact), or he was
+  // taken out of it (hit, parried, a throw broken); he faints now. Run every step before regen.
+  function settle(u) {
+    if (!u.faintPending) return;
+    if (u.health <= 0 || sim.phase !== 'fight') { u.faintPending = 0; return; }
+    if (u.state !== 'attack' || u.attackId !== u.faintPending || (u.phase === 'recovery' && !u.hitConfirmed)) faintNow(u);
   }
   function endFaint(u) {
     u.faint = 0; u.faintDmg = 0;
@@ -747,6 +783,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // knocked down (a hit, a throw, a trip, a floor break, a stair tumble): the bar refills to the top as he
   // hits the floor, and any faint ends; the HUD and the status effects flash it ('refill')
   function floored(u) {
+    u.faintPending = 0;   // knocked down mid-strike: the floor refills him, no faint
     if (u.faint > 0) endFaint(u);
     u.rootT = 0;   // a root (frame data root) ends when he hits the floor
     const smax = u.staminaMax || STAMINA.max;
@@ -803,7 +840,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.seq = u.bufferKeys || (MOVE_TOKEN[move] ? [MOVE_TOKEN[move]] : opens ? [opens.keys[0]] : null);
     u.seqName = u.bufferName || '';
     u.bufferKeys = null; u.bufferName = '';
-    spend(u, fd0.cost);
+    spend(u, fd0.cost, { pend: !fd0.botch });
     if (fd0.air) {
       u.airUsed = (u.airUsed || 0) + 1;
       // the dive kick ends the jump early: an angled stomp down and forward
@@ -2038,6 +2075,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     def.health = Math.max(0, def.health - dmg); def.flash = FLASH_STEPS;
     att.hitstop = def.hitstop = f60(6); att.vx = -dir * 200; att.glide = null;
     callout('ARMOR', def.id, 'counter');
+    credit(att, fd, true, move);   // armor soaked it: paid like a block
     note({ type: 'armor', att: att.id, def: def.id, move, dmg });
     onEvent({ type: 'hit', x: pt.x - dir * 10, y: pt.y, dir, strength: 0.5, move, limb: fd.limb, flashR: 24, ko: def.health <= 0, knockdown: false, armor: true, attacker: att, defender: def });
     if (def.health <= 0) koDefender(att, def, fd, dir);
@@ -2103,6 +2141,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       def.flash = FLASH_STEPS; def.buffer = null; def.seq = null;
       att.hitstop = def.hitstop = f60(fd.hitstop + 3); att.vx = 0; att.glide = null;
       callout('COUNTER', att.id, 'counter');
+      credit(att, fd, false, move);
       note({ type: 'hit', move, height: fd.height, att: att.id, def: def.id, counter: true, wake: true, combo: def.combo });
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.6, move, limb: fd.limb, flashR: fd.flashR, ko: def.health <= 0, knockdown: true, counter: true, attacker: att, defender: def });
       if (def.health <= 0) { koDefender(att, def, fd, dir); return; }
@@ -2127,6 +2166,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         att.hitstop = def.hitstop = f60(OTG.hitstop);
       }
       att.releaseEv = { type: 'release', x: pt.x, y: pt.y, dir, strength: 0.4, ko: false };
+      credit(att, fd, false, move);
       note({ type: 'hit', move, att: att.id, def: def.id, otg: true });
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.4, move, limb: fd.limb, flashR: 24, ko: false, knockdown: true, otg: true, attacker: att, defender: def });
       return;
@@ -2175,6 +2215,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       att.launchCancelAt = sim.stepCount + att.hitstop + 4;
       if (ko) koDefender(att, def, fd, dir);
       att.releaseEv = { type: 'release', x: pt.x, y: pt.y, dir, strength: 0.6, ko };
+      credit(att, fd, false, move);
       note({ type: 'hit', move, att: att.id, def: def.id, air: def.airHits, splat });
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.6, move, limb: fd.limb, flashR: 30, ko, knockdown: true, attacker: att, defender: def });
       return;
@@ -2203,6 +2244,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (lowGuard) safePlay(def.rig, ANIM.crouchBlockHit); else if (ANIM.blockHit) safePlay(def.rig, ANIM.blockHit);
       syncRig(def); rigUpd(def, 0.03); def.rig.events.length = 0;
       seatStrike(att, def, dir);
+      credit(att, fd, true, move);
       note({ type: 'block', move, height: fd.height, low: lowGuard, att: att.id, def: def.id });
       onEvent({ type: 'block', x: hp.x, y: hp.y, dir, strength: fd.damage / 14, move, low: lowGuard, attacker: att, defender: def });
       return;
@@ -2248,6 +2290,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       att.launchCancelAt = sim.stepCount + att.hitstop + 8;   // straight on to the next goon
       sim.horde.count++; sim.card = { text: `${sim.horde.count} DOWN`, t: 0.9 };
       onEvent({ type: 'hit', x: hp.x, y: hp.y, dir, strength: 1, move, limb: fd.limb, flashR: fd.flashR, ko: true, knockdown: true, attacker: att, defender: def });
+      credit(att, fd, false, move);
       goonDown(def);
       return;
     }
@@ -2325,6 +2368,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (!trade && !def.rag) seatStrike(att, def, dir);
     const strength = Math.min(1, fd.damage / 14);
     att.releaseEv = { type: 'release', x: hp.x, y: hp.y, dir, strength, ko };   // fired when the freeze lets go
+    credit(att, fd, false, move);
     note({ type: 'hit', move, height: fd.height, att: att.id, def: def.id, counter, trade, combo: def.combo, crouch: false });
     onEvent({ type: 'hit', x: hp.x, y: hp.y, dir, strength, move, limb: fd.limb, flashR: fd.flashR, ko, knockdown: fd.knockdown, counter, trade, attacker: att, defender: def });
   }
@@ -2637,7 +2681,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (u.buffer && !(u.state === 'attack' && u.phase !== 'recovery' && u.bufferKeys && u.bufferKeys.length > 1) && ++u.bufferAge > BUFFER_STEPS) { u.buffer = null; u.bufferKeys = null; }
       u.prevJoints = copyJoints(u.rig.joints, u.prevJoints);
       updateUnit(u, opp, e);
-      if (sim.phase === 'fight') regen(u);
+      if (sim.phase === 'fight') { settle(u); regen(u); }
       physics(u);
       syncRig(u);
       // a walk or run cycle plays at the rate that keeps planted feet planted at the character's speed

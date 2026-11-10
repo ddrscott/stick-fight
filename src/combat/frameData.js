@@ -107,8 +107,11 @@ for (const [m, name] of Object.entries({ flashRoundhouse: 'FLASH ROUNDHOUSE', ne
 // never faints you. At 0 the fighter faints for faintTime seconds (no attacks, no guard, walks at
 // faintWalk speed), wakes with faintRecover, and wakes early from a knockdown or after taking
 // faintDmgCap damage.
+// refundHit / refundBlock: the share of a strike's price it gives back when it connects (hit / blocked; a whiff,
+// a parried strike and a botch give nothing back; the same move refunded again within refundRepeat s gives half as
+// much each time). A strike that empties the bar and then hits leaves 1, no faint.
 export const STAMINA = { max: 100, regen: 90, regenBlock: 36, delay: 0.3, run: 14, jump: 8, blockCost: 1 / 3,
-  faintTime: 1.5, faintRecover: 30, faintDmgCap: 20, faintWalk: 0.35 };
+  faintTime: 1.5, faintRecover: 30, faintDmgCap: 20, faintWalk: 0.35, refundHit: 0.5, refundBlock: 0.25, refundRepeat: 1.5, saveShare: 0.5 };
 // Combo decay, by the hit's place in the combo (1st, 2nd, ...; the last entry repeats). Hitstun
 // shrinks from the 3rd hit so a repeated loop drops and the defender can act; damage from the 4th,
 // and past COMBO_SOFTCAP damage in one combo the rest counts COMBO_OVERCAP as much.

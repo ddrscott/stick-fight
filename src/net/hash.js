@@ -6,7 +6,7 @@
 // difference in the last bit shows up.
 
 const UNIT_FIELDS = [
-  'x', 'y', 'vx', 'vy', 'facing', 'grounded', 'state', 'move', 'phase', 'health', 'stamina', 'faint',
+  'x', 'y', 'vx', 'vy', 'facing', 'grounded', 'state', 'move', 'phase', 'health', 'stamina', 'faint', 'faintPending',
   'hitstop', 'stun', 'downTimer', 'combo', 'floor', 'stair', 'attackId', 'hidden', 'rag', 'falling', 'airHits',
 ];
 

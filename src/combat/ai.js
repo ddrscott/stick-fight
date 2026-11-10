@@ -39,7 +39,7 @@
 
 import { EMPTY_INPUT } from './input.js';
 import { matchStrings } from './strings.js';
-import { FRAME_DATA, AIR_TECH } from './frameData.js';
+import { FRAME_DATA, AIR_TECH, STAMINA } from './frameData.js';
 import { stairRoute } from './stairNav.js';
 
 const DOWN_STATES = new Set(['knockdown', 'down', 'getup', 'ko']);
@@ -186,8 +186,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const score = (st) => {
       const last = FRAME_DATA[st.moves[st.moves.length - 1]] || {};
       let w = 1 + rng();
-      // an ender only when the rest of the string fits in the bar (the last point faints)
-      if (last.ender) w += me.stamina > restCost(st, me.seq.length) + 4 && !me.faint ? 1.2 * difficulty : -3;
+      // an ender only when the rest of the string fits in the bar (the last point faints); on a clean hit the
+      // rest will connect too, and each press gives back refundHit of its price (README, Stamina)
+      if (last.ender) w += me.stamina > restCost(st, me.seq.length) * (blocked || !me.hitConfirmed ? 1 : 1 - STAMINA.refundHit) + 4 && !me.faint ? 1.2 * difficulty : -3;
       if (last.splat && wallNear) w += 2;
       if (wellBeyond(well(me, sim, opp), me, opp) && (last.juggle || last.splat || (last.kb && last.kb.x >= 400))) w += 2.5;
       if (blocked && last.ender) w -= 1.5;   // a blocked string ends early more often
@@ -512,7 +513,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       const st = (me.seq && pickedString && matchStrings(me.seq, strs(me)).includes(pickedString)) ? pickedString : chooseString(me, opp, sim, false);
       pickedString = st;
       const n = me.seq ? me.seq.length : 1;
-      if (st && n < st.keys.length && n < 1 + Math.round(3 * difficulty) + (FRAME_DATA[st.moves[st.moves.length - 1]].ender ? 1 : 0) && me.stamina > (FRAME_DATA[st.moves[n]].cost || 9) + 8 && chance(0.55 + 0.45 * difficulty)) { queue = [press(st.keys[n])]; act = null; }
+      if (st && n < st.keys.length && n < 1 + Math.round(3 * difficulty) + (FRAME_DATA[st.moves[st.moves.length - 1]].ender ? 1 : 0) && me.stamina > (FRAME_DATA[st.moves[n]].cost || 9) * (1 - STAMINA.refundHit) + 8 && chance(0.55 + 0.45 * difficulty)) { queue = [press(st.keys[n])]; act = null; }
       // a juggle: keep it in the air with jabs when no string continues
       else if (opp.state === 'knockdown' && opp.juggle && (opp.airHits || 0) < 4) { queue = [press('1')]; act = null; }
     }
@@ -679,7 +680,10 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     // stamina: never press the strike that would empty the bar (the last point faints). The bottom
     // of the ladder slips now and then and faints anyway; the showcase never does.
-    if (act && (act.attack || act.press || act.pressFn) && !act.pressed && me.stamina - actCost(me, act) <= 0) {
+    // A string's next press after a clean hit counts on connecting: one that empties the bar and hits leaves him
+    // on 1 (when the bar holds STAMINA.saveShare of its price), so that's all it needs
+    const onHit = me.state === 'attack' && me.hitConfirmed && !lastHitBlocked;
+    if (act && (act.attack || act.press || act.pressFn) && !act.pressed && me.stamina - actCost(me, act) * (onHit ? STAMINA.saveShare : 1) <= 0) {
       if (act.faintOK == null) act.faintOK = !show && chance((1 - difficulty) * 0.4);
       if (!act.faintOK) {
         const cornered = me.x - sim.bounds.x0 < 90 || sim.bounds.x1 - me.x < 90;
