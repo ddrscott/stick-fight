@@ -5,6 +5,7 @@
 // hand), and one unique string, REPLY ALL (1, 2, 2), whose ender is a wild haymaker he overcommits to.
 // Paper Cut replaces LOW RUSH (d+1, d+1, d+3 now finishes with the low kick off the paper cuts).
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 import { chainPath } from '../fighter/cloth.js';
 
 const { K, F, LF, RF, HIP, CH, crouchP } = RIG_KIT;
@@ -107,8 +108,22 @@ const dance = { keys: [
   K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4, la: [50, 120], ra: [30, 120], spin: 360 }, 0, 'inOut'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): he gets it up, it slips, he juggles it, and a panicked underhand lob sends it at the camera by accident; then both hands on his head.
+const perfect = { name: 'ACCIDENTAL LOB', stamp: 'OOPS', hand: 'lHand', hold: 'collar', fly: { spin: 1.5, arc: 220, wobble: 1 }, keys: [
+  ...stoop('lHand'),
+  lift('collar', 'lHand', 200),
+  K({ ...F(4, HIP - 10, LF + 6, RF), torso: 30, bend: 6, head: 12, la: [28, 20], ra: [60, 30] }, 150, 'in'),
+  K({ ...F(0, HIP - 4, LF + 2, RF - 4), torso: -6, bend: -4, head: -10, la: [100, 66], ra: [130, 80] }, 130, 'out'),
+  K({ ...F(-4, HIP - 12, LF, RF - 6), torso: 18, bend: 4, head: 4, la: [-30, -24], ra: [150, 200] }, 150, 'inOut'),
+  K({ ...F(6, HIP + 2, LF + 8, RF - 6), torso: -14, bend: -6, head: -16, la: [132, 160], ra: [170, 220] }, 100, 'out', 'release'),
+  K({ ...F(8, HIP, LF + 8, RF - 4), torso: -6, head: -12, la: [150, 176], ra: [160, 210] }, 200, 'out'),
+  K({ ...F(6, HIP - 2, LF + 8, RF - 2), torso: 6, bend: 2, head: 6, la: [150, 232], ra: [144, 224] }, 260, 'inOut'),
+  K({ ...F(6, HIP - 3, LF + 8, RF - 2), torso: 9, bend: 3, head: 10, la: [146, 236], ra: [140, 228] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'intern',
   name: 'INTERN',
   tagline: 'UNPAID, AND SWINGING LIKE IT',

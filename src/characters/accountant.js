@@ -6,6 +6,7 @@
 // down for the low, stand for the overhead. On hit it all combos. Drops GROUND RUSH (its d+3 opener is
 // Fine Print here); LOW RUSH still ends in the shared low kick.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 
 const { K, F, L, LF, RF, CH, HIP, crouchP } = RIG_KIT;
 
@@ -92,8 +93,22 @@ const dance = { keys: [
   K({ ...F(0, HIP - 2, LF, RF), torso: 4, bend: 1, head: 6, la: [30, 150], ra: [20, 40] }, 300, 'sine'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): a precise underhand toss: he lifts it, takes a measured half step back, sights the lens down a pencil, and lobs it underhand with bent knees; then the tidy fist pump.
+const perfect = { name: 'PRECISE UNDERHAND', stamp: 'AUDITED', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 110 }, keys: [
+  ...stoop('lHand'),
+  lift('collar', 'lHand', 200),
+  K({ ...F(-6, HIP - 2, LF - 4, RF - 8, 0, 4), torso: 0, bend: -2, head: -8, la: [96, 104], ra: [100, 160] }, 200, 'inOut', 'footstep'),
+  K({ ...F(-6, HIP - 2, LF - 4, RF - 8), torso: 0, bend: -2, head: -6, la: [96, 104], ra: [104, 164] }, 160, 'sine'),
+  K({ ...F(-8, HIP - 12, LF - 4, RF - 8), torso: 16, bend: 2, head: -4, la: [-36, -28], ra: [30, 110] }, 220, 'inOut'),
+  K({ ...F(-2, HIP - 4, LF - 4, RF - 8), torso: 2, bend: -2, head: -10, la: [70, 108], ra: [30, 116] }, 110, 'out', 'release'),
+  K({ ...F(-2, HIP - 2, LF - 4, RF - 8), torso: 0, head: -10, la: [96, 140], ra: [30, 118] }, 200, 'out'),
+  K({ ...F(-2, HIP - 1, LF - 4, RF - 8), torso: 4, head: -6, la: [40, 110], ra: [60, 162] }, 240, 'inOut'),
+  K({ ...F(-2, HIP, LF - 4, RF - 8), torso: 4, head: -8, la: [38, 110], ra: [100, 190] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'accountant',
   name: 'ACCOUNTANT',
   tagline: 'READ THE FINE PRINT. THEN THE OVERHEAD',

@@ -3,6 +3,7 @@
 // and Drop-Off Knee (f,f+4, a running flying knee that hops over lows and launches), and one unique
 // string, SAME DAY (1,1,3), whose ender is the slide. Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 
 const { K, F, LF, RF, HIP, CH, crouchP } = RIG_KIT;
 
@@ -53,8 +54,22 @@ const dance = { keys: [
   K({ ...F(0, HIP - 2, LF, RF - 22), torso: 10, head: -4, la: [30, 110], ra: [20, 100] }, 150, 'in'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): he picks it up like a parcel across both arms, tosses it up and drop-kicks it at the camera, then tips his cap.
+const perfect = { name: 'SAME-DAY DROP KICK', stamp: 'DELIVERED', hand: 'lHand', hold: 'carry', fly: { spin: 1, arc: 10 }, keys: [
+  ...stoop('both'),
+  lift('chest', 'lHand', 200),
+  K({ ...F(-2, HIP - 8, LF - 2, RF), torso: 10, bend: 2, head: -8, la: [74, 118], ra: [66, 112] }, 120, 'in'),
+  K({ ...F(0, HIP + 2, LF, RF, 0, 4), torso: -4, bend: -4, head: -14, la: [130, 150], ra: [120, 146] }, 120, 'out'),
+  K({ hx: -6, ll: RIG_KIT.L(-6, HIP + 2, LF - 4), rl: [104, 96], torso: -24, bend: -6, head: -10, la: [150, 200], ra: [-40, -20] }, 90, 'out', 'release'),
+  K({ hx: -4, ll: RIG_KIT.L(-4, HIP + 2, LF - 4), rl: [96, 84], torso: -22, bend: -6, head: -8, la: [140, 190], ra: [-30, -10] }, 160, 'out'),
+  K({ ...F(2, HIP - 2, LF, RF + 6), torso: 4, head: -6, la: [40, 100], ra: [30, 110] }, 220, 'inOut', 'footstep'),
+  K({ ...F(2, HIP, LF, RF + 6), torso: 2, head: -8, la: [150, 230], ra: [20, 40] }, 260, 'inOut'),
+  K({ ...F(2, HIP, LF, RF + 6), torso: 2, head: -10, la: [156, 236], ra: [20, 40] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'courier',
   name: 'COURIER',
   tagline: 'DELIVERS IN THIRTY SECONDS OR LESS',

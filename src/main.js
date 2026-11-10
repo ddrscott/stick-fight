@@ -738,7 +738,25 @@ const scenes = {
     if (!o.lockstep) { scenes.play(o); return; }
     if (arena.clearBodies) arena.clearBodies();
     sim.setController(0, 'net', o.lockstep.controller(0)); sim.setController(1, 'net', o.lockstep.controller(1));
+    sim.perfectSkip = 'winner';   // the perfect finisher: only the winner's press skips it (the loser can't cut the show short)
     sim.resetMatch({ seed: o.seed >>> 0, fresh: true });   // fresh: nothing carried over from this machine's demo
+  },
+  // the perfect round finisher (README, Perfect rounds): P1 (?p1=, TEMP by default) walks up to a dummy that
+  // never fights back and crosses it out of a low health bar, so every round is a perfect one and ends in P1's
+  // throw at the camera. &hurt=1 takes a point off P1 at the start of each round: the same KO, no finisher.
+  // &p2win=1 swaps the parts (the dummy is P1), for the winner on the right of the screen.
+  'perfect-test'(o) {
+    sim.botchOn = false;
+    const hurt = params.get('hurt') === '1', swap = params.get('p2win') === '1', hit = swap ? 1 : 0;
+    let t = 0;
+    sim.setController(hit, 'script', (me, op, s) => {
+      if (s.phase !== 'fight' || op.state === 'ko') { t = 0; return EMPTY_INPUT; }
+      if (hurt && me.health === me.maxHealth) me.health -= 1;
+      if (Math.abs(op.x - me.x) > 100) return { ...EMPTY_INPUT, dx: Math.sign(op.x - me.x) };
+      return (t++ % 48) < 3 ? { ...EMPTY_INPUT, cross: true } : EMPTY_INPUT;
+    });
+    sim.setController(1 - hit, 'none');
+    sim.resetMatch({ seed: seedOf(o, 11), skipIntro: true, startHealth: 18 });
   },
   ko(o) {
     sim.setAI(0, 0.8); sim.setAI(1, 0.8);
@@ -874,6 +892,7 @@ function setScene(name, opts) {
   const rules = name === 'online' && opts && opts.lockstep && opts.rules ? opts.rules
     : picked ? { roundTime: roundTime(), winsNeeded: winsFor(bestOf()) } : { roundTime: DEFAULT_ROUND_TIME, winsNeeded: winsFor(DEFAULT_BEST_OF) };
   sim.roundTime = rules.roundTime; sim.winsNeeded = rules.winsNeeded;
+  sim.perfectOn = true; sim.perfectSkip = 'any';   // the perfect round finisher: on everywhere, any player's press skips (online: the scene says winner)
   scenes[name](opts || {});
   updateCamera(1, true);
 }

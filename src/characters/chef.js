@@ -5,6 +5,7 @@
 // two-handed upward flick out of the hip that launches, in a big flash), and one unique string,
 // EIGHTY-SIX (1, 1, 4), ending in a kitchen-door push kick that sends him into the wall. Drops SKY SPIKE.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 import { chainPath, ribbonPath } from '../fighter/cloth.js';
 
 const { K, F, L, leg, LF, RF, HIP } = RIG_KIT;
@@ -113,8 +114,21 @@ const dance = { keys: [
   K({ ...F(2, HIP - 4, LF, RF), torso: 20, bend: 4, head: 6, la: [50, 70], ra: [70, 80] }, 200, 'sine'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): a pancake flip: the body on the spatula hand, a dip and a flip up at the camera (it turns over on the way); then the chef's kiss.
+const perfect = { name: 'PANCAKE FLIP', stamp: 'ORDER UP', hand: 'rHand', hold: 'carry', fly: { spin: 0, flip: 1.5, arc: 160 }, keys: [
+  ...stoop('rHand'),
+  K({ ...F(2, HIP - 3, LF + 4, RF), torso: 6, bend: -2, head: -8, la: [40, 110], ra: [60, 92] }, 220, 'inOut'),
+  K({ ...F(0, HIP - 10, LF + 4, RF), torso: 14, bend: 2, head: -6, la: [40, 110], ra: [36, 70] }, 160, 'in'),
+  K({ ...F(4, HIP + 2, LF + 4, RF), torso: -10, bend: -4, head: -16, la: [50, 120], ra: [140, 170] }, 90, 'out', 'release'),
+  K({ ...F(4, HIP + 1, LF + 4, RF), torso: -6, head: -14, la: [50, 120], ra: [150, 186] }, 200, 'out'),
+  K({ ...F(4, HIP - 1, LF + 4, RF), torso: 4, head: -6, la: [108, 200], ra: [40, 120] }, 220, 'inOut'),
+  K({ ...F(4, HIP, LF + 4, RF), torso: 2, head: -10, la: [124, 124], ra: [40, 120] }, 200, 'out'),
+  K({ ...F(4, HIP, LF + 4, RF), torso: 2, head: -12, la: [128, 128], ra: [40, 120] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'chef',
   name: 'CHEF',
   tagline: 'THE SPECIAL TODAY IS YOU',

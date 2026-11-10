@@ -7,6 +7,7 @@
 // One unique string, AISLE 3 (3, 3, 3), ending in a long side kick that splats on the wall. Keeps
 // every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 
 const { K, F, L, LF, RF, HIP, CH } = RIG_KIT;
 
@@ -86,8 +87,21 @@ const dance = { keys: [
   K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [160, 150], ra: [170, 200] }, 220, 'sine'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): a mop-handle golf swing: he takes it by the ankle, addresses the ball, a full backswing and a drive at the camera, then holds the follow-through.
+const perfect = { name: 'MOP-HANDLE DRIVE', stamp: 'FORE!', hand: 'lHand', hold: 'ankle', fly: { spin: -2, arc: 140 }, keys: [
+  ...stoop('both'),
+  K({ ...F(-2, HIP - 8, LF + 6, RF - 6), torso: 24, bend: 4, head: 8, la: [10, 4], ra: [6, 0] }, 220, 'inOut'),
+  K({ ...F(-4, HIP - 8, LF + 6, RF - 6), torso: 22, bend: 4, head: 10, tw: -10, la: [-120, -150], ra: [-110, -140] }, 300, 'inOut'),
+  K({ ...F(-4, HIP - 9, LF + 6, RF - 6), torso: 22, bend: 4, head: 10, tw: -12, la: [-140, -170], ra: [-130, -160] }, 80, 'sine'),
+  K({ ...F(0, HIP - 10, LF + 6, RF - 6), torso: 20, bend: 4, head: 10, tw: 4, la: [-8, 0], ra: [-12, -4] }, 90, 'in'),
+  K({ ...F(4, HIP - 4, LF + 6, RF - 6, 0, 4), torso: 0, bend: -4, head: -6, tw: 10, la: [110, 140], ra: [100, 130] }, 70, 'out', 'release'),
+  K({ ...F(6, HIP, LF + 6, RF - 6, 0, 6), torso: -10, bend: -6, head: -18, tw: 12, la: [160, 214], ra: [150, 206] }, 220, 'out'),
+  K({ ...F(6, HIP, LF + 6, RF - 6, 0, 6), torso: -10, bend: -6, head: -20, tw: 12, la: [162, 216], ra: [152, 208] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'janitor',
   name: 'JANITOR',
   tagline: 'WORKS THE LOWER FLOOR. MOPS WITH JUMP-INS',

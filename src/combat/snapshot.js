@@ -14,7 +14,7 @@
 
 const SIM_SCALARS = ['phase', 'phaseTimer', 'stepCount', 'round', 'timer', 'winner', 'banner', 'bannerT', 'difficulty', 'botchOn',
   'accumulator', 'hitstopActive', 'koSlow', 'finisher', 'startHealth', 'introTime', 'seed', 'floor', 'floorBroken', 'combo', 'hordeCfg',
-  'roundTime', 'winsNeeded', 'roundClock'];
+  'roundTime', 'winsNeeded', 'roundClock', 'perfectT', 'perfectRel', 'perfectWait', 'perfectOn', 'perfectSkip'];
 
 function copyPoints(src, dst) {
   if (!src) return null;

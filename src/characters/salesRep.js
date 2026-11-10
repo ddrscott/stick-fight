@@ -5,6 +5,7 @@
 // The Pitch (b+3) works on its own too, and one unique string, ALWAYS BE CLOSING (3, 1, 2), ends in a
 // rising phone-hand uppercut that launches. Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 import { ribbonPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP } = RIG_KIT;
@@ -95,8 +96,24 @@ const dance = { keys: [
   K({ ...F(0, HIP - 4, LF, RF), torso: 2, head: 4, la: [104, 110], ra: [98, 104] }, 300, 'out'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): the handshake: he takes it by the hand and pumps it three times, then closes the deal with the rising phone-hand uppercut that sends it at the camera; finger guns.
+const perfect = { name: 'CLOSE THE DEAL', stamp: 'SOLD!', hand: 'rHand', hold: 'collar', fly: { spin: 1, arc: 160 }, keys: [
+  ...stoop('rHand'),
+  lift('collar', 'rHand', 200),
+  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),
+  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [104, 118] }, 100, 'sine'),
+  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),
+  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [104, 118] }, 100, 'sine'),
+  K({ ...F(-2, HIP - 14, LF + 4, RF - 4), torso: 24, bend: 4, head: -2, la: [50, 100], ra: [10, 20] }, 160, 'in'),
+  K({ ...F(6, HIP + 2, LF + 8, RF - 4, 0, 6), torso: -12, bend: -6, head: -16, la: [30, 100], ra: [166, 178] }, 90, 'out', 'release'),
+  K({ ...F(8, HIP, LF + 8, RF, 0, 0), torso: -4, head: -10, la: [30, 110], ra: [160, 186] }, 200, 'out', 'footstep'),
+  K({ ...F(8, HIP - 1, LF + 8, RF + 4), torso: 4, head: -6, la: [94, 92], ra: [92, 90] }, 220, 'out'),
+  K({ ...F(8, HIP, LF + 8, RF + 4), torso: 4, head: -8, la: [98, 96], ra: [96, 94] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'salesRep',
   name: 'SALES REP',
   tagline: 'HAVE YOU GOT A MINUTE? GREAT',

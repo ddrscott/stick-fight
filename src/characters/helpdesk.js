@@ -6,6 +6,7 @@
 // there when it's close). One unique string, CTRL ALT DEL (1, 3, 2), ending in a rising double palm
 // that launches. Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { stoop, lift } from './perfectKit.js';
 import { FRAME_DATA } from '../combat/frameData.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
@@ -94,8 +95,22 @@ const dance = { keys: [
   K({ ...F(0, HIP, LF, RF), torso: 0, head: 0, la: [90, 180], ra: [0, 90] }, 0, 'snap'),
 ] };
 
+// The perfect round finisher (registry `perfect`, README Perfect rounds): have you tried turning them off and on: he spins once with the body held out by the collar and lets go on the way round; on the glass it blinks off and back on; then a calm thumbs-up.
+const perfect = { name: 'OFF AND ON AGAIN', stamp: 'TICKET CLOSED', hand: 'lHand', hold: 'collar', fly: { spin: 3, arc: 30 }, slide: { blink: true }, keys: [
+  ...stoop('lHand'),
+  lift('collar', 'lHand', 200),
+  K({ ...F(-2, HIP - 6, LF, RF), torso: 4, bend: -2, head: -4, tw: -10, la: [96, 100], ra: [40, 110], spin: 0 }, 120, 'in'),
+  K({ ...F(-2, HIP - 4, LF, RF), torso: 0, head: -4, la: [94, 96], ra: [60, 90], spin: 140 }, 120, 'linear'),
+  K({ ...F(-2, HIP - 4, LF, RF), torso: -4, head: -4, la: [94, 94], ra: [70, 80], spin: 270 }, 100, 'linear', 'release'),
+  K({ ...F(-1, HIP - 3, LF, RF), torso: 2, head: -4, la: [90, 92], ra: [40, 100], spin: 360 }, 0, 'out'),
+  K({ ...F(-1, HIP - 3, LF, RF), torso: 2, head: -4, la: [90, 92], ra: [40, 100], spin: 0 }, 180, 'out', 'footstep'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -6, la: [30, 40], ra: [70, 170] }, 260, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 4, head: -8, la: [26, 36], ra: [74, 174] }, 0, 'sine'),
+] };
+
 export default {
   dance,
+  perfect,
   id: 'helpdesk',
   name: 'HELPDESK',
   tagline: 'HAVE YOU TRIED BLOCKING?',
