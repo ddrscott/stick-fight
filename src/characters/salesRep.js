@@ -5,6 +5,7 @@
 // The Pitch (b+3) works on its own too, and one unique string, ALWAYS BE CLOSING (3, 1, 2), ends in a
 // rising phone-hand uppercut that launches. Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { ribbonPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP } = RIG_KIT;
 
@@ -60,22 +61,8 @@ const abc = { blend: 40, limb: 'rHand', shift: 12, keys: [
 
 // a skinny necktie down the shirt front, and a phone in the rear hand (held across the palm, so it never
 // sticks out past the fist), its screen lit
-function tieAndPhone(ctx, J, o) {
-  const s = o.scale, n = J.neck, c = J.chest;
-  let dx = c.x - n.x, dy = c.y - n.y; const L0 = Math.hypot(dx, dy) || 1; dx /= L0; dy /= L0;
-  const fx = dy * o.facing, fy = -dx * o.facing;
-  const kx = n.x + dx * 3.5 * s + fx * 3.8 * s, ky = n.y + dy * 3.5 * s + fy * 3.8 * s;
-  const tx = kx + dx * L0 * 1.12 + fx * 2 * s, ty = ky + dy * L0 * 1.12 + fy * 2 * s, w = 2.2 * s;
-  ctx.lineJoin = 'round';
-  const path = () => {
-    ctx.beginPath();
-    ctx.moveTo(kx - dy * w, ky + dx * w); ctx.lineTo(kx + dy * w, ky - dx * w);
-    ctx.lineTo(tx + dy * w * 1.2 - dx * w, ty - dx * w * 1.2 - dy * w); ctx.lineTo(tx, ty);
-    ctx.lineTo(tx - dy * w * 1.2 - dx * w, ty + dx * w * 1.2 - dy * w); ctx.closePath();
-  };
-  ctx.strokeStyle = '#1a0408'; ctx.lineWidth = 2 * s; path(); ctx.stroke();
-  ctx.fillStyle = o.accent; path(); ctx.fill();
-  ctx.fillStyle = o.accent; ctx.beginPath(); ctx.arc(kx, ky, 2.2 * s, 0, Math.PI * 2); ctx.fill();
+function phone(ctx, J, o) {
+  const s = o.scale;
   // the phone: across the rear forearm's end, centered just behind the fist
   const e = J.rElbow, h = J.rHand;
   let ax = h.x - e.x, ay = h.y - e.y; const La = Math.hypot(ax, ay) || 1; ax /= La; ay /= La;
@@ -87,6 +74,15 @@ function tieAndPhone(ctx, J, o) {
   };
   ctx.fillStyle = '#0a0414'; rect(1.25); ctx.fill();
   ctx.fillStyle = '#9ff8ff'; rect(0.82); ctx.fill();
+}
+// the skinny tie: a cloth chain from the knot at the collar (below), so the blade flips and settles
+function tie(ctx, P, o) {
+  const s = o.scale, w = 2.2 * s;
+  ctx.lineJoin = 'round';
+  ribbonPath(ctx, P, o.facing, (t) => w * (1 + 0.2 * t), true);
+  ctx.strokeStyle = '#1a0408'; ctx.lineWidth = 2 * s; ctx.stroke();
+  ctx.fillStyle = o.accent; ctx.fill();
+  ctx.beginPath(); ctx.arc(P[0].x, P[0].y, 2.2 * s, 0, Math.PI * 2); ctx.fill();
 }
 
 // The celebration (registry `dance`, played by the match winner under the WINS banner): Closed the deal: finger guns, left, right, both, with a little shoulder roll and a wink of the head.
@@ -113,7 +109,8 @@ export default {
   altPants: '#2ee8ff',
   // light and quick: runs you down, a touch less health
   stats: { health: 100, walk: 1.08, backWalk: 0.92, run: 1.1, jump: 1.02, dash: 1.1, weight: 0.98, stamina: 1, regen: 1.15, damage: 1.05 },
-  body: { scale: 1, headR: 14.5, torsoW: 14, hipW: 10.5, limbW: 11.4, limbTip: 8.7, lean: 4, accessory: tieAndPhone },
+  body: { scale: 1, headR: 14.5, torsoW: 14, hipW: 10.5, limbW: 11.4, limbTip: 8.7, lean: 4, accessory: phone },
+  cloth: [{ draw: tie, axis: ['neck', 'chest'], off: [3.8, 3.5], dir: [0.094, 1], len: 21.3, seg: 3, hz: 2.1, damping: 0.22, side: 'front', clear: 3.8 }],
   moves: {
     // the feint: back+3 (sr_pitch) or a throw in the first 100 ms of startup replaces the jab (frame data feint)
     sr_coldCall: { rig: coldCall, frame: { limb: 'hand', damage: 9, kb: { x: 0, y: 0 }, hitstun: 28, blockstun: 10, hitstop: 6, knockdown: false, height: 'mid',

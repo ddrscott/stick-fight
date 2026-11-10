@@ -4,6 +4,7 @@
 // flurry of lead-hand flicks finished by a stepping palm (the multi-hit `rush` hook), and one unique string,
 // LATTE ART (1, 2, 1), ends in a whirling backfist. Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { chainPath, ribbonPath, chainAt, chainNormal } from '../fighter/cloth.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
 
@@ -54,31 +55,52 @@ const latteArt = { blend: 40, limb: 'lHand', shift: 14, keys: [
 
 // an apron over the front of the torso down to the thighs (a dark panel with a cream edge and a neck
 // strap), and a paper cup: tucked in the apron pocket, or in the lead hand when that hand is up at the
-// mouth with the forearm upright (the espresso shot)
+// mouth with the forearm upright (the espresso shot). The bib down to the waist tie stays on the body; the
+// skirt under it is a cloth chain (below) that flexes at the hem, and the tie's tail swings behind.
+const cupAtMouth = (J, o) => {
+  const h = J.lHand, e = J.lElbow, hd = J.head;
+  return (e.y - h.y) / (Math.hypot(h.x - e.x, h.y - e.y) || 1) > 0.95 && Math.hypot(h.x - hd.x, h.y - hd.y) < o.headR * 1.9;
+};
+function cup(ctx, x, y, tilt, s, o) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(tilt);
+  ctx.beginPath(); ctx.moveTo(-3.6 * s, -5 * s); ctx.lineTo(3.6 * s, -5 * s); ctx.lineTo(2.6 * s, 5 * s); ctx.lineTo(-2.6 * s, 5 * s); ctx.closePath();
+  ctx.fillStyle = o.accent; ctx.fill(); ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 1 * s; ctx.stroke();
+  ctx.fillStyle = '#2a1408'; ctx.fillRect(-3.4 * s, -1.2 * s, 6.8 * s, 2.4 * s);
+  ctx.restore();
+}
 function apronAndCup(ctx, J, o) {
   const s = o.scale, n = J.neck, c = J.chest, hp = J.hip;
   let dx = hp.x - c.x, dy = hp.y - c.y; const Lt = Math.hypot(dx, dy) || 1; dx /= Lt; dy /= Lt;
   const fx = dy * o.facing, fy = -dx * o.facing;
   // side view: the panel runs down the front of the torso, from the centerline out past the chest's front edge
   const P = (t, side) => { const off = side > 0 ? (7.5 + 3 * Math.max(0, t)) * s : -1 * s; return { x: c.x + dx * Lt * t + fx * off, y: c.y + dy * Lt * t + fy * off }; };
-  const pts = [P(-0.05, -1), P(-0.05, 1), P(1.55, 1), P(1.55, -1)];
+  const pts = [P(-0.05, -1), P(-0.05, 1), P(0.9, 1), P(0.9, -1)];
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath();
   ctx.fillStyle = '#2a1408'; ctx.fill();
   ctx.strokeStyle = o.accent; ctx.lineWidth = 1.4 * s; ctx.stroke();
-  // the neck strap and the waist tie
+  // the neck strap
   ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(n.x, n.y); ctx.lineTo(pts[1].x, pts[1].y); ctx.stroke();
-  const w0 = P(0.9, -1.25), w1 = P(0.9, 1.25);
-  ctx.beginPath(); ctx.moveTo(w0.x, w0.y); ctx.lineTo(w1.x, w1.y); ctx.stroke();
-  // the cup
-  const h = J.lHand, e = J.lElbow, hd = J.head;
-  const upright = (e.y - h.y) / (Math.hypot(h.x - e.x, h.y - e.y) || 1) > 0.95, atMouth = Math.hypot(h.x - hd.x, h.y - hd.y) < o.headR * 1.9;
-  const at = upright && atMouth ? { x: h.x, y: h.y - 3 * s, tilt: -0.5 * o.facing } : { ...P(1.25, 0.2), tilt: 0 };
-  ctx.save(); ctx.translate(at.x, at.y); ctx.rotate(at.tilt);
-  ctx.beginPath(); ctx.moveTo(-3.6 * s, -5 * s); ctx.lineTo(3.6 * s, -5 * s); ctx.lineTo(2.6 * s, 5 * s); ctx.lineTo(-2.6 * s, 5 * s); ctx.closePath();
-  ctx.fillStyle = o.accent; ctx.fill(); ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 1 * s; ctx.stroke();
-  ctx.fillStyle = '#2a1408'; ctx.fillRect(-3.4 * s, -1.2 * s, 6.8 * s, 2.4 * s);
-  ctx.restore();
+  // the cup at the mouth (in the pocket it's drawn with the skirt)
+  if (cupAtMouth(J, o)) cup(ctx, J.lHand.x, J.lHand.y - 3 * s, -0.5 * o.facing, s, o);
+}
+// the apron's skirt from the waist tie to the hem (a cloth chain down its middle), the tie across its top
+// edge, and the cup in the pocket
+function skirt(ctx, P, o) {
+  const s = o.scale;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ribbonPath(ctx, P, o.facing, (t) => (5.6 + 1 * t) * s);
+  ctx.fillStyle = '#2a1408'; ctx.fill();
+  ctx.strokeStyle = o.accent; ctx.lineWidth = 1.4 * s; ctx.stroke();
+  if (!cupAtMouth(o.J, o)) {
+    const q = chainAt(P, 0.54), nm = chainNormal(P, Math.min(P.length - 1, q.i + 1), o.facing);
+    cup(ctx, q.x + nm.x * 6.1 * s, q.y + nm.y * 6.1 * s, 0, s, o);
+  }
+}
+// the waist tie's tail, out behind
+function tieTail(ctx, P, o) {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = o.accent; ctx.lineWidth = 1.4 * o.scale;
+  chainPath(ctx, P); ctx.stroke();
 }
 
 // The celebration (registry `dance`, played by the match winner under the WINS banner): Shaking the order: both hands pump a shaker at the shoulder, bouncing on the toes, then serve it out.
@@ -108,6 +130,10 @@ export default {
   // quick everything, a light body that flies a little farther, less health
   stats: { health: 95, walk: 1.15, backWalk: 0.95, run: 1.15, jump: 1.04, dash: 1.15, weight: 0.92, stamina: 1, regen: 1.2, damage: 1.02 },
   body: { scale: 1, headR: 14.5, torsoW: 14, hipW: 10.5, limbW: 11.4, limbTip: 8.6, lean: 3, accessory: apronAndCup },
+  cloth: [
+    { draw: skirt, axis: ['chest', 'hip'], at: 0.9, off: [4.6, 0], dir: [0.088, 1], len: 11.1, seg: 2, hz: 2.6, damping: 0.4, side: 'front', clear: 3, limit: 1.1 },
+    { draw: tieTail, layer: 'back', axis: ['chest', 'hip'], at: 0.9, off: [-1, 0], dir: [-0.6, 1], hang: 0.4, len: 8, seg: 2, hz: 2.2, damping: 0.25, limit: 2 },
+  ],
   moves: {
     ba_espresso: { rig: espresso, frame: { limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', noHit: true,
       selfStatus: { speed: 1.35, ms: 2500, tag: 'WIRED' }, cost: 20, reach: 40, flashR: 0 } },

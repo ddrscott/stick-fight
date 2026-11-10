@@ -1128,7 +1128,7 @@ function render() {
     // a knocked-down body reads as down: 30% darker while it is on the floor
     else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);
     ctxs.figures.restore();
-    u.rig.joints = realJ; u.rig.sway = null;
+    u.rig.joints = realJ; u.rig.cloth = null;
   }
   drawGhosts(ctxs.figures, ctxs.emissive);
   // ragdolls: KO'd horde goons still in the air after their unit respawned

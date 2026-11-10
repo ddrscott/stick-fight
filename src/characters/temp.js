@@ -3,27 +3,24 @@
 // characters existed (the regression scenes in the README give the same results). It's also what a
 // ladder stage falls back to when its character isn't in the game yet.
 import { RIG_KIT } from '../fighter/index.js';
+import { chainPath } from '../fighter/cloth.js';
 
 const { K, F, LF, RF, HIP } = RIG_KIT;
 
 // a lanyard with a visitor badge: the cord from the back of the neck down the front of the shirt, the badge in
-// the accent with a dark edge. It's his prop, so the life layer swings the badge (o.sway); at rest it hangs on
-// the chest. The first day, in one object.
-function lanyard(ctx, J, o) {
-  const n = J.neck, c = J.chest, s = o.scale, sw = o.sway;
+// the accent with a dark edge. It's a cloth chain (below), so the cord swings and the badge flips at its end;
+// at rest it hangs on the chest. The first day, in one object.
+function lanyard(ctx, P, o) {
+  const J = o.J, n = J.neck, c = J.chest, s = o.scale;
   let dx = c.x - n.x, dy = c.y - n.y; const L0 = Math.hypot(dx, dy) || 1; dx /= L0; dy /= L0;
   const fx = dy * o.facing, fy = -dx * o.facing;   // toward his front
-  const ax = n.x + fx * 4.5 * s, ay = n.y + fy * 4.5 * s;             // where the cord leaves the collar
-  const bx = n.x + dx * o.len + fx * 6 * s + sw.x, by = n.y + dy * o.len + fy * 6 * s + sw.y;   // the badge clip
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = '#1a0f00'; ctx.lineWidth = 2.6 * s;
-  ctx.beginPath(); ctx.moveTo(n.x - fx * 3 * s, n.y - fy * 3 * s); ctx.quadraticCurveTo(ax, ay, bx, by); ctx.stroke();
-  ctx.strokeStyle = o.accent; ctx.lineWidth = 1.5 * s;
-  ctx.beginPath(); ctx.moveTo(n.x - fx * 3 * s, n.y - fy * 3 * s); ctx.quadraticCurveTo(ax, ay, bx, by); ctx.stroke();
+  const back = { x: n.x - fx * 3 * s, y: n.y - fy * 3 * s };   // round the back of the neck
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const [col, w] of [['#1a0f00', 2.6], [o.accent, 1.5]]) { ctx.strokeStyle = col; ctx.lineWidth = w * s; chainPath(ctx, P, back); ctx.stroke(); }
   // the badge hangs from the clip along the cord's last stretch
-  let ux = bx - ax, uy = by - ay; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul;
+  const b = P[P.length - 1], a = P[P.length - 2];
   const w = 6.5 * s, h = 8.5 * s;
-  ctx.save(); ctx.translate(bx, by); ctx.rotate(Math.atan2(uy, ux) - Math.PI / 2);
+  ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x) - Math.PI / 2);
   ctx.fillStyle = '#1a0f00'; ctx.fillRect(-w / 2 - 1.1 * s, -1.1 * s, w + 2.2 * s, h + 2.2 * s);
   ctx.fillStyle = o.accent; ctx.fillRect(-w / 2, 0, w, h);
   ctx.fillStyle = '#1a0f00'; ctx.fillRect(-w / 2 + 1.4 * s, 2 * s, w - 2.8 * s, 1.3 * s);   // the name line nobody filled in
@@ -55,7 +52,7 @@ export default {
   stats: {},
   body: null,
   // drawn over the chest, swung by the life layer (src/fighter/life.js); body stays null, so the rig is the baseline
-  prop: { draw: lanyard, at: 0.15, len: 24, hz: 2.2, damping: 0.2 },
+  cloth: [{ draw: lanyard, axis: ['neck', 'chest'], off: [4.5, 0], dir: [0.06, 1], len: 24, seg: 3, hz: 2.2, damping: 0.2, side: 'front', clear: 4.5 }],
   moves: {},
   commands: [],
   strings: {},

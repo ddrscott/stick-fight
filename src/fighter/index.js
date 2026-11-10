@@ -13,6 +13,7 @@
 
 import * as dm from '../combat/dmath.js';   // bit-identical trig on every engine: online play runs this rig on both machines
 import { mixBotch } from './limbBlend.js';   // a botch mixes the two moves per limb
+import { clothItem, clothRest } from './cloth.js';   // what hangs off a character (drawn only)
 const DEG = Math.PI / 180;
 
 // Segment lengths, ~130px tall standing.
@@ -1613,7 +1614,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     const w = R.limbW * s, tip = R.limbTip * s;
-    // Far limbs, torso, head, near limbs.
+    // Far limbs, torso, head, near limbs; a 'back' layer of cloth (a ponytail) behind them all
+    drawCloth(ctx, J, 'back');
     limb(ctx, J.lShoulder, J.lElbow, J.lHand, w, tip);
     // legs in the character's pants color when it has one (src/characters/: `pants`), so fighters
     // with close body colors still read apart; the hips get a band of it over the torso's base
@@ -1635,10 +1637,9 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     ctx.fill();
     // a character's accessory (a cap, a hard hat, a headset): a few strokes on the head, lit like the body
     if (accessory) { ctx.save(); try { accessory(ctx, J, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s, pose: f.pose }); } catch (e) { /* a bad accessory never breaks the frame */ } ctx.restore(); }
-    // a character's prop (src/characters/: `prop`, a lanyard, a tie): drawn over the chest, its free end shifted by
-    // f.sway, which only the life layer sets (src/fighter/life.js, draw-only; null hangs it at rest)
-    const prop = f.charDef && f.charDef.prop;
-    if (prop && prop.draw) { ctx.save(); try { prop.draw(ctx, J, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s, pose: f.pose, sway: f.sway || { x: 0, y: 0 }, at: prop.at || 0.15, len: (prop.len || 22) * s }); } catch (e) { /* a bad prop never breaks the frame */ } ctx.restore(); }
+    // a character's cloth over the chest (src/characters/: `cloth`, a tie, a lanyard, an apron's hem): the
+    // life layer's live chain when it set one (f.cloth, draw-only), else the chain at rest
+    drawCloth(ctx, J, 'front');
     if (pants) ctx.fillStyle = pants;
     limb(ctx, J.hip, J.rKnee, J.rFoot, w, tip);
     if (pants) ctx.fillStyle = f.color;
@@ -1647,6 +1648,22 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       speedLines(ctx, strikeDir, J[move.limb], strikeTimer / 110);
     }
     ctx.restore();
+  }
+
+  // a character's cloth items on one layer: each draws its chain's points (src/fighter/cloth.js)
+  function drawCloth(ctx, J, layer) {
+    const items = f.charDef && f.charDef.cloth;
+    if (!items) return;
+    const s = f.scale;
+    for (let i = 0; i < items.length; i++) {
+      const it = clothItem(items[i]);
+      if (it.layer !== layer || !it.draw) continue;
+      const P = (f.cloth && f.cloth[i]) || clothRest(it, J, f.facing, s);
+      if (!P) continue;
+      ctx.save();
+      try { it.draw(ctx, P, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s, pose: f.pose, J }); } catch (e) { /* bad cloth never breaks the frame */ }
+      ctx.restore();
+    }
   }
 
   function limb(ctx, a, b, c, w, tip) {

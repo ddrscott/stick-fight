@@ -59,21 +59,26 @@ const exitInterview = { blend: 40, limb: 'rHand', shift: 28, keys: [
   K({ ...F(28, HIP - 1, LF + 28, RF + 28), torso: 6, head: -4 }, 0, 'sine'),
 ] };
 
-// a lanyard round the neck with an ID card on the chest, and a clipboard held flat along the lead forearm
-// (it never reaches past the fist, so a swat still touches with the hand)
-function lanyardAndClipboard(ctx, J, o) {
-  const s = o.scale, n = J.neck, c = J.chest;
+// a lanyard round the neck with an ID card on the chest: a cloth chain (below), the strap's V down to the clip
+// and the card swinging from it
+function lanyard(ctx, P, o) {
+  const J = o.J, s = o.scale, n = J.neck, c = J.chest;
   let dx = c.x - n.x, dy = c.y - n.y; const L0 = Math.hypot(dx, dy) || 1; dx /= L0; dy /= L0;
-  const fx = dy * o.facing, fy = -dx * o.facing;   // toward his front, across the torso
+  const fx = dy * o.facing, fy = -dx * o.facing;
+  const clip = P[1], end = P[2];
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  // the strap: from both sides of the neck down to the card, a V
-  const bx = n.x + dx * L0 * 0.62 + fx * 4 * s, by = n.y + dy * L0 * 0.62 + fy * 4 * s;
   ctx.strokeStyle = '#2ee8ff'; ctx.lineWidth = 1.6 * s;
-  ctx.beginPath(); ctx.moveTo(n.x - fx * 4 * s, n.y - fy * 4 * s); ctx.lineTo(bx, by); ctx.lineTo(n.x + fx * 6 * s, n.y + fy * 6 * s); ctx.stroke();
-  // the card hangs straight down from the clip
-  ctx.fillStyle = '#0a0414'; ctx.fillRect(bx - 3.4 * s, by, 6.8 * s, 8.6 * s);
-  ctx.fillStyle = o.accent; ctx.fillRect(bx - 2.6 * s, by + 0.8 * s, 5.2 * s, 7 * s);
-  ctx.fillStyle = '#2ee8ff'; ctx.fillRect(bx - 2.6 * s, by + 0.8 * s, 5.2 * s, 2 * s);
+  ctx.beginPath(); ctx.moveTo(n.x - fx * 4 * s, n.y - fy * 4 * s); ctx.lineTo(clip.x, clip.y); ctx.lineTo(n.x + fx * 6 * s, n.y + fy * 6 * s); ctx.stroke();
+  ctx.save(); ctx.translate(clip.x, clip.y); ctx.rotate(Math.atan2(end.y - clip.y, end.x - clip.x) - Math.PI / 2);
+  ctx.fillStyle = '#0a0414'; ctx.fillRect(-3.4 * s, 0, 6.8 * s, 8.6 * s);
+  ctx.fillStyle = o.accent; ctx.fillRect(-2.6 * s, 0.8 * s, 5.2 * s, 7 * s);
+  ctx.fillStyle = '#2ee8ff'; ctx.fillRect(-2.6 * s, 0.8 * s, 5.2 * s, 2 * s);
+  ctx.restore();
+}
+// a clipboard held flat along the lead forearm (it never reaches past the fist, so a swat still touches with the hand)
+function clipboard(ctx, J, o) {
+  const s = o.scale;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   // the clipboard: a board on the lead forearm, from a third of the way down to just short of the fist
   const e = J.lElbow, h = J.lHand;
   let ax = h.x - e.x, ay = h.y - e.y; const La = Math.hypot(ax, ay) || 1; ax /= La; ay /= La;
@@ -124,7 +129,8 @@ export default {
   altPants: '#ff8a3d',
   // an upright, ordinary body; a bit more health and a steadier bar, a bit less behind each hit
   stats: { health: 104, walk: 0.95, backWalk: 1.05, run: 0.95, jump: 0.98, dash: 1, weight: 1.04, stamina: 1.05, regen: 1.1, damage: 0.97 },
-  body: { scale: 1, headR: 15, torsoW: 15, hipW: 11.5, limbW: 11.6, limbTip: 8.8, lean: -1, accessory: lanyardAndClipboard },
+  body: { scale: 1, headR: 15, torsoW: 15, hipW: 11.5, limbW: 11.6, limbTip: 8.8, lean: -1, accessory: clipboard },
+  cloth: [{ draw: lanyard, axis: ['neck', 'chest'], off: [1, 0], dir: [[0.246, 0.969], [0, 1]], len: [12.2, 8.6], hz: 2.2, damping: 0.25, side: 'front', clear: 4 }],
   moves: {
     hr_writeUp: { rig: writeUp, frame: { limb: 'hand', damage: 7, kb: { x: 0, y: 0 }, hitstun: 26, blockstun: 8, hitstop: 7, knockdown: false, height: 'high',
       status: WRITTEN_UP, cost: 19, reach: 85, flashR: 32, callout: 'WRITE-UP' } },

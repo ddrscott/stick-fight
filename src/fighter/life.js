@@ -7,7 +7,9 @@
 //     a strike winding up at them, a body on the floor), and nods toward the target as their own strike or
 //     step starts (think, then move);
 //   - springs: the head lags the neck, the hands trail a little, a hit sends a wave up the body (hips,
-//     chest, shoulders, head), and a prop (src/characters/: `prop`) swings on its own spring;
+//     chest, shoulders, head);
+//   - cloth: every chain a character hangs off its body (src/characters/: `cloth`, src/fighter/cloth.js), a tie,
+//     a lanyard, an apron's hem, a ponytail, swinging with the body's motion and flung by hits;
 //   - fatigue: under 40% stamina the shoulders heave with a faster, deeper breath, the guard sags and the
 //     head drops; the faint keeps its own dizzy clip;
 //   - takes: reactions to the other fighter (a double take at a botch, watching a faint, a flinch when parried,
@@ -17,6 +19,8 @@
 //     only after a couple of quiet seconds standing.
 // Every overlay eases in and out; nothing steps, and nothing retriggers faster than a person could move.
 // ?life=0 turns it off (for A/B); window.__game.life.on does the same live.
+
+import { clothStep } from './cloth.js';
 
 const DEG = Math.PI / 180;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -213,7 +217,7 @@ export function createLife() {
   function stateOf(u) {
     let s = st.get(u);
     if (!s) {
-      s = { head: {}, lHand: {}, rHand: {}, prop: {}, look: { a: 0, v: 0 }, eyeW: 0, lead: 0, fat: 0, breath: 0, calm: 0,
+      s = { head: {}, lHand: {}, rHand: {}, cloth: null, clothKick: null, look: { a: 0, v: 0 }, eyeW: 0, lead: 0, fat: 0, breath: 0, calm: 0,
         move: null, state: u.state, health: u.health, wave: null, pendingWave: null,
         T: Math.random() * 10, seen: null, prevState: u.state, prevHealth: u.health, koPending: false,
         take: null, takeW: 0, takeAt: -9, habit: null, habitW: 0, idleFor: 0, nextHabit: rnd(1.8, 3.6), habitReadyAt: 0, lastHabit: null, sigW: 0, last: null };
@@ -259,6 +263,10 @@ export function createLife() {
       const opp = oppOf(u, sim);
       const dir = opp ? Math.sign(u.x - opp.x) || -u.facing : -u.facing;
       s.pendingWave = { dir, amp: clamp(3.5 + (s.health - u.health) * 0.35, 3.5, 8) };
+      // the cloth's fling: away from the hit, harder by the damage, hardest on a launch, a knockdown or the KO
+      const big = u.state === 'ko' ? 2.2 : RAW(u) || u.state === 'knockdown' || u.juggle ? 1.7 : 1;
+      const k = clamp(4 + (s.health - u.health) * 0.5, 4, 14) * big;
+      s.clothKick = { x: dir * k * 38 * ((u.rig && u.rig.scale) || 1), y: -k * 14 * ((u.rig && u.rig.scale) || 1) };
     }
     s.health = u.health;
     const own = u.state === 'attack' && u.phase === 'startup' && u.move !== s.move;
@@ -267,15 +275,15 @@ export function createLife() {
     s.move = u.state === 'attack' ? u.move : null; s.state = u.state;
 
     const sc = (u.rig && u.rig.scale) || 1;
-    // the prop's spring runs whatever happens, so it's never stale when the body comes back
+    // the cloth runs whatever happens (launched, thrown, falling too), so it's never stale when the body comes back
     const raw = RAW(u);
-    if (!on) { u.rig.sway = null; s.last = J; return J; }
+    if (!on) { u.rig.cloth = null; s.last = J; return J; }
     if (raw || !J.head || !J.neck) {
       // launched, thrown or falling: drawn raw; a take or habit in progress ends (nothing of it is drawn now), and
       // what was seen is forgotten so nothing that happened meanwhile is reacted to late
       s.head.init = s.lHand.init = s.rHand.init = false; s.wave = null; s.pendingWave = null;
       s.take = null; s.takeW = 0; s.habit = null; s.habitW = 0; s.idleFor = 0; s.seen = null; s.koPending = false;
-      propStep(u, s, J, dt, sc); s.last = J; return J;
+      clothRun(u, s, J, sim, dt, sc); s.last = J; return J;
     }
     if (s.pendingWave && !(u.hitstop > 0)) { s.wave = { ...s.pendingWave, t: 0 }; s.pendingWave = null; }
 
@@ -384,7 +392,7 @@ export function createLife() {
     const vx = hx - neckX, vy = hy - neckY, c = Math.cos(theta), sn = Math.sin(theta);
     M.head = { x: neckX + vx * c - vy * sn, y: neckY + vx * sn + vy * c };
 
-    propStep(u, s, M, dt, sc);
+    clothRun(u, s, M, sim, dt, sc);
     s.last = M;
     return M;
   }
@@ -448,18 +456,19 @@ export function createLife() {
     }
   }
 
-  // the prop: a point on a spring hanging from the chest; the rig's draw shifts the prop's free end by u.rig.sway
-  function propStep(u, s, J, dt, sc) {
-    const pr = u.rig && u.rig.charDef && u.rig.charDef.prop;
-    if (!pr || !on || !J.neck || !J.chest) { if (u.rig) u.rig.sway = null; return; }
-    const dx = J.chest.x - J.neck.x, dy = J.chest.y - J.neck.y, L0 = Math.hypot(dx, dy) || 1;
-    const len = (pr.len || 22) * sc;
-    const ax = J.neck.x + dx * (pr.at || 0.15), ay = J.neck.y + dy * (pr.at || 0.15);
-    const rx = ax + dx / L0 * len, ry = ay + dy / L0 * len;   // at rest it lies along the torso
-    const p = s.prop;
-    if (!(u.hitstop > 0)) follow(p, rx, ry, dt, 2 * Math.PI * (pr.hz || 2.2), pr.damping || 0.22);
-    const max = len * 0.75;
-    u.rig.sway = p.init ? { x: clamp(p.x - rx, -max, max), y: clamp(p.y - ry, -max * 0.5, max * 0.5) } : null;
+  // the cloth: each chain a character lists (`cloth`) steps on the joints drawn this frame; the rig's draw reads
+  // the points from u.rig.cloth (set here, cleared after the draw; null hangs everything at rest). A hit's freeze
+  // holds it, and the hit's fling lands as the freeze ends.
+  function clothRun(u, s, J, sim, dt, sc) {
+    const items = u.rig && u.rig.charDef && u.rig.charDef.cloth;
+    if (!items || !items.length || !on) { if (u.rig) u.rig.cloth = null; return; }
+    if (!s.cloth || s.cloth.length !== items.length) s.cloth = items.map(() => ({ st: {}, P: null }));
+    const frozen = u.hitstop > 0 || sim.hitstopActive > 0;
+    const kick = !frozen && s.clothKick ? s.clothKick : null;
+    if (kick) s.clothKick = null;
+    const out = [];
+    for (let i = 0; i < items.length; i++) out.push(clothStep(s.cloth[i].st, items[i], J, u.facing || 1, sc, frozen ? 0 : dt, kick));
+    u.rig.cloth = out;
   }
 
   return {

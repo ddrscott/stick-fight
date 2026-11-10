@@ -6,6 +6,7 @@
 // unique string, SHORT CIRCUIT (2, 1, 2), ending in a two-handed palm thrust that closes the circuit.
 // Keeps every shared string.
 import { RIG_KIT } from '../fighter/index.js';
+import { chainPath } from '../fighter/cloth.js';
 
 const { K, F, L, LF, RF, HIP, CH } = RIG_KIT;
 
@@ -57,7 +58,16 @@ const shocked = { blend: 0, keys: [
   K({}, 0, 'linear'),
 ] };
 
-// a hard hat with a brim and a ridge, and a tool belt slung round the hips with a pouch and a hanging tester
+// a hard hat with a brim and a ridge, and a tool belt slung round the hips with a pouch (the tester hanging
+// off the belt is a cloth chain, below)
+// the voltage tester on its lead, hanging off the back of the belt
+function tester(ctx, P, o) {
+  const s = o.scale;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 2.4 * s; chainPath(ctx, P); ctx.stroke();
+  const b = P[P.length - 1];
+  ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(b.x, b.y, 1.9 * s, 0, Math.PI * 2); ctx.fill();
+}
 function hardHatAndBelt(ctx, J, o) {
   const h = J.head, n = J.neck, hip = J.hip, s = o.scale, r = o.headR;
   let ux = h.x - n.x, uy = h.y - n.y; const L0 = Math.hypot(ux, uy) || 1; ux /= L0; uy /= L0;
@@ -75,8 +85,6 @@ function hardHatAndBelt(ctx, J, o) {
   const pc = { x: bc.x - ax * 6 * s - tx * 7 * s, y: bc.y - ay * 6 * s - ty * 7 * s };
   ctx.fillStyle = '#1a1206'; ctx.strokeStyle = o.accent; ctx.lineWidth = 1.4 * s;
   ctx.beginPath(); ctx.rect(pc.x - 4.5 * s, pc.y - 5 * s, 9 * s, 10 * s); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 2.4 * s;
-  ctx.beginPath(); ctx.moveTo(bc.x + ax * 4 * s, bc.y + ay * 4 * s); ctx.lineTo(bc.x + ax * 5 * s - tx * 13 * s, bc.y + ay * 5 * s - ty * 13 * s); ctx.stroke();
   // the hat: a dome over the crown, a ridge down the middle, a brim out the front and a lip behind
   ctx.fillStyle = o.accent; ctx.strokeStyle = '#1a1206'; ctx.lineWidth = 1.6 * s;
   ctx.beginPath(); ctx.arc(h.x + ux * r * 0.1, h.y + uy * r * 0.1, r * 1.08, a - 1.45, a + 1.45); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -114,6 +122,7 @@ export default {
   // average on his feet and in the bar, a slightly heavier frame, a touch lighter on damage: the shock is the payoff
   stats: { health: 98, walk: 0.96, backWalk: 1, run: 0.95, jump: 0.98, dash: 1, weight: 1.04, stamina: 1, regen: 1.05, damage: 0.95 },
   body: { scale: 1.02, headR: 15, upperArm: 23.5, lowerArm: 22.5, upperLeg: 30.5, lowerLeg: 29.5, torsoW: 16.5, hipW: 12, lean: 2, accessory: hardHatAndBelt },
+  cloth: [{ draw: tester, axis: ['neck', 'hip'], at: 1, off: [-4, -4], dir: [-0.077, 1], hang: 0.5, len: 13, seg: 2, hz: 2.4, damping: 0.3, gravity: 400, limit: 1.8 }],
   moves: {
     electrician_liveWire: { rig: liveWire, frame: { limb: 'hand', damage: 7, kb: { x: 200, y: 0 }, hitstun: 22, blockstun: 8, hitstop: 8, height: 'mid', react: 'hitStun',
       shock: { frames: 26, clip: 'electrician_shocked' }, cost: 20, reach: 85, flashR: 34, flashColor: [1, 0.95, 0.45], callout: 'LIVE WIRE' } },
