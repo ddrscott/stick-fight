@@ -304,6 +304,24 @@ function injectStyle() {
   .fl-key.fl-off { opacity: 0.2; pointer-events: none; display: flex; align-items: center; justify-content: center; }
   .fl-link { font-size: 2.1cqw; letter-spacing: 0.06em; color: #9df8ff; word-break: break-all; max-width: 80cqw; text-align: center; }
   .fl-dots::after { content: ''; animation: fl-dots 1.2s steps(4) infinite; }
+  /* The join link as a QR code (src/qr.js), on the host screen and the crew lobby. Black on a white tile with the
+     quiet zone inside it, and nothing over it: a neon or inverted code, or one with a glow, fails on a lot of
+     phone cameras. The frame is a thin line outside the white. Before there's a link the tile is empty, the same size. */
+  .fl-qr { --qr: 34cqh; display: flex; flex-direction: column; align-items: center; gap: 1cqh; flex: none; }
+  .fl-qrtile { width: var(--qr); height: var(--qr); border: 2px solid var(--cyan); background: #fff; line-height: 0; }
+  .fl-qrtile svg { display: block; width: 100%; height: 100%; }
+  .fl-qrlabel { font-size: 2.1cqw; font-weight: 600; letter-spacing: 0.16em; line-height: 1; color: #d8fdff; white-space: nowrap; }
+  .fl-qrwait .fl-qrtile { background: rgba(14,4,30,0.62); border-color: rgba(46,242,255,0.35); }
+  .fl-qrwait .fl-qrlabel { opacity: 0.4; }
+  /* the host screen: the title across, the code and link beside the QR code, the buttons under both */
+  .fl-host { display: grid; grid-template-columns: auto auto; grid-template-areas: "t t" "i q" "b b" "s s";
+    justify-content: center; align-content: center; justify-items: center; align-items: center; column-gap: 4cqw; row-gap: 1.8cqh; }
+  .fl-host > .fl-h2 { grid-area: t; }
+  .fl-host > .fl-qr { grid-area: q; }
+  .fl-host > .fl-row { grid-area: b; }
+  .fl-host > .fl-spec { grid-area: s; }
+  .fl-hostinfo { grid-area: i; width: 46cqw; display: flex; flex-direction: column; align-items: center; gap: 1.8cqh; }
+  .fl-hostinfo .fl-link { max-width: 100%; line-height: 1.2; min-height: 1.2em; }   /* a line's room before the link arrives */
   @keyframes fl-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 
   /* ending credits */
@@ -466,10 +484,11 @@ function injectStyle() {
   .fl-crew { gap: 1cqh; }
   .fl-crew .fl-h2 { font-size: 3.6cqw; }
   .fl-crew .fl-link { font-size: 1.8cqw; }
-  .fl-crewbody { align-items: flex-start; gap: 2.4cqw; margin-top: 0.6cqh; }
-  .fl-crewleft { width: 58cqw; display: flex; flex-direction: column; gap: 1.4cqh; }
-  .fl-crewright { width: 26cqw; }
-  .fl-standings { display: grid; grid-template-columns: 2.2cqw 1fr 3.4cqw 3.4cqw 3.4cqw 6cqw 11cqw; column-gap: 0.8cqw; row-gap: 0.5cqh; align-items: baseline;
+  .fl-crewbody { align-items: flex-start; gap: 1.6cqw; margin-top: 0.6cqh; }
+  .fl-crewleft { width: 52cqw; display: flex; flex-direction: column; gap: 1.4cqh; }
+  .fl-crewright { width: 24cqw; }
+  .fl-crewbody > .fl-qr { --qr: 18cqw; }   /* the crew link's QR code, a third column */
+  .fl-standings { display: grid; grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw 11cqw; column-gap: 0.8cqw; row-gap: 0.5cqh; align-items: baseline;
     padding: 1cqw 1.2cqw; border: 2px solid rgba(46,242,255,0.5); background: rgba(14,4,30,0.66); font-size: 2.3cqw; font-weight: 600; letter-spacing: 0.08em; line-height: 1.05; }
   .fl-standings span { color: #e9dcff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fl-standings .fl-sth { font: 400 1.2cqw/1 'Bungee', sans-serif; color: rgba(214,190,255,0.7); letter-spacing: 0.06em; }
@@ -493,7 +512,7 @@ function injectStyle() {
   .fl-playbtn { min-width: 0; width: 100%; min-height: max(56px, 13cqh); }
   .fl-playbtn .fl-pl { font: 400 4.4cqw/1 'Bungee', 'Arial Black', sans-serif; letter-spacing: 0.04em; }
   .fl-crewpair { gap: 1cqw; }
-  .fl-crewpair .fl-btn { flex: 1; min-width: 0; }
+  .fl-crewpair .fl-btn { flex: 1; min-width: 0; padding-left: 0; padding-right: 0; font-size: 1.9cqw; letter-spacing: 0.08em; }
   .fl-crewfail .fl-h3 { max-width: 70cqw; }
 
   /* A narrow stage: a phone held upright, where the stage is about 390 by 219. A column of seven or nine
@@ -518,6 +537,24 @@ function injectStyle() {
     /* the fighter select's footer buttons give up their 44px floor to stay on the stage */
     .fl-selfoot .fl-btn { min-height: 12cqh; }
     .fl-select { padding-top: 1.6cqh; gap: 1cqh; }
+    /* the host screen: the QR code takes the right of the stage at the biggest size that fits, everything else stacks beside it */
+    .fl-host { grid-template-areas: "t q" "i q" "b q" "s q"; column-gap: 2.4cqw; row-gap: 1.2cqh; }
+    .fl-host > .fl-qr { --qr: 66cqh; }
+    .fl-hostinfo { width: 56cqw; gap: 1.2cqh; }
+    .fl-host > .fl-row { width: 56cqw; flex-wrap: wrap; gap: 1.2cqh 1.4cqw; }
+    .fl-host > .fl-row .fl-btn { min-width: 0 !important; flex: 1 1 40%; }
+    .fl-host > .fl-spec { width: 56cqw; min-height: 30px; padding: 0.4cqw 0.6cqw 0; font-size: 2.5cqw; line-height: 1; letter-spacing: 0.06em; white-space: normal; text-align: center; }
+    .fl-qrlabel { font-size: 2.8cqw; }
+    /* the crew lobby: the FAVORITE column gives its room to the QR code, and the small buttons keep their words inside */
+    .fl-crewleft { width: 43cqw; }
+    .fl-crewbody > .fl-qr { --qr: 27cqw; }
+    .fl-standings { grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw; }
+    .fl-standings .fl-sfav, .fl-standings .fl-sth:nth-child(7) { display: none; }
+    .fl-crew .fl-btn.fl-mini { font-size: 2.3cqw; min-height: 30px; }
+    .fl-crew .fl-playbtn { min-height: 44px; }
+    .fl-crew .fl-playbtn small { font-size: 2cqw; }
+    .fl-crew .fl-playbtn .fl-pl { font-size: 3.6cqw; }
+    .fl-crew .fl-crewpair .fl-btn { font-size: 1.9cqw; letter-spacing: 0.02em; }
   }
   `;
   const s = document.createElement('style');

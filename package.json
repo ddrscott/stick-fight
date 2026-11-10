@@ -16,11 +16,13 @@
     "netsim": "node scripts/netsim/run.mjs",
     "netsim:proof": "node scripts/netsim/proof.mjs",
     "netsim:watch": "node scripts/netsim/watch.mjs",
-    "test:watch": "node scripts/watch/e2e.mjs"
+    "test:watch": "node scripts/watch/e2e.mjs",
+    "test:qr": "node scripts/qr/check.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",
     "@types/node": "^22.20.5",
+    "jsqr": "^1.4.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.6",
     "wrangler": "^4.158.0"
