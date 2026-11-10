@@ -75,7 +75,9 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
     for (const k in shadow) if (!(k in me)) delete shadow[k];
     Object.assign(shadow, me);
     for (const k of AI_FIELDS) shadow[k] = keep[k];
-    return ai(shadow, opp, sim) || EMPTY_INPUT;
+    const rs = sim.rng.state, out = ai(shadow, opp, sim) || EMPTY_INPUT;
+    if (sim.rng.state !== rs) { client.rngTouches = (client.rngTouches || 0) + 1; sim.rng.state = rs; }   // a CPU helper that rolls the sim's dice: not the player's to roll
+    return out;
   }
 
   const game = {
@@ -135,6 +137,7 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
   function nudge() {
     const atEnd = inject.atEnd && sim.phase === 'match' && endNudged !== net.match;
     if (sched.t < nextNudge && !atEnd) return;
+    if (net.netcode && net.netcode.frame >= net.netcode.endAt) return;   // a halted sim never changes by itself (it waits on the other side's word)
     if (atEnd) endNudged = net.match; else nextNudge = sched.t + inject.every * (0.5 + rng());
     const u = sim.units[Math.floor(rng() * sim.units.length)], k = rng();
     if (k < 0.5) u.x += 0.25 + rng(); else if (k < 0.8) u.stamina = Math.max(0, u.stamina - 3); else sim.rng.state = (sim.rng.state + 1) >>> 0;

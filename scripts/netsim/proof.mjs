@@ -50,7 +50,7 @@ for (let b = 0; b < BOUTS; b++) {
   ref.setCharacters(pair);
   const inputs = [[], []];
   ref.units.forEach((u, i) => { const ai = thumbs(ref, i, seed * 3 + i); ref.setController(i, 'net', (me, opp, s) => { const v = ai(me, opp, s); inputs[i][ref.tickNo] = v; return v; }); });
-  ref.resetMatch({ seed, fresh: true }); ref.roundTime = 30;
+  ref.roundTime = 30; ref.resetMatch({ seed, fresh: true });
   const hashes = [];
   ref.tickNo = 0;
   const texts = [];
@@ -60,7 +60,7 @@ for (let b = 0; b < BOUTS; b++) {
   rep.setCharacters(pair);
   let tick = 0;
   rep.units.forEach((u, i) => rep.setController(i, 'net', () => inputs[i][tick] || EMPTY_INPUT));
-  rep.resetMatch({ seed, fresh: true }); rep.roundTime = 30;
+  rep.roundTime = 30; rep.resetMatch({ seed, fresh: true });
   const r = mulberry32(seed);
   for (tick = 0; tick < STEPS;) {
     if ((INTERESTING(rep) ? r() < 0.25 : r() < 0.04) && tick < STEPS - 20) {
@@ -82,7 +82,7 @@ for (let b = 0; b < BOUTS; b++) {
   play.setCharacters(pair);
   let pt = 0;
   play.units.forEach((u, i) => play.setController(i, 'net', () => inputs[i][pt] || EMPTY_INPUT));
-  play.resetMatch({ seed, fresh: true }); play.roundTime = 30;
+  play.roundTime = 30; play.resetMatch({ seed, fresh: true });
   const points = Array.from({ length: 6 }, () => 200 + Math.floor(r2() * (STEPS - 600))).sort((x, y) => x - y);
   for (const p of points) {
     while (pt < p) { play.tick(); pt++; }
@@ -95,7 +95,7 @@ for (let b = 0; b < BOUTS; b++) {
     other.setCharacters(pair);
     let ot = p;
     other.units.forEach((u, i) => other.setController(i, 'net', () => inputs[i][ot] || EMPTY_INPUT));
-    other.resetMatch({ seed: 1, fresh: true }); other.roundTime = 30;
+    other.roundTime = 30; other.resetMatch({ seed: 1, fresh: true });
     const text = encodeState(play, play.saveState());
     maxBytes = Math.max(maxBytes, text.length); sumBytes += text.length;
     other.loadState(decodeState(other, text));
@@ -109,7 +109,7 @@ for (let b = 0; b < BOUTS; b++) {
     }
     play.loadState(keep); pt = keepT;
   }
-  console.log(`bout ${b + 1} ${pair.join(' v ')}: rounds ${ref.wins.join('-')} (match ${ref.phase}), ${rbCount} rollbacks so far, resync points ${points.join(' ')}`);
+  console.log(`bout ${b + 1} ${pair.join(' v ')}: round ${ref.round}, wins ${ref.wins.join("-")}, phase ${ref.phase}, ${ref.stepCount} steps into this match, ${rbCount} rollbacks so far, resync points ${points.join(' ')}`);
 }
 console.log(`\nrollback: ${rbCount} rollbacks, ${rbChecks} restored steps checked, ${rbBad} differed from the reference`);
 console.log(`resync: ${syncCount} states sent as text (avg ${(sumBytes / Math.max(1, syncCount) / 1024).toFixed(1)} KB, max ${(maxBytes / 1024).toFixed(1)} KB), ${syncChecks} steps after loading checked, ${syncBad} differed`);
