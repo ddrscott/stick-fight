@@ -129,6 +129,16 @@ export const PERFECT = { fly: 0.42, slide: 0.7, drop: 1.75, after: 2.15 };
 // `lock` of steps in which another tap doesn't count (and keeps it locked), so mashing forward never parries, and
 // a tap within `quiet` steps of a button press doesn't count either, so mashing buttons never parries.
 export const PARRY = { win: 12, lock: 40, stun: 16, quiet: 24 };
+// The clash (sim.js clashTest): two live strikes whose striking limbs touch stop each other. No damage and no stun:
+// both freeze `hitstop` frames at the contact, bounce back (`push` px/s, dying out over the stun) and are free on
+// the same step, `stun` frames later. Both keep what the swing cost. `slack` px on top of the two drawn limbs counts
+// as touching; tips that ran past each other are backed out to meet, each body giving up to `seat` px. A strike whose weight (frame data `weight`, else its damage) is `breakBy` or more above the other's
+// breaks through instead: it carries on and lands as usual, and the lighter strike is batted aside (it ends, he
+// reels `batStun` frames, it's no counter hit). With breakBy 8 a jab (6) clashes with a jab, a cross (10), a light
+// kick (7) or a lunge cross (11), a cross with a roundhouse (16), and a roundhouse or any ender (14 to 18) breaks
+// through a jab. Never a clash: a throw or grab, a counter stance, a stance, a noHit move, an armored move (its
+// armor absorbs, as ever), an invulnerable one, a wake-up strike, a botch's flail, a strike in the air.
+export const CLASH = { breakBy: 8, hitstop: 4, stun: 14, push: 320, slack: 2, batStun: 10, seat: 24 };
 export const COMBO_STUN = [1, 1, 0.85, 0.65, 0.45, 0.3];
 export const COMBO_DMG = [1, 1, 1, 0.8, 0.65, 0.5];
 export const COMBO_SOFTCAP = 30, COMBO_OVERCAP = 0.25;

@@ -93,6 +93,8 @@ const BLOCK_FX = [
   { scale: 0.75, ttl: 0.09, lines: 3, light: [65, 0.32], shake: 0.03 },    // medium: a cross, a sweep
   { scale: 1, ttl: 0.1, lines: 3, light: [90, 0.5], shake: 0.06 },          // heavy: an ender (and a parry, as before)
 ];
+// a clash (two striking limbs meeting): the heavy block's glyph a touch bigger, both ways; a break-through, a flick
+const CLASH_FX = { clash: { scale: 1.2, ttl: 0.13, lines: 3, light: [120, 0.7], shake: 0.1 }, broke: { scale: 0.5, ttl: 0.07, lines: 2, light: [50, 0.25], shake: 0.02 } };
 let debug = false, paused = false, driven = false, sceneName = 'play', help = false;
 // The life layer (src/fighter/life.js): a puppeteer's touches on the drawn pose, never the sim's
 const life = createLife(); life.setFrameData(FRAME_DATA);
@@ -150,6 +152,18 @@ function onEvent(ev) {
         if (!ev.parry && ev.move !== 'throw' && typeof fx.guardSpark === 'function') fx.guardSpark({ x: ev.x, y: ev.y, dir: -ev.dir, weight: w });
         light(ev.x, ev.y, B.light[0], [0.6, 0.75, 1.0], B.light[1], B.ttl);
         shake.trauma = Math.min(1, shake.trauma + B.shake);
+      }
+      break;
+    case 'clash':
+      // limb meets limb (sim clash): the block's blue spark, a touch bigger and facing both ways, at the point the
+      // limbs met, with its cool light and a small kick. A break-through (the heavy strike carrying on) is a flick.
+      {
+        const C = ev.broke ? CLASH_FX.broke : CLASH_FX.clash;
+        for (const d of [-1, 1]) blockSparks.push({ x: ev.x, y: ev.y, dir: d, ttl: C.ttl, max: C.ttl, scale: C.scale, lines: C.lines });
+        if (typeof fx.guardSpark === 'function') for (const d of ev.broke ? [-ev.dir] : [-1, 1]) fx.guardSpark({ x: ev.x, y: ev.y, dir: d, weight: ev.broke ? 0 : 2 });
+        light(ev.x, ev.y, C.light[0], [0.6, 0.75, 1.0], C.light[1], C.ttl * 1.4);
+        shake.trauma = Math.min(1, shake.trauma + C.shake);
+        if (!ev.broke) { shake.kickY = -7; shake.zoomPunch = 0.025; }
       }
       break;
     case 'thud':
@@ -504,9 +518,26 @@ const PHASES = {
   juggle: [
     { name: 'launch then mash 1', at: () => [570, 640], p1: [[10, D('rp')], ...Array.from({ length: 24 }, (_, i) => [60 + i * 8, B('lp')])], dur: 300 },
   ],
+  // (two jabs on the same step used to be the trade here; their fists meet, so that's a clash now: clash-test)
   trade: [
-    { name: 'jab trade', at: () => [560, 646], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { lp: true } : {}), dur: 100 },
+    { name: 'trade: a jab and a snap kick land together (head height and body height, the limbs never meet)', at: () => [560, 646], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 20 && t < 23 ? { lk: true } : {}), dur: 100 },
     { name: 'counter hit', at: () => [560, 646], p1: [[22, B('lp')]], p2: (me, o, t) => (t >= 20 && t < 23 ? { rk: true } : {}), dur: 100 },
+  ],
+  // The clash (sim.js clashTest, frame data CLASH): two live strikes whose striking limbs touch stop each other. P2's
+  // press is timed so both strikes go live together (P2 reads t a step after P1: t 21 is P1's 20).
+  clash: [
+    { name: 'CLASH: jab against jab, fist on fist, nobody hit', at: () => [560, 646], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { lp: true } : {}), dur: 110 },
+    { name: 'CLASH: cross against cross', at: () => [560, 646], p1: [[20, B('rp')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { rp: true } : {}), dur: 120 },
+    { name: 'CLASH: snap kick against snap kick, shin on shin', at: () => [560, 646], p1: [[20, B('lk')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { lk: true } : {}), dur: 110 },
+    { name: 'CLASH: roundhouse against roundhouse', at: () => [560, 646], p1: [[20, B('rk')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { rk: true } : {}), dur: 120 },
+    { name: 'CLASH: low kick against low kick, at the ankles', at: () => [560, 646], p1: [[20, D('lk')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { lk: true, down: true } : {}), dur: 110 },
+    { name: 'CLASH: a jab against a cross thrown earlier, live together', at: () => [560, 646], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 7 && t < 10 ? { rp: true } : {}), dur: 120 },
+    { name: 'no clash: the second jab a step late is counter hit', at: () => [560, 646], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 22 && t < 25 ? { lp: true } : {}), dur: 130 },
+    { name: 'BREAK THROUGH: a jab against COMET CROSS (an ender): batted aside, the ender lands', at: () => [560, 646],
+      p1: [], p1f: (me, o, t) => { if (t === 8 && me.state === 'idle') sim.startAttack(me, 'cometCross'); return null; }, p2: (me, o, t) => (t >= 18 && t < 21 ? { lp: true } : {}), dur: 200 },
+    { name: 'still a TRADE: a jab and a snap kick, the limbs never meet', at: () => [560, 646], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 20 && t < 23 ? { lk: true } : {}), dur: 110 },
+    { name: 'still a PARRY: a tap forward just before his jab lands', p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true } : {}), p1: [], p1f: tapAt(3), dur: 160 },
+    { name: 'a jab and a throw on the same step: unchanged, the grab has him', at: () => [560, 632], p1: [[20, B('lp')]], p2: (me, o, t) => (t >= 21 && t < 24 ? { lp: true, lk: true } : {}), dur: 130 },
   ],
   // v3: knock him down a stairwell, the attacker vaults after him, and the fight goes on downstairs. The
   // spots are the old scene's, measured from the right stairwell (wellAt), then the same into the left one.
@@ -810,6 +841,7 @@ const scenes = {
   'wall-test'(o) { timeline(PHASES.wall, o); },
   'juggle-test'(o) { timeline(PHASES.juggle, o); },
   'trade-test'(o) { timeline(PHASES.trade, o); },
+  'clash-test'(o) { timeline(PHASES.clash, o); },
   'throw-test'(o) { timeline(PHASES.throws, o); },
   'botch-test'(o) { timeline(PHASES.botch, o); },
   'accident-test'(o) { timeline(PHASES.accident, o); },
@@ -1321,7 +1353,7 @@ function render() {
     ctxs.figures.save(); ctxs.figures.translate(off.x, off.y);
     try {
       u.rig.draw(ctxs.figures);
-      if (u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld)) drawGuard(u, ctxs.figures);
+      if (u.state === 'block' || (u.state === 'blockstun' && !(u.clashUntil > sim.stepCount)) || (u.state === 'crouch' && u.backHeld)) drawGuard(u, ctxs.figures);   // (bouncing off a clash isn't a guard)
       if (u.flash > 0) drawFlash(u, ctxs.figures, '#fff', statusFX.counterOn(u) ? 0.65 : 0.3);   // a counter hit flashes harder
       // a knocked-down body reads as down: 30% darker while it is on the floor
       else if (u.state === 'down' || u.state === 'roll' || u.state === 'ko') drawFlash(u, ctxs.figures, '#000', 0.3);

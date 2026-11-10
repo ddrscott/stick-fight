@@ -2,9 +2,9 @@
 // physics, hit resolution with hitstop, rounds and KO. step(ms) is deterministic given
 // the same inputs and seed. Events for the glue (fx, camera) go through onEvent.
 
-import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PERFECT, PARRY, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
+import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PERFECT, PARRY, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale, CLASH } from './frameData.js';
 import { matchStrings, MOVE_TOKEN } from './strings.js';
-import { buildHitboxes, buildHurtboxes, testHit } from './hitboxes.js';
+import { buildHitboxes, buildHurtboxes, testHit, strikeSegment, strikeTip } from './hitboxes.js';
 import { EMPTY_INPUT } from './input.js';
 import { createAI } from './ai.js';
 import { mulberry32 } from './rng.js';
@@ -390,6 +390,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       wakeUp: 0,   // a wake-up strike from the floor: 1 lying, 2 rising (sim.js isWake)
       stair: -1,   // the flight he's on (arena.stairs index), -1 on a floor
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
+      clashUntil: 0,   // the step a clash's bounce back ends (physics lets it slide; the draw leaves the guard off)
       shockT: 0, shockUsed: false, rootT: 0,   // character hooks: shock (extra stun), root (no walk or jump)
       dodgedId: -1,   // character hooks: the last strike an invuln move let pass (logged once)
       regenMul: 1, regenEnd: -1, regenLen: 0, regenTag: '', speedMul: 1, speedEnd: -1, speedLen: 0, speedTag: '',   // timed statuses (frame data status / selfStatus)
@@ -465,7 +466,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
 u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.paid = 0; u.refundId = 0; u.faintPending = 0; u.shakeDir = 0; u.shakeAt = -999; u.faintCut = 0; u.refundMove = ''; u.refundRep = 0; u.refundAt = -999; u.crouch = false; u.seq = null; u.bufferKeys = null;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
     u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1; u.parryAt = -999; u.parryLow = false; u.parryLock = -1; u.pressAt = -999;
-    u.shockT = 0; u.shockUsed = false; u.rootT = 0;
+    u.shockT = 0; u.shockUsed = false; u.rootT = 0; u.clashUntil = 0;
     u.regenMul = 1; u.regenEnd = -1; u.regenLen = 0; u.regenTag = ''; u.speedMul = 1; u.speedEnd = -1; u.speedLen = 0; u.speedTag = '';
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
     if (typeof u.rig.reset === 'function') { u.rig.x = u.x; u.rig.y = u.y; u.rig.facing = u.facing; u.rig.reset(); }
@@ -1904,7 +1905,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const wasAir = !u.grounded;
     // a reeling body doesn't slide on planted feet: the root holds and the rig's reaction carries
     // the body (its shift moves the root when the reaction ends)
-    if (u.grounded && (u.state === 'hitstun' || u.state === 'blockstun')) u.vx = 0;
+    if (u.grounded && (u.state === 'hitstun' || u.state === 'blockstun') && !(u.clashUntil > sim.stepCount)) u.vx = 0;   // (a clash's bounce back is a real slide)
     // a glide ends at a standstill in a strike (a carried-over third of it slid the attacker on under the body he'd launched)
     if (u.glide) { if (sim.stepCount < u.glide.until && u.grounded) { if (!(u.glide.from > sim.stepCount)) u.vx = u.glide.vx; } else { u.glide = null; if (u.grounded) u.vx = u.state === 'attack' ? 0 : u.vx * 0.3; } }
     if (u.rag) {
@@ -2084,6 +2085,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const hero = sim.units[0];
     for (let i = 1; i < sim.units.length; i++) {
       const g = sim.units[i];
+      // limb against limb comes before limb against body: two live strikes whose limbs touch clash (or the much
+      // heavier one breaks through and carries on), even if one would have reached the body a step later
+      const c = clashTest(hero, g);
+      if (c && c.win) batAside(c.win, c.lose, c);
+      else if (c) { clash(hero, g, c); continue; }
       const a = testStrike(hero, g), b = testStrike(g, hero);
       if (a && b && !a.grab && !b.grab && !a.graze && !b.graze) {
         const ma = hero.move, mb = g.move;
@@ -2098,6 +2104,79 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (a) a.grab ? grab(hero, g) : a.graze ? graze(hero, g, a.pt) : applyHit(hero, g, a.pt);
       if (b && g.state === 'attack') b.grab ? grab(g, hero) : b.graze ? graze(g, hero, b.pt) : applyHit(g, hero, b.pt);
     }
+  }
+  // ---- the clash (frame data CLASH) ---------------------------------------------------
+  // A strike that can clash: a plain strike on its feet that's live (active, or inside the early window testStrike
+  // uses) and hasn't touched anything yet. Never a throw or a grab, a counter stance, a stance, a noHit move, an
+  // armored or invulnerable move (their own rules stand), a wake-up strike, a botch's flail or an air attack (an
+  // anti-air stays a read: the uppercut hits the body, it doesn't stop at the foot).
+  function clashKind(u) {
+    if (u.state !== 'attack' || u.hitConfirmed || u.hidden || !u.grounded || u.rag || u.falling) return null;
+    if (u.phase !== 'active' && u.phase !== 'startup') return null;
+    const fd = FRAME_DATA[u.move];
+    if (!fd || fd.throw || fd.grab || fd.parry || fd.throwCounter || fd.stance || fd.noHit || fd.armor || fd.invuln || fd.wake || fd.botch || fd.air || fd.otg) return null;
+    if (u.grazeId === u.attackId) return null;
+    return fd;
+  }
+  function clashLive(u) {
+    const fd = clashKind(u);
+    if (!fd || u.hitstop > 0 || (u.phase !== 'active' && msToActive(u) > earlyMs(u))) return null;
+    return fd;
+  }
+  // the gap between the two drawn striking segments (negative: into each other) and the point between them
+  function limbGap(a, b) {
+    const sa = strikeSegment(a.rig, a.move, a.facing), sb = strikeSegment(b.rig, b.move, b.facing);
+    if (!sa || !sb) return null;
+    const m = segMeet(sa.a, sa.b, sb.a, sb.b);
+    return { gap: m.d - sa.r - sb.r, x: m.x, y: m.y };
+  }
+  // both strikes live and their limbs touching on this step: a clash, or (win, lose) when one is much the heavier
+  function clashTest(a, b) {
+    if (sim.phase !== 'fight') return null;
+    const fa = clashLive(a), fb = fa && clashLive(b);
+    if (!fa || !fb || !sameLevel(a, b)) return null;
+    const m = limbGap(a, b);
+    if (!m || m.gap > CLASH.slack) return null;
+    const wa = fa.weight != null ? fa.weight : fa.damage, wb = fb.weight != null ? fb.weight : fb.damage;
+    if (wa - wb >= CLASH.breakBy) { m.win = a; m.lose = b; } else if (wb - wa >= CLASH.breakBy) { m.win = b; m.lose = a; }
+    return m;
+  }
+  // Limb meets limb: nobody is hit. Both freeze at the contact with the limbs still out (the rig holds its pose
+  // through the freeze, and the trade's exemption keeps the two limbs from shoving the bodies apart), then bounce
+  // back and are free on the same step. No damage, no stun to speak of, no combo, no refund: both paid for the swing.
+  function clash(a, b, m) {
+    const ma = a.move, mb = b.move, dir = Math.sign(bodyX(b) - bodyX(a)) || a.facing;   // from a toward b
+    // the contact frame shows the touch: two tips that have run past each other (fists side by side, each beyond the
+    // other's) are backed out until they meet tip to tip, each body giving half, at most CLASH.seat px
+    const sa = strikeSegment(a.rig, ma, a.facing), sb = strikeSegment(b.rig, mb, b.facing);
+    const past = sa && sb ? Math.min(CLASH.seat * 2, (sa.b.x - sb.b.x) * dir + sa.r + sb.r) : 0;
+    if (past > 1) {
+      const ba = bandOf(a), bb = bandOf(b);
+      a.x = Math.max(ba.x0, Math.min(ba.x1, a.x - dir * past / 2)); b.x = Math.max(bb.x0, Math.min(bb.x1, b.x + dir * past / 2));
+      syncRig(a); syncRig(b); rigUpd(a, 0); rigUpd(b, 0);
+      m = limbGap(a, b) || m;
+    }
+    const hs = f60(CLASH.hitstop), stun = f60(CLASH.stun);
+    for (const [u, away, move] of [[a, -dir, ma], [b, dir, mb]]) {
+      u.tradeLimb = FRAME_DATA[move].limb; u.tradeUntil = sim.stepCount + hs + 10;
+      u.state = 'blockstun'; u.stun = stun; u.phase = null; u.move = null; u.crouch = false; u.clashUntil = sim.stepCount + hs + stun;
+      u.buffer = null; u.bufferKeys = null; u.bufferName = ''; u.seq = null; u.queued = null; u.glide = null; u.followThrough = false; u.chase = false; u.armorLeft = 0;
+      u.vx = away * CLASH.push; u.hitstop = hs;
+      safePlay(u.rig, ANIM.throwTech);   // the push-off, from the pose at contact once the freeze lets go
+    }
+    callout('CLASH', -1, 'clash');
+    note({ type: 'clash', a: ma, b: mb, att: a.id, def: b.id });
+    onEvent({ type: 'clash', x: m.x, y: m.y, dir, a: ma, b: mb, limb: FRAME_DATA[ma].limb, units: [a, b] });
+  }
+  // The much heavier strike breaks through: the lighter limb is batted aside (his strike ends and he reels a few
+  // frames, open), and the heavy one carries on to land the ordinary way: a plain hit, not a counter.
+  function batAside(win, lose, m) {
+    const move = lose.move;
+    lose.state = 'hitstun'; lose.stun = f60(CLASH.batStun); lose.phase = null; lose.move = null; lose.crouch = false; lose.comboBy = -1;
+    lose.buffer = null; lose.bufferKeys = null; lose.bufferName = ''; lose.seq = null; lose.queued = null; lose.glide = null; lose.vx = 0; lose.followThrough = false; lose.chase = false;
+    safePlay(lose.rig, HAS_HITSTUN ? 'hitStun' : 'hitLight'); syncRig(lose); rigUpd(lose, 0.008); lose.rig.events.length = 0;
+    note({ type: 'clash', broke: true, a: win.move, b: move, att: win.id, def: lose.id });
+    onEvent({ type: 'clash', broke: true, x: m.x, y: m.y, dir: awayDir(win, lose), a: win.move, b: move, limb: FRAME_DATA[win.move].limb, units: [win, lose] });
   }
   const isLow = (u) => !!u.crouch && u.grounded;
   // how early a strike goes live: 45ms, or less for a fast move (a 60ms kick must not hit on frame one)
@@ -2149,7 +2228,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const hits = buildHitboxes(att.rig, att.move, att.facing);
     const rk = reachKey(att, att.move);
     for (const h of hits) { const r = Math.max(reachSeen[rk] || 0, (h.x - att.x) * att.facing + h.r); if (r !== reachSeen[rk]) { reachSeen[rk] = r; touchReach(reachSeen); } }
-    const pt = testHit(hits, buildHurtboxes(def.rig));
+    // hitting a limb never does damage: the striking segment of his own strike on its way (in startup or live, the
+    // kind that can clash) isn't body to a strike of that kind. The two limbs clash once both are live, or this one
+    // carries on to his body
+    const skip = clashKind(def) && clashKind(att) ? strikeTip(def.rig, def.move, def.facing) : null;
+    const pt = testHit(hits, buildHurtboxes(def.rig, skip));
     if (pt && dodging) return dodge();
     // an air strike from an air jump comes down on him from above, where seating can only slide him
     // sideways: it connects once the drawn limb really touches the drawn body
@@ -2227,6 +2310,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     applyHit(att, def, { x: (att.x + def.x) / 2, y: def.y - 90 }, { move: att.move });
   }
   sim.breakThrow = breakThrow;
+  sim.startAttack = startAttack;   // scenes (clash-test) start a string's ender on the spot
 
   // A combo hit's damage after the decay: past COMBO_SOFTCAP points in one combo the rest counts
   // COMBO_OVERCAP as much. Whole points, at least 1. Damage on a fainted body counts toward
@@ -3061,6 +3145,23 @@ function segDistPt(p, a, b) {
 }
 // closest distance between two segments (exact for non-crossing; crossing gives 0)
 function cross(o, p, q) { return (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x); }
+// the same distance with the point halfway between the two closest points (where two limbs meet)
+function segMeet(a, b, c, d) {
+  const d1 = cross(c, d, a), d2 = cross(c, d, b), d3 = cross(a, b, c), d4 = cross(a, b, d);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    const t = d1 / (d1 - d2);   // where a-b crosses c-d
+    return { d: 0, x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  }
+  let best = null;
+  for (const [p, q, r] of [[a, c, d], [b, c, d], [c, a, b], [d, a, b]]) {
+    const qx = r.x - q.x, qy = r.y - q.y, l2 = qx * qx + qy * qy;
+    let t = l2 ? ((p.x - q.x) * qx + (p.y - q.y) * qy) / l2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const nx = q.x + qx * t, ny = q.y + qy * t, dist = dm.hypot(p.x - nx, p.y - ny);
+    if (!best || dist < best.d) best = { d: dist, x: (p.x + nx) / 2, y: (p.y + ny) / 2 };
+  }
+  return best;
+}
 function segSeg(a, b, c, d) {
   const d1 = cross(c, d, a), d2 = cross(c, d, b), d3 = cross(a, b, c), d4 = cross(a, b, d);
   if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return 0;

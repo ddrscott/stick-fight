@@ -228,6 +228,22 @@ export function createSfx({ context = null, destination = null } = {}) {
     hiss(v, { at: 0.004, dur: 0.028, filter: 'bandpass', f: vary(3200, 0.08), q: 9, gain: 0.55 * s });
     hiss(v, { at: 0.016, dur: 0.022, filter: 'bandpass', f: vary(2100, 0.08), q: 9, gain: 0.25 * s });
   }
+  // A clash (two striking limbs meeting, nobody hit): the block's clack made sharp. A hard double crack of bone on
+  // bone, a short bright ring over it, and almost none of the block's dull thud. Shins knock lower than fists.
+  function clash({ strength = 1, pan = 0, limb = 'hand' } = {}) {
+    const s = Math.max(0.3, Math.min(1, strength)), k = limb === 'foot' ? 0.8 : 1;
+    const v = voice(P.block, 0.3, pan, 2.4);
+    if (!v) return;
+    hiss(v, { dur: 0.02, filter: 'bandpass', f: vary(4200 * k, 0.06), q: 7, gain: 0.8 * s });
+    hiss(v, { at: 0.011, dur: 0.026, filter: 'bandpass', f: vary(2900 * k, 0.06), q: 8, gain: 0.6 * s });
+    hiss(v, { dur: 0.04, filter: 'highpass', f: 6000, q: 0.7, gain: 0.3 * s });
+    tone(v, { dur: 0.05, type: 'triangle', f: [vary(520 * k), 240 * k], gain: 0.35 * s });
+    if (s > 0.5) {
+      const f = vary(1976 * k, 0.02);
+      tone(v, { at: 0.004, dur: 0.22, f, gain: 0.14, attack: 0.002 });
+      tone(v, { at: 0.004, dur: 0.14, f: f * 1.51, gain: 0.07, attack: 0.002 });
+    }
+  }
   // A counter hit: the heaviest hit short of an ender, a second snap right behind the
   // first crack (caught mid-swing), and a bright ping over it.
   function counter({ pan = 0, limb = 'hand' } = {}) {
@@ -544,7 +560,7 @@ export function createSfx({ context = null, destination = null } = {}) {
       for (const s of samples) { const a = Math.abs(s); if (a > peak) peak = a; sum += s * s; }
       return { peak, rms: Math.sqrt(sum / samples.length) };
     },
-    whoosh, hit, block, counter, footstep, land, jump, bodyFall, wallSplat, wallBounce, wallKnock, groundBounce,
+    whoosh, hit, block, clash, counter, footstep, land, jump, bodyFall, wallSplat, wallBounce, wallKnock, groundBounce,
     throwGrab, throwSlam, whiff, gassed, shake, round, fight, ko, slowmoKO, combo, ender, goonDown, match, ui,
     floorBreak, tread, vault, floorClear, perfectWhoosh, glassThud, squeak, squeakStop, unstick,
   };

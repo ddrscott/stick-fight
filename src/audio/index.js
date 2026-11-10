@@ -181,6 +181,10 @@ function createGameAudio() {
       case 'block':
         sfx.block({ strength: ev.move === 'throw' ? 1 : ev.strength, pan: p });
         break;
+      case 'clash':   // limb meets limb: nobody is hit; a break-through (the heavy strike carries on) is only a tick
+        sfx.clash({ pan: p, strength: ev.broke ? 0.35 : 1, limb: ev.limb });
+        if (!ev.broke) music.pump(0.6, 0.04, 0.2);
+        break;
       case 'grab': sfx.throwGrab({ pan: p }); break;
       // the perfect round finisher (sim.js perfectStep): the grab, the throw at the camera, the glass, the squeak down it
       case 'perfectGrab': sfx.throwGrab({ pan: p }); break;
