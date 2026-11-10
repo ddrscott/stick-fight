@@ -286,8 +286,16 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   const reachKey = (u, m) => (u && u.char && u.char.id !== TEMP_ID ? u.char.id + ':' + m : m);
   const reach = (m) => (FRAME_DATA[m] ? (reachSeen[m] ? reachSeen[m] + 12 : FRAME_DATA[m].reach) : 90);
   const reachOf = (u, m) => { const k = reachKey(u, m); return FRAME_DATA[m] ? (reachSeen[k] ? reachSeen[k] + 12 : FRAME_DATA[m].reach * ((u && u.rig && u.rig.scale) || 1)) : 90; };
+  // The measurement runs on the rig in one fixed state, whatever it was doing: a character is first measured the
+  // first time it appears on this machine (mid-demo, on the stairs, ragdolled...), and online both machines must
+  // end up with the same bits, since the reach feeds the sim (a string's step-in, the auto guard). The rig's own
+  // state is put back afterwards.
+  const CAL_X = 1000, CAL_Y = 360;
   function calibrate(rig, ch = null) {
-    const x = rig.x, y = rig.y, fc = rig.facing, pre = ch && ch.id !== TEMP_ID ? ch.id + ':' : '';
+    const keep = typeof rig.getState === 'function' ? rig.getState() : null;
+    const x = rig.x, y = rig.y, fc0 = rig.facing, fc = 1, pre = ch && ch.id !== TEMP_ID ? ch.id + ':' : '';
+    if (typeof rig.reset === 'function') rig.reset({ full: true });
+    rig.x = CAL_X; rig.y = CAL_Y; rig.facing = fc; rig.play('idle'); rig.update(0); rig.events.length = 0;
     for (const m of ATTACKS) {
       if (ch && !canUse(ch, m)) continue;
       rig.play(FRAME_DATA[m].anim || m);
@@ -299,7 +307,8 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
         if (active) for (const h of buildHitboxes(rig, m, fc)) reachSeen[pre + m] = Math.max(reachSeen[pre + m] || 0, (h.x - rig.x) * fc + h.r);
       }
     }
-    rig.x = x; rig.y = y; rig.facing = fc; rig.play('idle'); rig.update(0); rig.events.length = 0;
+    if (keep) rig.setState(keep);
+    rig.x = x; rig.y = y; rig.facing = fc0; rig.play('idle'); rig.update(0); rig.events.length = 0;
   }
   calibrate(fighters[0]);
   const reachCalibrated = { ...reachSeen };   // reachSeen grows from real hits; a fresh match starts from this

@@ -12,7 +12,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "types:worker": "wrangler types worker/worker-configuration.d.ts",
-    "deploy": "vite build && wrangler deploy"
+    "deploy": "vite build && wrangler deploy",
+    "netsim": "node scripts/netsim/run.mjs",
+    "netsim:proof": "node scripts/netsim/proof.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",

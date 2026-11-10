@@ -6,7 +6,7 @@
 //   const net = createOnline({ sim, input, startMatch, endMatch })
 //   await net.host()            -> { code, url }   a new room; resolves once the room is open
 //   await net.join(code)        -> { code }        resolves when connected to the room
-//   net.on('status' | 'connected' | 'peer-left' | 'start' | 'end' | 'desync', fn)
+//   net.on('status' | 'connected' | 'peer-left' | 'start' | 'end' | 'desync' | 'resync', fn)
 //   net.leave()                 hang up and end the match (endMatch is called)
 //   net.roomFromUrl()           the ?room=CODE on the page's URL, or ''
 //   net.openLobby(mode?)        the built-in panel: 'menu' | 'host' | 'join' (+ code)
@@ -23,8 +23,10 @@
 // main.js; the netcode is rollback now, src/net/rollback.js.)
 //
 // Between matches (the room session). A match ends END_HOLD frames after the frame the sim first
-// shows the result, once that frame is confirmed on both sides, so both machines stop on the same
-// state and count the same result. The link stays up, and the session goes to 'post':
+// shows the result, once that frame is confirmed on both sides and both have said so with the same
+// state hash ({t:'end', n, f, h}; a disagreement gets the guest the host's state first, see
+// src/net/rollback.js, Resync), so both machines stop on the same state and count the same result.
+// The link stays up, and the session goes to 'post':
 //   - each side sends {t:'post', n, want, focus, poke?}: what it asked for (rematch, chars, wait)
 //     and where its cursor is; the guest's want is a request, the host's is the decision
 //   - the host runs the countdowns and tells the guest ({t:'cd', n, kind, ms}): 'auto' (5 s from
@@ -54,12 +56,15 @@ import { createRollback } from './rollback.js';
 import { hashSim } from './hash.js';
 import { legend, watchDevice } from '../flow/controls.js';
 
-export const NET_VERSION = 15;   // bump when the sim or the netcode changes in a way old builds can't play against (15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
+export const NET_VERSION = 16;   // bump when the sim or the netcode changes in a way old builds can't play against (16: resync (the host sends its confirmed state on a hash mismatch), the end of a match agreed by state hash, a character's reach measured on a reset rig (it depended on what the rig was doing the first time that phone saw the character), the rng and the reach table in the state hash; 15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
 const PID_KEY = 'stick-fight-pid', RIVALS_KEY = 'stick-fight-rivals';   // this browser's random id, and the all-time record per rival id
 const END_HOLD = 150;     // frames of the WINS card after the result shows (the sim's own hold, 216, would reset the match)
 const AUTO_MS = 5000, AGREE_MS = 3000, GRACE_MS = 20000, ALIVE_MS = 3000, SILENT_MS = 15000;
+// a match that can't go on is dropped as CONNECTION LOST on both sides: stalled (WAITING FOR RIVAL) this long with
+// packets still arriving, or at the end this long without the other side agreeing on the final state
+const STALL_LOST_MS = 20000, END_WAIT_MS = 15000;
 const WANTS = new Set(['rematch', 'chars', 'wait']);
 
 /** this browser's id for the all-time record (random, kept in localStorage; '' when storage is off) */
@@ -108,7 +113,9 @@ export function createOnline(game) {
   let cd = /** @type {null | { kind: string, until: number }} */ (null), autoOff = false;
   let pendingResult = /** @type {any} */ (null), pendingGo = false;
   /** @type {any} */ let drain = null;   // the finished match's netcode: keeps sending acks until the next start
-  let timer = 0, heardAt = 0, aliveAt = 0, autoHalt = false;
+  let timer = 0, heardAt = 0, aliveAt = 0;
+  // the end of the match: what this side last said ({t:'end'}), the other side's word, and since when we wait
+  let endSent = '', rivalEnd = /** @type {null | { n: number, f: number, h: string, e: number }} */ (null), endWait = 0;
   // the player's display name (rides the ready message; the only thing about a player the other sees),
   // and the rival's. A crew match (src/net/crew.js opened the room) starts on the pick screen
   // (pickFirst: the host's 'go' at match 0 instead of a start), and its all-time record is the
@@ -142,7 +149,13 @@ export function createOnline(game) {
     l.on('control', (msg) => {
       heardAt = now();
       if (lockstep && lockstep.onControl(msg)) return;
-      if (msg.t === 'hash' || msg.t === 'dump') return;   // the match before's, arriving late
+      if (msg.t === 'hash' || msg.t === 'dump' || msg.t === 'sync' || msg.t === 'resync?') return;   // the match before's, arriving late
+      if (msg.t === 'end') {
+        // the other side's final state for this match, and how many resyncs it had been through (its epoch)
+        if ((msg.n | 0) === n && lockstep) rivalEnd = { n: msg.n | 0, f: msg.f | 0, h: String(msg.h), e: msg.e | 0 };
+        return;
+      }
+      if (msg.t === 'lost') { if (lockstep || between()) finish('lost'); return; }   // the other side gave up on the link
       if (msg.t === 'ready') {
         if (msg.v !== NET_VERSION) { setState('error', 'version'); l.close(); return; }
         remoteChar = typeof msg.char === 'string' ? msg.char : 'temp';
@@ -180,15 +193,17 @@ export function createOnline(game) {
   function hostRules() { return cleanRules(typeof game.rulesSetting === 'function' ? game.rulesSetting() : null); }
   function begin(seed, chars = ['temp', 'temp'], botch = true, m = 1, rules = cleanRules(null)) {
     const localIndex = role === 'host' ? 0 : 1;
-    n = m; drain = null; stopTimer(); autoHalt = false;
+    n = m; drain = null; stopTimer();
+    endSent = ''; rivalEnd = null; endWait = 0;
     localChar = chars[localIndex] || localChar; remoteChar = chars[1 - localIndex] || remoteChar;
     mine = { want: null, focus: 'rematch', id: localChar, ready: false };
     rival = { want: null, focus: '', id: remoteChar, ready: false, at: now() };
     cd = null; autoOff = false; pendingGo = false;
     lockstep = createRollback({
-      sim: game.sim, localIndex, link: netsimLink(link, params.get('netsim')), match: m,
+      sim: game.sim, localIndex, link: netsimLink(link, params.get('netsim')), match: m, endHold: END_HOLD,
       sampleLocal: (f) => (localSource ? localSource(f) : game.input.snapshot()),
       onDesync: (d) => { emit('desync', d); readout.render(); },
+      onResync: (r) => { emit('resync', r); readout.render(); },
     });
     lobby.close();
     setState('playing');
@@ -203,16 +218,27 @@ export function createOnline(game) {
 
   // ---- the room session: the end of a match, and between matches -------------------------------
   const between = () => state === 'post' || state === 'select';
-  /** after each advance: the match is over once END_HOLD frames past the result are confirmed here
-   *  and the other side has our inputs up to there too (the drain keeps sending them after) */
+  /** after each advance: the match is over once the netcode has halted END_HOLD frames past the result, that
+   *  frame is confirmed here, and the other side has said it halted there on the same state (the drain keeps
+   *  sending our inputs after, for its last frames). Two different ends are a desync: the host's state wins. */
   function checkEnd() {
     const ls = lockstep;
     if (!ls) return;
     const at = ls.matchAt;
-    if (at < 0) { if (autoHalt) { ls.haltAt = Infinity; autoHalt = false; } return; }   // a result a correction took back
+    // the other side's word counts against ours only once both have been through the same resyncs (a resync in
+    // flight will change one of them)
+    const word = rivalEnd && rivalEnd.n === n ? rivalEnd : null, current = !!word && word.e === ls.epoch;
+    // the other side halted on a frame this side has confirmed without a result there: the states differ
+    if (current && word && (at < 0 || at + END_HOLD !== word.f) && ls.confirmed >= word.f - 1) ls.resync();
+    if (at < 0) { endWait = 0; return; }   // no result yet (or one a correction took back)
     const end = at + END_HOLD;
-    if (ls.haltAt > end) { ls.haltAt = end; autoHalt = true; }
-    if (ls.frame >= end && ls.confirmed >= end - 1) matchOver();
+    if (!(ls.frame >= end && ls.confirmed >= end - 1)) { endWait = 0; return; }
+    const h = hashSim(game.sim), key = `${end}:${h}:${ls.epoch}`;
+    if (key !== endSent) { endSent = key; if (link) link.sendControl({ t: 'end', n, f: end, h, e: ls.epoch }); }
+    if (!endWait) endWait = now();
+    if (word && word.f === end && word.h === h) { matchOver(); return; }
+    if (current) ls.resync();
+    if (now() - endWait > END_WAIT_MS) finish('lost');
   }
   function matchOver() {
     const sim = game.sim, ls = lockstep;
@@ -346,7 +372,7 @@ export function createOnline(game) {
   function finish(reason) {
     const was = !!lockstep || between();
     lockstep = null; drain = null; stopTimer(); cd = null;
-    if (link) { const l = link; link = null; l.close(); }
+    if (link) { const l = link; link = null; if (reason === 'lost' && was) { try { l.sendControl({ t: 'lost' }); } catch { /* gone */ } } l.close(); }
     document.documentElement.classList.remove('online');
     readout.show(false);
     clearRoomParam();
@@ -378,8 +404,8 @@ export function createOnline(game) {
       n = 0; tally = freshTally(); last = null; rivalName = '';
       pickFirst = !!opts.pickFirst; crewMode = !!opts.crew;
       role = 'host'; setState('creating');
-      try { code = opts.code && CODE_RE.test(opts.code) ? opts.code : await createRoom(); } catch (e) { setState('error', (e && e.reason) || 'unreachable'); throw e; }
-      wire(createLink({ code, role: 'host', forceRelay: forceRelay() }));
+      try { code = opts.code && CODE_RE.test(opts.code) ? opts.code : await (game.createRoom || createRoom)(); } catch (e) { setState('error', (e && e.reason) || 'unreachable'); throw e; }
+      wire((game.createLink || createLink)({ code, role: 'host', forceRelay: forceRelay() }));
       setState('waiting');
       return { code, url: shareUrl(code), link };
     },
@@ -391,7 +417,7 @@ export function createOnline(game) {
       c = String(c || '').trim().toUpperCase();
       if (!CODE_RE.test(c)) { setState('error', 'bad-code'); throw new Error('bad room code'); }
       role = 'guest'; code = c;
-      wire(createLink({ code, role: 'guest', forceRelay: forceRelay() }));
+      wire((game.createLink || createLink)({ code, role: 'guest', forceRelay: forceRelay() }));
       setState('joining');
       return { code, link };
     },
@@ -401,7 +427,8 @@ export function createOnline(game) {
     advance(ms) {
       if (!lockstep) return 0;
       const k = lockstep.advance(ms);
-      if (lockstep && lockstep.lost) { finish('lost'); return k; }
+      // the link is gone, or can't carry this match any more: both sides end it, never two different fights
+      if (lockstep && (lockstep.lost || lockstep.broken || lockstep.stalledMs > STALL_LOST_MS)) { finish('lost'); return k; }
       checkEnd();
       readout.tick();
       return k;
@@ -477,7 +504,7 @@ export function createOnline(game) {
     shareUrl,
     stats() {
       const s = lockstep ? lockstep.stats() : null;
-      return { state, role, code, mode: link ? link.mode : '', ...(s || {}) };
+      return { state, role, code, mode: link ? link.mode : '', endWaitMs: endWait ? now() - endWait : 0, ...(s || {}) };
     },
     // tests: scripted local input, a common stop frame, and the state hash
     setLocalSource(fn) { localSource = fn; },
@@ -513,10 +540,11 @@ function createReadout(net, stage) {
   const el = document.createElement('div');
   el.className = 'nf-readout';
   el.hidden = true;
-  el.innerHTML = '<span class="nf-mode"></span> <span class="nf-ping"></span><b class="nf-desync" hidden>DESYNC</b><b class="nf-wait" hidden>WAITING FOR RIVAL</b>';
+  el.innerHTML = '<span class="nf-mode"></span> <span class="nf-ping"></span><b class="nf-resync" hidden>RESYNC</b><b class="nf-desync" hidden>DESYNC</b><b class="nf-wait" hidden>WAITING FOR RIVAL</b>';
   (stage || document.body).appendChild(el);
   const mode = el.querySelector('.nf-mode'), ping = el.querySelector('.nf-ping');
   const desync = /** @type {HTMLElement} */ (el.querySelector('.nf-desync')), wait = /** @type {HTMLElement} */ (el.querySelector('.nf-wait'));
+  const resync = /** @type {HTMLElement} */ (el.querySelector('.nf-resync'));
   let last = 0;
   const r = {
     show(on) { el.hidden = !on; if (on) r.render(); },
@@ -528,8 +556,11 @@ function createReadout(net, stage) {
       el.classList.toggle('nf-relay', s.mode === 'relay');
       // the round trip, how many frames the last correction re-ran, and the input delay
       ping.textContent = `${Math.round(s.rtt || 0)} MS · RB ${s.lastDepth || 0} · DELAY ${s.delay || 0}`;
-      desync.hidden = !s.desync;
-      wait.hidden = !(s.stalledMs > 300);
+      // a resync just put this side back on the host's state: a brief note. DESYNC only for a mismatch nothing has
+      // fixed in 3 s (a resync normally lands in a round trip)
+      resync.hidden = !(s.sinceResync < 1500);
+      desync.hidden = !(s.desync && performance.now() - (s.desync.at || 0) > 3000);
+      wait.hidden = !(s.stalledMs > 300 || s.endWaitMs > 300);
     },
   };
   return r;
@@ -758,6 +789,7 @@ function injectStyle() {
   .nf-readout.nf-relay { color: #ffe0a8; text-shadow: 0 0 6px #ffb02e, 0 0 2px #000; }
   .nf-readout b { font-weight: 600; }
   .nf-desync { color: #ffc2f3; text-shadow: 0 0 8px #ff2bd6, 0 0 2px #000; }
+  .nf-resync { color: #ffe0a8; text-shadow: 0 0 8px #ffb02e, 0 0 2px #000; }
   .nf-wait { color: #fff4fd; animation: nf-blink 1.1s steps(1) infinite; }
   html.touch-ui .nf-readout { bottom: auto; top: calc(var(--nf-top, 74px)); left: 50%; transform: translateX(-50%); }
   /* online: no horde toggle on the touch layer */
