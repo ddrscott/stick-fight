@@ -32,9 +32,20 @@ const SPLAT_STEPS = 48, BREAK_STEPS = 36, RISE_STEPS = 24, DASH_STEPS = 14, COUN
 const CROUCH_SQUASH = 0.7;
 const FLOOR_DMG = 10, VAULT_HOP_VY = 420;   // landing damage after a floor break; the vault's hop   // a crouch drawn by squashing the standing pose, until the rig has crouch clips
 const INVULN = new Set(['getup', 'ko', 'roll']);
-const OTG_MOVES = new Set(['sweep', 'cross', 'lowKick']);   // low enough to land on a floored body
-const OTG = { damage: 3, hitstop: 3, bounce: 4 };   // a flinch: 3-frame freeze, then a 2-frame 6px pop; the body stays down
-const ROLL_STEPS = 30, ROLL_SPEED = 340, GETUP_SPEED = 2;   // the rig's getup is 672ms at 1x; at 2x it is 336ms, about the old clip at 1.5x
+const OTG = { bounce: 4 };   // a ground hit's flinch: a 2-frame 6px pop; the body stays down
+// Hitting a body on the floor (README, Fundamentals): only a strike whose drawn limb touches the drawn lying body
+// counts (FLOOR_TOUCH px of slack). A low (frame data height 'low') or the stomp that touches it is that
+// knockdown's one ground hit: a low for `share` of its damage, the stomp for all of it. Anything else that
+// touches it (a high or a mid, or any strike once the ground hit is used) is a graze: a flick, no damage.
+const FLOOR_TOUCH = 3;
+const GROUND = { share: 0.55, hitstop: 4, react: 0.6 };
+const GRAZE = { hitstop: 2, bounce: 3 };
+const GETUP_SPEED = 2;   // the rig's getup is 672ms at 1x; at 2x it is 336ms, about the old clip at 1.5x
+// Rolls (README, Getting up): a fresh press away from the opponent or toward him. Away rolls `away` px and stays on
+// his side. Toward, with the opponent's root within `crossGap` of the hip, crosses under him and comes up `crossPast`
+// px beyond him (if there's `room` past him); otherwise it rolls at most `toward` px and stops `stopGap` short of him.
+// `pad`: how close to the wall a roll comes. Steps: the tumble (the rise after it is the getup state's).
+const ROLL = { away: 110, toward: 80, crossGap: 210, crossPast: 78, room: 60, stopGap: 130, pad: 34, steps: 40, crossSteps: 48 };
 const SQUASH_STEPS = 10;            // 5 frames on the floor after touchdown before up or a wake-up strike is read (a roll goes at once)
 const DOWN_MAX = 120;
 // air recovery out of a juggle or a launch: a button once TECH_MIN steps have passed since the last hit flips
@@ -266,6 +277,16 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       return;
     }
     u.stair = -1; u.floor = 1; u.y = u.ragFloor;
+  }
+  // A lying body's ends for standing bodies (keepOff, the ride stop in physics): from its hip to just past its drawn
+  // feet (LIE_FEET), or to its root if that's nearer. The root of the rest pose sits a body-length out past the feet,
+  // and holding a man off to the root kept every low but the stomp from ever touching the legs. A man at the feet
+  // stands OVER inside that, clear of a wake-up strike's 56px scoot toward him.
+  const LIE_FEET = 84;
+  function lieEnds(u) {
+    const hip = u.rig.joints.hip.x, L = LIE_FEET * (u.rig.scale || 1);
+    const fx = Math.abs(u.x - hip) > L ? hip + Math.sign(u.x - hip) * L : u.x;
+    return [Math.min(hip, fx), Math.max(hip, fx)];
   }
   // where a body is: a lying or tumbling body's root can sit at its feet or be re-based when it settles,
   // so sides and facing go by its hip
@@ -654,6 +675,19 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function toDown(u) {
     u.state = 'down'; u.downTimer = DOWN_MAX; u.touchStep = sim.stepCount; u.downPin = 0; floored(u);
     u.buffer = null; u.bufferKeys = null; u.queued = null;   // a press made in the air isn't a getup choice
+    lieSide(u);
+  }
+  // Sides while a body is down (README, Sides): its side of the opponent is fixed as it lands, by its hip (a
+  // launch, a throw or a cross-up may have carried it over him), and kept in both units' `home`. Only a roll that
+  // crosses under him, or him jumping over the body, changes it; every way up rises on that side.
+  function lieSide(u) {
+    const o = oppOf(u);
+    if (!o || o === u || o.hidden || !sameLevel(u, o)) return;
+    const d = bodyX(u) - o.x;
+    // within OVER of each other (a standing body may reach that far onto a lying one) the side they already had
+    const s = Math.abs(d) > OVER + 4 ? Math.sign(d) : (u.home || -(o.home || 0) || Math.sign(d) || -o.facing || 1);
+    u.home = s;
+    if (oppOf(o) === u) o.home = -s;
   }
   const wallMode = (u) => (u.splatPending ? 'splat' : u.wallBounce ? 'bounce' : 'stop');
   // every rig update goes through here: until the rig has crouch clips, a crouching body is the
@@ -974,7 +1008,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const sm = inStance(u) && FRAME_DATA[u.move].stance.moves[BTN_NUM[b]];
     if (sm && canUse(u.char, sm)) return { attack: sm, keys: null, name: '' };
     const tok = (inp.down ? 'd' : '') + BTN_NUM[b];
-    if (inp.down && (b === 'lk' || b === 'rk') && stompOK(u)) return { attack: 'stomp', keys: null, name: '' };   // over a body on the floor
+    if (inp.down && b === 'rk' && stompOK(u)) return { attack: 'stomp', keys: null, name: '' };   // down+4 over a body on the floor (down+3 stays the low kick, which can land on it)
     if (u.state === 'jump' || !u.grounded) return { attack: resolveButton(b, inp, u, sim.stepCount), keys: null, name: '' };
     if (seqLive(u)) {
       const cand = [...u.seq, tok], m = matchStrings(cand, u.char.strings);
@@ -987,7 +1021,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     return { attack: resolveButton(b, inp, u, sim.stepCount), keys: [tok], name: '' };
   }
   sim.resolvePress = resolvePress;
-  // down + a kick is the stomp when the opponent lies on the floor close enough for its step to reach
+  // down + 4 is the stomp when the opponent lies on the floor close enough for its step to reach
   const STOMP_RANGE = 175;   // px from his root to the body's hip: a standing body stops ~150 from it on the feet side
   function stompOK(u) {
     const o = oppOf(u);
@@ -1400,8 +1434,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         break;
       }
       case 'roll':
-        u.vx *= 0.97;
-        if (--u.rollLeft <= 0) { u.vx = 0; setState(u, 'getup'); u.getupSteps = ROLL_GETUP_STEPS; }
+        rollStep(u);
         break;
       case 'getup':
         u.vx = 0;
@@ -1659,18 +1692,64 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     note({ type: 'airLand', att: u.id, hit: false, lag: u.landLag });
     onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.4 });
   }
+  // A roll (README, Getting up): dx is the fresh press, and what it does depends on where the opponent is (his side,
+  // u.home). The root goes to the hip first, so the ball turns about where the body lies (nothing jumps), and the
+  // clip is picked by which way the body lies: the way the head points is a back roll, the way the feet point a
+  // forward roll. The sim moves the root (rollStep); the rig only turns the body.
+  const rollRoom = (u, o, dir) => { const b = bandOf(u); return dir > 0 ? b.x1 - ROLL.pad - o.x : o.x - (b.x0 + ROLL.pad); };
   function startRoll(u, dx) {
-    // a roll faces the opponent whichever way it goes (facing against the roll turned a forward roll's back to him)
-    const o = oppOf(u), ox = o ? bodyX(o) : u.x - dx;
-    u.state = 'roll'; u.rolled = true; u.rollLeft = ROLL_STEPS; u.vx = dx * ROLL_SPEED; u.facing = Math.sign(ox - bodyX(u)) || -dx;
-    u.rig.play('knockdown'); rigUpd(u, 0.5);
+    const o = oppOf(u), hip = bodyX(u), b = bandOf(u), lo = b.x0 + ROLL.pad, hi = b.x1 - ROLL.pad;
+    const live = o && !o.hidden && sameLevel(u, o);
+    const side = (live && (u.home || Math.sign(hip - o.x))) || -dx;   // his side of the opponent
+    const toward = live && dx === -side;
+    let to = hip + dx * ROLL.away, cross = false;
+    if (toward) {
+      const gap = (o.x - hip) * dx, room = rollRoom(u, o, dx);
+      if (gap <= ROLL.crossGap && o.grounded && !o.rag && room >= ROLL.room) { cross = true; to = o.x + dx * Math.min(ROLL.crossPast, room); }
+      else to = hip + dx * Math.max(0, Math.min(ROLL.toward, gap - ROLL.stopGap));
+    }
+    to = Math.max(lo, Math.min(hi, to));
+    if ((to - hip) * dx < 0) to = hip;   // already past the pad: roll in place, never backwards
+    // the root to the hip (a getup cut short takes its step first, like any travelling clip)
+    syncRig(u);
+    if (typeof u.rig.commitShift === 'function') { const x0 = u.rig.x; u.rig.commitShift(); u.x += u.rig.x - x0; }
+    if (typeof u.rig.rebase === 'function') { u.rig.rebase(hip); u.x = hip; }
+    u.state = 'roll'; u.phase = null; u.move = null; u.rolled = true; u.vx = 0;
+    u.rollFrom = u.x; u.rollTo = to; u.rollDir = dx; u.rollCross = cross; u.rollT = 0; u.rollPlan = u.x;
+    u.rollN = cross ? ROLL.crossSteps : ROLL.steps;
+    const clip = dx === u.facing ? 'rollFwd' : 'rollBack', md = MOVE_DATA_ && MOVE_DATA_[clip];
+    u.rollRate = md ? ((md.blend || 0) + md.duration) / (u.rollN / 120 * 1000) : 1;   // the tumble fills the roll
+    safePlay(u.rig, clip);
+    note({ type: 'roll', unit: u.id, toward, cross, from: Math.round(hip), to: Math.round(to) });
+    onEvent({ type: 'roll', unit: u, toward, cross, dir: dx });
+  }
+  // the roll's travel: eased so it's moving its way from the first frame (half again the average speed, slowing
+  // to half of it), added a step at a time so keepSides can still stop a roll under someone. A cross aims past
+  // the opponent wherever he is now.
+  function rollStep(u) {
+    u.vx = 0;
+    const o = oppOf(u);
+    if (u.rollCross && o && !o.hidden) { const b = bandOf(u); u.rollTo = Math.max(b.x0 + ROLL.pad, Math.min(b.x1 - ROLL.pad, o.x + u.rollDir * Math.max(0, Math.min(ROLL.crossPast, rollRoom(u, o, u.rollDir))))); }
+    const k = Math.min(1, ++u.rollT / u.rollN), e = 0.5 * k + 0.5 * (1 - (1 - k) * (1 - k));
+    const plan = u.rollFrom + (u.rollTo - u.rollFrom) * e;
+    u.x += plan - u.rollPlan; u.rollPlan = plan;
+    if (k < 1) return;
+    // up on his feet: his side now (a cross put him past the opponent), facing him; the turn draws as a turn
+    if (o && !o.hidden && sameLevel(u, o)) {
+      const d = u.x - o.x, s = Math.abs(d) > 8 ? Math.sign(d) : u.rollCross ? u.rollDir : (u.home || Math.sign(d) || 1);
+      u.home = s; if (oppOf(o) === u) o.home = -s;
+      u.facing = -s;
+    }
+    note({ type: 'rollEnd', unit: u.id, cross: u.rollCross, x: Math.round(u.x), side: u.home });
+    u.rollCross = false;
+    setState(u, 'getup', 'rollUp'); u.getupSteps = ROLL_GETUP_STEPS;
   }
   // A wake-up strike: it kicks toward the opponent, so a body lying with its head toward him turns over
   // first (the hip stays where it is; the drawing cross-fades the mirror), then the strike starts from the
   // rest pose like any other
   const REST_HX = -128;   // the knockdown rest pose's hip, px behind the root (src/fighter: MOVE_DEFS.knockdown)
   function startWake(u, move) {
-    const o = oppOf(u), hip = bodyX(u), want = o ? Math.sign(bodyX(o) - hip) : 0;
+    const o = oppOf(u), hip = bodyX(u), want = o ? (-u.home || Math.sign(bodyX(o) - hip)) : 0;   // toward him, by the sides (lieSide)
     if (want && want !== u.facing) { u.facing = want; u.x = hip - REST_HX * want * (u.rig.scale || 1); syncRig(u); rigUpd(u, 0); }
     u.buffer = null; u.bufferKeys = null; u.bufferName = '';
     startAttack(u, move);
@@ -1761,7 +1840,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const o = oppOf(u);
       const stomping = u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].otg;   // the stomp's step goes in over the legs
       if (o && u.grounded && !stomping && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx && sameLevel(u, o)) {
-        const dir = Math.sign(u.vx), near = dir > 0 ? Math.min(o.x, bodyX(o)) : Math.max(o.x, bodyX(o));
+        const ends = o.rag ? [Math.min(o.x, bodyX(o)), Math.max(o.x, bodyX(o))] : lieEnds(o), dir = Math.sign(u.vx), near = dir > 0 ? ends[0] : ends[1];
         const room = (near - u.x) * dir - 24;
         if ((near - u.x) * dir > -40 && room < u.vx * dir * DT) { u.vx = Math.max(0, room) / DT * dir; if (room <= 0) { u.vx = 0; u.chase = false; } }
       }
@@ -1773,7 +1852,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // a body getting up stays where it lies: its root (at the feet) may be past the wall, its hip never is,
     // and it stands up at the hip (takeRoot). Sliding it off the wall slid the rising body along the floor,
     // under a man standing over it, and it stood up on his other side.
-    if ((u.state === 'getup' || isWake(u)) && u.grounded) { u.vx = 0; return finishPhysics(u, wasAir); }
+    if ((u.state === 'getup' || u.state === 'roll' || isWake(u)) && u.grounded) { u.vx = 0; return finishPhysics(u, wasAir); }   // a roll moves its own root (rollStep)
     if (u.easeBand) {
       // (a body still in the air eases in too, and still lands: an attack out of the vault's drop)
       if (u.x > bounds.x1) { u.x = Math.max(bounds.x1, u.x - 260 * DT); if (wasAir) finishPhysics(u, wasAir); return; }
@@ -1919,7 +1998,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     for (let i = 1; i < sim.units.length; i++) {
       const g = sim.units[i];
       const a = testStrike(hero, g), b = testStrike(g, hero);
-      if (a && b && !a.grab && !b.grab) {
+      if (a && b && !a.grab && !b.grab && !a.graze && !b.graze) {
         const ma = hero.move, mb = g.move;
         applyHit(hero, g, a.pt, { move: ma, trade: true });
         applyHit(g, hero, b.pt, { move: mb, trade: true });
@@ -1929,8 +2008,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         note({ type: 'trade', a: ma, b: mb });
         continue;
       }
-      if (a) a.grab ? grab(hero, g) : applyHit(hero, g, a.pt);
-      if (b && g.state === 'attack') b.grab ? grab(g, hero) : applyHit(g, hero, b.pt);
+      if (a) a.grab ? grab(hero, g) : a.graze ? graze(hero, g, a.pt) : applyHit(hero, g, a.pt);
+      if (b && g.state === 'attack') b.grab ? grab(g, hero) : b.graze ? graze(g, hero, b.pt) : applyHit(g, hero, b.pt);
     }
   }
   const isLow = (u) => !!u.crouch && u.grounded;
@@ -1964,8 +2043,15 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (dodging) { att.grabOK = false; return dodge(); }   // slipped: the grab doesn't lock on later in its active frames
       return { grab: true };
     }
-    const floored = def.state === 'down';
-    if (floored && (!(OTG_MOVES.has(att.move) || fd.otg) || def.otgHit)) return null;   // one ground hit per knockdown, low moves and the stomp only
+    if (def.state === 'down') {
+      // a body on the floor: the drawn limb has to touch the drawn body (no padded boxes, so it lands when it looks
+      // like it does). A low or the stomp is the knockdown's one ground hit; after it, or for a high or a mid, a graze
+      if (att.grazeId === att.attackId) return null;
+      if (segGap(att, def) > FLOOR_TOUCH) return null;
+      const tip = (fd.joint && att.rig.joints[fd.joint]) || buildHitboxes(att.rig, att.move, att.facing)[0];
+      const ground = (fd.otg || fd.height === 'low') && !fd.botch && !def.otgHit;
+      return tip ? { pt: { x: tip.x, y: tip.y }, graze: !ground } : null;
+    }
     // a character's hop or flying knee: lows pass under it from the press until its recovery
     if (fd.height === 'low' && def.state === 'attack' && def.phase !== 'recovery' && FRAME_DATA[def.move] && FRAME_DATA[def.move].lowInvuln) return null;
     // a high passes over a croucher (logged once per strike for measurement)
@@ -2150,25 +2236,29 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       return;
     }
     if (def.state === 'down') {
-      // on-the-ground hit: a flinch, not a relaunch; the getup timer keeps running after the freeze. A low's is
-      // a 3-damage poke the striker can cancel into a meaty; the stomp (frame data otg) does real damage, counted
-      // in the combo it ends (decay and soft cap), pins the body under the heel, and can't be cancelled
+      // the knockdown's one ground hit (testStrike): a flinch, not a relaunch, counted in the combo it ends (decay and
+      // soft cap); the getup timer keeps running after the freeze. A low does GROUND.share of its damage with a jolt
+      // through the body and can cancel into a meaty; the stomp (frame data otg) does all of it, pins the body under
+      // the heel, and can't be cancelled
       def.otgHit = true; def.flash = FLASH_STEPS; def.bounce = OTG.bounce;
+      const chained = def.comboBy === att.id;
+      def.combo = chained ? (def.combo || 1) + 1 : 1; if (!chained) def.comboDmg = 0;
+      def.comboBy = att.id; def.lastHitAt = sim.stepCount; sim.combo = { count: def.combo, by: att.id, on: def.id };
+      const dmg = comboDamage(def, fd.damage * att.char.stats.damage * (fd.otg ? 1 : GROUND.share) * comboScale(COMBO_DMG, def.combo));
+      def.health = Math.max(1, def.health - dmg);
+      att.glide = null; att.vx = 0;
       if (fd.otg) {
-        const chained = def.comboBy === att.id;
-        def.combo = chained ? (def.combo || 1) + 1 : 1; if (!chained) def.comboDmg = 0;
-        def.comboBy = att.id; def.lastHitAt = sim.stepCount; sim.combo = { count: def.combo, by: att.id, on: def.id };
-        def.health = Math.max(1, def.health - comboDamage(def, fd.damage * att.char.stats.damage * comboScale(COMBO_DMG, def.combo)));
         def.downPin = f60(fd.pin || 0); if (def.downTimer < def.downPin + 2) def.downTimer = def.downPin + 2;
-        att.hitstop = def.hitstop = f60(fd.hitstop); att.glide = null; att.vx = 0;
+        att.hitstop = def.hitstop = f60(fd.hitstop);
       } else {
-        def.health = Math.max(1, def.health - OTG.damage); att.otgConfirm = true;
-        att.hitstop = def.hitstop = f60(OTG.hitstop);
+        att.otgConfirm = true;
+        att.hitstop = def.hitstop = f60(GROUND.hitstop);
+        if (typeof def.rig.react === 'function') { try { def.rig.react(HAS_HITBODY ? 'hitBody' : 'hitLight', { weight: GROUND.react, dir: 1 }); } catch (e) { warnOnce('react', 'rig.react threw: ' + e.message); } }
       }
       att.releaseEv = { type: 'release', x: pt.x, y: pt.y, dir, strength: 0.4, ko: false };
       credit(att, fd, false, move);
-      note({ type: 'hit', move, att: att.id, def: def.id, otg: true });
-      onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.4, move, limb: fd.limb, flashR: 24, ko: false, knockdown: true, otg: true, attacker: att, defender: def });
+      note({ type: 'hit', move, height: fd.height, att: att.id, def: def.id, otg: true, dmg, combo: def.combo });
+      onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: fd.otg ? 0.4 : 0.35, move, limb: fd.limb, flashR: 24, ko: false, knockdown: !!fd.otg, otg: true, attacker: att, defender: def });
       return;
     }
     if ((def.state === 'knockdown' && inAir(def)) || def.state === 'splat') {
@@ -2372,6 +2462,15 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     note({ type: 'hit', move, height: fd.height, att: att.id, def: def.id, counter, trade, combo: def.combo, crouch: false });
     onEvent({ type: 'hit', x: hp.x, y: hp.y, dir, strength, move, limb: fd.limb, flashR: fd.flashR, ko, knockdown: fd.knockdown, counter, trade, attacker: att, defender: def });
   }
+  // A strike that touches a body on the floor without being its ground hit (testStrike): a flick of the body and a
+  // two-step freeze so the touch reads, with a small spark and tap. No damage, no combo, no refund, no cancel.
+  function graze(att, def, pt) {
+    att.grazeId = att.attackId;
+    def.bounce = Math.max(def.bounce || 0, GRAZE.bounce); def.flash = Math.max(def.flash || 0, 2);
+    att.hitstop = def.hitstop = GRAZE.hitstop;
+    note({ type: 'graze', move: att.move, height: FRAME_DATA[att.move].height, att: att.id, def: def.id });
+    onEvent({ type: 'graze', x: pt.x, y: pt.y, dir: awayDir(att, def), move: att.move, limb: FRAME_DATA[att.move].limb, attacker: att, defender: def });
+  }
   function koDefender(att, def, fd, dir) {
     // the knockdown clip lands sprawled; the ko clip ends as a flat bar
     def.state = 'ko'; def.koDone = false; def.landJoints = null; safePlay(def.rig, 'knockdown');
@@ -2466,7 +2565,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const onFoot = (u) => u.grounded && !u.rag && !u.falling && u.state !== 'vault' && u.state !== 'jump' && !NOT_SOLID.has(u.state) && !wakeLying(u);
     const down = lyingDown(a) ? a : lyingDown(b) ? b : null, stand = down === a ? b : a;
     if (!down || !onFoot(stand) || !(down.rig && down.rig.joints && down.rig.joints.hip)) return;
-    const hip = down.rig.joints.hip.x, lo = Math.min(hip, down.x), hi = Math.max(hip, down.x);
+    const hip = down.rig.joints.hip.x, [lo, hi] = lieEnds(down);
     // his own side: remembered from when both stood (going by where he is now pushed him the rest of the way across)
     const side = (oppOf(stand) === down && stand.home) || Math.sign((stand.prevBX != null ? stand.prevBX : stand.x) - (down.prevBX != null ? down.prevBX : hip)) || Math.sign(stand.x - hip) || 1;
     const edge = side > 0 ? hi - OVER : lo + OVER;
@@ -2482,6 +2581,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const airFreeze = (u) => !u.grounded && u.hitstop > 0 && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air;
     if (airFreeze(a) || airFreeze(b)) return;
     if (a.hidden || b.hidden) return;
+    if ((a.state === 'roll' && a.rollCross) || (b.state === 'roll' && b.rollCross)) return;   // a roll crossing under him: nothing stops it
     if (NOT_SOLID.has(a.state) || NOT_SOLID.has(b.state) || wakeLying(a) || wakeLying(b)) { keepSides(a, b); keepOff(a, b); return; }
     // a body rising from the floor is solid only for the last quarter of its getup (or of a wake-up strike's rise)
     const rising = (u) => (u.state === 'getup' || isWake(u)) && u.rig.current.t < 0.75;
@@ -2616,6 +2716,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // doesn't let him walk out the far side of her body while she is down or in the air
       const o = oppOf(u);
       if (o && !o.hidden && u.grounded && o.grounded && !u.rag && !o.rag && !NOT_SOLID.has(u.state) && !NOT_SOLID.has(o.state) && u.state !== 'getup' && o.state !== 'getup' && !isWake(u) && !isWake(o) && Math.abs(u.x - o.x) > 8) u.home = Math.sign(u.x - o.x);
+      // a jump over a body on the floor changes sides for both (the only way besides a crossing roll: lieSide)
+      else if (o && !o.hidden && !u.grounded && !u.rag && !u.falling && (o.state === 'down' || wakeLying(o)) && !o.rag && oppOf(o) === u && sameLevel(u, o)) {
+        const d = u.x - bodyX(o);
+        if (Math.abs(d) > OVER + 4 && Math.sign(d) !== u.home) { u.home = Math.sign(d); o.home = -u.home; }
+      }
     }
     for (const u of sim.units) {
       const opp = oppOf(u);
@@ -2686,7 +2791,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       syncRig(u);
       // a walk or run cycle plays at the rate that keeps planted feet planted at the character's speed
       // (exactly 1 for TEMP); the getup at its own speed
-      const rate = u.state === 'getup' ? GETUP_SPEED : u.state === 'walk' ? u.char.stats.walk * (u.backHeld ? u.char.stats.backWalk : 1) / u.char.stride
+      const rate = u.state === 'getup' ? GETUP_SPEED : u.state === 'roll' ? u.rollRate || 1 : u.state === 'walk' ? u.char.stats.walk * (u.backHeld ? u.char.stats.backWalk : 1) / u.char.stride
         : u.state === 'run' ? u.char.stats.run / u.char.stride : u.state === 'crouch' && u.vx ? u.char.stats.walk / u.char.stride
         : u.state === 'attack' && u.phase === 'startup' && sim.stepCount < u.speedEnd ? u.speedMul : 1;   // a timed speed status quickens startups
       rigUpd(u, DT * rate);

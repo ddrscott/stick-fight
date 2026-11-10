@@ -824,6 +824,42 @@ MOVE_DEFS.airTech = { blend: 50, blendEase: 'out', keys: [
   K({ hx: 4, torso: 10, head: -4, ll: [24, 4], rl: [-10, -16], la: [110, 120], ra: [90, 100], air: 0 }, 90, 'out'),
   K({ hx: 4, torso: 8, head: -4, ll: [22, 2], rl: [-10, -14], la: [100, 120], ra: [84, 100], air: 0 }, 0, 'sine'),
 ] };
+// Rolls from the floor (the sim's 'roll' state): the body balls up and tumbles along the floor, ending in a
+// crouch on its feet; 'rollUp' then stands it up. The sim puts the root at the hip first (rig.rebase) and
+// moves the root along the floor itself, so these keys keep the hip over the root (hx 0) and only turn the
+// body: the ground snap keeps the lowest point on the floor, which is what makes the ball roll.
+// A turn of the whole body by r degrees (positive: forward, the way a positive torso leans) adds r to the
+// torso and takes it from every limb (limb angles are measured from straight down the other way round).
+// rollBack goes the way the head points (legs over the head, about 270 degrees); rollFwd the way the feet
+// point (sit up, then over the shoulder and round onto the feet, about 450). Both end in the same crouch,
+// a whole number of turns round, with every angle off by 360: play() takes the turns back off.
+const BALL = (r, o = {}) => ({ hx: 0, torso: r + 28, bend: 12, head: 26, ll: [150 - r, 18 - r], rl: [142 - r, 6 - r], la: [70 - r, 150 - r], ra: [58 - r, 136 - r], ...o });
+const CROUCH_UP = { hx: 0, torso: 30, bend: 6, head: 6, la: [40, 110], ra: [20, 120], ...F(0, 27, 16, -12) };
+const turned = (p, n) => ({ ...p, torso: p.torso + 360 * n, ll: p.ll.map(a => a - 360 * n), rl: p.rl.map(a => a - 360 * n), la: p.la.map(a => a - 360 * n), ra: p.ra.map(a => a - 360 * n) });
+Object.assign(MOVE_DEFS, {
+  rollBack: { blend: 20, keys: [
+    K(BALL(-122), 50, 'out'),
+    K(BALL(-195), 60, 'linear'),
+    K(BALL(-270), 60, 'linear'),
+    K(BALL(-335), 60, 'out'),
+    K(turned(CROUCH_UP, -1), 0, 'sine'),
+  ] },
+  rollFwd: { blend: 20, keys: [
+    K(BALL(-60), 60, 'out'),
+    K(BALL(30), 50, 'linear'),
+    K(BALL(120), 50, 'linear'),
+    K(BALL(210), 50, 'linear'),
+    K(BALL(290), 60, 'out'),
+    K(turned(CROUCH_UP, 1), 0, 'sine'),
+  ] },
+  // from the roll's crouch: a beat with a hand down, then up into the guard (the getup's own speed applies)
+  rollUp: { blend: 20, keys: [
+    K(CROUCH_UP, 120, 'inOut'),
+    K({ ...F(0, 36, 16, -12), torso: 24, bend: 4, head: 2, la: [50, 120], ra: [26, 136] }, 180, 'out'),
+    K({ ...F(0, HIP - 2, LF, RF), torso: 8, head: -2, la: [56, 146], ra: [32, 160] }, 160, 'inOut'),
+    K({ ...F(0, HIP, LF, RF), torso: 6, head: -4 }, 0, 'sine'),
+  ] },
+});
 // Stomp (down and a kick over a body on the floor): the rear knee comes up to the chest, then the heel
 // drives down onto the body as he steps through, the weight following it down; it sticks there a beat (the
 // sim pins the body under it) and the leg has to come back out before he's guarding again. A long recovery
@@ -1031,6 +1067,8 @@ function lerpPose(a, b, t) {
   return o;
 }
 const clonePose = p => lerpPose(p, p, 0);
+// the same pose n whole turns back (the torso and every limb; their senses are opposite, see BALL)
+const turnBack = (p, n) => turned(p, -n);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 function poseVel(a, b, dt) {
   const o = {};
@@ -1128,6 +1166,17 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     keys = keys.map(k => ({ ...k, p: { ...k.p, hx: k.p.hx - move.shift } }));
   }
   f.commitShift = commitShift;
+  // Move the root to world x without moving the body (the pose's hip offset takes the difference): the sim
+  // puts a lying body's root at its hip before it rolls, so the roll turns about the hip.
+  function rebase(nx) {
+    const d = (nx - f.x) / (f.facing * f.scale);
+    if (!d) return;
+    f.x = nx;
+    f.pose = { ...f.pose, hx: f.pose.hx - d };
+    keys = keys.map(k => ({ ...k, p: { ...k.p, hx: k.p.hx - d } }));
+    if (lastBase) lastBase = { ...lastBase, hx: lastBase.hx - d };
+  }
+  f.rebase = rebase;
   const advCache = {};
   function play(name, opt) {
     let m = MOVE_DEFS[name];
@@ -1206,6 +1255,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     // unchanged), so the next move starts from the new spot instead of snapping back.
     commitShift();
     if (f.pose.spin) f.pose = { ...f.pose, spin: ((f.pose.spin % 360) + 360) % 360 };
+    // a roll ends whole turns round (every angle off by 360): take the turns back off, or the blend unwinds them
+    if (Math.abs(f.pose.torso) > 200) { const n = Math.round(f.pose.torso / 360); f.pose = turnBack(f.pose, n); if (lastBase) lastBase = turnBack(lastBase, n); }
     // Leaving an air attack for anything on the ground (the sim's landing, a hit-confirmed idle):
     // lower the hip from the arc instead of dropping it in one frame. An air move starts its own.
     if (m.air) landEase = null;

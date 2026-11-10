@@ -10,7 +10,8 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { chromium } = require('/Users/spierce/.nvm/versions/node/v22.23.2/lib/node_modules/playwright');
+// playwright from the global npm root (any machine), the old fixed path as a fallback
+const { chromium } = require([(() => { try { return require('node:child_process').execSync('npm root -g').toString().trim() + '/playwright'; } catch { return ''; } })(), '/Users/spierce/.nvm/versions/node/v22.23.2/lib/node_modules/playwright'].find((q) => q && require('node:fs').existsSync(q)));
 
 const [,, page, scene, outdir, ...rest] = process.argv;
 if (!page || !scene || !outdir) { console.error('usage: capture.mjs <page> <scene> <outdir> [--frames N] [--interval ms] [--keys a,b]'); process.exit(2); }
@@ -27,7 +28,7 @@ const server = http.createServer((req, res) => {
 await new Promise(r => server.listen(0, r));
 const url = `http://127.0.0.1:${server.address().port}/${page}`;
 fs.mkdirSync(outdir, { recursive: true });
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ ...(process.env.PW_CHROME ? { executablePath: process.env.PW_CHROME } : {}), args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 const pg = await ctx.newPage();
 const errors = [];
