@@ -109,6 +109,14 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       ctx.globalAlpha = faint ? 0.6 : 1;
       ctx.shadowColor = faint ? NEON.violet : low ? NEON.pink : NEON.amber; ctx.shadowBlur = faint ? 4 : low || refill ? 12 : 8; ctx.fillStyle = c;
       ctx.fillRect(side === 0 ? x + 30 + (BAR_W - 30) - sw : x - SKEW, sy, sw + SKEW, ST_H);
+      // a hit that connected gave some back: the gained piece flashes cyan (white-cyan on a hit, dimmer on a block)
+      const rf = refundAt.get(u), rk = rf ? 1 - (clock - rf.at) / REFUND_FLASH : 0;
+      if (rk > 0 && !faint && st > rf.from) {
+        const gw = (BAR_W - 30) * (st - rf.from);
+        ctx.globalAlpha = Math.min(1, rk * 1.6) * (rf.blocked ? 0.7 : 1);
+        ctx.shadowColor = NEON.cyan; ctx.shadowBlur = 14; ctx.fillStyle = Math.floor(clock * 16) % 2 === 0 ? NEON.white : NEON.cyan;
+        ctx.fillRect(side === 0 ? x + 30 + (BAR_W - 30) - sw : x - SKEW + sw - gw, sy, gw + SKEW, ST_H);
+      }
       ctx.restore();
     }
     if (faint && Math.floor(clock * 8) % 2 === 0) plainText('FAINT', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 15, NEON.pink, { align: side === 0 ? 'left' : 'right' });
@@ -193,11 +201,19 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   // It sits above the head, steps sideways off the other fighter, clamps on screen and fades when it
   // has nowhere clear to go (owner requirement 5). It only reads the sim.
   const trk = new WeakMap();
+  const refundAt = new WeakMap();   // unit -> { at, from, blocked }: a connecting strike's refund (the gained piece flashes)
+  const REFUND_FLASH = 0.45;
   const refillAt = new WeakMap();   // unit -> HUD clock of its last knockdown refill (the corner bar flashes)   // unit -> { x, y, a, stunMax, lastStun, stamShow, counter, flashT }
   const tstate = (u) => { let s = trk.get(u); if (!s) { s = { x: null, y: null, a: 0, stunMax: 1, lastStun: 0, stamShow: 0, counter: 0, armor: 0, parry: 0 }; trk.set(u, s); } return s; };
   function event(ev) {
     if (ev.type === 'hit' && ev.defender) { if (ev.counter) tstate(ev.defender).counter = 0.5; if (ev.armor) tstate(ev.defender).armor = 0.4; }
     if (ev.type === 'block' && ev.parry && ev.defender) tstate(ev.defender).parry = 0.5;
+    if (ev.type === 'refund' && ev.unit) {
+      const max = ev.unit.staminaMax || 100, old = refundAt.get(ev.unit), now = ev.unit.stamina / max;
+      // refunds landing inside one flash (a string) keep the piece growing from where the first one started
+      const from = old && clock - old.at < REFUND_FLASH ? Math.min(old.from, now - ev.amount / max) : now - ev.amount / max;
+      refundAt.set(ev.unit, { at: clock, from: Math.max(0, from), blocked: !!ev.blocked });
+    }
     if (ev.type === 'refill' && ev.unit) { tstate(ev.unit).refill = 0.6; refillAt.set(ev.unit, clock); }   // knocked down: the bar refills to the top
   }
   function statusOf(u, s) {
@@ -323,6 +339,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
         const c = flash ? NEON.white : u.faint > 0 ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
         if (s.refill > 0) ctx.globalAlpha = Math.max(ctx.globalAlpha, 0.95);
         ctx.shadowColor = c; ctx.shadowBlur = low || s.refill > 0 ? 10 : 4; ctx.fillStyle = c; ctx.fillRect(bx, y, bw * stam, 2);
+        const rf = refundAt.get(u), rk = rf ? 1 - (clock - rf.at) / REFUND_FLASH : 0;   // a refund: the gained piece flashes cyan
+        if (rk > 0 && !(u.faint > 0) && stam > rf.from) { ctx.globalAlpha = Math.max(ctx.globalAlpha, Math.min(1, rk * 1.6)); ctx.shadowColor = NEON.cyan; ctx.shadowBlur = 10; ctx.fillStyle = NEON.cyan; ctx.fillRect(bx + bw * rf.from, y - 0.5, bw * (stam - rf.from), 3); }
         ctx.restore();
         y += 6;
       }

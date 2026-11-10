@@ -27,6 +27,8 @@ import { faceGlyph, legend } from './controls.js';
 // a button's number to its face button (the FIGHT table: 1 X, 2 Y, 3 A, 4 B)
 const PAD_FACE = { 1: 2, 2: 3, 3: 0, 4: 1 };
 const STRING_RULE = 'STRINGS NEED EVERY HIT TO CONNECT (HIT OR BLOCKED). IF ONE WHIFFS, THE NEXT PRESS IS A MASH AND YOU BOTCH.';
+// the stamina rule (README, Controls: Stamina and Faint), at the top of SYSTEM
+const STAMINA_RULE = 'EVERY STRIKE COSTS STAMINA. A HIT GIVES HALF OF IT BACK, A BLOCKED HIT A QUARTER, A WHIFF NOTHING. EMPTY THE BAR WITH A STRIKE THAT HITS AND YOU STAY ON YOUR FEET, NEARLY EMPTY; WHIFF OR GET BLOCKED AND YOU FAINT.';
 const STRING_BEAT = 'PRESS ON A STEADY BEAT, ABOUT 0.1 TO 0.5 S APART: RHYTHM, NOT SPEED. MISS A HIT? STOP, RESET, START AGAIN.';
 
 function el(tag, cls = '', text) {
@@ -67,7 +69,7 @@ export function openMoveList(o) {
     { id: 'strings', tab: 'STRINGS', title: 'STRINGS', notes: [STRING_RULE, STRING_BEAT], rule: true, rows: data.strings,
       after: data.dropped.length ? `${c.name} DOESN'T USE ${data.dropped.join(', ')}` : '' },
     { id: 'basics', tab: 'BASICS', title: 'BASIC ATTACKS', notes: [], rows: data.basics },
-    { id: 'system', tab: 'SYSTEM', title: 'SYSTEM', notes: [], rows: data.system },
+    { id: 'system', tab: 'SYSTEM', title: 'SYSTEM', notes: [STAMINA_RULE], rows: data.system },
     { id: 'accidents', tab: 'ACCIDENTS', title: 'HAPPY ACCIDENTS',
       notes: [`FOUND ${tech.filter((x) => x.found).length}/${tech.length}. A MISTIMED PRESS IN JUST THE RIGHT SPOT COMES OUT AS A HIDDEN TECHNIQUE. THE HINT SAYS WHERE, NEVER WHEN.`],
       rows: tech.map((x) => ({ name: x.found ? x.name : '???', input: x.found ? x.input : '? › ?', note: x.hint, tags: x.found ? ['found'] : [], hidden: !x.found,

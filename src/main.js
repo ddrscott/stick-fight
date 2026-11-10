@@ -334,6 +334,20 @@ const tapAt = (k, low = false) => (me, o, t) => {
   if (o.state === 'attack' && live <= k && live > k - 2) return { dx: towardOf(me, o), down: low };
   return low && o.state === 'attack' ? { down: true } : {};
 };
+// refund-test's follow-up: jab the juggled body twice, each once the last jab has connected, then walk over the body
+// and stomp it once it's down
+const refundCombo = () => (me, o, t) => {
+  if (t === 0) { me.jj = 0; me.jjId = -1; }
+  if (t < 80) return {};
+  if (me.move === 'jab' && me.attackId !== me.jjId) { me.jj = (me.jj || 0) + 1; me.jjId = me.attackId; }   // a juggle jab came out
+  if (o.state === 'knockdown' && o.juggle && (me.jj || 0) < 2 && !me.buffer && (me.state !== 'attack' || (me.hitConfirmed && me.phase !== 'startup')))
+    return me.last && me.last.lp ? {} : clean(me, { lp: true });
+  if (o.state === 'down' && !o.otgHit && me.state !== 'attack') {
+    if (sim.stompOK && sim.stompOK(me)) return t % 2 ? { rk: true, down: true } : {};
+    return { dx: Math.sign(hipOf(o) - me.x) };
+  }
+  return {};
+};
 const wakeAt = (inp, at = 120) => (me, o, t) => (me.state === 'down' && t >= at && t < at + 3 ? (typeof inp === 'function' ? inp(me, o) : inp) : {});
 const PHASES = {
   getup: [
@@ -392,6 +406,21 @@ const PHASES = {
   stamina: [
     { name: 'spam on a guard', p2: { block: true }, hold1: { dx: 1 }, at: () => [570, 650], dur: 600,
       p1: Array.from({ length: 70 }, (_, i) => [10 + i * 8, B(['lp', 'rp', 'lk', 'rk'][i % 4])]) },
+  ],
+  // stamina refunds (README, Stamina): a hit gives back half its price, a block a quarter, a whiff nothing, and
+  // the press that empties the bar doesn't faint him if it hits. combo: after NEON TORNADO's launch, a jab each
+  // time the juggle can take one (two of them), then over to the body and the stomp once it's down.
+  refund: [
+    { name: 'NEON TORNADO, two juggle jabs, STOMP from a full bar: refunds on every hit, no faint', at: () => [570, 650], dur: 420,
+      p1: [[10, B('lp')], [26, B('rp')], [46, B('lk')], [70, B('rk')]], p1f: refundCombo() },
+    { name: 'the same NEON TORNADO from out of range at 100: every press whiffs, no refund', at: () => [470, 650], dur: 300,
+      p1: [[10, B('lp')], [26, B('rp')], [46, B('lk')], [70, B('rk')]] },
+    { name: 'a cross at 12 stamina that hits: it empties the bar, connects, and he is left on 1 plus the refund (LOW, no faint)', at: () => [570, 650], dur: 220,
+      setup: () => { sim.units[0].stamina = 12; sim.units[0].regenAt = 1e9; }, p1: [[10, B('rp')]] },
+    { name: 'the same cross at 12 into a guard: blocked, so he faints', at: () => [570, 650], dur: 300,
+      setup: () => { sim.units[0].stamina = 12; sim.units[0].regenAt = 1e9; }, p2: { back: true }, p1: [[10, B('rp')]] },
+    { name: 'the same cross at 12 from out of range: it whiffs, so he faints as it recovers', at: () => [470, 650], dur: 300,
+      setup: () => { sim.units[0].stamina = 12; sim.units[0].regenAt = 1e9; }, p1: [[10, B('rp')]] },
   ],
   strings: [
     { name: 'FLASH ROUNDHOUSE 1,1,2,4', p1: [[10, B('lp')], [26, B('lp')], [42, B('rp')], [62, B('rk')]], dur: 200 },
@@ -710,6 +739,7 @@ const scenes = {
   'parry-test'(o) { timeline(PHASES.parry, o); },
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
   'stamina-test'(o) { timeline(PHASES.stamina, o); },
+  'refund-test'(o) { timeline(PHASES.refund, o); },
   'string-ender-test'(o) { timeline(PHASES.strings, o); },
   'wall-test'(o) { timeline(PHASES.wall, o); },
   'juggle-test'(o) { timeline(PHASES.juggle, o); },
