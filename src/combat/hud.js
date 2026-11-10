@@ -76,8 +76,10 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   }
   const textCache = new Map(), widths = new Map();
   if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { textCache.clear(); widths.clear(); });
-  // Plain HUD text: a solid, slightly lightened fill inside a firm dark outline, no glow. The labels
-  // along the top use it: neon glow on small text smeared it into the bright bars and the room behind.
+  // Plain HUD text: a solid, slightly lightened fill inside a firm dark outline, no glow. Anything meant
+  // to be read uses it (names, move hints, score, key hints, the move list, status tags over a fighter):
+  // neon glow smears text into the bright bars and the room behind. Glow is for decorative text only:
+  // the title, combo and round callouts, banners.
   function plainText(text, x, y, size, color, { font = LABEL, align = 'left', weight = 600 } = {}) {
     ctx.save();
     ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
@@ -348,7 +350,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
         const blink = st.dim ? 0.8 : 1;
         const pop = st.pop ? 1 + Math.max(0, st.pop - 0.3) * 1.2 : 1;
         ctx.save(); ctx.globalAlpha *= blink; ctx.translate(s.x, y + fs / 2); ctx.scale(pop, pop);
-        neonText(st.text, 0, 1, fs, st.glow || st.color, { glow: 0.8, core: true });
+        plainText(st.text, 0, 1, fs, st.color, { font: DISPLAY, align: 'center', weight: '' });   // read mid-fight: no glow
         ctx.restore();
         if (st.dizzy) {
           // two small stars chase round the word
@@ -368,7 +370,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
         }
       }
       for (const t of timed) {
-        neonText(t.text, s.x, y + tfs / 2 + 1, tfs, t.color, { glow: 0.6, core: true });
+        plainText(t.text, s.x, y + tfs / 2 + 1, tfs, t.color, { font: DISPLAY, align: 'center', weight: '' });
         y += tfs + 1;
         ctx.save(); ctx.fillStyle = 'rgba(14,4,30,0.8)'; ctx.fillRect(s.x - bw / 2 - 1, y - 1, bw + 2, 4);
         ctx.shadowColor = t.color; ctx.shadowBlur = 6; ctx.fillStyle = t.color; ctx.fillRect(s.x - bw / 2, y, bw * Math.max(0, Math.min(1, t.k)), 2); ctx.restore();
@@ -607,7 +609,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     // a happy accident a player found for the first time (main.js): TECHNIQUE FOUND 3/8
     if (toast) {
       const spot = placeFree(measure(toast.text, 22) + 20, 30, [[width / 2, STRIP_H + 150], [width / 2, STRIP_H + 184]], boxes, taken);
-      if (spot) { ctx.save(); ctx.globalAlpha = Math.min(1, toast.t / 0.3); neonText(toast.text, spot.x, spot.y, 22, KIND_COLOR.accident); ctx.restore(); }
+      if (spot) { ctx.save(); ctx.globalAlpha = Math.min(1, toast.t / 0.3); plainText(toast.text, spot.x, spot.y, 22, KIND_COLOR.accident, { font: DISPLAY, align: 'center', weight: '' }); ctx.restore(); }
     }
     // horde count card
     if (sim.card) {
@@ -626,7 +628,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       if (hintText && !padUI && cls.contains('fs-ok')) hintText += '     F11  FULLSCREEN';   // src/fullscreen.js: only where F11 can do it
       const hint = { x0: width - 34 - Math.max(196, hintText ? measure(hintText, 16, LABEL, 500) : 0), x1: width - 20, y0: height - 26, y1: height - 4 };
       ctx.save(); ctx.globalAlpha = overlaps(hint, boxes) ? 0.15 : 0.85;
-      if (hintText) neonText(hintText, width - 24, height - 14, 16, NEON.violet, { font: LABEL, align: 'right', weight: 500, glow: 0.4, core: false });
+      if (hintText) plainText(hintText, width - 24, height - 14, 16, NEON.violet, { align: 'right', weight: 500 });
       ctx.restore();
     }
     if ((help || (padUI && paused)) && !touchUI) legend(boxes, padUI);
@@ -640,8 +642,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const off = Math.max(118, (labelW[side] || 0) + 16), y = BAR_Y + BAR_H + 6 + ST_H + 12, x = side ? width - 44 - off : 44 + off;
     const txt = String(Math.max(0, Math.floor(flow.score))).padStart(7, '0');
     const align = side ? 'right' : 'left', dir = side ? -1 : 1;
-    const w = neonText(txt, x, y, 22, NEON.amber, { font: LABEL, align, weight: 600, glow: 0.7 });
-    if (flow.bonus) neonText(flow.bonus, x + dir * (w + 10), y, 18, NEON.white, { font: LABEL, align, weight: 600, glow: 0.6, core: false });
+    const w = plainText(txt, x, y, 22, NEON.amber, { align, weight: 600 });
+    if (flow.bonus) plainText(flow.bonus, x + dir * (w + 10), y, 18, NEON.white, { align, weight: 600 });
   }
 
   // the move list, two lines at the bottom; it fades out wherever a fighter is under it
@@ -657,9 +659,9 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       ? 'X Y A B = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   STICK MOVES, BACK OR L1 WALKS BACK AND GUARDS A STRIKE THAT\'S COMING   DOWN CROUCH, DOWN-BACK GUARDS LOWS   UP JUMP   R1 THROW   R2 RUN   START PAUSE'
       : 'U I J K = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   A D MOVE, HOLD BACK TO STEP BACK (IT GUARDS A STRIKE THAT\'S COMING)   S CROUCH (DOWN-FORWARD CREEPS, DOWN-BACK GUARDS LOWS)   W JUMP   SHIFT RUN';
     const line2 = 'AIR 1 2 3 4, d+4 DIVE   d1 d1 d3 LOW RUSH   1124 FLASH ROUNDHOUSE   1234 NEON TORNADO   214 SPIN HEEL   334 CRESCENT   d3 d3 4 GROUND RUSH   d2 1 2 4 SKY SPIKE   f,f+2 COMET   1+3 / 2+4 THROW   TAP TOWARD PARRY   d3/d4 STOMP   d+TOWARD STAIRS DOWN';
-    neonText(line1, width / 2, y0 + 12, 17, NEON.cyan, { font: LABEL, weight: 500, glow: 0.4, core: false });
-    neonText(line2, width / 2, y0 + 31, 17, NEON.pink, { font: LABEL, weight: 500, glow: 0.4, core: false });
-    if (extra) neonText('FOUND   ' + foundTech.map(t => `${t.input} ${t.name}`).join('   '), width / 2, y0 + 50, 17, KIND_COLOR.accident, { font: LABEL, weight: 500, glow: 0.4, core: false });
+    plainText(line1, width / 2, y0 + 12, 17, NEON.cyan, { align: 'center', weight: 500 });
+    plainText(line2, width / 2, y0 + 31, 17, NEON.pink, { align: 'center', weight: 500 });
+    if (extra) plainText('FOUND   ' + foundTech.map(t => `${t.input} ${t.name}`).join('   '), width / 2, y0 + 50, 17, KIND_COLOR.accident, { align: 'center', weight: 500 });
     ctx.restore();
   }
 
