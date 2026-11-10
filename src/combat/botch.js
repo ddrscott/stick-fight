@@ -17,7 +17,31 @@ import { addMoves, RIG_KIT } from '../fighter/index.js';
 export const BOTCH_GRACE = 8;
 
 export const BOTCH_KINDS = ['over', 'spin', 'trip', 'flail', 'whiff', 'air'];
+// The family's label in the sim's callout record and its log ({ text, by, kind: 'botch' }): what the
+// measurement scripts and test scenes read. It's never drawn. The player sees a coaching line instead
+// (BOTCH_LINES below), which the HUD draws over the fighter who botched.
 export const BOTCH_CALLOUT = { over: 'OVERBALANCED', spin: 'SPUN OUT', trip: 'TRIPPED', flail: 'FLAIL', whiff: 'WHIFF', air: 'TANGLED' };
+export const BOTCH_KIND_OF = Object.fromEntries(Object.entries(BOTCH_CALLOUT).map(([k, v]) => [v, k]));
+
+// What the player is told: short, plain words that say it was his own doing and hint at the cause.
+// About 14 characters at most, no jargon, and never the family's name.
+export const BOTCH_LINES = {
+  over: ['TOO FAST?!', 'WHOA, EASY!', 'SLOW DOWN!'],            // a forward strike on top of a lunge
+  spin: ['WRONG WAY?!', 'DIZZY?!', 'WHICH WAY?!'],              // turning one way, striking the other
+  trip: ['TWO LEGS?!', 'FEET!', 'ONE KICK!'],                   // a kick on a kick
+  flail: ['BOTH ARMS?!', 'STOP MASHING!', 'ONE PUNCH!'],        // both arms at once
+  whiff: ['TAKE YOUR TIME!', 'WAIT FOR IT!', 'NOT YET!'],       // pressed before the first strike was done
+  air: ['ONE AT A TIME!', 'EASY UP THERE!', 'MID-AIR?!'],       // a second air attack mid-swing
+};
+/** the line for a botch: picked from a hash of the unit's id and the step it botched on (botchAt), both
+ *  already part of the sim's state. It never draws from sim.rng and nothing is stored, so both peers
+ *  and a rollback show the same line, and the sim's state is what it was. Called at draw time (hud.js). */
+export function botchLine(kind, id, at) {
+  const pool = BOTCH_LINES[kind] || BOTCH_LINES.whiff;
+  let h = Math.imul((id | 0) + 1, 0x9e3779b1) ^ Math.imul((at | 0) + 7, 0x85ebca6b);
+  h ^= h >>> 15; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 13;
+  return pool[(h >>> 0) % pool.length];
+}
 
 // Which way a strike turns the body: a rear-side limb (r*) drives the hips round forward, a lead-side
 // one (l*) the other way; a kick turns it harder than a punch.

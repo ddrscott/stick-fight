@@ -7,7 +7,7 @@
 // special moves (hint). Over each fighter's head: the overhead status track (tracks). See README, HUD.
 import { drawBoxes } from './hitboxes.js';
 import { FRAME_DATA } from './frameData.js';
-import { ACCIDENTS } from './botch.js';
+import { ACCIDENTS, BOTCH_KIND_OF, botchLine } from './botch.js';
 import { discovered } from '../flow/techniques.js';   // read only: which happy accidents this browser has found
 import { canUse } from '../characters/registry.js';
 
@@ -241,7 +241,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
 
   // ---- the overhead status track: a compact readout over each fighter's head, so the state of the
   // fight reads where the eyes already are. Only what's active shows: STUN / GUARD with a draining
-  // bar (SHOCKED while a shock runs), FAINT, DOWN / GET UP, BOTCH, ARMOR, PARRY, STANCE, ROOTED, COUNTER, OPEN (a whiffed strike's recovery: punish
+  // bar (SHOCKED while a shock runs), FAINT, DOWN / GET UP, a botch's coaching line, ARMOR, PARRY, STANCE, ROOTED, COUNTER, OPEN (a whiffed strike's recovery: punish
   // it), air-jump pips, and a thin stamina bar that shows once stamina is spent and flashes when low.
   // It sits above the head, steps sideways off the other fighter, clamps on screen and fades when it
   // has nowhere clear to go (owner requirement 5). It only reads the sim.
@@ -262,12 +262,28 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     }
     if (ev.type === 'refill' && ev.unit) { tstate(ev.unit).refill = 0.6; refillAt.set(ev.unit, clock); }   // knocked down: the bar refills to the top
   }
-  function statusOf(u, s) {
+  // A botch's coaching line (TOO FAST?!, BOTH ARMS?!: botchLine in botch.js), the track's top line over
+  // the fighter who botched. It lives as long as the sim's own botch callout record (1.1 s, saved and
+  // restored with the sim, so a rollback that undoes the botch takes the line with it) and for as long
+  // as the stumble lasts after that. The line itself is picked here, at draw time, from the unit's id
+  // and botchAt: nothing is drawn from sim.rng and nothing is written to the sim.
+  const BOTCH_COLOR = KIND_COLOR.botch;
+  function botchOf(u, sim) {
+    const cs = sim.callouts || [];
+    for (let i = cs.length - 1; i >= 0; i--) {
+      const c = cs[i];
+      if (c.kind === 'botch' && c.by === u.id) return { kind: BOTCH_KIND_OF[c.text] || u.botchKind || 'whiff', age: c.max - c.t };
+    }
+    return u.state === 'botch' && u.botchKind ? { kind: u.botchKind, age: 9 } : null;
+  }
+  function statusOf(u, s, sim) {
     const fd = u.state === 'attack' && u.move ? FRAME_DATA[u.move] : null;
     const stunK = Math.max(0, Math.min(1, u.stun / s.stunMax));
     if (s.counter > 0) return { text: 'COUNTER', color: NEON.white, glow: NEON.amber, bar: u.state === 'hitstun' ? stunK : null, barColor: '#ff2b4a', pop: s.counter };
     if (s.armor > 0) return { text: 'ARMOR', color: NEON.amber, pop: s.armor };
     if (s.parry > 0) return { text: 'PARRY', color: NEON.cyan, pop: s.parry };
+    const bt = botchOf(u, sim);
+    if (bt) return { text: botchLine(bt.kind, u.id, u.botchAt), color: BOTCH_COLOR, size: 22, pop: Math.max(0, 0.5 - bt.age), bar: u.state === 'hitstun' ? stunK : null, barColor: '#ff2b4a' };   // punished mid-stumble: the stun's bar under it
     if (u.faint > 0) return { text: 'FAINT', color: NEON.pink, bar: Math.min(1, u.faint / (1.5 * 120)), barColor: NEON.violet, dizzy: true };
     if (u.state === 'hitstun' && u.shockT > 0) return { text: 'SHOCKED', color: '#fff27a', bar: stunK, barColor: '#ffe066' };   // frame data shock
     if (u.state === 'hitstun') return { text: 'STUN', color: '#ff3d6e', bar: stunK, barColor: '#ff2b4a' };
@@ -275,10 +291,9 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (u.state === 'blockstun') return { text: 'GUARD', color: NEON.cyan, bar: stunK, barColor: NEON.cyan };
     if (u.state === 'block' || (u.state === 'crouch' && u.backHeld)) return { text: u.crouch ? 'LOW GUARD' : 'GUARD', color: NEON.cyan, dim: true };
     // lying there: the bar is the second left before he stands up by himself
-    if (u.state === 'down' && u.downTimer > 0) return { text: u.botchKind === 'air' ? 'TANGLED' : 'DOWN', color: NEON.violet, bar: Math.min(1, u.downTimer / 120), barColor: NEON.violet, fill: true };
-    if (u.state === 'knockdown' || u.state === 'splat' || u.state === 'down' || u.state === 'roll') return { text: u.botchKind === 'air' ? 'TANGLED' : 'DOWN', color: NEON.violet };
+    if (u.state === 'down' && u.downTimer > 0) return { text: 'DOWN', color: NEON.violet, bar: Math.min(1, u.downTimer / 120), barColor: NEON.violet, fill: true };
+    if (u.state === 'knockdown' || u.state === 'splat' || u.state === 'down' || u.state === 'roll') return { text: 'DOWN', color: NEON.violet };
     if (u.state === 'getup') return { text: 'GET UP', color: NEON.violet, bar: Math.min(1, (u.rig && u.rig.current && u.rig.current.t) || 0), barColor: NEON.violet, fill: true };
-    if (u.state === 'botch') return { text: 'BOTCH', color: '#ff6a3d' };
     if (fd && fd.armor && u.armorLeft > 0 && u.phase !== 'recovery') return { text: 'ARMOR', color: NEON.amber };
     if (fd && fd.parry && u.phase !== 'recovery') return { text: 'PARRY', color: NEON.cyan };
     if (fd && fd.stance && u.phase !== 'recovery') return { text: 'STANCE', color: NEON.white, glow: NEON.pink };   // frame data stance
@@ -305,7 +320,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       s.counter = Math.max(0, s.counter - dt); s.armor = Math.max(0, s.armor - dt); s.parry = Math.max(0, s.parry - dt); s.clash = Math.max(0, (s.clash || 0) - dt); s.refill = Math.max(0, (s.refill || 0) - dt);
       if (u.stun > s.lastStun) s.stunMax = Math.max(1, u.stun);
       s.lastStun = u.stun;
-      const st = statusOf(u, s);
+      const st = statusOf(u, s, sim);
       const stam = Math.max(0, Math.min(1, (u.stamina == null ? 100 : u.stamina) / (u.staminaMax || 100)));
       const low = stam < 0.35 && !(u.faint > 0);
       // the stamina bar shows once some is spent, and lingers a beat after it refills
@@ -317,7 +332,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       if (u.regenTag && sim.stepCount < u.regenEnd) timed.push({ text: u.regenTag, k: (u.regenEnd - sim.stepCount) / Math.max(1, u.regenLen), color: u.regenMul < 1 ? '#ff6ad5' : '#c8ff3a' });
       if (u.speedTag && sim.stepCount < u.speedEnd) timed.push({ text: u.speedTag, k: (u.speedEnd - sim.stepCount) / Math.max(1, u.speedLen), color: u.speedMul > 1 ? '#c8ff3a' : '#ff6ad5' });
       if (!st && !s.stamShow && !pips && !timed.length) { s.a = 0; s.x = null; return; }
-      const fs = Math.round(17 * big), tw = st ? measure(st.text, fs, DISPLAY) : 0;
+      const fs = Math.round(((st && st.size) || 17) * big), tw = st ? measure(st.text, fs, DISPLAY) : 0;
       const tfs = Math.round(12 * big), ttw = timed.reduce((m, t) => Math.max(m, measure(t.text, tfs, DISPLAY)), 0);
       const bw = Math.round(54 * big), w = Math.max(tw, bw, ttw) + 10;
       const h = (st ? fs + 2 : 0) + (st && st.bar != null ? 7 : 0) + timed.length * (tfs + 5) + (s.stamShow ? 6 : 0) + (pips ? 10 : 0) + 4;
@@ -577,6 +592,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const cb = sim.combo || sim.lastCombo;
     if (cb && cb.count >= 2) items.push({ text: `${cb.count} HITS`, by: cb.by, color: cb.by === 0 ? NEON.cyan : NEON.pink, size: 26, alpha: sim.combo ? 1 : Math.min(1, (cb.t || 0) / 0.3), age: 1 });
     for (const c of (sim.callouts || []).slice().reverse()) {
+      if (c.kind === 'botch') continue;   // a botch's line is drawn over the fighter who botched (tracks, botchOf)
       const color = KIND_COLOR[c.kind] || (c.by === 0 ? NEON.cyan : c.by === 1 || c.by > 1 ? NEON.pink : NEON.white);
       const age = c.max - c.t;
       items.push({ text: c.kind === 'counter' && c.text === 'COUNTER' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' || c.kind === 'accident' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
