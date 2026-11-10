@@ -22,6 +22,7 @@
 import { touchPref, setTouchFit, onTouchPref } from './touchPrefs.js';
 
 import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';   // shared with the desktop button and F11
+import { PLAIN } from './plaintext.js';   // readable text never glows: the shared dark outline
 
 const TARGET = window;                  // must match createInput(window) in main.js
 // the stick's travel in px at scale 1 with a 16px rem; it grows and shrinks with the drawn stick,
@@ -299,11 +300,12 @@ function injectStyle() {
     color: var(--c); font: inherit;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
     box-shadow: 0 0 ${u(0.625)} var(--c), inset 0 0 ${u(0.625)} color-mix(in srgb, var(--c) 45%, transparent);
-    text-shadow: 0 0 ${u(0.375)} var(--c); transition: transform 60ms, box-shadow 60ms;
+    text-shadow: ${PLAIN}; transition: transform 60ms, box-shadow 60ms;   /* word labels (GUARD, SND) are read: no glow */
     -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
   }
   .tc-btn svg { width: ${u(1.5)}; height: ${u(1.5)}; filter: drop-shadow(0 0 ${u(0.25)} var(--c)); }
-  .tc-btn i { font-style: normal; font-size: ${u(1.125)}; line-height: 1; margin-top: ${u(0.0625)}; }
+  .tc-btn i { font-style: normal; font-size: ${u(1.125)}; line-height: 1; margin-top: ${u(0.0625)}; text-shadow: 0 0 ${u(0.375)} var(--c); }   /* the 1-4 is the button's glyph, lit like its icon */
+  .tc-btn.tc-on i { text-shadow: none; }
   .tc-l1 { --c: var(--cyan); } .tc-l2 { --c: var(--pink); } .tc-l3 { --c: var(--amber); } .tc-l4 { --c: var(--violet); }
   .tc-btn.tc-on {
     background: var(--c); color: #12041f; text-shadow: none; transform: scale(0.94);
@@ -332,7 +334,7 @@ function injectStyle() {
   }
   .tc-base.tc-run .tc-knob { border-color: var(--pink); box-shadow: 0 0 ${u(0.875)} var(--pink); }
   .tc-hint { position: absolute; left: 0; right: 0; top: 100%; margin-top: ${u(0.375)}; text-align: center;
-    font-size: ${u(0.75)}; line-height: 1; letter-spacing: 0.08em; color: var(--cyan); text-shadow: 0 0 ${u(0.375)} var(--cyan); opacity: 0.75; }
+    font-size: ${u(0.75)}; line-height: 1; letter-spacing: 0.08em; color: #9df8ff; text-shadow: ${PLAIN}; opacity: 0.85; }
   .tc-base.tc-on .tc-hint { visibility: hidden; }
 
   /* right thumb */

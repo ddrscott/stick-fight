@@ -631,9 +631,10 @@ export function createFlow(ctx) {
     ui.show('fl-stage', (root) => {
       root.append(el('div', 'fl-label', st.boss ? 'FINAL STAGE' : `STAGE ${st.n} OF ${ladder().length}`));
       const vs = el('div', 'fl-vs');
-      const name = el('b', '', st.name); name.style.color = '#fff'; name.style.textShadow = `0 0 0.8cqw ${st.color}, 0 0 2cqw ${st.color}`;
+      // names are read, so they don't glow: each in its fighter's neon, lightened (ui.js, --plain)
+      const name = el('b', '', st.name); name.style.color = `color-mix(in srgb, ${st.color} 60%, #fff)`;
       const me = characterOr(sel.player), you = el('b', 'fl-you', me.name);
-      you.style.textShadow = `0 0 0.8cqw ${me.color}, 0 0 2cqw ${me.color}`;
+      you.style.color = `color-mix(in srgb, ${me.color} 60%, #fff)`;
       vs.append(you, el('b', 'fl-x', 'VS'), name);
       root.append(el('h1', 'fl-h1', `STAGE ${st.n}`), vs, el('div', 'fl-label', st.tagline));
       pips(root, st);
@@ -920,7 +921,7 @@ export function createFlow(ctx) {
     let codeEl, linkEl, waitEl;
     ui.show('fl-host', (root) => {
       root.append(el('h1', 'fl-h2', 'HOST A GAME'), el('div', 'fl-label', 'YOUR ROOM CODE'));
-      codeEl = el('div', 'fl-h1', '····');
+      codeEl = el('div', 'fl-h1 fl-read', '····');   // a code to read out and type: no glow
       linkEl = el('div', 'fl-link', '');
       waitEl = el('div', 'fl-label fl-dots', 'OPENING A ROOM');
       statusEl = waitEl;
@@ -1001,7 +1002,7 @@ export function createFlow(ctx) {
     const session = ++netSession;
     let msg;
     ui.show('fl-connecting', (root) => {
-      root.append(el('h1', 'fl-h2', 'JOINING'), el('div', 'fl-h1', joinCode));
+      root.append(el('h1', 'fl-h2', 'JOINING'), el('div', 'fl-h1 fl-read', joinCode));
       msg = el('div', 'fl-label fl-dots', 'CONNECTING');
       statusEl = msg;
       root.appendChild(msg);
@@ -1321,7 +1322,7 @@ export function createFlow(ctx) {
     const p = profile();
     signOutArmed = false;
     ui.show('fl-profile', (root) => {
-      root.append(el('h1', 'fl-h2', 'PROFILE'), el('div', 'fl-label', 'YOUR NAME ONLINE'), el('div', 'fl-h1 fl-pname', p.name || '???'));
+      root.append(el('h1', 'fl-h2', 'PROFILE'), el('div', 'fl-label', 'YOUR NAME ONLINE'), el('div', 'fl-h1 fl-pname fl-read', p.name || '???'));
       root.appendChild(el('div', 'fl-label fl-pemail', p.email ? `SAVED TO ${p.email}` : 'KEPT ON THIS DEVICE ONLY'));
       if (profileMsg) root.appendChild(el('div', 'fl-label fl-newhi', profileMsg));
       root.appendChild(el('div', 'fl-small', p.email
@@ -1558,7 +1559,7 @@ export function createFlow(ctx) {
     }
     const known = profile().crews.find((c) => c.slug === slug);
     ui.show('fl-crew', (root) => {
-      const title = el('h1', 'fl-h2 fl-crewname', (crewCli && crewCli.state && crewCli.state.crew.name) || (known && known.name) || 'CREW ROOM');
+      const title = el('h1', 'fl-h2 fl-crewname fl-read', (crewCli && crewCli.state && crewCli.state.crew.name) || (known && known.name) || 'CREW ROOM');
       const sub = el('div', 'fl-label', 'CREW ROOM  ·  BOOKMARK THIS PAGE TO COME BACK');
       const linkEl = el('div', 'fl-link', link);
       root.append(title, sub, linkEl);

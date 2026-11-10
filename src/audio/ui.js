@@ -13,6 +13,7 @@
 // touchmove on the page and a native range input on Android needs those.
 
 import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
+import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 
 const SPEAKER = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path class="sf-wave" d="M11 5.5c1 .8 1 4.2 0 5M12.8 3.8c2 1.8 2 6.6 0 8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path class="sf-x" d="M11 6l4 4M15 6l-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
@@ -178,7 +179,7 @@ function injectStyle() {
   .sf-hint {
     position: absolute; left: 48px; bottom: 12px; z-index: 5; pointer-events: none; opacity: 0;
     font: 500 17px/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.08em; color: var(--amber);
-    text-shadow: 0 0 6px rgba(255,176,46,0.8); transition: opacity 200ms;
+    text-shadow: ${PLAIN}; transition: opacity 200ms;   /* a hint to read: no glow */
   }
   .sf-hint.sf-show { opacity: 0.9; }
 
@@ -189,6 +190,7 @@ function injectStyle() {
     border: 2px solid var(--pink); border-radius: 2px;
     box-shadow: 0 0 18px rgba(255,43,214,0.55), inset 0 0 22px rgba(255,43,214,0.12);
     font-family: 'Teko', 'Arial Narrow', sans-serif; opacity: 0; pointer-events: none; transition: opacity 120ms, transform 120ms;
+    text-shadow: ${PLAIN};   /* settings are read, so the letters don't glow (README, "The look") */
     touch-action: none; -webkit-user-select: none; user-select: none;
   }
   .sf-panel.sf-open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
@@ -196,7 +198,7 @@ function injectStyle() {
   .sf-panel button { font-family: 'Bungee', 'Arial Black', sans-serif; cursor: pointer; }
   .sf-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .sf-head h2 { margin: 0; font: 400 22px/1 'Bungee', 'Arial Black', sans-serif; letter-spacing: 0.06em;
-    color: var(--pink); text-shadow: 0 0 8px rgba(255,43,214,0.9); }
+    color: #ff8fe8; }
   .sf-close { width: 30px; height: 30px; padding: 0; background: transparent; color: var(--pink);
     border: 2px solid var(--pink); border-radius: 2px; font-size: 13px; box-shadow: 0 0 8px rgba(255,43,214,0.5); }
   .sf-row { display: flex; gap: 8px; margin-bottom: 8px; }
@@ -205,10 +207,10 @@ function injectStyle() {
     font-size: 12px; letter-spacing: 0.05em; }
   .sf-sw b { font-weight: 400; color: var(--violet); }
   .sf-sw.sf-on { color: var(--ink); border-color: var(--cyan); box-shadow: 0 0 10px rgba(46,242,255,0.55), inset 0 0 8px rgba(46,242,255,0.2); }
-  .sf-sw.sf-on b { color: var(--cyan); text-shadow: 0 0 6px var(--cyan); }
+  .sf-sw.sf-on b { color: var(--cyan); }
   .sf-now { display: flex; align-items: center; gap: 8px; }
   .sf-track { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1; }
-  .sf-name { font-size: 26px; font-weight: 600; letter-spacing: 0.03em; color: var(--amber); text-shadow: 0 0 8px rgba(255,176,46,0.7);
+  .sf-name { font-size: 26px; font-weight: 600; letter-spacing: 0.03em; color: var(--amber);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sf-mood { font-size: 16px; font-weight: 500; color: rgba(255,244,253,0.6); letter-spacing: 0.04em; margin-top: 2px; }
   .sf-next { height: 34px; padding: 0 12px; background: transparent; color: var(--amber); border: 2px solid var(--amber);
@@ -229,7 +231,7 @@ function injectStyle() {
   html.touch-ui .sf-size { display: block; }
   .sf-size-head { display: flex; align-items: baseline; justify-content: space-between; }
   .sf-size-head label { font-size: 18px; font-weight: 600; letter-spacing: 0.06em; color: var(--cyan); }
-  .sf-size-name { font-size: 18px; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; color: var(--amber); text-shadow: 0 0 8px rgba(255,176,46,0.7); }
+  .sf-size-name { font-size: 18px; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; color: var(--amber); }
   .sf-size-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
   .sf-step, .sf-reset { height: 36px; padding: 0; background: transparent; color: var(--cyan); border: 2px solid var(--cyan);
     border-radius: 2px; box-shadow: 0 0 8px rgba(46,242,255,0.5); }
@@ -247,9 +249,9 @@ function injectStyle() {
     html.touch-ui .sf-panel { top: calc(env(safe-area-inset-top) + 8px); transform: translate(-50%, 0) scale(0.96); }
     html.touch-ui .sf-panel.sf-open { transform: translate(-50%, 0) scale(1); }
   }
-  .sf-keys { margin: 6px 0 0; font-size: 15px; letter-spacing: 0.08em; color: rgba(255,244,253,0.45); }
+  .sf-keys { margin: 6px 0 0; font-size: 15px; letter-spacing: 0.08em; color: rgba(255,244,253,0.65); }
   html.touch-ui .sf-keys { display: none; }
-  .sf-credit { margin: 8px 0 0; font-size: 14px; letter-spacing: 0.08em; color: rgba(255,244,253,0.45); }
+  .sf-credit { margin: 8px 0 0; font-size: 14px; letter-spacing: 0.08em; color: rgba(255,244,253,0.65); }
   .sf-credit a { color: #4df3ff; text-decoration: none; border-bottom: 1px solid rgba(77,243,255,0.4); }`;
   const s = document.createElement('style');
   s.id = 'sf-sound-style';
