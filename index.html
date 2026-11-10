@@ -132,6 +132,32 @@
     <div class="s-cta s-cta-center"><a class="s-btn s-btn-ghost s-btn-big" href="./fighters/">MEET THE WHOLE CAST</a></div>
   </section>
 
+  <section class="s-section s-books" id="stats" aria-labelledby="stats-h" data-stats="home">
+    <div class="s-section-head">
+      <h2 class="s-h2" id="stats-h">THE BOOKS</h2>
+      <div class="s-seg" role="group" aria-label="Which matches">
+        <button type="button" data-vs="cpu" aria-pressed="true" disabled>VS CPU</button>
+        <button type="button" data-vs="pvp" aria-pressed="false" disabled>PLAYER VS PLAYER</button>
+      </div>
+    </div>
+    <p class="s-note" data-stats-note>HR keeps a file on everyone: who gets picked, who wins, and who can't get past whom. Every finished match goes in it, with no names attached. The numbers load from the game's server, and they aren't available right now.</p>
+    <div class="s-books-cols">
+      <div>
+        <h3 class="s-h3">MOST PICKED</h3>
+        <ol class="s-rank" data-stats-picks><li class="s-rank-empty">Pick share by fighter shows up here.</li></ol>
+      </div>
+      <div>
+        <h3 class="s-h3">BEST WIN RATES</h3>
+        <ol class="s-rank" data-stats-wins><li class="s-rank-empty">Win rates show up here once a fighter has enough matches.</li></ol>
+      </div>
+    </div>
+    <h3 class="s-h3 s-mu-h">MATCHUP CHART</h3>
+    <p class="s-note" data-stats-chart-note>Every fighter against every other: how often the row beats the column.</p>
+    <div class="s-mu-wrap" data-stats-chart><p class="s-rank-empty">The chart needs the game's server. Meanwhile, <a href="./fighters/">every fighter's page</a> has its stats and frame data.</p></div>
+    <p class="s-mu-detail" data-stats-detail aria-live="polite"></p>
+    <!--@fighters-->
+  </section>
+
   <section class="s-section s-howto" id="how" aria-labelledby="how-h">
     <h2 class="s-h2" id="how-h">HOW TO PLAY</h2>
     <div class="s-how-cols">
@@ -205,7 +231,7 @@
   <div class="s-foot-in">
     <p><a class="s-logo" href="./"><span>NEON</span> STICK FIGHT</a></p>
     <nav class="s-foot-nav" aria-label="Footer">
-      <a href="./play/">Play</a><a href="./fighters/">Fighters</a><a href="./how-to-play/">How to play</a><a href="./how-to-play/strategy/">Strategy</a><a href="#online">Online</a><a href="#about">About and credits</a><a href="https://github.com/ddrscott/stick-fight">GitHub</a>
+      <a href="./play/">Play</a><a href="./fighters/">Fighters</a><a href="./how-to-play/">How to play</a><a href="./how-to-play/strategy/">Strategy</a><a href="#stats">Stats</a><a href="#online">Online</a><a href="#about">About and credits</a><a href="https://github.com/ddrscott/stick-fight">GitHub</a>
     </nav>
     <p>Free and open source under the GNU AGPL v3. Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL).</p>
     <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>

@@ -78,6 +78,12 @@ export const script = (root) => `<script type="module" src="${root}site/site.js"
 //   detail: the roster index's line of health and unique moves
 //   cast:   the homepage's cast: the fighter's colors and up to three signature moves from its moveList
 //   root:   the way back to the site's root from the page, for the idle sprites (site/sprites.mjs)
+/** What site/stats.js needs to name and color a fighter: the roster in order, as JSON in the page. */
+export function statsRoster(sheets) {
+  const data = sheets.map((s) => ({ id: s.id, name: s.name, color: s.color }));
+  return `<script type="application/json" data-stats-roster>${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`;
+}
+
 export function rosterCards(sheets, hrefPrefix, { detail = false, cast = false, root = './' } = {}) {
   return sheets.map((s, i) => {
     const sp = (x) => `${root}sprites/${s.id}-idle${x}.webp`;
@@ -252,6 +258,13 @@ ${topbar(root)}
       ${listed ? `<ul class="s-sig">${listed}</ul>` : ''}
       <a class="s-btn s-btn-play s-btn-big" href="${root}play/?pick=${s.id}">PLAY AS ${esc(s.name)}</a>
     </div>
+  </section>
+
+  <section class="s-section s-books" id="record" data-stats="fighter" data-fighter="${s.id}">
+    <h2 class="s-h2">ON THE BOOKS</h2>
+    <p class="s-note" data-stats-note>How often ${esc(s.name)} gets picked, how often it wins, and its best and worst matchups, against the CPU and against other players. The numbers load from the game's server; they aren't available right now.</p>
+    <div class="s-record" data-stats-record></div>
+    ${statsRoster(sheets)}
   </section>
 
   <section class="s-section" id="stats">

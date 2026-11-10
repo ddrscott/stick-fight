@@ -32,7 +32,8 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["Crew"] }],
   // Profiles kept by email (worker/auth.ts): accounts, sign-in codes (hashed), sessions (hashed),
-  // and the send and guess counters. Schema in migrations/; apply with
+  // and the send and guess counters. The match bookkeeping's all-time rollups live here too
+  // (worker/stats.ts, migrations/0003_stats.sql): fighters and modes only, no player in them. Schema in migrations/; apply with
   // `npx wrangler d1 migrations apply stick-fight-auth --remote` before the first deploy.
   "d1_databases": [
     { "binding": "DB", "database_name": "stick-fight-auth", "database_id": "8a0ea2d9-9d74-466f-a6ff-5a0446d35653", "migrations_dir": "migrations" }
@@ -51,7 +52,9 @@
     // profile and sign-in calls per IP (the per-email and per-hour caps live in D1)
     { "name": "AUTH_LIMIT", "namespace_id": "7104", "simple": { "limit": 20, "period": 60 } },
     // analytics events per IP (POST /api/e)
-    { "name": "EVENT_LIMIT", "namespace_id": "7105", "simple": { "limit": 60, "period": 60 } }
+    { "name": "EVENT_LIMIT", "namespace_id": "7105", "simple": { "limit": 60, "period": 60 } },
+    // GET /api/stats per IP (the answer is cached at the edge, so this only guards the limiter itself)
+    { "name": "STATS_LIMIT", "namespace_id": "7106", "simple": { "limit": 60, "period": 60 } }
   ],
   // Game analytics (Workers Analytics Engine): cookieless events, no player ids; query with the
   // SQL API (README, Analytics). The dataset is created on the first write.

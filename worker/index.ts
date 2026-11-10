@@ -8,6 +8,8 @@
 //   GET  /stick-fight/api/ice                -> { iceServers, ttl, turn }   for RTCPeerConnection
 //   POST /stick-fight/api/crews              -> { slug }   a new crew room ({ name }), worker/crew.ts
 //   GET  /stick-fight/api/crews/<slug>/ws    -> WebSocket   the crew lobby
+//   POST /stick-fight/api/e                  -> 204         analytics events from the page (README, Analytics)
+//   GET  /stick-fight/api/stats              -> the all-time pick and matchup rollups, worker/stats.ts
 //   POST /stick-fight/api/auth/start, auth/verify, auth/logout; GET and PUT /stick-fight/api/me
 //                                            profiles and email sign-in, worker/auth.ts
 //
@@ -26,15 +28,22 @@
 // players set up their peer-to-peer link, then the match's control messages, and the input
 // packets themselves when the peer-to-peer link can't be made (the relay fallback). The only
 // messages it writes itself are {"t":"sys",...} notices: welcome, peer joined or left, and
-// errors. Nothing stored but the time the room expires. A crew room opens one of these for each
+// errors. The one message it keeps for itself is a page's {"t":"sys","ev":"result"} when a match ends:
+// the result goes on the books only when both players' pages report the same one (worker/stats.ts).
+// Nothing stored but the time the room expires and a result waiting for the other side's. A crew room opens one of these for each
 // match it starts.
 import { DurableObject } from "cloudflare:workers";
 import { type Env, API, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName, track } from "./env";
 
-// the events the page may send (src/analytics.js); anything else is dropped
-const EVENT_NAMES = new Set(["visit", "mode", "pick", "stage", "arcade_end", "horde_end", "online_match", "install", "technique", "perf"]);
 import { Crew, SLUG_RE } from "./crew";
 import { handleAuth } from "./auth";
+import { offlineMatch, recordMatch, recordPick, roomResult, statsResponse } from "./stats";
+
+// the events the page may send (src/analytics.js); anything else is dropped. `match` and `pick` also
+// update the D1 rollups, so they're checked field by field (worker/stats.ts) instead of passed through
+const EVENT_NAMES = new Set(["visit", "mode", "stage", "arcade_end", "horde_end", "online_match", "online_drop", "install", "technique", "move", "perf"]);
+const MAX_BATCH = 12;   // events in one POST (a match's end sends its result and its move counts together)
+type PageEvent = { e?: unknown; l?: unknown; v?: unknown; d?: unknown; m?: unknown };
 
 export { Crew };
 export type { Env };
@@ -102,7 +111,7 @@ async function iceServers(env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     if (!url.pathname.startsWith(API)) return notFound();
     const parts = url.pathname.slice(API.length).split("/").filter(Boolean);
@@ -127,14 +136,26 @@ export default {
     if (parts.length === 1 && parts[0] === "e") {
       if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
       if (!(await allowed(env.EVENT_LIMIT, req))) return new Response(null, { status: 204 });
-      const body = await req.json<{ e?: unknown; l?: unknown; v?: unknown }>().catch(() => ({} as { e?: unknown; l?: unknown; v?: unknown }));
-      const e = typeof body.e === "string" ? body.e : "";
-      if (EVENT_NAMES.has(e)) {
-        const labels = Array.isArray(body.l) ? body.l.filter((x) => typeof x === "string" || typeof x === "number").map((x) => String(x).replace(/[^\w .:+-]/g, "").slice(0, 40)) : [];
-        track(env, req, e, labels, typeof body.v === "number" ? body.v : 0);
+      // one event, or a short list of them (one rate-limit count either way)
+      const body = await req.json<PageEvent | PageEvent[]>().catch(() => ({} as PageEvent));
+      for (const ev of (Array.isArray(body) ? body : [body]).slice(0, MAX_BATCH)) {
+        if (!ev || typeof ev !== "object") continue;
+        const e = typeof ev.e === "string" ? ev.e : "";
+        const labels = Array.isArray(ev.l) ? ev.l.filter((x) => typeof x === "string" || typeof x === "number").map((x) => String(x).replace(/[^\w .:+-]/g, "").slice(0, 40)) : [];
+        if (e === "match") {
+          // a vs-CPU match or a horde run, as the page tells it (online results come through the room)
+          const m = offlineMatch(ev.m);
+          if (m) ctx.waitUntil(recordMatch(env, req, m));
+        } else if (e === "pick") recordPick(env, req, ctx, labels);
+        else if (EVENT_NAMES.has(e)) {
+          const more = Array.isArray(ev.d) ? ev.d.filter((x) => typeof x === "number").slice(0, 8) : [];
+          track(env, req, e, labels, typeof ev.v === "number" ? ev.v : 0, more);
+        }
       }
       return new Response(null, { status: 204 });
     }
+
+    if (parts.length === 1 && parts[0] === "stats") return statsResponse(req, env, ctx);
 
     if (parts.length === 1 && parts[0] === "ice") {
       if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
@@ -253,6 +274,8 @@ export class Room extends DurableObject<Env> {
     const role = this.ctx.getTags(ws)[0];
     if (role !== "host" && role !== "guest") return;
     if (!this.take(ws)) return;
+    // a page's own word to the room (a match's result, worker/stats.ts); everything else goes to the other player
+    if (typeof message === "string" && message.startsWith('{"t":"sys"')) { await roomResult(this.ctx.storage, this.env, role, message); return; }
     for (const w of this.ctx.getWebSockets(other(role))) {
       try { w.send(message); } catch { /* closing */ }
     }
