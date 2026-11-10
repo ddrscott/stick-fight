@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { chromium } = require([(() => { try { return require('node:child_process').execSync('npm root -g').toString().trim() + '/playwright'; } catch { return ''; } })(), '/Users/spierce/.nvm/versions/node/v22.23.2/lib/node_modules/playwright'].find((q) => q && require('node:fs').existsSync(q)));
+import { chromium, executablePath } from './browser.mjs';
 const [,, scene = 'getup-test', only = '0', steps = '200', every = '6', chars = ''] = process.argv;
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.glsl': 'text/plain' };
@@ -17,7 +17,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise(r => server.listen(0, r));
-const browser = await chromium.launch({ ...(process.env.PW_CHROME ? { executablePath: process.env.PW_CHROME } : {}), args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const pg = await (await browser.newContext({ viewport: { width: 640, height: 360 } })).newPage();
 const errors = [];
 pg.on('pageerror', e => errors.push(String(e)));

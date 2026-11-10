@@ -10,7 +10,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { chromium } = require(path.join(execSync('npm root -g').toString().trim(), 'playwright'));
+import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
@@ -43,14 +43,6 @@ if (BOUTS && (!ONLY.length || ONLY.includes('ai-fight'))) {
   }
 }
 
-// the browser playwright wants, else any headless shell already downloaded (a global playwright newer or older than its browsers)
-let executablePath;
-try { if (!fs.existsSync(chromium.executablePath())) throw 0; } catch {
-  const dir = path.join(process.env.HOME || '', '.cache/ms-playwright');
-  const hit = fs.existsSync(dir) && fs.readdirSync(dir).filter(d => d.startsWith('chromium_headless_shell-')).sort().reverse()
-    .map(d => path.join(dir, d, 'chrome-headless-shell-linux64/chrome-headless-shell')).find(f => fs.existsSync(f));
-  if (hit) executablePath = hit;
-}
 const browser = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const results = [];
 const errors = [];

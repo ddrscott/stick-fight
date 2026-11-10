@@ -22,8 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { chromium } = (() => { try { return require('playwright'); } catch { return require(path.join(path.dirname(process.execPath), '../lib/node_modules/playwright')); } })();   // local, else the global install beside this node
-
+import { chromium, executablePath } from './browser.mjs';
 const [,, mode = 'mash', ...rest] = process.argv;
 const opt = (k, d) => { const i = rest.indexOf(k); return i >= 0 ? rest[i + 1] : d; };
 const root = path.resolve(opt('--root', path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')));
@@ -35,7 +34,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise(r => server.listen(0, r));
-const browser = await chromium.launch({ executablePath: process.env.PW_CHROME || undefined, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const pg = await (await browser.newContext({ viewport: { width: 640, height: 360 } })).newPage();
 const errors = [];
 pg.on('pageerror', e => errors.push(String(e)));

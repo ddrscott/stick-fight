@@ -10,7 +10,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { chromium } = require(path.join(execSync('npm root -g').toString().trim(), 'playwright'));
+import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
 const { createCanvas, loadImage } = await import(path.join(root, 'node_modules/@napi-rs/canvas/index.js'));
 
@@ -26,12 +26,6 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise(r => server.listen(0, r));
-let executablePath;
-try { if (!fs.existsSync(chromium.executablePath())) throw 0; } catch {
-  const dir = path.join(process.env.HOME || '', '.cache/ms-playwright');
-  executablePath = fs.readdirSync(dir).filter(d => d.startsWith('chromium_headless_shell-')).sort().reverse()
-    .map(d => path.join(dir, d, 'chrome-headless-shell-linux64/chrome-headless-shell')).find(f => fs.existsSync(f));
-}
 const browser = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const pg = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 const errors = []; pg.on('pageerror', e => errors.push(String(e)));
