@@ -27,7 +27,9 @@ const KEYS = {
 };
 const PAD = { 0: 'confirm', 1: 'back', 2: 'del', 3: 'moves', 8: 'select', 9: 'start' };
 const DIRS = new Set(['up', 'down', 'left', 'right']);
-const REPEAT_FIRST = 380, REPEAT_EVERY = 110;
+// a held pad direction: the press itself moves at once, the repeat starts after REPEAT_FIRST (longer than any
+// tap, so one tap is one step) and then steps every REPEAT_EVERY. (A held key repeats at the OS's own rate.)
+const REPEAT_FIRST = 250, REPEAT_EVERY = 80;
 
 export function createMenuInput({ onKey, onActivity, onText }) {
   watchDevice();
