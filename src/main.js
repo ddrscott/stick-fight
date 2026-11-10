@@ -428,12 +428,12 @@ const PHASES = {
   // fainted (README, Faint): rooted, and alternating left/right presses shake it off faster. P1 faints on the
   // spot at the start of each phase; P2 stands there unless the phase says otherwise. Presses start 20 steps in.
   faint: [
-    { name: 'fainted, no input: the full 1.5 s', setup: faintP1, p1: [], dur: 220 },
-    { name: 'steady alternation at the best rate (a fresh press every 12 steps, 100 ms): about 0.8 s', setup: faintP1, p1: [], p1f: alternate(12), dur: 220 },
-    { name: 'a calmer rhythm (a press every 20 steps, 6 a second): about 1 s', setup: faintP1, p1: [], p1f: alternate(20), dur: 220 },
-    { name: 'holding a direction: rooted, no gain', setup: faintP1, p1: [], hold1: { dx: 1 }, dur: 220 },
-    { name: 'mashing one direction (a press every 8 steps): no gain past the first', setup: faintP1, p1: [], p1f: (me, o, t) => (t >= 20 && t % 8 < 4 ? { dx: 1 } : {}), dur: 220 },
-    { name: 'frantic alternation (a flip every 5 steps, 42 ms): slower than the steady rhythm', setup: faintP1, p1: [], p1f: (me, o, t) => (t >= 20 ? { dx: Math.floor((t - 20) / 5) % 2 ? 1 : -1 } : {}), dur: 220 },
+    { name: 'fainted, no input: the full 1.5 s', at: () => [520, 680], setup: faintP1, p1: [], dur: 220 },
+    { name: 'steady alternation at the best rate (a fresh press every 12 steps, 100 ms): about 0.9 s', at: () => [520, 680], setup: faintP1, p1: [], p1f: alternate(12), dur: 220 },
+    { name: 'a calmer rhythm (a press every 20 steps, 6 a second): about 1 s', at: () => [520, 680], setup: faintP1, p1: [], p1f: alternate(20), dur: 220 },
+    { name: 'holding a direction: rooted, no gain', at: () => [520, 680], setup: faintP1, p1: [], hold1: { dx: 1 }, dur: 220 },
+    { name: 'mashing one direction (a press every 8 steps): no gain past the first', at: () => [520, 680], setup: faintP1, p1: [], p1f: (me, o, t) => (t >= 20 && t % 8 < 4 ? { dx: 1 } : {}), dur: 220 },
+    { name: 'frantic alternation (a flip every 5 steps, 42 ms): slower than the steady rhythm', at: () => [520, 680], setup: faintP1, p1: [], p1f: (me, o, t) => (t >= 20 ? { dx: Math.floor((t - 20) / 5) % 2 ? 1 : -1 } : {}), dur: 220 },
     { name: 'shaking under a jab, 1, 1: the hits still knock him back', setup: faintP1, p1: [], p1f: alternate(12), p2: (me, o, t) => (t === 40 || t === 56 ? { lp: true } : {}), dur: 220 },
   ],
   strings: [
