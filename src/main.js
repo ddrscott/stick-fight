@@ -1176,11 +1176,11 @@ function render() {
   if (!arena.bodiesInBackground && arena.drawBodies && !(fx.skip && fx.skip.bodies)) arena.drawBodies(ctxs.bodies || ctxs.figures);
   // the life layer runs on real time, and not at all while the sim stands still (paused, a menu over the fight)
   const lifeDt = sim.stepCount !== lifeStep ? Math.min(0.05, lastFrameMs / 1000) : 0; lifeStep = sim.stepCount;
+  const figs = figureJoints(drawnNow, lifeDt);
   const order = [...sim.units].sort((p, q) => (p.state === 'attack') - (q.state === 'attack') || q.id - p.id);
   for (const u of order) {
     if (u.hidden) continue;
-    const { off, joints: smoothJ } = drawnNow.get(u);
-    const joints = life.apply(u, smoothJ, sim, lifeDt);   // the life layer on top, drawn only
+    const { off, joints } = figs.get(u);
     const realJ = u.rig.joints; u.rig.joints = joints;   // the turnaround and snap fade, drawn only (put back below)
     ctxs.figures.save(); ctxs.figures.translate(off.x, off.y);
     try {
@@ -1212,6 +1212,17 @@ function render() {
   const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help, toast, found: help ? techniques().filter(t => t.found) : null,
     attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl });
   if (fl) flow.frame(layout);
+}
+// the joints each body is drawn with this frame: the draw smoothing (frameDraw, already in drawnNow), then the life
+// layer on top, drawn only
+function figureJoints(drawnNow, lifeDt) {
+  const out = new Map();
+  for (const u of sim.units) {
+    if (u.hidden) continue;
+    const { off, joints: smoothJ } = drawnNow.get(u);
+    out.set(u, { off, joints: life.apply(u, smoothJ, sim, lifeDt) });
+  }
+  return out;
 }
 // ---- draw smoothing: a visual-only catch-up for air moves ---------------------------------------
 // Some air attacks have to cover 50-90px between the press and the contact pose in two or three
@@ -1473,7 +1484,18 @@ window.__gauntlet = {
 window.__game = { drawState, sim, camera, fx, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
   // measurement hooks: a frame stepped without drawing (the draw smoothing still runs), and where a body is drawn
   stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); fitCameraToDrawn(); },
-  drawn: (u) => drawnPoints(u), poseState, life };
+  drawn: (u) => drawnPoints(u), poseState, life,
+  // a frame stepped and posed exactly as render() poses it (draw smoothing, life layer, cloth), without painting:
+  // fn(figs) sees each unit's { off, joints } and u.rig.cloth before the cloth is cleared (scripts/floorlog)
+  stepPosed(ms, fn) {
+    driven = true; lastFrameMs = ms; advance(ms);
+    const drawnNow = new Map();
+    for (const u of sim.units) if (!u.hidden) drawnNow.set(u, frameDraw(u));
+    fitCameraToDrawn();
+    const lifeDt = sim.stepCount !== lifeStep ? Math.min(0.05, lastFrameMs / 1000) : 0; lifeStep = sim.stepCount;
+    const figs = figureJoints(drawnNow, lifeDt);
+    try { if (fn) fn(figs); } finally { for (const u of sim.units) if (u.rig) u.rig.cloth = null; }
+  } };
 // no load race for captures: fonts first, then one real rendered frame, then ready
 // the HUD draws on a canvas, so its two faces are asked for by name (an unused web font never
 // loads on its own); offline, the system fallbacks are used after a short wait
