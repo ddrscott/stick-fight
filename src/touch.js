@@ -7,11 +7,13 @@
 //   right thumb  Tekken diamond of round arcade buttons, one per limb: 1 LP (U)  2 RP (I) /
 //                3 LK (J)  4 RK (K), plus GUARD (B), which means hold back (it walks back and guards what's coming). Stick + button gives
 //                the directional and crouch moves; two buttons together (1+3, 2+4) throw.
-//   top corner   HORDE (G), SOUND (the src/audio/ui.js settings panel) and fullscreen; in an online
+//   top corner   HORDE (G), SOUND (the src/audio/ui.js settings panel) and fullscreen (src/fullscreen.js); in an online
 //                match HORDE gives way to LEAVE (Escape)
 //
 // Every touch is tracked by its identifier, so a held stick and an attack press coexist.
 // Keys are reference counted per code.
+
+import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';   // shared with the desktop button and F11
 
 const TARGET = window;                  // must match createInput(window) in main.js
 const DEAD_PX = 14, RUN_PX = 52, VERT_PX = 26, KNOB_MAX = 56;
@@ -54,7 +56,7 @@ function init() {
       <button class="tc-btn tc-mini" data-tap="KeyG" aria-label="Toggle horde mode">HORDE</button>
       <button class="tc-btn tc-mini tc-leave" data-tap="Escape" aria-label="Leave the online match">LEAVE</button>
       <button class="tc-btn tc-mini tc-sound" data-role="sound" aria-label="Sound settings">SND</button>
-      <button class="tc-btn tc-mini" data-role="fullscreen" aria-label="Fullscreen"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      <button class="tc-btn tc-mini" data-role="fullscreen" aria-label="Fullscreen">${FS_ICON}</button>
     </div>
     <div class="tc-rotate" role="note">
       <span>Turn your phone sideways for the full arena</span>
@@ -65,8 +67,7 @@ function init() {
   const base = root.querySelector('.tc-base'), knob = root.querySelector('.tc-knob');
   const zone = root.querySelector('.tc-stickzone');
   const fsBtn = root.querySelector('[data-role="fullscreen"]');
-  const de = document.documentElement;
-  if (!(de.requestFullscreen || de.webkitRequestFullscreen) || de.classList.contains('standalone')) fsBtn.remove();   // iPhone Safari has neither; an installed app is already full screen
+  if (!canFullscreen) fsBtn.remove();   // iPhone Safari has no Fullscreen API; an installed app is already full screen (src/fullscreen.js)
   try { if (sessionStorage.getItem('tc-rotate-dismissed')) root.classList.add('tc-no-rotate'); } catch {}
 
   // ---- touch tracking -------------------------------------------------------------------------
@@ -172,19 +173,6 @@ function init() {
   window.addEventListener('orientationchange', releaseAll);
 
   function flash(b) { b.classList.add('tc-on'); setTimeout(() => b.classList.remove('tc-on'), 140); }
-
-  function toggleFullscreen() {
-    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-    try {
-      let p;
-      if (fsEl) p = (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      else {
-        p = (de.requestFullscreen || de.webkitRequestFullscreen).call(de, { navigationUI: 'hide' });
-        Promise.resolve(p).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => {});
-      }
-      Promise.resolve(p).catch(() => {});
-    } catch {}
-  }
 
   function el(tag, cls) { const n = document.createElement(tag); n.className = cls; return n; }
 }
