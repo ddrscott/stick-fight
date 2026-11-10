@@ -167,7 +167,14 @@ export function createFlow(ctx) {
   const ladder = () => run.ladder || LADDER;
   const history = [];
   const ui = createUI((k) => { if (ctx.click) ctx.click(k); });
-  ui.pauseBtn.addEventListener('click', () => { if (state === 'fighting' || state === 'roundEnd') pause(); });
+  // the pause button: the desktop corner row's (a click) and the touch layer's (src/touch.js sends 'sf:pause')
+  ui.pauseBtn.addEventListener('click', () => pause());
+  window.addEventListener('sf:pause', () => pause());
+  // the SETTINGS panel (src/audio/ui.js) takes the menu keys while it's up; when it closes, the press that
+  // closed it stays out of the menu under it, whose focus is where it was
+  const settingsPanel = ctx.panel || null;
+  const panelOpen = () => !!(settingsPanel && settingsPanel.isOpen);
+  window.addEventListener('sf:settings-closed', () => { if (menu) menu.swallow(); });
 
   // ---- transitions ----------------------------------------------------------------------------
   function go(next) {
@@ -200,6 +207,7 @@ export function createFlow(ctx) {
     if (state === 'off') return;
     c.add(`fl-${state}`);
     if (PLAY.has(state)) c.add('fl-play');
+    if (HUD_ON.has(state) || state === 'watching') c.add('fl-hud');   // the fight HUD is up: the desktop corner buttons sit under it (src/corner.js)
   }
   function leave(prev, next) {
     if (ONLINE.has(prev) && !ONLINE.has(next)) netReset();
@@ -451,6 +459,9 @@ export function createFlow(ctx) {
       // post-match: any press but a confirm stops the auto rematch (a confirm presses a button, which says what it wants)
       if (state === 'onlinePost' && k !== 'confirm' && k !== 'start') { try { getNet().postPoke?.(); } catch { /* stub */ } }
       if (ctx.netBusy && ctx.netBusy()) return;   // its panel is up; it can't block the pad, so we ignore it here
+      // the SETTINGS panel owns every key while it's up over a menu. Over a live fight the keys are the
+      // fighter's (B is a kick, not back), so there it only closes on Escape, which the panel takes itself
+      if (panelOpen() && !PLAY.has(state)) { settingsPanel.key(k); return; }
       if (ml) { ml.key(k); return; }   // the move list owns every key while it's up
       if (PLAY.has(state)) {
         if (state !== 'result' && (k === 'pause' || k === 'escape' || k === 'start' || k === 'select')) pause();
@@ -819,7 +830,7 @@ export function createFlow(ctx) {
       if (mode !== 'horde') items.push(...rulesButtons('fl-amber', 'FROM THE NEXT FIGHT'));   // horde has no rounds and resets the clock per goon
       // the right panel: the book of happy accidents, or the controls (keyboard and gamepad)
       const panel = el('div', 'fl-tech');
-      const view = button('', () => { pauseView = pauseView === 'tech' ? 'controls' : 'tech'; paint(); });
+      const view = button('', () => { pauseView = pauseView === 'tech' ? 'controls' : 'tech'; paint(); }, 'fl-viewbtn');
       const paint = () => {
         view.el.textContent = pauseView === 'tech' ? 'SHOW CONTROLS' : 'SHOW TECHNIQUES';
         panel.textContent = '';
@@ -830,6 +841,13 @@ export function createFlow(ctx) {
         panel.appendChild(el('div', 'fl-techhead', `TECHNIQUES FOUND ${tech.filter(x => x.found).length}/${tech.length}`));
         for (const x of tech) { const p = el('p', x.found ? 'fl-got' : ''); p.append(el('b', '', x.found ? `${x.name}  ${x.input}` : '???'), el('small', '', x.hint)); panel.appendChild(p); }
       };
+      // the one SETTINGS panel (sound, music and, on a touch screen, the size of the controls), over this menu;
+      // closing it comes back here with the focus still on this item
+      if (settingsPanel) {
+        const set = button('SETTINGS', () => settingsPanel.open({ keys: true }));
+        set.el.appendChild(el('small', '', ctx.touchUI() ? 'SOUND, MUSIC, CONTROL SIZE' : 'SOUND AND MUSIC'));
+        items.push(set);
+      }
       items.push(view, button('MAIN MENU', mainMenu, 'fl-violet'));
       items.forEach(i => list.appendChild(i.el));
       paint();

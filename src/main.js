@@ -1637,7 +1637,7 @@ for (const t of ['pointerdown', 'touchstart']) {
     idleMs = 0;
     if (!attract || (flow && flow.on)) return;   // with the flow on, a tap only wakes the sound (src/audio/); START is a button
     const el = e.target instanceof Element ? e.target : null;
-    if (el && el.closest('[class^="sf-"], [class*=" sf-"], #credits')) return;   // the menu button, its panel and the credits link are left alone
+    if (el && el.closest('[class^="sf-"], [class*=" sf-"], #credits')) return;   // the corner buttons, the SETTINGS panel and the credits link are left alone
     startFromAttract();
   }, { capture: true, passive: true });
 }
@@ -1683,6 +1683,7 @@ flow = createFlow({
   click: (kind) => { try { gameAudio.actions && gameAudio.actions.click(kind); } catch (e) { /* audio off */ } },   // audio: menu clicks through the public API
   music: (pool) => gameAudio.setMusicPool(pool),   // audio: the flow pins the music pool per screen
   netBusy: () => !!online.busy,
+  panel: gameAudio.panel || null,   // the SETTINGS panel (src/audio/ui.js): the pause menu opens it, and it takes the menu keys while it's up
   watch,
 });
 window.__flow = flow;

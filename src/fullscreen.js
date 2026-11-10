@@ -2,8 +2,8 @@
 //
 //   F11             toggles the Fullscreen API on <html> instead of the browser's own F11 full screen, from every
 //                   screen. The key never reaches the game: no menu, attract screen or fighter sees it.
-//   corner button   desktop only, beside the menu button in the stage's bottom-left corner. A touch screen
-//                   keeps the touch layer's own button (html.touch-ui hides this one).
+//   corner button   desktop only, the last of the corner buttons in the stage's top right, after the menu
+//                   button (src/corner.js). A touch screen keeps the touch layer's own (html.touch-ui hides the row).
 //   Esc             leaves fullscreen the browser's way; the icon follows through fullscreenchange.
 //
 // Nothing is offered where it can't work: no Fullscreen API (iPhone Safari), an installed app (already full
@@ -11,6 +11,7 @@
 // frame allows it). <html> gets .fs-ok when it can work and .fs-on while fullscreen is on; the HUD's key hints
 // (src/combat/hud.js) read .fs-ok.
 import { install } from './install.js';
+import { cornerButton } from './corner.js';
 
 const doc = typeof document !== 'undefined' ? document : null;
 const de = doc ? doc.documentElement : null;
@@ -69,29 +70,16 @@ if (doc && typeof window !== 'undefined') {
 
     const style = doc.createElement('style');
     style.id = 'sf-fs-style';
-    // the menu button's look (src/audio/ui.js), a step dimmer and with less glow, so it never lights a fighter
+    // the button's look and place are the corner row's (src/corner.js); only the icon's two states are here
     style.textContent = `
   .fs-exit, html.fs-on .fs-enter { display: none; }
-  html.fs-on .fs-exit { display: inline; }
-  .sf-fs {
-    position: absolute; left: 48px; bottom: 8px; z-index: 5; width: 30px; height: 30px; padding: 0;
-    display: flex; align-items: center; justify-content: center; cursor: pointer;
-    background: rgba(14,4,30,0.55); color: #2ef2ff; border: 2px solid #2ef2ff; border-radius: 2px;
-    box-shadow: 0 0 5px rgba(46,242,255,0.35); opacity: 0.45; transition: opacity 120ms;
-  }
-  .sf-fs:hover { opacity: 1; }
-  .sf-fs svg { filter: drop-shadow(0 0 3px currentColor); }
-  html.touch-ui .sf-fs { display: none; }
-  html.fs-ok .sf-hint { left: 86px; }`;
+  html.fs-on .fs-exit { display: inline; }`;
     doc.head.appendChild(style);
 
     // "sf-" keeps the attract screen's tap-to-start off it (main.js), like the menu button
-    const btn = doc.createElement('button');
-    btn.className = 'sf-fs'; btn.type = 'button'; btn.tabIndex = -1;   // never focused, so Space or Enter in a fight can't press it
-    btn.innerHTML = FS_ICON;
-    btn.addEventListener('mousedown', (e) => e.preventDefault());       // a click doesn't take the focus either
-    btn.addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); btn.blur(); });
-    (doc.getElementById('stage') || doc.body).appendChild(btn);
+    const btn = cornerButton('sf-fs', 'Fullscreen (F11)', 3, FS_ICON);
+    btn.tabIndex = -1;   // never focused, so Space or Enter in a fight can't press it
+    btn.addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); });
     sync();
   }
 }
