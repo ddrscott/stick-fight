@@ -149,7 +149,10 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     foreground: texture(gl, W, H),
     far: texture(gl, W, H),
     bodies: texture(gl, W, H),
+    bgCache: texture(gl, 1, 1),   // fx.bgSource: the background as a world bitmap, uploaded only when it's redrawn
   };
+  let bgCacheVersion = -1, bgCacheCanvas = null;
+  const bgMapIdentity = [1, 1, 0, 0];
   const hw = Math.max(1, W >> 1), hh = Math.max(1, H >> 1), qw = Math.max(1, W >> 2), qh = Math.max(1, H >> 2), ew = Math.max(1, W >> 3), eh = Math.max(1, H >> 3);
   const fb = {
     scene: framebuffer(gl, W, H),
@@ -297,6 +300,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     tune: { bloomA: 1.0, bloomB: 0.05, bloomC: 0.03, star: 0.08, vignette: 0.26, grain: 0.03, haze: 0.03, shadow: 0.5, figAmb: 0.95, figGain: 0.25, rim: 0.6, emiGain: 1.0, coreWhite: 0.0, outline: 0.5, emiBloom: 1.5, shaftBloom: 0.5, hazeBloom: 0.2, blurRadius: 0.6, lift: [0.008, 0.004, 0.014], toe: 0.5, black: 0.0, lightGain: 1.0, maxDebris: 60, shakeMax: 24, punch: 16, punchHold: 0.045, aberration: 0.005, emiLight: 0.0, emiLightA: 0.5, emiLightC: 1.0, coreCap: 1.0, hiLift: 0, fgCut: 0.12, bodyAmb: 0.5, bodyGain: 0.8 },
     shake: { x: 0, y: 0 },
     skip: {},              // { layerName: true } = unchanged since the last frame, do not re-upload
+    bgSource: null,        // { canvas, version, map: [ax, ay, bx, by] }: the background from a world bitmap instead of fx.layers.background
     get tier() { return tier; },
     setTier(t) { tier = Math.max(1, Math.min(3, t | 0)); adapt.on = false; applyTier(); },
     get adaptive() { return adapt.on; },
@@ -423,7 +427,12 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       // caller knows; the compositor cannot without reading the canvas back). Uploads are the most
       // expensive per-frame cost on phones.
       const up = (k) => { if (!fx.skip[k]) uploadCanvas(gl, tex[k], layers[k]); };
-      up('background');
+      // fx.bgSource { canvas, version, map }: the background comes from a world-space bitmap (src/arena/cache.js),
+      // re-uploaded only when its version changes, and the scene pass samples it through map
+      const bs = fx.bgSource;
+      if (bs) {
+        if (bs.version !== bgCacheVersion || bs.canvas !== bgCacheCanvas) { uploadCanvas(gl, tex.bgCache, bs.canvas); bgCacheVersion = bs.version; bgCacheCanvas = bs.canvas; }
+      } else up('background');
       up('figures');
       up('emissive');
       const fgOn = o.foreground && fx.foreground.on;
@@ -591,7 +600,9 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
         target(fb.scene);
         bindQuad(P);
         setCommon(P);
-        bindTex(0, tex.background, P.u.u_bg);
+        bindTex(0, bs ? tex.bgCache : tex.background, P.u.u_bg);
+        const bm = bs ? bs.map : bgMapIdentity;
+        gl.uniform4f(P.u.u_bgMap, bm[0], bm[1], bm[2], bm[3]);
         bindTex(1, tex.figures, P.u.u_fig);
         bindTex(2, tex.emissive, P.u.u_emi);
         bindTex(3, tex.far, P.u.u_far);

@@ -453,25 +453,34 @@ function farSpan(cam, clip) {
   const m = farToEmissive(cam);
   return { x0: (clip.x - m.dx) / m.s - 60, x1: (clip.x + clip.w - m.dx) / m.s + 60 };
 }
-function drawCityLights(ctx, cam, clip) {
-  const m = farToEmissive(cam), sp = farSpan(cam, clip);
-  ctx.save();
-  clipRect(ctx, clip);
-  ctx.translate(m.dx, m.dy); ctx.scale(m.s, m.s);
-  for (let ti = 0; ti < TOWERS.length; ti++) {
-    const g = towerGrid(ti), B = g.B;
-    if (g.t.x > sp.x1 || g.t.x + g.t.w < sp.x0) continue;
+// Each tower's lit windows as one Path2D per tower (built once): the hash and the occlusion test ran per window
+// every frame before; now a frame fills one path per tower that the opening can show.
+let cityPaths = null;
+function buildCityPaths() {
+  cityPaths = TOWERS.map((t, ti) => {
+    const g = towerGrid(ti), B = g.B, path = typeof Path2D === 'function' ? new Path2D() : null;
     const rows = Math.ceil((H + 400 - g.t.top) / g.every);
     for (let row = 0; row < rows; row++) {
       for (let c = 0; c < g.cols; c++) {
-        const hsh = hash(ti, row, c);
-        if (hsh % 5 !== 0) continue; // a fifth of the windows are lit
+        if (hash(ti, row, c) % 5 !== 0) continue; // a fifth of the windows are lit
         if (hiddenBehind(ti, g.x0 + c * g.every + 1, g.y0 + row * g.every + 1)) continue;
-        const hue = WIN_HUES[ti % WIN_HUES.length];
-        ctx.fillStyle = `rgba(${WIN_CSS[hue] || WIN_CSS.white},${B.winAlpha})`;
-        ctx.fillRect(g.x0 + c * g.every, g.y0 + row * g.every, B.win, B.wh);
+        if (path) path.rect(g.x0 + c * g.every, g.y0 + row * g.every, B.win, B.wh);
       }
     }
+    const hue = WIN_HUES[ti % WIN_HUES.length];
+    return { path, x0: t.x, x1: t.x + t.w, fill: `rgba(${WIN_CSS[hue] || WIN_CSS.white},${B.winAlpha})` };
+  });
+}
+function drawCityLights(ctx, cam, clip) {
+  const m = farToEmissive(cam), sp = farSpan(cam, clip);
+  if (!cityPaths) buildCityPaths();
+  ctx.save();
+  clipRect(ctx, clip);
+  ctx.translate(m.dx, m.dy); ctx.scale(m.s, m.s);
+  for (const cp of cityPaths) {
+    if (!cp.path || cp.x0 > sp.x1 || cp.x1 < sp.x0) continue;
+    ctx.fillStyle = cp.fill;
+    ctx.fill(cp.path);
   }
   for (const n of NEONS) { ctx.fillStyle = n.css; ctx.fillRect(n.x, n.y, n.w, n.h); }
   for (const ti of BEACONS) { const b = TOWERS[ti]; ctx.fillStyle = 'rgba(255,50,40,0.85)'; ctx.fillRect(b.x + b.w / 2 - 2, b.top - 3, 4, 4); }
@@ -1036,7 +1045,11 @@ export function drawBuildingForeground(ctx, pal, lights) {
 // emissive: everything that glows, full color on a transparent layer, plus the
 // city's lights through the openings. `lights` is the live list (intensities flicker).
 
-export function drawBuildingEmissive(ctx, cam, lights) {
+// part: 'all' (the default), 'static' (everything that doesn't move or flicker: what src/arena/cache.js
+// keeps in a bitmap) or 'live' (the city's lights, which follow the far layer's parallax, and the lights
+// that flicker: the tubes, the vending machine, the fairy lights). 'static' + 'live' paint what 'all' does.
+export function drawBuildingEmissive(ctx, cam, lights, part = 'all') {
+  const live = part !== 'static', still = part !== 'live';
   const by = {};
   for (const l of lights || geometry.lights) by[l.name] = l.intensity;
   const k = (n, d = 1) => (typeof by[n] === 'number' ? by[n] : d);
@@ -1051,12 +1064,14 @@ export function drawBuildingEmissive(ctx, cam, lights) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
   // the city's lights through every opening, pinned to the far layer
-  for (const w of WINDOWS) drawCityLights(ctx, cam, w);
-  for (const w of LOWER_WINDOWS) drawCityLights(ctx, cam, w);
-  drawCityLights(ctx, cam, EXTERIOR);
+  if (live) {
+    for (const w of WINDOWS) drawCityLights(ctx, cam, w);
+    for (const w of LOWER_WINDOWS) drawCityLights(ctx, cam, w);
+    drawCityLights(ctx, cam, EXTERIOR);
+  }
 
   // fluorescent tubes
-  TUBES.forEach((t, i) => {
+  if (live) TUBES.forEach((t, i) => {
     const a = k(TUBE_NAMES[i]);
     if (a <= 0.01) return;
     ctx.fillStyle = `rgba(200,230,255,${0.35 * a})`;
@@ -1065,6 +1080,35 @@ export function drawBuildingEmissive(ctx, cam, lights) {
     ctx.fillRect(t.x - t.halfW, CEIL_Y + 3, t.halfW * 2, TUBE_H);
   });
 
+  if (still) drawStillEmissive(ctx, cam, k);
+  if (live) {
+    // vending machine: magenta glass as material, with product rows and a brand strip
+    const v = VENDING, a = k('vending');
+    neonRect(ctx, v.x + 7, v.y + 11, v.w - 14, 82, 'pink', a, 16);
+    ctx.fillStyle = `rgba(255,190,215,${0.85 * a})`;
+    ctx.fillRect(v.x + 9, v.y + 13, v.w - 18, 6);
+    ctx.fillStyle = `rgba(110,10,50,${0.8 * a})`;
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) ctx.fillRect(v.x + 11 + c * 12, v.y + 26 + r * 21, 8, 12);
+  }
+  if (live) {
+    // fairy lights strung in the corner plant and the hanging planter
+    const s = Math.min(1, k('plantSparkle') * 2.5);
+    ctx.fillStyle = rgba('cyan', s);
+    ctx.fillRect(PLANT_SPARKLE.x - 3, PLANT_SPARKLE.y - 3, 6, 6);
+    ctx.fillRect(PLANT_SPARKLE.x + 34, PLANT_SPARKLE.y + 30, 4, 4);
+    ctx.fillRect(PLANT_SPARKLE.x + 52, PLANT_SPARKLE.y - 34, 3, 3);
+    ctx.fillStyle = rgba('white', 0.9);
+    ctx.fillRect(BRANCH_SPARKLE.x - 3, BRANCH_SPARKLE.y - 3, 6, 6);
+    ctx.fillRect(BRANCH_SPARKLE.x + 8, BRANCH_SPARKLE.y + 30, 3, 3);
+  }
+
+  // (the compositor mirrors everything above each floor line into its glossy band)
+
+  ctx.restore();
+}
+
+// Everything on the emissive layer that holds still: signs, screens, LED runs, doors, lamps. k(name) is a light's intensity.
+function drawStillEmissive(ctx, cam, k) {
   // the double doors: the corridor beyond is lit, so the door windows glow and the frame catches it
   for (const d of DOOR_SETS) {
     const ww = 56, wh = 60, wy = d.y + 18;
@@ -1101,15 +1145,6 @@ export function drawBuildingEmissive(ctx, cam, lights) {
   ctx.fillStyle = rgba('amber', 0.9);
   for (let x = WALL_L + 40; x < WALL_R - 40; x += 80) ctx.fillRect(x + 40, LOW_FLOOR_Y + 5, 6, 3); // lower floor only: the main band is the mirror's
 
-  // vending machine: magenta glass as material, with product rows and a brand strip
-  {
-    const v = VENDING, a = k('vending');
-    neonRect(ctx, v.x + 7, v.y + 11, v.w - 14, 82, 'pink', a, 16);
-    ctx.fillStyle = `rgba(255,190,215,${0.85 * a})`;
-    ctx.fillRect(v.x + 9, v.y + 13, v.w - 18, 6);
-    ctx.fillStyle = `rgba(110,10,50,${0.8 * a})`;
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) ctx.fillRect(v.x + 11 + c * 12, v.y + 26 + r * 21, 8, 12);
-  }
   // the copier's control panel and its scan bar
   {
     const c = COPIER, a = k('copier');
@@ -1196,18 +1231,6 @@ export function drawBuildingEmissive(ctx, cam, lights) {
     ctx.fillRect(f.head + f.dir * 300 - 10, LOW_CEIL_Y + 6, 20, 4); // the lamp under its ceiling mount
   });
 
-  // fairy lights strung in the corner plant and the hanging planter
-  {
-    const s = Math.min(1, k('plantSparkle') * 2.5);
-    ctx.fillStyle = rgba('cyan', s);
-    ctx.fillRect(PLANT_SPARKLE.x - 3, PLANT_SPARKLE.y - 3, 6, 6);
-    ctx.fillRect(PLANT_SPARKLE.x + 34, PLANT_SPARKLE.y + 30, 4, 4);
-    ctx.fillRect(PLANT_SPARKLE.x + 52, PLANT_SPARKLE.y - 34, 3, 3);
-    ctx.fillStyle = rgba('white', 0.9);
-    ctx.fillRect(BRANCH_SPARKLE.x - 3, BRANCH_SPARKLE.y - 3, 6, 6);
-    ctx.fillRect(BRANCH_SPARKLE.x + 8, BRANCH_SPARKLE.y + 30, 3, 3);
-  }
-
   // the smashed pane: short dim glints along the broken edges, and the rain's spray on the floor under it
   {
     ctx.save();
@@ -1221,7 +1244,4 @@ export function drawBuildingEmissive(ctx, cam, lights) {
     for (let i = 0; i < 12; i++) ctx.fillRect(r.x0 + ((i * 29) % (r.x1 - r.x0 - 2)), r.y1 - 2 - (i % 3), 2, 2);
   }
 
-  // (the compositor mirrors everything above each floor line into its glossy band)
-
-  ctx.restore();
 }

@@ -1,0 +1,137 @@
+[
+  {
+    "scenario": "close",
+    "mode": "gpu",
+    "tier": "3",
+    "cpu50": 3.4,
+    "synced50": 8.5,
+    "synced95": 10.6,
+    "gpuWait50": 5
+  },
+  {
+    "scenario": "close",
+    "mode": "gpu",
+    "tier": "2",
+    "cpu50": 2.7,
+    "synced50": 7.3,
+    "synced95": 11.7,
+    "gpuWait50": 4.6
+  },
+  {
+    "scenario": "close",
+    "mode": "gpu",
+    "tier": "1",
+    "cpu50": 2.7,
+    "synced50": 5.8,
+    "synced95": 9.2,
+    "gpuWait50": 3.1
+  },
+  {
+    "scenario": "horde",
+    "mode": "gpu",
+    "tier": "3",
+    "cpu50": 3.9,
+    "synced50": 9.3,
+    "synced95": 12.7,
+    "gpuWait50": 5.2
+  },
+  {
+    "scenario": "horde",
+    "mode": "gpu",
+    "tier": "2",
+    "cpu50": 4.4,
+    "synced50": 10.3,
+    "synced95": 16.4,
+    "gpuWait50": 5.7
+  },
+  {
+    "scenario": "horde",
+    "mode": "gpu",
+    "tier": "1",
+    "cpu50": 3.6,
+    "synced50": 7.2,
+    "synced95": 10.5,
+    "gpuWait50": 3.5
+  },
+  {
+    "scenario": "rain",
+    "mode": "gpu",
+    "tier": "3",
+    "cpu50": 3.8,
+    "synced50": 8.6,
+    "synced95": 10.8,
+    "gpuWait50": 4.9
+  },
+  {
+    "scenario": "rain",
+    "mode": "gpu",
+    "tier": "2",
+    "cpu50": 3.8,
+    "synced50": 8.7,
+    "synced95": 12.7,
+    "gpuWait50": 5
+  },
+  {
+    "scenario": "rain",
+    "mode": "gpu",
+    "tier": "1",
+    "cpu50": 3.7,
+    "synced50": 7.4,
+    "synced95": 10.7,
+    "gpuWait50": 3.4
+  },
+  {
+    "scenario": "floor",
+    "mode": "gpu",
+    "tier": "3",
+    "cpu50": 2.2,
+    "synced50": 6.4,
+    "synced95": 10.2,
+    "gpuWait50": 4.3
+  },
+  {
+    "scenario": "floor",
+    "mode": "gpu",
+    "tier": "2",
+    "cpu50": 2.5,
+    "synced50": 7.2,
+    "synced95": 9.5,
+    "gpuWait50": 4.7
+  },
+  {
+    "scenario": "floor",
+    "mode": "gpu",
+    "tier": "1",
+    "cpu50": 2.2,
+    "synced50": 5.2,
+    "synced95": 8.7,
+    "gpuWait50": 3.1
+  },
+  {
+    "scenario": "attract",
+    "mode": "gpu",
+    "tier": "3",
+    "cpu50": 3.1,
+    "synced50": 7.6,
+    "synced95": 13.2,
+    "gpuWait50": 4.5
+  },
+  {
+    "scenario": "attract",
+    "mode": "gpu",
+    "tier": "2",
+    "cpu50": 3.6,
+    "synced50": 8.4,
+    "synced95": 13,
+    "gpuWait50": 4.7
+  },
+  {
+    "scenario": "attract",
+    "mode": "gpu",
+    "tier": "1",
+    "cpu50": 4,
+    "synced50": 7.5,
+    "synced95": 13,
+    "gpuWait50": 3.4
+  }
+]

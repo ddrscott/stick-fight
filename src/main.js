@@ -6,6 +6,7 @@ import { createLife } from './fighter/life.js';   // the life layer: eyeline, sp
 import { createFX } from './fx/index.js';
 import { createStatusFX, hitWeight, blockWeight } from './fx/status.js';   // state read off the bodies: stun halo, guard glint, dizzy stars, breath
 import { createArena, drawJoints } from './arena/index.js';
+import { createWorldCache, viewRect } from './arena/cache.js';   // the building's still art as bitmaps (README, Performance)
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
 import { createHUD, HUD_TOP } from './combat/hud.js';
@@ -19,12 +20,17 @@ import { roster, getCharacter, TEMP_ID } from './characters/index.js';   // regi
 import { botchEnabled, discover, techniques } from './flow/techniques.js';
 import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
 import { ACCIDENTS } from './combat/botch.js';
+import { perf, perfOverlay } from './perf.js';   // frame timing, and the ?perf=1 overlay (README, Performance)
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
 const glCanvas = document.getElementById('game');
 const hudCanvas = document.getElementById('hud');
-const dpr = Math.min(2, window.devicePixelRatio || 1);
+// The HUD canvas is never bigger than the screen pixels the stage covers (held sideways, the way the game is
+// played): a Pixel 7's stage is about 1920 device px wide, so a 2x HUD (2560) was drawn and then shrunk.
+// Up to 2x on a big screen, never under 1x. (The GL canvas is always 1280x720: createFX sizes it.)
+const stageCss = Math.min(Math.max(innerWidth, innerHeight), Math.min(innerWidth, innerHeight) * 16 / 9);
+const dpr = Math.max(1, Math.min(2, Math.round(stageCss * (window.devicePixelRatio || 1) / W * 4) / 4));
 glCanvas.width = W * dpr; glCanvas.height = H * dpr;
 hudCanvas.width = W * dpr; hudCanvas.height = H * dpr;
 
@@ -1134,6 +1140,17 @@ function drawBlockSpark(s, ctx) {
 // resizes its layers for a quality tier, or on a scene change), and an empty body layer stays empty.
 let farDrawnW = 0, bodiesDrawn = true;
 const FAR_STEP = 64, farBase = { x: 0, y: 0 };
+// The building's still art (both floors) and the still part of its glow live in world bitmaps (src/arena/cache.js),
+// redrawn only when the camera leaves them or zooms to another step. The background goes straight to the
+// compositor as a texture (fx.bgSource, no per-frame upload); the glow is one drawImage into the emissive
+// layer, with the city's lights and the flickering tubes drawn live over it. A door swinging open (horde)
+// draws the background live for that second. ?cache=0 turns both off, for comparisons.
+const SCENERY = { x0: -260, y0: -260, x1: 2820, y1: 980 };
+const bgCache = createWorldCache(SCENERY), emiCache = createWorldCache(SCENERY);
+const useCache = params.get('cache') !== '0';
+const bgMap = [1, 1, 0, 0], viewNow = { x0: 0, y0: 0, x1: 0, y1: 0 };
+const bgSource = { canvas: bgCache.canvas, version: 0, map: bgMap };
+function doorsMoving() { for (const k in arena.doorState) if (arena.doorState[k].t > 0) return true; return false; }
 const drawnOff = new Map(), NO_OFF = { x: 0, y: 0 };   // this frame's draw-smoothing offsets, for the status effects
 const drawOffsetNow = (u) => drawnOff.get(u) || NO_OFF;
 
@@ -1146,6 +1163,14 @@ function render() {
   const ctxs = {};
   const haveBodies = !arena.bodiesInBackground && arena.bodies && arena.bodies.length > 0;
   if (fx.skip) { fx.skip.far = false; fx.skip.bodies = !haveBodies && !bodiesDrawn; }
+  // the still scenery from its caches, when they can hold this view (both at the layers' resolution times the zoom)
+  const sceneScale = camera.zoom * (fx.layers.background.width / W), sceneKey = (camera.mirror ? 'm' : '') + arena.style;
+  viewRect(camera, W, H, viewNow);
+  const bgCached = useCache && !doorsMoving() && bgCache.ensure(viewNow, sceneScale, sceneKey, (c) => arena.drawBackground(c, camera));
+  if (bgCached) { bgSource.version = bgCache.version; bgCache.map(camera, W, H, bgMap); fx.bgSource = bgSource; }
+  else fx.bgSource = null;
+  if (fx.skip) fx.skip.background = bgCached;
+  const emiCached = useCache && !!arena.drawEmissive && emiCache.ensure(viewNow, sceneScale, sceneKey, (c) => arena.drawEmissive(c, camera, 'static'));
   for (const k of ['far', 'background', 'bodies', 'figures', 'emissive', 'foreground']) {
     const L = fx.layers[k];
     if (!L) continue;
@@ -1159,6 +1184,7 @@ function render() {
     }
     if (fx.skip && k === 'far' && farDrawnW === L.width) { fx.skip.far = true; continue; }
     if (fx.skip && k === 'bodies' && fx.skip.bodies) continue;
+    if (k === 'background' && bgCached) continue;
     const ctx = L.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, L.width, L.height);
     // far: identity camera, the FX applies its own parallax and haze; foreground: harder follow
@@ -1169,8 +1195,9 @@ function render() {
   // far first: the background leaves its window openings transparent so the skyline shows through
   if (ctxs.far && arena.drawFar) { arena.drawFar(ctxs.far, { ...camera, farBase }); farDrawnW = fx.layers.far.width; }
   bodiesDrawn = haveBodies;
-  arena.drawBackground(ctxs.background, camera);
-  if (arena.drawEmissive) arena.drawEmissive(ctxs.emissive, camera);
+  if (!bgCached) arena.drawBackground(ctxs.background, camera);
+  if (emiCached) { emiCache.blit(ctxs.emissive); arena.drawEmissive(ctxs.emissive, camera, 'live'); }
+  else if (arena.drawEmissive) arena.drawEmissive(ctxs.emissive, camera);
   // the pile goes on the FX bodies layer (lit like the room, so corpses take the scene's color),
   // under the live fighters; older FX without that layer get it on the figures layer
   if (!arena.bodiesInBackground && arena.drawBodies && !(fx.skip && fx.skip.bodies)) arena.drawBodies(ctxs.bodies || ctxs.figures);
@@ -1206,12 +1233,15 @@ function render() {
   const statusLights = statusFX.draw(ctxs.emissive, sim, { dt: lastFrameMs / 1000, tier: fx.tier || 3, offset: drawOffsetNow });
   if (arena.drawForeground) arena.drawForeground(ctxs.foreground || ctxs.figures);
   fx.lights = [...(arena.lights || []), ...lights.map(l => ({ x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity * (l.ttl / l.max) })), ...statusLights];
+  perf.mark('draw');
   fx.render(camera);
+  perf.mark('gl');
   const fl = flow && flow.on ? flow.hud() : null;   // flow: score, names, no HUD under a menu, the title card only on the title
   if (toast) { toast.t -= lastFrameMs / 1000; if (toast.t <= 0) toast = null; }
   const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help, toast, found: help ? techniques().filter(t => t.found) : null,
     attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl });
   if (fl) flow.frame(layout);
+  perf.mark('hud');
 }
 // ---- draw smoothing: a visual-only catch-up for air moves ---------------------------------------
 // Some air attacks have to cover 50-90px between the press and the contact pose in two or three
@@ -1494,8 +1524,14 @@ window.addEventListener('message', (e) => {
 function frame(now) {
   const ms = Math.min(100, now - last); last = now;
   const idle = embedHidden && !online.active && flow && flow.on && flow.demo;
-  if (!driven && !idle) { lastFrameMs = ms; advance(ms); render(); }
+  perf.begin(now);
+  if (!driven && !idle) { lastFrameMs = ms; advance(ms); perf.mark('sim'); render(); }
+  perf.end();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 window.__gauntlet.ready = true;
+// what the profiler reports alongside the times: the tier, the DPR and the size the GL canvas draws at
+const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height });
+perfInfo(); setInterval(perfInfo, 1000);
+if (params.get('perf') === '1') perfOverlay(document.getElementById('stage'));

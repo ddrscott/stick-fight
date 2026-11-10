@@ -1,0 +1,20 @@
+[
+  {
+    "mode": "load",
+    "throttle": 1,
+    "net": "local",
+    "readyMs": 511,
+    "fcpMs": 349,
+    "mainThreadMs": 192,
+    "kb": 758
+  },
+  {
+    "mode": "load",
+    "throttle": 4,
+    "net": "local",
+    "readyMs": 1076,
+    "fcpMs": 711,
+    "mainThreadMs": 671,
+    "kb": 758
+  }
+]

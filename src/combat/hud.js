@@ -31,17 +31,51 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   const labelW = [0, 0];     // how wide each side's name label drew, so the score starts after it      // the flow's character names per slot (an arcade stage's name), else each unit's character
   let layout = {};           // what draw() returns: where the title's prompt sits (src/flow/ puts its START button there)
 
-  // neon text: a dark outline for contrast, a colored glow stroke, then a hot white-tinted core
-  function neonText(text, x, y, size, color, { font = DISPLAY, align = 'center', glow = 1, core = true, weight = '' } = {}) {
-    ctx.save();
-    ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
-    ctx.lineWidth = Math.max(3, size * 0.16); ctx.strokeStyle = 'rgba(8,2,18,0.85)'; ctx.strokeText(text, x, y);
-    ctx.shadowColor = color; ctx.shadowBlur = size * 0.5 * glow;
-    ctx.lineWidth = Math.max(1.5, size * 0.07); ctx.strokeStyle = color; ctx.strokeText(text, x, y);
-    ctx.fillStyle = core ? mix(color, '#ffffff', 0.55) : color; ctx.fillText(text, x, y);
-    ctx.shadowBlur = 0; ctx.restore();
-    return ctx.measureText ? measure(text, size, font, weight) : size * text.length * 0.6;
+  // neon text: a dark outline for contrast, a colored glow stroke, then a hot white-tinted core.
+  // The glow is a shadowBlur, the costliest thing a 2D canvas does (a blur per draw, on the phone's GPU every
+  // frame), so each label is drawn once into a small bitmap at the HUD's resolution and stamped from then on
+  // (README, Performance). Keyed by everything that changes its look (the glow in 0.05 steps); the 96 most
+  // recent are kept, and the cache empties when a web font finishes loading. Under any transform other than the
+  // HUD's own (a scaled or rotated label) it draws live as before.
+  function neonDraw(c, text, x, y, size, color, font, align, glow, core, weight) {
+    c.font = `${weight} ${size}px ${font}`; c.textAlign = align; c.textBaseline = 'middle'; c.lineJoin = 'round';
+    c.lineWidth = Math.max(3, size * 0.16); c.strokeStyle = 'rgba(8,2,18,0.85)'; c.strokeText(text, x, y);
+    c.shadowColor = color; c.shadowBlur = size * 0.5 * glow;
+    c.lineWidth = Math.max(1.5, size * 0.07); c.strokeStyle = color; c.strokeText(text, x, y);
+    c.fillStyle = core ? mix(color, '#ffffff', 0.55) : color; c.fillText(text, x, y);
+    c.shadowBlur = 0;
   }
+  function neonText(text, x, y, size, color, { font = DISPLAY, align = 'center', glow = 1, core = true, weight = '' } = {}) {
+    const t = ctx.getTransform();
+    const w = measure(text, size, font, weight);
+    if (typeof document !== 'undefined' && t.a === dpr && t.d === dpr && t.b === 0 && t.c === 0) {
+      const g = Math.round(glow * 20) / 20, key = `${text}|${size}|${color}|${font}|${weight}|${g}|${core ? 1 : 0}`;
+      let e = textCache.get(key);
+      if (e) { textCache.delete(key); textCache.set(key, e); }
+      else {
+        const pad = Math.ceil(size * 0.5 * g * 1.6 + size * 0.16 + 4), cw = w + 2 * pad, ch = size * 1.5 + 2 * pad;
+        const c = document.createElement('canvas');
+        c.width = Math.ceil(cw * dpr); c.height = Math.ceil(ch * dpr);
+        const o = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+        o.setTransform(dpr, 0, 0, dpr, 0, 0);
+        neonDraw(o, text, pad, pad + size * 0.75, size, color, font, 'left', g, core, weight);
+        e = { c, pad, oy: pad + size * 0.75 };
+        textCache.set(key, e);
+        if (textCache.size > 96) textCache.delete(textCache.keys().next().value);
+      }
+      const left = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+      // on whole device pixels, so a stamp is as sharp as the text was
+      const dx = Math.round((left - e.pad) * dpr) / dpr, dy = Math.round((y - e.oy) * dpr) / dpr;
+      ctx.drawImage(e.c, dx, dy, e.c.width / dpr, e.c.height / dpr);
+      return w;
+    }
+    ctx.save();
+    neonDraw(ctx, text, x, y, size, color, font, align, glow, core, weight);
+    ctx.restore();
+    return w;
+  }
+  const textCache = new Map(), widths = new Map();
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { textCache.clear(); widths.clear(); });
   // Plain HUD text: a solid, slightly lightened fill inside a firm dark outline, no glow. The labels
   // along the top use it: neon glow on small text smeared it into the bright bars and the room behind.
   function plainText(text, x, y, size, color, { font = LABEL, align = 'left', weight = 600 } = {}) {
@@ -52,7 +86,16 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.restore();
     return measure(text, size, font, weight);
   }
-  function measure(text, size, font = DISPLAY, weight = '') { ctx.save(); ctx.font = `${weight} ${size}px ${font}`; const w = ctx.measureText(text).width; ctx.restore(); return w; }
+  function measure(text, size, font = DISPLAY, weight = '') {
+    const key = `${text}|${size}|${font}|${weight}`;
+    let w = widths.get(key);
+    if (w === undefined) {
+      ctx.save(); ctx.font = `${weight} ${size}px ${font}`; w = ctx.measureText(text).width; ctx.restore();
+      if (widths.size > 512) widths.clear();
+      widths.set(key, w);
+    }
+    return w;
+  }
   function para(x, y, w, h, side) {
     // a parallelogram leaning outward: left bar's outer (left) end sits lower-left
     const k = SKEW * (h / BAR_H);

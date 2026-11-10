@@ -98,6 +98,7 @@ float shaftMask(vec2 px) {
 export const SCENE_FS = PRECISION + COMMON + `
 varying vec2 v_uv;
 uniform sampler2D u_bg, u_fig, u_emi, u_far, u_body;
+uniform vec4 u_bgMap;    // screen uv -> background uv (uv * xy + zw): identity for the layer, a world cache's window otherwise
 uniform sampler2D u_nearA, u_nearB, u_nearC; // blurred emissive (quarter and eighth res bloom): near-field light from the signs
 uniform float u_emiLight, u_emiLightA, u_emiLightC, u_coreCap, u_bodyOn, u_bodyAmb, u_bodyGain;
 uniform float u_farOn, u_farAmount, u_farLight;
@@ -112,30 +113,25 @@ uniform float u_lighting, u_shadows, u_fogOn, u_hazeOn;
 uniform float u_shadowK, u_figAmb, u_figGain, u_rimK, u_emiGain, u_coreWhite, u_outline;
 uniform float u_raw;
 
-vec3 figLightAt(vec2 px, vec2 n, float edge, out vec3 rim) {
-  vec3 L = u_ambient;
-  rim = vec3(0.0);
+// Every light's contribution in one pass over the array (it was three: the background's light with its
+// contact shadows, the figures' light and rim, and the haze): the distance and falloff are worked out once
+// per light. Same sums as before; the figures' terms only where there is a figure (fg).
+void lightAll(vec2 px, vec2 n, float edge, bool lit, bool fg, bool hz, out vec3 Lbg, out vec3 Lfig, out vec3 rim, out vec3 hsum) {
+  Lbg = u_ambient; Lfig = u_ambient; rim = vec3(0.0); hsum = vec3(0.0);
   for (int i = 0; i < NLIGHTS; i++) {
     if (i >= u_nLights) break;
     vec2 dn = (u_lpos[i] - px) / u_lrad[i]; // in radii, so length() never squares pixels
     float x = length(dn);
+    // Light scattered in the air around a light (the halo you see in fog): reaches 1.35 radii
+    if (hz) { float t = clamp(1.0 - x / 1.35, 0.0, 1.0); hsum += u_lcol[i] * (t * t * t); }
+    if (!lit) continue;
     float a = falloff(x);
     if (a <= 0.0005) continue;
-    L += u_lcol[i] * a;
-    float facing = max(0.0, dot(n, dn / max(x, 0.0001)));
-    rim += u_lcol[i] * a * facing * edge;
-  }
-  return L;
-}
-
-vec3 bgLightAt(vec2 px) {
-  vec3 L = u_ambient;
-  for (int i = 0; i < NLIGHTS; i++) {
-    if (i >= u_nLights) break;
-    vec2 dn = (u_lpos[i] - px) / u_lrad[i]; // in radii, so length() never squares pixels
-    float x = length(dn);
-    float a = falloff(x);
-    if (a <= 0.0005) continue;
+    if (fg) {
+      Lfig += u_lcol[i] * a;
+      float facing = max(0.0, dot(n, dn / max(x, 0.0001)));
+      rim += u_lcol[i] * a * facing * edge;
+    }
     if (u_shadows > 0.5) {
       float dist = x * u_lrad[i];
       // Occlusion toward the light by anything on the figure layer: a soft contact shadow.
@@ -147,15 +143,14 @@ vec3 bgLightAt(vec2 px) {
       // A light sitting on a body (a hit flash) must not wrap the body in its own shadow.
       a *= 1.0 - u_shadowK * occ * smoothstep(50.0, 180.0, dist);
     }
-    L += u_lcol[i] * a;
+    Lbg += u_lcol[i] * a;
   }
-  return L;
 }
 
 void main() {
   vec2 uv = v_uv;
   vec2 px = vec2(uv.x * u_res.x, (1.0 - uv.y) * u_res.y);
-  vec4 bg = texture2D(u_bg, uv);
+  vec4 bg = texture2D(u_bg, uv * u_bgMap.xy + u_bgMap.zw);
   vec4 fig = texture2D(u_fig, uv);
   vec4 emi = texture2D(u_emi, uv);
 
@@ -179,10 +174,20 @@ void main() {
   float hz = exp(-hzt * hzt); // not pow(): pow of a negative base is NaN on phone GPUs and blacked out the upper band
   sky += u_horizon * hz * (0.75 + 0.25 * fbm(px * vec2(0.004, 0.012) + vec2(u_time * 0.02, 0.0)));
 
+  // the figure's edge normal from its alpha gradient (the rim light and the outline below use it)
+  vec2 tx = 1.0 / u_res;
+  float ax = texture2D(u_fig, uv + vec2(tx.x, 0.0)).a - texture2D(u_fig, uv - vec2(tx.x, 0.0)).a;
+  float ay = texture2D(u_fig, uv + vec2(0.0, tx.y)).a - texture2D(u_fig, uv - vec2(0.0, tx.y)).a;
+  vec2 g = vec2(ax, -ay); // screen space, y down; points inward (toward more alpha)
+  float edge = clamp(length(g) * 1.5, 0.0, 1.0);
+  vec2 n = -g / max(length(g), 0.0001); // outward
+
+  bool lit = u_lighting > 0.5, hzOn = u_hazeOn > 0.5;
+  vec3 Lbg = u_ambient, Lf = u_ambient, rim = vec3(0.0), hsum = vec3(0.0);
+  if (lit || hzOn) lightAll(px, n, edge, lit, fig.a > 0.0, hzOn, Lbg, Lf, rim, hsum);
+
   vec3 col;
-  vec3 Lbg = u_ambient;
-  if (u_lighting > 0.5) {
-    Lbg = bgLightAt(px);
+  if (lit) {
     // Emissive near-field light: every glowing face lights the wall around it, through the same
     // blur the bloom uses (~20px tight and ~50-80px wide). It only exists near emitters, so the
     // ambient stays dark while the wall 40-80px from a sign picks up the sign's color.
@@ -209,7 +214,7 @@ void main() {
   float sh = shaftMask(px);
   col += u_shCol * sh;
 
-  vec3 haze = (u_hazeOn > 0.5) ? hazeAt(px) : vec3(0.0);
+  vec3 haze = hzOn ? hsum * (0.7 + 0.3 * fbm(px * 0.004 + vec2(u_time * 0.05, -u_time * 0.03))) * u_haze : vec3(0.0);
   col += haze;
 
   // Soft knee on lit surfaces only: a strong light on a light fill rolls off instead of flattening
@@ -238,12 +243,6 @@ void main() {
 
   // Figures: lit by ambient + lights with a floor so they always read, plus a rim
   // on the edge facing each light. The edge normal comes from the alpha gradient.
-  vec2 tx = 1.0 / u_res;
-  float ax = texture2D(u_fig, uv + vec2(tx.x, 0.0)).a - texture2D(u_fig, uv - vec2(tx.x, 0.0)).a;
-  float ay = texture2D(u_fig, uv + vec2(0.0, tx.y)).a - texture2D(u_fig, uv - vec2(0.0, tx.y)).a;
-  vec2 g = vec2(ax, -ay); // screen space, y down; points inward (toward more alpha)
-  float edge = clamp(length(g) * 1.5, 0.0, 1.0);
-  vec2 n = -g / max(length(g), 0.0001); // outward
   // Readability rim: darken the backdrop in a ~2px band just outside every figure, so a hue-only
   // fighter (orange on a pink-lit wall) still has a luma edge.
   if (u_outline > 0.0) {
@@ -278,9 +277,7 @@ void main() {
     col = mix(col, bodyCol, bod.a);
   }
   vec3 figCol;
-  if (u_lighting > 0.5) {
-    vec3 rim;
-    vec3 Lf = figLightAt(px, n, edge, rim);
+  if (lit) {
     figCol = fig.rgb * min(vec3(1.35), u_figAmb + Lf * u_figGain) + rim * u_rimK;
   } else {
     figCol = fig.rgb;
