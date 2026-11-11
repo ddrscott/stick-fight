@@ -755,7 +755,8 @@ function injectStyle() {
   #flow > .fl-up.fl-crew .fl-crewpair .fl-btn { min-height: 44px; font-size: max(14px, 4.2cqw); letter-spacing: 0.06em; }
   #flow > .fl-up.fl-crew .fl-crewbody > .fl-qr { grid-area: q; --qr: clamp(140px, 40cqw, 200px); align-self: end; }
   #flow > .fl-up.fl-crew .fl-recent { grid-area: r; min-height: 0; font-size: max(12px, 3.5cqw); gap: 0.25em; line-height: 1.15; }
-  #flow > .fl-up.fl-crew .fl-standings { grid-area: tb; align-content: start; grid-template-columns: 5cqw minmax(0, 1fr) 5.5cqw 5.5cqw 5.5cqw 10cqw 19cqw;
+  #flow > .fl-up.fl-crew .fl-standings { grid-area: tb; align-content: start; grid-template-columns: 5cqw minmax(0, 1fr) 5cqw 5cqw 5cqw 12cqw 18cqw;
+    grid-auto-rows: max-content;   /* the cells clip (ellipsis), so in a box shorter than the list auto rows would shrink to nothing */
     column-gap: 1.6cqw; row-gap: 0.5em; padding: 0 2.4cqw 2cqw; font-size: max(13px, 3.9cqw); }
   #flow > .fl-up.fl-crew .fl-standings .fl-sfav, #flow > .fl-up.fl-crew .fl-standings .fl-sth:nth-child(7) { display: block; }
   #flow > .fl-up.fl-crew .fl-standings .fl-sfav { font-size: max(12px, 3.5cqw); }
@@ -849,8 +850,6 @@ function injectStyle() {
   /* the watch card (between matches, or one that stopped short) */
   #flow > .fl-up .fl-wcard { max-width: 100%; padding: 4cqw; }
 
-  /* a full-screen menu has nothing of the scene's to credit */
-  html.sq:has(#flow > .fl-up) #credits { display: none; }
   /* Held upright, the screens that stay in the 16:9 box (the title, the watch view) are sized in phone px: the box
      is about 390 wide, where 1cqw is under 4 px */
   html.sq #flow .fl-title .fl-start { font-size: 16px; min-height: 48px; padding: 0.3em 18px 0; }
@@ -858,7 +857,8 @@ function injectStyle() {
   html.sq #flow .fl-title .fl-mini { font-size: 14px; min-height: 42px; padding: 0.3em 12px 0; }
   html.sq #flow .fl-wbar { font-size: 13px; gap: 8px; padding: 4px 8px 3px 4px; white-space: normal; max-width: 96%; flex-wrap: wrap; justify-content: center; }
   html.sq #flow .fl-wtag { font-size: 12px; padding: 4px 6px 2px; }
-  html.sq #flow .fl-wbtns { gap: 8px; right: 8px; }
+  html.sq #flow .fl-wbar > * { white-space: nowrap; }
+  html.sq #flow .fl-wbtns { gap: 8px; right: 8px; bottom: auto; top: calc(1.6cqh - var(--sq-over) * 100cqh); }   /* the view's top corner: the bar has the bottom */
   html.sq #flow .fl-wbtns .fl-btn { min-height: 44px; font-size: 15px; padding: 0.3em 12px 0; }
   html.sq #flow .fl-watch-wait .fl-h2, html.sq #flow .fl-watch-stop .fl-h2, html.sq #flow .fl-watch-result .fl-h2 { font-size: 20px; }
   html.sq #flow .fl-wcard .fl-label, html.sq #flow .fl-wcard .fl-small { font-size: 13px; }

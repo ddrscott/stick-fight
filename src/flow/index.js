@@ -208,6 +208,9 @@ export function createFlow(ctx) {
     for (const k of [...c]) if (k.startsWith('fl-')) c.remove(k);
     c.toggle('flow-on', state !== 'off');
     if (state === 'off') return;
+    // main.js marks the old flow-less demo 'attract', which hides the touch layer (index.html); a page opened on a
+    // crew or room link starts that demo before the menus are on, and kept the mark, so it had no menu button
+    c.remove('attract');
     c.add(`fl-${state}`);
     if (PLAY.has(state)) c.add('fl-play');
     if (HUD_ON.has(state) || state === 'watching') c.add('fl-hud');   // the fight HUD is up: the desktop corner buttons sit under it (src/corner.js)

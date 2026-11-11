@@ -36,6 +36,25 @@ const NET = !argv.includes('--no-net');
 const ONLY = opt('--only', '').split(',').filter(Boolean);
 const STATES = opt('--states', '').split(',').filter(Boolean);
 const TEXT_MIN = 12, TAP_MIN = 40;
+// --dump file.json: every element's box, font size and text on every screen, to diff two builds (sideways and
+// desktop must not move by a pixel; screenshots can't show that, the demo fight behind the menus never holds still)
+const DUMP = opt('--dump', '');
+const dump = {};
+function layout() {
+  const out = [];
+  const sel = ['#flow', '.sf-panel.sf-open', '.ml-root', '.nf-lobby:not([hidden])', '.up-pill:not([hidden])', '.sf-hs'];
+  for (const q of sel) for (const root of document.querySelectorAll(q)) {
+    const walk = (n, path) => {
+      const r = n.getBoundingClientRect(), cs = getComputedStyle(n);
+      if (cs.display === 'none') return;
+      const own = [...n.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent.trim()).join('').slice(0, 30);
+      out.push(`${path} ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)} ${cs.fontSize} z${n.currentCSSZoom || 1}${own ? ' "' + own + '"' : ''}`);
+      [...n.children].forEach((c, i) => walk(c, `${path}>${c.tagName.toLowerCase()}${typeof c.className === 'string' && c.className ? '.' + c.className.trim().split(/\s+/).filter((k) => !/^fl-(focus|hit|dis|cur)$/.test(k)).join('.') : ''}[${i}]`));
+    };
+    walk(root, q);
+  }
+  return out;
+}
 
 const phone = (w, h) => ({ name: w > h ? `sideways-${w}x${h}` : `upright-${w}x${h}`, viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, upright: h > w });
 const SIZES = [
@@ -109,8 +128,11 @@ function audit({ upright, textMin, tapMin }) {
         if (o.overflowX === 'visible' && o.overflowY === 'visible') continue;
         const eb = R(e.getBoundingClientRect()), was = a;
         a = cut(a, eb);
-        const ellipsis = getComputedStyle(n).textOverflow === 'ellipsis' || o.textOverflow === 'ellipsis' || e.matches('.fl-ring, .fl-roll');
+        const ellipsis = getComputedStyle(n).textOverflow === 'ellipsis' || o.textOverflow === 'ellipsis' || !!e.closest('.fl-ring, .fl-roll');   // (the carousel's side cards are shrunk and half off screen by design)
         if (!ellipsis && area(a) > 0 && (was.l < eb.l - 1 || was.r > eb.r + 1)) out.push(`CUT OFF AT THE SIDE ${name(n)} ${fmt(was)} (in ${fmt(eb)})`);
+        // and one that cuts it at the top or bottom, unless it scrolls there
+        const scrolls = /auto|scroll/.test(o.overflowY) || !!e.closest('.fl-ring, .fl-roll');
+        if (!scrolls && area(a) > 0 && (was.t < eb.t - 1 || was.b > eb.b + 1)) out.push(`CUT OFF ${name(n)} ${fmt(was)} (in ${fmt(eb)})`);
       }
       if (area(a) <= 0) continue;
       // text is judged by the glyphs' own box, not its element's (padding, a fixed-width cell)
@@ -118,7 +140,13 @@ function audit({ upright, textMin, tapMin }) {
       if (text && !press) {
         const rg = document.createRange(); let u = null;
         for (const c of n.childNodes) if (c.nodeType === 3 && c.textContent.trim()) { rg.selectNodeContents(c); const q = R(rg.getBoundingClientRect()); u = u ? { l: Math.min(u.l, q.l), t: Math.min(u.t, q.t), r: Math.max(u.r, q.r), b: Math.max(u.b, q.b) } : q; }
-        if (u) { ta = cut(u, a); if (area(ta) <= 0) continue; }   // clipped text (an ellipsis) ends at its box
+        if (u) {
+          // letters taller than the box that clips them are cut (a grid row squeezed under its text)
+          // (against the font size: a font's line box runs well past its capitals, Teko's by 40%)
+          const fpx = parseFloat(getComputedStyle(n).fontSize) * (n.currentCSSZoom || 1);
+          if (/hidden|clip/.test(getComputedStyle(n).overflowY) && r.height < fpx * 0.85) out.push(`CUT OFF ${name(n)}: ${Math.round(fpx)} px letters in a ${Math.round(r.height)} px box`);
+          ta = cut(u, a); if (area(ta) <= 0) continue;   // clipped text (an ellipsis) ends at its box
+        }
       }
       items.push({ n, a: ta || a, box: box, press, text, scr, sc });
     }
@@ -158,6 +186,21 @@ function audit({ upright, textMin, tapMin }) {
     if (c.r - c.l > 2 && c.b - c.t > slack) out.push(`OVERLAP ${name(A.n)} ${fmt(A.a)} / ${name(B.n)} ${fmt(B.a)}`);
   }
   return [...new Set(out)];
+}
+
+// ---- the D-pad reaches every button: from the focus a screen opens on, every direction from every item reached ----
+function reach() {
+  if (document.querySelector('.sf-panel.sf-open, .ml-root, .nf-lobby:not([hidden]) .nf-panel')) return [];   // an overlay has the keys
+  const f = window.__flow, ui = f && f.debug.ui;
+  if (!ui || ui.items.length < 2 || ui.focus < 0) return [];
+  const items = ui.items, start = ui.focus, seen = new Set([start]), q = [start];
+  const live = (k) => !items[k].el.classList.contains('fl-dis') && items[k].el.offsetParent !== null;
+  while (q.length) {
+    const k = q.shift();
+    for (const d of ['up', 'down', 'left', 'right']) { ui.setFocus(k); ui.move(d); if (!seen.has(ui.focus)) { seen.add(ui.focus); q.push(ui.focus); } }
+  }
+  ui.setFocus(start);
+  return items.map((it, k) => k).filter((k) => live(k) && !seen.has(k)).map((k) => `PAD CAN'T REACH "${(items[k].el.textContent || '').trim().slice(0, 24)}"`);
 }
 
 // ---- crews and rooms through the Worker, from Node ---------------------------------------------------------------
@@ -207,7 +250,9 @@ for (const size of SIZES) {
   const shot = async (label, wait = 500, p = page) => {
     await sleep(wait);
     if (p === page) await touchMode();
+    if (DUMP) dump[`${size.name} ${label}`] = await p.evaluate(layout);
     report(label, await p.evaluate(audit, { upright: size.upright, textMin: TEXT_MIN, tapMin: TAP_MIN }));
+    if (!/charSelect|onlineSelect/.test(label)) report(label, await p.evaluate(reach));   // (the carousel and grid move by their own rules; test:select walks them)
     const file = OUT ? path.join(OUT, `${size.name}-${String(++n).padStart(2, '0')}-${label}.png`) : '';
     if (file) await p.screenshot({ path: file });
     return file;
@@ -283,10 +328,12 @@ for (const size of SIZES) {
       await go('modeSelect', 'onlineMenu', 'profile');
       await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /SAVE MY PROFILE/.test(i.el.textContent)); it && it.act(); });
       if (await at('signInEmail', 3000)) {
-        await page.keyboard.type(`scott.${tag}@example.com`);
+        await page.keyboard.type(`scott.${tag}.${Date.now() % 100000}@example.com`);
         await shot('signInEmail');
         await page.keyboard.press('Enter');
-        if (await at('signInCode', 8000)) await shot('signInCode', 700); else report('signInCode', ['never got there']);
+        // (the local Worker caps code sends per IP an hour: past that the screen says so, and the code screen is opened directly)
+        if (!(await at('signInCode', 8000))) await go('signInCode');
+        if (await at('signInCode', 2000)) await shot('signInCode', 700); else report('signInCode', ['never got there']);
       } else report('signInEmail', ['never got there']);
     }
     if (want('onlineHost')) {
@@ -323,7 +370,7 @@ for (const size of SIZES) {
         // both lock in; the host starts at once
         await page.evaluate(() => window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true));
         await R.evaluate(() => { window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true); });
-        await until(() => R.evaluate(() => { window.__net.startNow && window.__net.startNow(); return window.__flow.state === 'onlineFighting'; }), 10000);
+        await until(() => R.evaluate(() => { window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true); window.__net.startNow && window.__net.startNow(); return window.__flow.state === 'onlineFighting'; }), 15000);
         if (await at('onlineFighting', 10000)) {
           await sleep(1500);
           await shot('onlineFighting', 300);
@@ -347,7 +394,7 @@ for (const size of SIZES) {
             await sleep(2500);
             await shot(`${await state()}-rivalleft`, 300);
           } else report('onlinePost', [`never got there (${await state()})`]);
-        } else report('onlineFighting', [`never got there (${await state()})`]);
+        } else report('onlineFighting', [`never got there (${await state()}: ${await page.evaluate(() => document.querySelector('#flow')?.innerText.replace(/\s+/g, ' ').slice(0, 90))}; rival ${await R.evaluate(() => window.__flow.state)})`]);
       } else report('onlineSelect', [`never got there (${await state()}: ${await page.evaluate(() => document.querySelector('#flow')?.innerText.replace(/\s+/g, ' ').slice(0, 80))})`]);
       await rctx.close();
     }
@@ -453,5 +500,6 @@ for (const size of SIZES) {
   console.log(`[${size.name}] done`);
 }
 await browser.close();
+if (DUMP) fs.writeFileSync(DUMP, JSON.stringify(dump, null, 1));
 console.log(bad ? `${bad} problems` : 'nothing cut off or overlapping, text and tap targets at size, no page errors');
 process.exit(CHECK && bad ? 1 : 0);
