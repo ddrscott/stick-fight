@@ -22,7 +22,8 @@
 
 import { touchPref, setTouchFit, onTouchPref } from './touchPrefs.js';
 
-import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';   // shared with the desktop button and F11
+import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';
+import { homescreenHelp, openHomescreenHelp } from './homescreen.js';   // iPhone Safari: the fullscreen pill opens the Add to Home Screen how-to   // shared with the desktop button and F11
 import { PLAIN } from './plaintext.js';   // readable text never glows: the shared dark outline
 import { MINI, MINI_FACE, MINI_INK, HUD_STRIP, MENU_ICON, PAUSE_ICON } from './corner.js';   // the corner buttons' size and icons, shared with the desktop row
 
@@ -95,13 +96,17 @@ function init() {
   const base = root.querySelector('.tc-base'), knob = root.querySelector('.tc-knob');
   const zone = root.querySelector('.tc-stickzone');
   const fsBtn = root.querySelector('[data-role="fullscreen"]');
-  if (!canFullscreen) fsBtn.remove();   // iPhone Safari has no Fullscreen API; an installed app is already full screen (src/fullscreen.js)
+  // No Fullscreen API on iPhone Safari: there the pill stays and opens the Add to Home Screen how-to (src/homescreen.js).
+  // An installed app is already full screen, so it has no pill (src/fullscreen.js).
+  if (homescreenHelp && !canFullscreen) fsBtn.setAttribute('aria-label', 'Play full screen: add to your home screen');
+  else if (!canFullscreen) fsBtn.remove();
   try { if (sessionStorage.getItem('tc-rotate-dismissed')) root.classList.add('tc-no-rotate'); } catch {}
   let K = 1;                            // px per design px: the scale in use times rem / 16
   fit();                                // the saved size, before the layer is in the page, so it never draws at another
   document.body.appendChild(root);
   onTouchPref((source) => { if (source !== 'fit') fit(); });
   window.addEventListener('resize', fit);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);   // iOS Safari's bars sliding in and out
   window.addEventListener('orientationchange', () => { fit(); setTimeout(fit, 350); });   // iOS reports the new size late
 
   // ---- fitting the size to the screen ---------------------------------------------------------
@@ -204,7 +209,8 @@ function init() {
       } else if (btn && btn.dataset.role === 'settings') {
         window.dispatchEvent(new CustomEvent('sf:settings')); flash(btn);   // src/audio/ui.js opens the SETTINGS panel
       } else if (btn && btn.dataset.role === 'fullscreen') {
-        toggleFullscreen(); flash(btn);
+        if (canFullscreen) toggleFullscreen(); else openHomescreenHelp();
+        flash(btn);
       } else if (btn && btn.dataset.role === 'dismiss') {
         root.classList.add('tc-no-rotate');
         try { sessionStorage.setItem('tc-rotate-dismissed', '1'); } catch {}

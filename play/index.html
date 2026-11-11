@@ -22,9 +22,12 @@
 <style>
   @font-face { font-family: 'Bungee'; font-style: normal; font-weight: 400; font-display: swap; src: url(../fonts/bungee-latin.woff2) format('woff2'); }
   @font-face { font-family: 'Teko'; font-style: normal; font-weight: 300 700; font-display: swap; src: url(../fonts/teko-latin.woff2) format('woff2'); }
+  /* dvh is the height you can see. On iPhone Safari vh is the height with the bars hidden, so a stage sized by it
+     ran under the fold of a page that can't scroll. The vh lines are for browsers without dvh. */
   html, body { margin: 0; height: 100%; background: #07020f; overflow: hidden; font-family: 'Teko', 'Arial Narrow', system-ui, sans-serif; }
   body { display: flex; align-items: center; justify-content: center; }
   #stage { position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }
+  @supports (height: 100dvh) { #stage { width: min(100vw, calc(100dvh * 16 / 9)); } }
   #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #hud { pointer-events: none; }
   /* attract mode (the demo bout): no touch controls until a tap starts the game */

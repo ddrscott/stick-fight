@@ -785,7 +785,7 @@ function injectStyle() {
     /* everything in the panel is read (a question, a code, a status), so none of it glows: README, "The look" */
     --plain: ${PLAIN}; text-shadow: var(--plain); }
   .nf-lobby[hidden] { display: none; }
-  .nf-panel { min-width: min(420px, 86vw); max-width: 92vw; max-height: 92vh; overflow: auto; box-sizing: border-box;
+  .nf-panel { min-width: min(420px, 86vw); max-width: 92vw; max-height: 92vh; max-height: 92dvh; overflow: auto; box-sizing: border-box;
     padding: clamp(12px, 3vmin, 26px) clamp(16px, 4vmin, 34px); text-align: center; color: var(--ink);
     background: rgba(14,4,30,0.9); border: 2px solid var(--cyan); border-radius: 2px;
     box-shadow: 0 0 18px rgba(46,242,255,0.55), inset 0 0 22px rgba(46,242,255,0.12); }

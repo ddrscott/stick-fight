@@ -18,7 +18,8 @@
     "netsim:watch": "node scripts/netsim/watch.mjs",
     "test:watch": "node scripts/watch/e2e.mjs",
     "test:qr": "node scripts/qr/check.mjs",
-    "test:join": "node scripts/join/check.mjs"
+    "test:join": "node scripts/join/check.mjs",
+    "test:ios": "node scripts/ios/check.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",
