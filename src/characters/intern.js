@@ -183,6 +183,12 @@ export default {
   // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs intern`
   // prints the numbers behind each one. Measure again when the frame data changes.
   strategy: [
+    { string: 'RISE AND SHINE', tips: [
+      "Crouch-block the Paper Cut, then stand up to block the kick. He's still recovering after it, and the lunge cross (→2) punishes.",
+      "Blocked, only the lunge cross (→2) reaches him. A plain jab or cross is too short.",
+      "Beat him to it: a cross (2) thrown as he crouches lands before the Paper Cut does.",
+      "From a step out, stand-block and the Paper Cut misses: the kick never comes. Nearly anything punishes the miss; the cross (2) and lunge cross (→2) are the surest.",
+    ] },
     { move: 'coffeeRun', tips: [
       "Stand-block it. It's a mid, so crouching gets you elbowed, blocking or not.",
       "Blocked, he's open. Jab (1) or snap kick (3) him right after.",

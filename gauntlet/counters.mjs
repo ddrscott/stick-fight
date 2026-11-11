@@ -144,7 +144,8 @@ function command(c, then) {
 }
 /** a string: the first press at step 10, each next press buffered as early as the string takes it */
 function string(s) {
-  const inpOf = (k) => (k[0] === 'd' ? { down: true, [BTN[k[1]]]: true } : { [BTN[k]]: true });
+  // 'd1' is 1 with down held; 'r3' is 3 pressed while rising (down let go after a crouching move: RISE AND SHINE)
+  const inpOf = (k) => (k[0] === 'd' ? { down: true, [BTN[k[1]]]: true } : k[0] === 'r' ? { [BTN[k[1]]]: true } : { [BTN[k]]: true });
   return () => {
     let i = 0, last = -99, hold = -1, cur = {};
     return (t, me) => {
@@ -169,7 +170,7 @@ function stance(c, follow, after = 42) {
   };
 }
 
-const glyphKeys = (keys) => keys.map((k) => (k[0] === 'd' ? '↓' + k[1] : k)).join(', ');
+const glyphKeys = (keys) => keys.map((k) => (k[0] === 'd' ? '↓' + k[1] : k[0] === 'r' ? 'release ↓ ' + k[1] : k)).join(', ');
 const nameOf = (c, m) => { const fd = FRAME_DATA[m] || {}; const e = (c.moveList || []).find((x) => fd.callout && x.name === fd.callout); return e ? e.name : fd.callout || m.replace(/^[a-z]+_/, '').replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase(); };
 
 // A move that is only there to set up the next one is measured with each thing that comes next, as a case of
