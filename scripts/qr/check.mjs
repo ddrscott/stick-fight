@@ -38,11 +38,11 @@ function raster(qr, px) {
 const readBack = (text, px = 4) => { const qr = encodeQR(text); if (!qr) return null; const { d, n } = raster(qr, px); const r = jsQR(d, n, n); return { qr, text: r ? r.data : null }; };
 
 const LINKS = [
-  ['a quick room', 'https://askscottpierce.com/stick-fight/play/?room=K7QX'],
-  ['a crew room', 'https://askscottpierce.com/stick-fight/play/?crew=tuesday-crew-7k2qm'],
-  ['the longest crew name', 'https://askscottpierce.com/stick-fight/play/?crew=wwwwwwwwwwwwwwwwwwww-7k2qm'],
-  ['a quick room on npm run dev', 'http://localhost:8077/play/?room=K7QX'],
-  ['a crew room on a dev tunnel', 'https://stick-fight-dev.dataturd.com/play/?crew=tuesday-crew-7k2qm'],
+  ['a quick room', 'https://askscottpierce.com/stick-fight/room/K7QX'],
+  ['a crew room', 'https://askscottpierce.com/stick-fight/crew/tuesday-crew-7k2qm'],
+  ['the longest crew name', 'https://askscottpierce.com/stick-fight/crew/wwwwwwwwwwwwwwwwwwww-7k2qm'],
+  ['a quick room on npm run dev', 'http://localhost:8077/room/K7QX'],
+  ['a crew room on a dev tunnel', 'https://stick-fight-dev.dataturd.com/crew/tuesday-crew-7k2qm'],
 ];
 for (const [name, link] of LINKS) {
   const r = readBack(link);
@@ -153,7 +153,7 @@ if (BASE) {
     const png1 = await snap('host-open');
     const m1 = await page.evaluate(measure);
     const got1 = await decode(png1);
-    check(`[${size.name}] host: the screenshot's code reads back as the quick-room link`, !!m1.link && got1 === m1.link && /[?&]room=[A-Z0-9]{4}$/.test(m1.link), `${got1}  ·  ${m1.modules} modules across, ${(m1.tile.w * size.deviceScaleFactor / m1.modules).toFixed(1)} device px each`);
+    check(`[${size.name}] host: the screenshot's code reads back as the quick-room link`, !!m1.link && got1 === m1.link && /\/room\/[A-Z0-9]{4}$/.test(m1.link), `${got1}  ·  ${m1.modules} modules across, ${(m1.tile.w * size.deviceScaleFactor / m1.modules).toFixed(1)} device px each`);
     const same = (a, b) => Math.abs(a.x - b.x) < 0.6 && Math.abs(a.y - b.y) < 0.6 && Math.abs(a.w - b.w) < 0.6 && Math.abs(a.h - b.h) < 0.6;
     check(`[${size.name}] host: the tile didn't move or change size when the room opened`, same(m0.tile, m1.tile), `${Math.round(m0.tile.x)},${Math.round(m0.tile.y)} ${Math.round(m0.tile.w)} -> ${Math.round(m1.tile.x)},${Math.round(m1.tile.y)} ${Math.round(m1.tile.w)}`);
     const moved = m1.others.filter((o) => o.cls.includes('fl-btn')).filter((o, i) => { const b = m0.others.filter((p) => p.cls.includes('fl-btn'))[i]; return !b || Math.abs(b.x - o.x) > 0.6 || Math.abs(b.y - o.y) > 0.6; });
@@ -165,12 +165,12 @@ if (BASE) {
     check(`[${size.name}] host: the arrow keys only ever land on buttons`, [...seen].every((s) => s.startsWith('BUTTON:')) && seen.size >= 3, `${seen.size} buttons`);
 
     // the crew lobby
-    await page.goto(`${BASE}play/?crew=${crew.slug}`);
+    await page.goto(`${BASE}crew/${crew.slug}`);
     await page.waitForFunction(() => window.__flow && window.__flow.state === 'crewLobby' && document.fonts.status === 'loaded' && /ALICE/.test((document.querySelector('#flow .fl-standings') || {}).textContent || ''), null, { timeout: 30000 });
     const png2 = await snap('crew-lobby');
     const m2 = await page.evaluate(measure);
     const got2 = await decode(png2);
-    check(`[${size.name}] crew: the screenshot's code reads back as the crew link`, !!m2.link && got2 === m2.link && m2.link.endsWith(`?crew=${crew.slug}`), `${got2}  ·  ${m2.modules} modules across, ${(m2.tile.w * size.deviceScaleFactor / m2.modules).toFixed(1)} device px each`);
+    check(`[${size.name}] crew: the screenshot's code reads back as the crew link`, !!m2.link && got2 === m2.link && m2.link.endsWith(`/crew/${crew.slug}`), `${got2}  ·  ${m2.modules} modules across, ${(m2.tile.w * size.deviceScaleFactor / m2.modules).toFixed(1)} device px each`);
     layout(`[${size.name}] crew`, m2);
     await ctx.close();
   }

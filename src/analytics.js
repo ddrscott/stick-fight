@@ -6,6 +6,7 @@
 // <html data-page="home" | "fighters" | "fighter:<id>">. The game inside the homepage's iframe names
 // its visit "embed", so a homepage visit isn't counted twice as a game visit.
 import { rootUrl, EMBEDDED } from './root.js';
+import { linkFromUrl } from './links.js';
 
 // For testing against a local Worker (npm run dev + npm run dev:worker): on localhost only,
 // localStorage['stick-fight-track'] = '1' turns the events on (README, Analytics, Checking it locally).
@@ -43,7 +44,8 @@ if (ok) {
   const app = (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone) ? 'app' : 'web';
   let ref = '';
   try { ref = document.referrer ? new URL(document.referrer).hostname : ''; } catch { ref = ''; }
-  const entry = new URLSearchParams(location.search).has('crew') ? 'crew-link' : new URLSearchParams(location.search).has('room') ? 'room-link' : 'direct';
+  // crew/<slug> and room/<CODE> (src/links.js); the old ?crew= and ?room= forms reach the page by a 301 to those
+  const entry = linkFromUrl('crew') ? 'crew-link' : linkFromUrl('room') ? 'room-link' : 'direct';
   const page = document.documentElement.dataset.page || (EMBEDDED ? 'embed' : 'play');
   track('visit', [touch, app, ref, entry, page]);
   window.addEventListener('appinstalled', () => track('install'));
