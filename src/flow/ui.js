@@ -596,7 +596,7 @@ function injectStyle() {
   #flow > .fl-up.fl-crew .fl-standings .fl-sth { top: calc(44px + 2.2cqw + 0.4em); }
   #flow > .fl-up.fl-crew .fl-standings .fl-sthfav { display: block; }
   #flow > .fl-up.fl-crew .fl-standings.fl-v-arcade, #flow > .fl-up.fl-crew .fl-standings.fl-v-horde { grid-template-columns: 5cqw minmax(0, 0.7fr) max-content minmax(0, 1fr) max-content; }
-  #flow > .fl-up.fl-crew .fl-standings .fl-sdate { display: none; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sdate, #flow > .fl-up.fl-crew .fl-standings.fl-standings .fl-sth.fl-sdate { display: none; }   /* (outranks the layout's FAVORITE-column rule, which counts children) */
   #flow > .fl-up.fl-crew .fl-standings .fl-sttitle { position: static; padding-top: 0; background: none; }
   #flow > .fl-up.fl-crew .fl-standings .fl-snote { font-size: max(12px, 3.5cqw); }
   #flow > .fl-up.fl-crew .fl-standings.fl-v-stats { grid-template-columns: 1fr; row-gap: 1.2em; }
