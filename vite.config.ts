@@ -55,7 +55,7 @@ export default defineConfig({
     // online rooms: the page calls ./api/..., which is /api/* on the Worker, in production and under
     // `npm run dev:worker` (wrangler dev, :8787) alike.
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8787', ws: true },
+      '/api': { target: process.env.SF_WORKER || 'http://127.0.0.1:8787', ws: true },   // another worktree's Worker can hold 8787: SF_WORKER=http://127.0.0.1:<port>
     },
   },
 });

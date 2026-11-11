@@ -302,6 +302,12 @@ function injectStyle() {
   @media (orientation: portrait) {
     html.touch-ui .sf-panel { top: calc(env(safe-area-inset-top) + 8px); transform: translate(-50%, 0) scale(0.96); }
     html.touch-ui .sf-panel.sf-open { transform: translate(-50%, 0) scale(1); }
+    /* and every control in it is a thumb's size (44 px tall), not a mouse's */
+    html.touch-ui .sf-close { width: 44px; height: 44px; font-size: 15px; }
+    html.touch-ui .sf-sw, html.touch-ui .sf-next { height: 44px; font-size: 13px; }
+    html.touch-ui .sf-step, html.touch-ui .sf-reset, html.touch-ui .sf-pips, html.touch-ui .sf-pip { height: 44px; }
+    html.touch-ui .sf-step { width: 44px; }
+    html.touch-ui .sf-reset { font-size: 13px; }
   }
   .sf-keys { margin: 6px 0 0; font-size: 15px; letter-spacing: 0.08em; color: rgba(255,244,253,0.65); }
   html.touch-ui .sf-keys { display: none; }

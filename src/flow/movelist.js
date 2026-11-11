@@ -326,6 +326,7 @@ function injectStyle() {
     .ml-head { gap: 0.5em; flex-wrap: nowrap; align-items: flex-start; }
     .ml-name { font-size: 1.5em; }
     .ml-tag { font-size: 0.8em; }
+    .ml-chip { font-size: max(12px, 0.55em); }   /* a phone's 0.55em is about 9 px: the 12 px floor (Menus, held upright) */
     .ml-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
     .ml-tabbtn { flex: 1 0 auto; padding: 0.35em 0.5em 0.15em; }
     .ml-close { min-width: 0; }

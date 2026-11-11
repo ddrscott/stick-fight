@@ -21,6 +21,7 @@
 import { legend } from './controls.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 import { cornerButton, PAUSE_ICON } from '../corner.js';
+import { onSquare, square } from '../square.js';   // held upright, a menu takes the whole screen (.fl-up)
 
 export function el (tag, cls = '', text) {
   const n = document.createElement(tag);
@@ -46,6 +47,22 @@ export function createUI(onSound) {
   let focusFn = null;
   let moveFn = null;
   let token = 0;
+  let veiled = false;   // the screen up is a menu over a dimmed scene (the title and the watch view aren't)
+
+  // Held upright (html.sq, src/square.js) the 16:9 box is a strip about 390 by 219, a quarter of the phone. So every
+  // menu leaves it for the whole screen, under the top buttons, with its own phone-sized layout (.fl-up, the
+  // stylesheet's last part). The character select does the same its own way (.fl-tall). Turning the phone
+  // switches the screen up between the two at once.
+  const upright = () => veiled && square.on && !!screen && !screen.classList.contains('fl-tall');
+  function setUp() {
+    if (!screen) return;
+    const on = upright();
+    if (on === screen.classList.contains('fl-up')) return;
+    screen.classList.toggle('fl-up', on);
+    zoomNow = 1; screen.style.zoom = '';
+    fit();
+  }
+  onSquare(() => setUp());
 
   // an item is off when its screen says so, or when this layout doesn't show it (the upright pause menu drops one)
   const off = (k) => !!(items[k] && ((items[k].disabled && items[k].disabled()) || items[k].el.offsetParent === null));
@@ -70,7 +87,9 @@ export function createUI(onSound) {
     if (bottom <= top) return;
     const cs = getComputedStyle(screen);
     const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);   // measured zoomed, like the rest
-    const edge = st.height * 0.012;   // a sliver of air at the top and bottom
+    // a sliver of air at the top and bottom; a full-screen upright menu has its padding for that, and a box in it
+    // that scrolls takes up whatever is left, so it always fills the screen exactly
+    const edge = screen.classList.contains('fl-up') ? -0.5 : st.height * 0.012;
     const h = (bottom - top + pad) / zoomNow, w = (right - left) / zoomNow;
     const k = Math.max(0.3, Math.min(1, (st.height - 2 * edge) / h, st.width / w));
     const next = k > 0.995 ? 1 : Math.floor(k * 200) / 200;
@@ -104,6 +123,8 @@ export function createUI(onSound) {
     const s = el('div', `fl-screen ${cls}${veil ? ' fl-veil' : ''}`);
     root.appendChild(s);
     screen = s;
+    veiled = veil;
+    if (upright()) s.classList.add('fl-up');   // before it's built, so a screen can lay out for it
     const out = build(s) || {};
     items = out.items || [];
     backFn = out.back || null;
@@ -148,7 +169,7 @@ export function createUI(onSound) {
   function clear() {
     token++;
     if (screen) { if (watch) for (const n of screen.children) watch.unobserve(n); screen.remove(); }
-    screen = null; items = []; focus = -1; backFn = null; focusFn = null; moveFn = null;
+    screen = null; items = []; focus = -1; backFn = null; focusFn = null; moveFn = null; veiled = false;
   }
   function activate() {
     const it = items[focus];
@@ -409,7 +430,10 @@ function injectStyle() {
   .fl-netpick .fl-grid { grid-auto-rows: 18.4cqh; }
   .fl-netpick .fl-card { height: 18.4cqh; }
   .fl-netpick .fl-detail { height: 57.2cqh; }
-  .fl-netpick .fl-selfoot .fl-btn { min-width: 16cqw; }   /* four buttons here (LEAVE ROOM, PICK, MOVE LIST, START) */
+  .fl-netpick .fl-selfoot .fl-btn { min-width: 16cqw; }
+  /* its sheet is shorter too: a fighter with four moves (TEMP's RISE AND SHINE) ran past it onto the hints, so the
+     move notes go here (MOVE LIST has them) */
+  .fl-netpick:not(.fl-tall) .fl-moves small { display: none; }   /* four buttons here (LEAVE ROOM, PICK, MOVE LIST, START) */
   .fl-post .fl-btn { white-space: nowrap; }
   .fl-selstatus { display: flex; gap: 3cqw; font-size: 2.3cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1; min-height: 2.4cqw; }
   .fl-selstatus b { font-weight: 600; color: var(--amber); }
@@ -595,23 +619,6 @@ function injectStyle() {
     .fl-crew .fl-crewpair .fl-btn { font-size: 1.9cqw; letter-spacing: 0.02em; }
   }
 
-  /* The crew lobby's views held upright. [twgdsx] lays the lobby out as one grid when the phone is upright
-     (.fl-up, its own block); these only size what this card added inside the table (the tabs, the high score
-     tables, the stats), and do nothing until that layout is on. */
-  /* the tabs stay at the top of the scrolling list, and the column heads stick under them */
-  #flow > .fl-up.fl-crew .fl-crewtabs { position: sticky; top: 0; z-index: 2; gap: 1.6cqw; margin: 0 -2.4cqw; padding: 2.2cqw 2.4cqw 0.4em; background: #10061f; }
-  #flow > .fl-up.fl-crew .fl-crewtabs .fl-btn.fl-crewtab { min-height: 44px; font-size: max(13px, 3.8cqw); letter-spacing: 0.04em; }
-  #flow > .fl-up.fl-crew .fl-standings .fl-sth { top: calc(44px + 2.2cqw + 0.4em); }
-  #flow > .fl-up.fl-crew .fl-standings .fl-sthfav { display: block; }
-  #flow > .fl-up.fl-crew .fl-standings.fl-v-arcade, #flow > .fl-up.fl-crew .fl-standings.fl-v-horde { grid-template-columns: 5cqw minmax(0, 0.7fr) max-content minmax(0, 1fr) max-content; }
-  #flow > .fl-up.fl-crew .fl-standings .fl-sdate, #flow > .fl-up.fl-crew .fl-standings.fl-standings .fl-sth.fl-sdate { display: none; }   /* (outranks the layout's FAVORITE-column rule, which counts children) */
-  #flow > .fl-up.fl-crew .fl-standings .fl-sttitle { position: static; padding-top: 0; background: none; }
-  #flow > .fl-up.fl-crew .fl-standings .fl-snote { font-size: max(12px, 3.5cqw); }
-  #flow > .fl-up.fl-crew .fl-standings.fl-v-stats { grid-template-columns: 1fr; row-gap: 1.2em; }
-  #flow > .fl-up.fl-crew .fl-stsum { font-size: max(14px, 4.4cqw); }
-  #flow > .fl-up.fl-crew .fl-stgrid { font-size: max(13px, 3.9cqw); column-gap: 2.4cqw; }
-  #flow > .fl-up.fl-crew .fl-stgrid .fl-sfav, #flow > .fl-up.fl-crew .fl-stpicks .fl-sfav { font-size: max(12px, 3.6cqw); }
-
   /* The character select held upright (select.js, .fl-tall): the 16:9 box is a strip a quarter of the phone's
      height, where 18 cards were 60 px tall. So this one screen leaves the box: #flow takes the whole viewport
      under the top buttons, and the roster is a carousel with the sheet under it. Units here are the phone's
@@ -684,6 +691,235 @@ function injectStyle() {
   @container (max-height: 600px) {
     #flow .fl-tall .fl-moves, #flow .fl-tall .fl-tagline { display: none; }
   }
+
+  /* ---- Held upright: every menu (.fl-up, set by show() above) -------------------------------------------------
+     The menu leaves the 16:9 strip for the whole screen under the top buttons, like the character select. #flow is
+     the container, so 1cqw is about 4 px here (a hundredth of the phone's width) and 1cqh about 8. Body text is
+     never under 12 px, a button never under 44 px tall, and long lists (crew members, the LIVE list, the pause
+     panel, CONTROLS) scroll by finger inside their own box (data-scroll, README, Controls). These rules all start
+     with #flow > .fl-up, so they outrank both the stage layout above and the narrow-stage @container rules. */
+  html.sq #flow:has(> .fl-up) { position: fixed; inset: 0; z-index: 19; }
+  html.sq:has(#flow > .fl-up) .tc-stickzone, html.sq:has(#flow > .fl-up) .tc-cluster { display: none; }
+  html.sq #flow > .fl-up.fl-veil { background: radial-gradient(ellipse at 50% 30%, rgba(26,8,54,0.96), rgba(5,1,12,0.985) 72%); }
+  html.sq #flow > .fl-up.fl-veil::before { display: none; }
+  #flow > .fl-up { justify-content: center; gap: max(8px, 1.5cqh); padding: calc(var(--tc-strip, 3rem) + 0.5rem) 5cqw max(1rem, env(safe-area-inset-bottom)); }
+  html:has(.sf-hs-tip.sf-hs-fits) #flow > .fl-up { padding-bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 3rem + 4px + 0.6rem); }
+  #flow > .fl-up .fl-h1 { font-size: 12cqw; }
+  #flow > .fl-up .fl-h2 { font-size: 7.6cqw; max-width: 100%; }
+  #flow > .fl-up .fl-h3 { font-size: 5.4cqw; line-height: 1.15; max-width: 100%; }
+  #flow > .fl-up .fl-label { font-size: max(13px, 4cqw); line-height: 1.15; letter-spacing: 0.1em; max-width: 100%; }
+  #flow > .fl-up .fl-small { font-size: max(12px, 3.6cqw); line-height: 1.2; letter-spacing: 0.08em; max-width: 100%; }
+  #flow > .fl-up .fl-link { font-size: max(12px, 3.6cqw); max-width: 100%; line-height: 1.2; }
+  #flow > .fl-up .fl-rule { width: 50cqw; }
+  #flow > .fl-up .fl-btn { min-width: 0; min-height: 46px; padding: 0.35em 3cqw 0.1em; font-size: max(15px, 5cqw); letter-spacing: 0.08em; }
+  #flow > .fl-up .fl-btn small { font-size: max(12px, 3.4cqw); letter-spacing: 0.08em; margin-top: 0.1em; line-height: 1.05; }
+  #flow > .fl-up .fl-btn.fl-mini { min-height: 44px; font-size: max(14px, 4.4cqw); }
+  /* a row of buttons spans the screen, two to a line */
+  #flow > .fl-up > .fl-row { align-self: stretch; flex-wrap: wrap; gap: 2.4cqw; }
+  #flow > .fl-up > .fl-row > .fl-btn { flex: 1 1 40%; min-width: 0 !important; }
+  /* the key and pad legend takes its own line at the bottom, not over the buttons */
+  #flow > .fl-up > .lg-bar { position: static; transform: none; align-self: center; flex-wrap: wrap; row-gap: 0.6em; column-gap: 1.4em; --lg: max(12px, 3.4cqw); margin-top: 0.4em; }
+  /* the legend's and the controls table's small glyphs (the START pill, the round face buttons) keep to the floor */
+  #flow > .fl-up .lg-pill { font-size: max(12px, 0.6em); }
+  #flow > .fl-up .lg-b { font-size: max(12px, 0.82em); }
+  #flow > .fl-up .lg-th { font-size: max(12px, 0.85em); }
+  /* the pause menu's and CONTROLS' rows are columns that hold a scrolling box: they don't wrap */
+  #flow > .fl-up > .fl-row.fl-pauserow, #flow > .fl-up > .fl-row.fl-ctlrow { flex-wrap: nowrap; justify-content: flex-start; }   /* (centered, an overflow would start above the top, out of reach) */
+  /* a box that scrolls under a finger (README, Controls, "What scrolls under a finger") */
+  #flow > .fl-up [data-scroll="y"] { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; pointer-events: auto; scrollbar-width: none; min-height: 0; }
+  #flow > .fl-up [data-scroll="y"]::-webkit-scrollbar { display: none; }
+
+  /* mode select: one column of modes, the two rules side by side, BACK across */
+  #flow > .fl-up.fl-modes .fl-list { display: grid; grid-template-columns: 1fr 1fr; gap: max(8px, 1.3cqh) 2.4cqw; width: 100%; }
+  #flow > .fl-up.fl-modes .fl-list .fl-btn { grid-column: 1 / -1; min-height: max(60px, 8.4cqh); }
+  #flow > .fl-up.fl-modes .fl-list .fl-btn.fl-slim { grid-column: auto; min-height: 48px; font-size: max(14px, 4.4cqw); }
+  #flow > .fl-up.fl-modes .fl-list .fl-btn:last-child { grid-column: 1 / -1; min-height: 46px; }
+
+  /* the online menu: CREW ROOMS over QUICK MATCH. Your crews across, then CREATE and JOIN side by side; HOST, JOIN, WATCH three across */
+  #flow > .fl-up .fl-onlinecols { flex-direction: column; align-items: stretch; align-self: stretch; gap: max(10px, 1.8cqh); }
+  #flow > .fl-up .fl-ocol { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: max(8px, 1.1cqh) 2.4cqw; }
+  #flow > .fl-up .fl-ocol:last-child { grid-template-columns: 1fr 1fr 1fr; }
+  #flow > .fl-up .fl-ocol > .fl-colhead, #flow > .fl-up .fl-ocol > .fl-crewbtn { grid-column: 1 / -1; }
+  #flow > .fl-up .fl-colhead { font-size: max(12px, 3.6cqw); text-align: left; }
+  #flow > .fl-up .fl-ocol .fl-btn { min-height: max(54px, 7cqh); padding-left: 1.4cqw; padding-right: 1.4cqw; font-size: max(15px, 4.6cqw); }
+  #flow > .fl-up .fl-ocol .fl-btn small { white-space: normal; }
+  #flow > .fl-up .fl-orow { align-self: stretch; margin-top: 0; }
+  #flow > .fl-up .fl-orow .fl-btn { flex: 1 1 0; min-width: 0; }
+
+  /* the profile: the name big, the buttons two by two */
+  #flow > .fl-up .fl-pname { font-size: 11cqw; }
+  #flow > .fl-up.fl-profile .fl-small { max-width: 100%; }
+
+  /* typing screens: the field across the screen, a full-width keyboard with keys a thumb can hit, OK under it */
+  #flow > .fl-up.fl-text, #flow > .fl-up.fl-join, #flow > .fl-up.fl-initials { gap: max(8px, 1.3cqh); }
+  #flow > .fl-up.fl-text .fl-h2 { font-size: 7cqw; }
+  #flow > .fl-up .fl-field { align-self: stretch; min-width: 0; max-width: none; min-height: 0; padding: 0.15em 2cqw 0; font-size: 6.4cqw; line-height: 1.55; }
+  #flow > .fl-up .fl-field.fl-lower { font-size: max(17px, 5.2cqw); line-height: 1.7; }
+  #flow > .fl-up .fl-caret { width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.12em; }
+  #flow > .fl-up .fl-temsg { min-height: 2.4em; display: flex; align-items: center; justify-content: center; }
+  #flow > .fl-up .fl-kb { --k: calc((100cqw - 10cqw - 9 * 1.2cqw) / 10); align-self: stretch; gap: 1.2cqw; }
+  #flow > .fl-up .fl-kbrow { gap: 1.2cqw; width: 100%; }
+  #flow > .fl-up .fl-kb .fl-key { flex: 0 1 var(--k); width: auto; min-width: 0; height: max(44px, 5.8cqh); min-height: 0; padding: 0.25em 0 0; font-size: max(16px, 5cqw); }
+  #flow > .fl-up .fl-kb .fl-key.fl-wide { flex-basis: calc(var(--k) * 1.5); font-size: max(13px, 3.6cqw); letter-spacing: 0.04em; }
+  #flow > .fl-up .fl-slots { gap: 3cqw; }
+  #flow > .fl-up .fl-slot b { width: 16cqw; height: 19cqw; font-size: 11cqw; line-height: 20cqw; }
+  #flow > .fl-up.fl-join .fl-h3 { font-size: 7cqw; }
+
+  /* the host screen: the code, the QR code as big as the screen allows (never under 140 px, so another phone reads it), the buttons two by two */
+  #flow > .fl-up.fl-host { display: flex; gap: max(6px, 1.2cqh); }
+  #flow > .fl-up .fl-hostinfo { width: 100%; gap: max(4px, 0.8cqh); }
+  #flow > .fl-up.fl-host .fl-hostinfo .fl-h1 { font-size: 14cqw; }
+  #flow > .fl-up.fl-host > .fl-qr { --qr: clamp(150px, min(68cqw, calc(100cqh - 500px)), 300px); }
+  #flow > .fl-up .fl-qrlabel { font-size: max(12px, 3.6cqw); }
+  #flow > .fl-up.fl-host > .fl-row { width: 100%; }
+  #flow > .fl-up.fl-host > .fl-spec { align-self: stretch; width: auto; min-height: 44px; padding: 0.3em 2cqw 0.1em; font-size: max(13px, 3.8cqw); line-height: 1.1; white-space: normal; letter-spacing: 0.06em; margin-top: 0; }
+
+  /* the crew lobby, upright: the name, then the status and PLAY under your thumb, everyone in the crew in a list
+     that scrolls, the last matches, the QR code beside the link and COPY LINK / SHARE, and the way out. The
+     stage layout's boxes (body, left, right) step aside (display: contents) so one grid places it all. */
+  #flow > .fl-up.fl-crew:not(.fl-crewfail) { display: grid; grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto auto;
+    grid-template-areas: "t t" "s s" "st st" "p p" "tb tb" "r r" "q l" "q c" "x x";
+    align-content: stretch; align-items: stretch; column-gap: 4cqw; row-gap: max(6px, 1.1cqh); }
+  #flow > .fl-up.fl-crew .fl-crewbody, #flow > .fl-up.fl-crew .fl-crewleft, #flow > .fl-up.fl-crew .fl-crewright, #flow > .fl-up.fl-crew .fl-crewbtns { display: contents; }
+  #flow > .fl-up.fl-crew > .fl-h2 { grid-area: t; font-size: 7cqw; justify-self: center; text-align: center; }
+  #flow > .fl-up.fl-crew > .fl-label { grid-area: s; justify-self: center; text-align: center; font-size: max(12px, 3.6cqw); }
+  #flow > .fl-up.fl-crew > .fl-link { grid-area: l; align-self: end; text-align: left; font-size: max(12px, 3.4cqw); word-break: break-all; }
+  #flow > .fl-up.fl-crew .fl-crewstatus { grid-area: st; min-height: 44px; font-size: max(13px, 4cqw); padding: 0.35em 2cqw 0.15em; }
+  #flow > .fl-up.fl-crew .fl-playbtn { grid-area: p; min-height: max(60px, 8cqh); }
+  #flow > .fl-up.fl-crew .fl-playbtn .fl-pl { font-size: 8cqw; }
+  #flow > .fl-up.fl-crew .fl-playbtn small { font-size: max(12px, 3.6cqw); }
+  #flow > .fl-up.fl-crew .fl-crewpair { grid-area: c; align-self: start; gap: 2.4cqw; }
+  #flow > .fl-up.fl-crew .fl-crewpair + .fl-crewpair { grid-area: x; }
+  #flow > .fl-up.fl-crew .fl-crewpair .fl-btn { min-height: 44px; font-size: max(14px, 4.2cqw); letter-spacing: 0.06em; }
+  #flow > .fl-up.fl-crew .fl-crewbody > .fl-qr { grid-area: q; --qr: clamp(140px, 40cqw, 200px); align-self: end; }
+  #flow > .fl-up.fl-crew .fl-recent { grid-area: r; min-height: 0; font-size: max(12px, 3.5cqw); gap: 0.25em; line-height: 1.15; }
+  #flow > .fl-up.fl-crew .fl-standings { grid-area: tb; align-content: start; grid-template-columns: 5cqw minmax(0, 1fr) 5cqw 5cqw 5cqw 12cqw 18cqw;
+    grid-auto-rows: max-content;   /* the cells clip (ellipsis), so in a box shorter than the list auto rows would shrink to nothing */
+    column-gap: 1.6cqw; row-gap: 0.5em; padding: 0 2.4cqw 2cqw; font-size: max(13px, 3.9cqw); }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sfav { display: block; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sfav { font-size: max(12px, 3.5cqw); }
+  /* the header stays put while the names scroll under it */
+  #flow > .fl-up.fl-crew .fl-standings .fl-sth { position: sticky; top: 0; z-index: 1; font: 600 max(12px, 3.4cqw)/1 'Teko', sans-serif; letter-spacing: 0.1em; padding: 2.2cqw 0 0.4em; background: #10061f; align-self: stretch; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-smore { font-size: max(12px, 3.5cqw); }
+  #flow > .fl-up.fl-crew .fl-sname { gap: 1.6cqw; }
+  #flow > .fl-up.fl-crew .fl-dot { width: 2.6cqw; height: 2.6cqw; }
+  #flow > .fl-up.fl-crew .fl-chip { font-size: 12px; padding: 0.2em 0.35em 0.05em; }
+  /* a short screen: the last matches go to two lines and the bookmark line goes, so the list keeps some rows */
+  @container (max-height: 720px) {
+    #flow > .fl-up.fl-crew > .fl-label { display: none; }
+    #flow > .fl-up.fl-crew .fl-recent > :nth-child(n+3) { display: none; }
+  }
+  @container (max-height: 660px) {
+    #flow > .fl-up.fl-crew .fl-crewbody > .fl-qr { --qr: 140px; }
+    #flow > .fl-up.fl-crew .fl-playbtn { min-height: 54px; }
+  }
+
+  /* The crew lobby's views held upright. [twgdsx] lays the lobby out as one grid when the phone is upright
+     (.fl-up, its own block); these only size what this card added inside the table (the tabs, the high score
+     tables, the stats), and do nothing until that layout is on. */
+  /* the tabs stay at the top of the scrolling list, and the column heads stick under them */
+  #flow > .fl-up.fl-crew .fl-crewtabs { position: sticky; top: 0; z-index: 2; gap: 1.6cqw; margin: 0 -2.4cqw; padding: 2.2cqw 2.4cqw 0.4em; background: #10061f; }
+  #flow > .fl-up.fl-crew .fl-crewtabs .fl-btn.fl-crewtab { min-height: 44px; font-size: max(13px, 3.8cqw); letter-spacing: 0.04em; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sth { top: calc(44px + 2.2cqw + 0.4em); }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sthfav { display: block; }
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-arcade, #flow > .fl-up.fl-crew .fl-standings.fl-v-horde { grid-template-columns: 5cqw minmax(0, 0.7fr) max-content minmax(0, 1fr) max-content; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sdate, #flow > .fl-up.fl-crew .fl-standings.fl-standings .fl-sth.fl-sdate { display: none; }   /* (outranks the layout's FAVORITE-column rule, which counts children) */
+  #flow > .fl-up.fl-crew .fl-standings .fl-sttitle { position: static; padding-top: 0; background: none; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-snote { font-size: max(12px, 3.5cqw); }
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-stats { grid-template-columns: 1fr; row-gap: 1.2em; }
+  #flow > .fl-up.fl-crew .fl-stsum { font-size: max(14px, 4.4cqw); }
+  #flow > .fl-up.fl-crew .fl-stgrid { font-size: max(13px, 3.9cqw); column-gap: 2.4cqw; }
+  #flow > .fl-up.fl-crew .fl-stgrid .fl-sfav, #flow > .fl-up.fl-crew .fl-stpicks .fl-sfav { font-size: max(12px, 3.6cqw); }
+
+  /* the LIVE list: every match, scrolling past what fits */
+  #flow > .fl-up .fl-livelist { width: 100%; flex: 0 1 auto; padding: 1cqw; margin: -1cqw; }
+  #flow > .fl-up .fl-liverow { min-height: 64px; padding: 0.3em 2.4cqw 0.15em; }
+  #flow > .fl-up .fl-lline { gap: 2cqw; font-size: max(15px, 4.6cqw); }
+  #flow > .fl-up .fl-lside { flex-direction: column; align-items: flex-end; gap: 0; }
+  #flow > .fl-up .fl-lside1 { align-items: flex-start; flex-direction: column; }
+  #flow > .fl-up .fl-lname { font-size: max(12px, 3.6cqw); line-height: 1; }
+  #flow > .fl-up .fl-lchar { line-height: 1.05; }
+  #flow > .fl-up .fl-liverow small { margin-top: 0.3em; }
+  #flow > .fl-up .fl-lvs { font-size: max(14px, 4.4cqw); }
+
+  /* the post-match screen */
+  #flow > .fl-up.fl-post { gap: max(8px, 1.3cqh); }
+  #flow > .fl-up .fl-set { gap: 5cqw; }
+  #flow > .fl-up .fl-set .fl-sn { font-size: 18cqw; }
+  #flow > .fl-up .fl-set .fl-sl { font-size: max(13px, 4.2cqw); }
+  #flow > .fl-up .fl-set .fl-dash { font-size: 10cqw; }
+  #flow > .fl-up .fl-cd { font-size: 7cqw; min-height: 0; }
+  #flow > .fl-up .fl-cd small { font-size: max(12px, 3.6cqw); }
+  #flow > .fl-up .fl-cdrow { min-height: 44px; gap: 4cqw; flex-wrap: nowrap; }
+  #flow > .fl-up .fl-cdrow .fl-btn { flex: 0 0 auto; min-width: 26cqw !important; }
+  #flow > .fl-up .fl-rivalline { font-size: max(13px, 4.2cqw); min-height: 1.2em; text-align: center; }
+  #flow > .fl-up.fl-post > .fl-row:not(.fl-cdrow) .fl-btn { width: auto; }
+  #flow > .fl-up.fl-post .fl-btn small { min-height: 0; }
+
+  /* pause: the menu two across, the TECHNIQUES or CONTROLS panel under it in what's left, scrolling */
+  #flow > .fl-up.fl-pause { justify-content: flex-start; }
+  #flow > .fl-up .fl-pauserow { flex-direction: column; align-items: stretch; align-self: stretch; flex: 0 1 auto; min-height: 0; gap: max(10px, 1.6cqh); }
+  #flow > .fl-up.fl-pause .fl-list { display: grid; grid-template-columns: 1fr 1fr; gap: max(8px, 1.1cqh) 2.4cqw; width: 100%; flex: none; }
+  #flow > .fl-up.fl-pause .fl-list .fl-btn { min-height: max(52px, 6.4cqh); font-size: max(15px, 4.6cqw); padding-left: 1cqw; padding-right: 1cqw; white-space: normal; }
+  #flow > .fl-up.fl-pause .fl-list .fl-btn small { font-size: max(12px, 3.2cqw); }
+  #flow > .fl-up.fl-pause .fl-viewbtn { display: flex; }
+  #flow > .fl-up.fl-pause .fl-tech { display: flex; width: 100%; flex: 0 1 auto; padding: 3cqw 3.6cqw; gap: 0.7em; }
+  #flow > .fl-up .fl-techhead { font-size: max(13px, 4.2cqw); }
+  #flow > .fl-up .fl-tech b { font-size: max(15px, 4.6cqw); }
+  #flow > .fl-up .fl-tech small { font-size: max(12px, 3.5cqw); line-height: 1.15; }
+  #flow > .fl-up .fl-tech.fl-ctlpanel { padding: 3cqw; }
+
+  /* CONTROLS: the two tables and the notes in one column that scrolls */
+  #flow > .fl-up.fl-controls { justify-content: flex-start; }
+  #flow > .fl-up .fl-ctlrow { flex-direction: column; align-items: stretch; align-self: stretch; flex: 0 1 auto; gap: max(12px, 2cqh); }
+  #flow > .fl-up .fl-ctlcol { max-width: none; gap: max(12px, 2cqh); }
+  #flow > .fl-up .fl-ctlnote { font-size: max(12px, 3.6cqw); line-height: 1.25; }
+  #flow > .fl-up .lg-table { --lg-size: max(15px, 4.2cqw); padding: 3cqw; column-gap: 0.9em; justify-content: start; }
+  #flow > .fl-up .lg-table .lg-th.lg-col { font-size: max(12px, 0.7em); }
+  /* three columns that share the phone's width: a long key or pad name wraps inside its cell */
+  #flow > .fl-up .lg-table { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr); white-space: normal; width: 100%; }
+  #flow > .fl-up .lg-table .lg-key { white-space: normal; max-width: 100%; }
+  #flow > .fl-up .lg-table .lg-th { white-space: nowrap; }
+
+  /* high scores */
+  #flow > .fl-up .fl-table { font-size: max(16px, 5.4cqw); column-gap: 4cqw; row-gap: 0.35em; flex: 0 1 auto; padding: 0 1cqw; }
+  #flow > .fl-up .fl-table .fl-note { font-size: max(12px, 3.6cqw); }
+
+  /* the stage card: the two names stacked, the pips across */
+  #flow > .fl-up .fl-vs { flex-direction: column; gap: 1cqh; }
+  #flow > .fl-up .fl-vs b { font-size: 9cqw; }
+  #flow > .fl-up .fl-vs .fl-x { font-size: 5cqw; }
+  #flow > .fl-up .fl-pips { gap: 2cqw; flex-wrap: wrap; justify-content: center; }
+  #flow > .fl-up .fl-pips i { width: 9cqw; height: 7cqw; font-size: max(12px, 3.8cqw); line-height: 6.6cqw; }
+  #flow > .fl-up .fl-pips i.fl-boss { width: 14cqw; }
+
+  /* stage clear, continue, game over */
+  #flow > .fl-up .fl-tally { font-size: max(15px, 5cqw); column-gap: 8cqw; }
+  #flow > .fl-up .fl-count { font-size: 36cqw; }
+
+  /* the ending's credits roll */
+  #flow > .fl-up .fl-roll { width: 100%; height: 56cqh; }
+  #flow > .fl-up .fl-roll p { font-size: max(15px, 5cqw); }
+  #flow > .fl-up .fl-roll p b { font-size: max(12px, 3.6cqw); }
+
+  /* the watch card (between matches, or one that stopped short) */
+  #flow > .fl-up .fl-wcard { max-width: 100%; padding: 4cqw; }
+
+  /* Held upright, the screens that stay in the 16:9 box (the title, the watch view) are sized in phone px: the box
+     is about 390 wide, where 1cqw is under 4 px */
+  html.sq #flow .fl-title .fl-start { font-size: 16px; min-height: 48px; padding: 0.3em 18px 0; }
+  html.sq #flow .fl-titlerow { top: 32px; gap: 8px; }
+  html.sq #flow .fl-title .fl-mini { font-size: 14px; min-height: 42px; padding: 0.3em 12px 0; }
+  html.sq #flow .fl-wbar { font-size: 13px; gap: 8px; padding: 4px 8px 3px 4px; white-space: normal; max-width: 96%; flex-wrap: wrap; justify-content: center; }
+  html.sq #flow .fl-wtag { font-size: 12px; padding: 4px 6px 2px; }
+  html.sq #flow .fl-wbar > * { white-space: nowrap; }
+  html.sq #flow .fl-wbtns { gap: 8px; right: 8px; bottom: auto; top: calc(1.6cqh - var(--sq-over) * 100cqh); }   /* the view's top corner: the bar has the bottom */
+  html.sq #flow .fl-wbtns .fl-btn { min-height: 44px; font-size: 15px; padding: 0.3em 12px 0; }
+  html.sq #flow .fl-watch-wait .fl-h2, html.sq #flow .fl-watch-stop .fl-h2, html.sq #flow .fl-watch-result .fl-h2 { font-size: 20px; }
+  html.sq #flow .fl-wcard .fl-label, html.sq #flow .fl-wcard .fl-small { font-size: 13px; }
+  html.sq #flow .fl-wcard .fl-btn { min-height: 44px; font-size: 15px; }
+  .fl-ringstep { height: 44px; }
   `;
   const s = document.createElement('style');
   s.id = 'flow-style';

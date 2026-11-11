@@ -18,7 +18,7 @@ export const EMBEDDED = embedded;
 // moves the address bar between those and play/ with history.replaceState. A replaceState changes what a
 // relative URL means unless the page has a <base>, so the page pins its base to where it loaded (the Worker
 // already puts <base href=".../play/"> on crew/ and room/ pages, and that one stays).
-if (doc && doc.head && !doc.querySelector('base')) {
+if (doc && doc.head && typeof doc.querySelector === 'function' && !doc.querySelector('base')) {   // (the netsim's stub document has no querySelector)
   const b = doc.createElement('base');
   b.href = new URL('.', doc.baseURI).href;
   doc.head.prepend(b);
