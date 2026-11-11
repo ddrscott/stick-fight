@@ -4,9 +4,11 @@
 //   node scripts/og/check.mjs [http://127.0.0.1:8787/stick-fight/] [--out dir]
 //
 // First the image's text layout, in Node: every crew name the rules allow fits in two lines clear of the
-// fighters. Then through the Worker, as the unfurl bots see it (plain HTTP, no script): a crew link's
-// tags, the same for every user agent; an unknown or expired crew, a bad room code and plain play/
-// get the default tags; a room link gets its own; an old /?crew= link is a 301 to play/; the images are
+// fighters. Then through the Worker, as the unfurl bots see it (plain HTTP, no script): a crew link
+// (crew/<slug>) is a 200 with the game page and the crew's tags, the same for every user agent, and a
+// <base> that makes every path in the page resolve; an unknown or expired crew, a bad room code and plain
+// play/ get the default tags; a room link (room/<CODE>) gets its own; the old forms play/?crew=, /?crew=,
+// play/?room= and /?room= are a 301 to the clean link with the rest of the query kept; the images are
 // JPEGs of 1200x630, small enough for WhatsApp, and a made-up version is sent to the real one.
 // --out saves each image. Exit code 1 on any failure.
 import fs from 'node:fs';
@@ -56,6 +58,17 @@ const UAS = {
 const get = (url, ua = UAS.chrome) => fetch(url, { headers: { 'user-agent': ua }, redirect: 'manual' });
 const tags = (html) => Object.fromEntries([...html.matchAll(/<meta (?:property|name)="((?:og|twitter):[^"]+)" content="([^"]*)">/g)].map((m) => [m[1], m[2].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")]));
 const page = async (q, ua) => tags(await (await get(`${BASE}play/${q}`, ua)).text());
+/** a clean link's page: crew/<slug> or room/<CODE>, which must answer 200 itself (no redirect) */
+const clean = async (path, ua) => { const res = await get(`${BASE}${path}`, ua); return { status: res.status, html: await res.text() }; };
+/** every relative URL in a page (src, href, the @font-face urls), resolved against its <base>, must load */
+async function resolves(html, name) {
+  const base = /<base href="([^"]+)">/.exec(html);
+  const root = new URL(base ? base[1] : '/stick-fight/play/', BASE);
+  const refs = new Set([...html.matchAll(/(?:src|href)="([^"]+)"|url\(([^)]+)\)/g)].map((m) => (m[1] || m[2]).replace(/^['"]|['"]$/g, '')).filter((u) => !/^(https?:|data:|#|mailto:)/.test(u)));
+  const bad = [];
+  for (const u of refs) { const res = await fetch(new URL(u, root)); if (res.status !== 200) bad.push(`${u} ${res.status}`); }
+  check(`${name}: the <base> is first in <head> and all ${refs.size} of its relative paths load`, base && /<head><base /.test(html) && !bad.length, bad.slice(0, 4).join(', ') || base?.[1]);
+}
 /** a JPEG's size from its frame header */
 function jpegSize(b) {
   if (b[0] !== 0xff || b[1] !== 0xd8) return null;
@@ -98,43 +111,62 @@ try {
   check('made a crew', !!slug, slug);
   await members(slug, 2);
   const seen = {};
-  for (const [k, ua] of Object.entries(UAS)) seen[k] = JSON.stringify(await page(`?crew=${slug}`, ua));
+  for (const [k, ua] of Object.entries(UAS)) { const c = await clean(`crew/${slug}`, ua); seen[k] = JSON.stringify([c.status, tags(c.html)]); }
+  const first = await clean(`crew/${slug}`);
+  check('crew/<slug>: a 200 with the game page, no redirect', first.status === 200 && /<canvas|id="stage"/.test(first.html), String(first.status));
+  await resolves(first.html, 'crew/<slug>');
   check('crew link: the same tags for every user agent', new Set(Object.values(seen)).size === 1, Object.keys(UAS).join(', '));
-  const t = JSON.parse(seen.imessage);
+  const t = JSON.parse(seen.imessage)[1];
   check('crew link: og:title names the crew', t['og:title'] === 'Join ROCK N ROLL 2 on Neon Stick Fight', t['og:title']);
   check('crew link: og:description has the member count and no member names', /2 fighters in the crew/.test(t['og:description']) && !/PLAYER/.test(JSON.stringify(t)), t['og:description']);
-  check('crew link: og:url is the crew link', t['og:url'] === `https://askscottpierce.com/stick-fight/play/?crew=${slug}`, t['og:url']);
+  check('crew link: og:url is the clean crew link', t['og:url'] === `https://askscottpierce.com/stick-fight/crew/${slug}`, t['og:url']);
   check('crew link: og:image is its own image', new RegExp(`/api/og/crew/${slug}\\.jpg\\?v=[0-9a-f]{10}$`).test(t['og:image']), t['og:image']);
   check('crew link: og:image:alt names the crew', /ROCK N ROLL 2/.test(t['og:image:alt']), t['og:image:alt']);
   await image(t['og:image'], 'crew');
   const wrong = await get(local(t['og:image']).replace(/v=\w+/, 'v=0000000000'));
   check('crew image: a made-up version is sent to the real one', wrong.status === 302 && (wrong.headers.get('location') || '').endsWith(t['og:image'].replace(/^.*\/stick-fight\//, '')), wrong.headers.get('location'));
-  const mixed = await page(`?crew=${slug.toUpperCase()}&utm_source=x`);
-  check('crew link: a slug in capitals with more in the query still unfurls', mixed['og:title'] === t['og:title']);
+  const caps = await get(`${BASE}crew/${slug.toUpperCase()}?utm_source=x`);
+  check('crew/<SLUG> in capitals: a 301 to the lower-case link, query kept', caps.status === 301 && caps.headers.get('location') === `/stick-fight/crew/${slug}?utm_source=x`, `${caps.status} ${caps.headers.get('location')}`);
+  const slash = await get(`${BASE}crew/${slug}/`);
+  check('crew/<slug>/ with a slash: a 301 to the link without one', slash.status === 301 && slash.headers.get('location') === `/stick-fight/crew/${slug}`, `${slash.status} ${slash.headers.get('location')}`);
 
-  const none = await page('?crew=nobody-zzzzz', UAS.slack);
-  check('unknown crew: the default tags', none['og:title'] === 'Neon Stick Fight' && /og\.jpg$/.test(none['og:image']));
-  const junk = await page(`?crew=${encodeURIComponent('"><script>x</script>')}`, UAS.slack);
-  check('a crew value that isn\'t a slug: the default tags', junk['og:title'] === 'Neon Stick Fight');
+  // the old forms: a 301 to the clean link, any other query kept, and a bot following it unfurls the crew
+  for (const [from, q] of [['play/', `?crew=${slug}&pick=intern`], ['', `?crew=${slug}&pick=intern`], ['play/', `?pick=intern&crew=${slug.toUpperCase()}`]]) {
+    const old = await get(`${BASE}${from}${q}`, UAS.slack);
+    check(`old link /${from}${q}: a 301 to crew/<slug>?pick=intern`, old.status === 301 && old.headers.get('location') === `/stick-fight/crew/${slug}?pick=intern`, `${old.status} ${old.headers.get('location')}`);
+  }
+  const followed = await fetch(`${BASE}play/?crew=${slug}`, { headers: { 'user-agent': UAS.facebook } });
+  check('old link followed like a bot: lands on crew/<slug> with the crew\'s tags', followed.url.endsWith(`/stick-fight/crew/${slug}`) && tags(await followed.text())['og:title'] === t['og:title'], followed.url);
+
+  const none = await clean('crew/nobody-zzzzz', UAS.slack), nt = tags(none.html);
+  check('unknown crew at crew/<slug>: 200, the default tags, the game page', none.status === 200 && nt['og:title'] === 'Neon Stick Fight' && /og\.jpg$/.test(nt['og:image']) && /<base href="\/stick-fight\/play\/">/.test(none.html), String(none.status));
+  const junk = await clean(`crew/${encodeURIComponent('"><script>x</script>')}`, UAS.slack);
+  check('a crew/ value that isn\'t a slug: the default tags, nothing of it in the page', junk.status === 200 && tags(junk.html)['og:title'] === 'Neon Stick Fight' && !/<script>x/.test(junk.html), String(junk.status));
+  const oldJunk = await get(`${BASE}play/?crew=${encodeURIComponent('"><script>x</script>')}`, UAS.slack);
+  check('an old ?crew= that isn\'t a slug: no redirect, the plain page', oldJunk.status === 200 && tags(await oldJunk.text())['og:title'] === 'Neon Stick Fight', String(oldJunk.status));
   const noimg = await get(`${BASE}api/og/crew/nobody-zzzzz.jpg`);
   check('unknown crew image: sent to og.jpg', noimg.status === 302 && /og\.jpg$/.test(noimg.headers.get('location') || ''), noimg.headers.get('location'));
 
   const gone = await crew('Gone Soon');
   const ex = await fetch(`${BASE}api/crews/${gone}/dev-expire`, { method: 'POST' }).then((r) => r.json()).catch(() => null);
   if (ex && ex.wiped) {
-    const g = await page(`?crew=${gone}`, UAS.whatsapp);
+    const g = tags((await clean(`crew/${gone}`, UAS.whatsapp)).html);
     check('expired crew: the default tags', g['og:title'] === 'Neon Stick Fight');
   } else console.log('SKIP  expired crew (needs DEV_HOOKS=1 in .dev.vars)');
 
-  const r = await page('?room=k7qm', UAS.discord);
-  check('room link: its own title, url and image', r['og:title'] === 'Join room K7QM on Neon Stick Fight' && r['og:url'] === 'https://askscottpierce.com/stick-fight/play/?room=K7QM' && /\/api\/og\/room\/K7QM\.jpg$/.test(r['og:image']), r['og:title']);
+  const rc = await clean('room/K7QM', UAS.discord), r = tags(rc.html);
+  check('room/<CODE>: a 200 with its own title, url and image', rc.status === 200 && r['og:title'] === 'Join room K7QM on Neon Stick Fight' && r['og:url'] === 'https://askscottpierce.com/stick-fight/room/K7QM' && /\/api\/og\/room\/K7QM\.jpg$/.test(r['og:image']), r['og:title']);
+  await resolves(rc.html, 'room/<CODE>');
   await image(r['og:image'], 'room');
-  const badRoom = await page('?room=AB10', UAS.discord);
-  check('bad room code: the default tags', badRoom['og:title'] === 'Neon Stick Fight');
-
-  for (const q of [`?crew=${slug}`, '?room=K7QM']) {
-    const old = await get(`${BASE}${q}`, UAS.slack);
-    check(`old link /${q}: a 301 to play/`, old.status === 301 && old.headers.get('location') === `/stick-fight/play/${q}`, `${old.status} ${old.headers.get('location')}`);
+  const lower = await get(`${BASE}room/k7qm`);
+  check('room/<code> in lower case: a 301 to capitals', lower.status === 301 && lower.headers.get('location') === '/stick-fight/room/K7QM', `${lower.status} ${lower.headers.get('location')}`);
+  const badRoom = await clean('room/AB10', UAS.discord);
+  check('room/ with a bad code: 200, the default tags', badRoom.status === 200 && tags(badRoom.html)['og:title'] === 'Neon Stick Fight');
+  const oldBad = await get(`${BASE}play/?room=AB`);
+  check('an old ?room= that isn\'t a whole code: no redirect (the game opens JOIN to finish it)', oldBad.status === 200);
+  for (const from of ['play/', '']) {
+    const old = await get(`${BASE}${from}?room=k7qm&relay=1`, UAS.slack);
+    check(`old link /${from}?room=k7qm&relay=1: a 301 to room/K7QM?relay=1`, old.status === 301 && old.headers.get('location') === '/stick-fight/room/K7QM?relay=1', `${old.status} ${old.headers.get('location')}`);
   }
   const home = await get(BASE);
   check('homepage without a crew: the page, no redirect', home.status === 200 && /<title>Neon Stick Fight · /.test(await home.text()));

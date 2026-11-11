@@ -14,6 +14,7 @@
 //   crew.state             the last state ({ crew, members, h2h, recent }), crew.you (this member's id)
 
 import { apiUrl } from './link.js';
+import { linkUrl } from '../links.js';
 
 const RETRY_MS = [1000, 2000, 4000, 8000];
 const FATAL = new Set(['no-crew', 'crew-full', 'bad-hello', 'full']);
@@ -98,19 +99,16 @@ export async function createCrewRoom(name) {
   } catch { return { error: 'unreachable' }; }
 }
 
-/** a crew slug from what was typed or pasted (the slug, or a link with ?crew=), or '' */
+/** a crew slug from what was typed or pasted (the slug, a crew/<slug> link, or an old one with ?crew=), or '' */
 export function cleanSlug(raw) {
   let s = String(raw || '').trim();
-  const m = s.match(/[?&]crew=([^&#\s]+)/);
-  if (m) s = decodeURIComponent(m[1]);
+  const m = s.match(/\/crew\/([^/?&#\s]+)/) || s.match(/[?&]crew=([^&#\s]+)/);
+  if (m) { try { s = decodeURIComponent(m[1]); } catch { s = m[1]; } }
   s = s.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) && s.length >= 3 && s.length <= 40 ? s : '';
 }
 
-/** the crew's permanent link: this page with ?crew=<slug> */
+/** the crew's permanent link: <root>crew/<slug> (src/links.js) */
 export function crewLink(slug) {
-  const u = new URL(location.href);
-  u.search = ''; u.hash = '';
-  u.searchParams.set('crew', slug);
-  return u.toString();
+  return linkUrl('crew', slug).href;
 }

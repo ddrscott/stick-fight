@@ -18,6 +18,8 @@
 //   changes (the rival's choice or pick, a countdown, the tally); view() is the same picture on
 //   demand, and postChoose / postBack / postPoke / postFocus / pick / startNow are the buttons
 
+import { linkUrl } from '../links.js';
+
 /**
  * The events the flow listens for.
  * @typedef {{
@@ -36,7 +38,7 @@
  * @property {boolean} available   false: the menus show "online play isn't ready" instead of trying
  * @property {number} CODE_LEN      room codes: CODE_LEN characters from ALPHABET (no 0/O, 1/I/L)
  * @property {string} ALPHABET
- * @property {(opts?: { code?: string, pickFirst?: boolean, crew?: boolean }) => Promise<{ code: string, link: string }>} host   open a room (or host one a crew claimed: opts.code); resolves with its code and a ?room=CODE link
+ * @property {(opts?: { code?: string, pickFirst?: boolean, crew?: boolean }) => Promise<{ code: string, link: string }>} host   open a room (or host one a crew claimed: opts.code); resolves with its code and its room/CODE link
  * @property {(code: string, opts?: { pickFirst?: boolean, crew?: boolean }) => Promise<void>} join   join a friend's room (pickFirst: open on the pick screen, as every flow room does)
  * @property {(name: string) => void} [setName]                    this player's display name, shown to the rival
  * @property {() => void} startMatch                                both connected: start the match (online.js already has)
@@ -66,12 +68,8 @@ export function cleanCode(s) {
   for (const ch of up) if (CODE_ALPHABET.includes(ch)) out += ch;
   return out.slice(0, CODE_LEN);
 }
-export function roomLink(code) {
-  const u = new URL(location.href);
-  u.search = ''; u.hash = '';
-  u.searchParams.set('room', code);
-  return u.toString();
-}
+/** a quick room's link: <root>room/<CODE> (src/links.js) */
+export const roomLink = (code) => linkUrl('room', code).href;
 
 const NOT_READY = 'ONLINE PLAY IS NOT READY YET';
 function createStub() {

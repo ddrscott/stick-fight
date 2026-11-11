@@ -53,6 +53,7 @@ import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './
 import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
 import { profile, setName as saveName, guestName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
 import { createCrew, createCrewRoom, cleanSlug, crewLink } from '../net/crew.js';
+import { linkFromUrl, setLinkInBar } from '../links.js';
 import { qrSvg } from '../qr.js';
 import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
 
@@ -1624,7 +1625,7 @@ export function createFlow(ctx) {
   }
 
   // ---- crew rooms ---------------------------------------------------------------------------------------------
-  // A crew room is a permanent link (?crew=<slug>) to a lobby (src/net/crew.js, worker/crew.ts): who's here,
+  // A crew room is a permanent link (crew/<slug>, src/links.js) to a lobby (src/net/crew.js, worker/crew.ts): who's here,
   // the standings, each member's favorite fighter, and PLAY. Two members ready go to the pick screen of a
   // match the crew opens (a quick room underneath), and the host's page reports each result to the crew.
   let crewCli = null, crewSlug = '', crewMatch = null, rotating = null, crewNote = '', crewFail = '', linkTimer = 0;
@@ -1661,13 +1662,8 @@ export function createFlow(ctx) {
     if (!profile().name) { askName(() => go('crewLobby'), () => go('onlineMenu')); return; }
     go('crewLobby');
   }
-  function setCrewParam(slug) {
-    try {
-      const u = new URL(location.href);
-      if (slug) u.searchParams.set('crew', slug); else u.searchParams.delete('crew');
-      if (u.href !== location.href) window.history.replaceState(null, '', u.toString());
-    } catch { /* sandboxed */ }
-  }
+  /** the address bar: the crew's clean link while you're in it, play/ once you've left (so a reload doesn't pull you back in) */
+  const setCrewParam = (slug) => setLinkInBar('crew', slug);
   /** entering the lobby: connect (or say we're back from a match), and a winner staying on is ready at once */
   function crewEnter() {
     const p = profile(), c = crewC();
@@ -1745,7 +1741,7 @@ export function createFlow(ctx) {
   function screenCrewJoin() {
     textScreen('fl-crewjoin', {
       title: 'JOIN A CREW', label: 'PASTE THE CREW LINK, OR TYPE ITS CODE (LIKE TUESDAY-CREW-7K2QM)',
-      msg: 'OPEN THE LINK YOUR FRIEND SENT, OR TYPE THE PART AFTER CREW=',
+      msg: 'OPEN THE LINK YOUR FRIEND SENT, OR TYPE THE PART AFTER /CREW/',
       value: '', max: 40, lower: true,
       keys: (ch) => /[A-Z0-9]/.test(ch), extraKeys: ['-'],
       accept: (ch) => /^[a-z0-9-]$/.test(ch),
@@ -1914,7 +1910,7 @@ export function createFlow(ctx) {
   function start(opts = {}) {
     const code = cleanCode(opts.room);
     const q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.slice(1));
-    const crew = cleanSlug(opts.crew || q.get('crew'));
+    const crew = cleanSlug(opts.crew || linkFromUrl('crew'));   // crew/<slug>, or an old ?crew=
     const watching = cleanCode(opts.watch || q.get('watch'));   // a watch link: straight to that room's match
     // the sign-in email's link: #signin=<email>&code=<code>, submitted from here (never by a plain GET)
     if (h.get('signin') && /^\d{6}$/.test(h.get('code') || '')) {

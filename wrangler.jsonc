@@ -1,7 +1,7 @@
 // The game at https://askscottpierce.com/stick-fight (see README, "Hosting" and "Multiplayer").
 // The routes hand /stick-fight and /stick-fight/* to this Worker. Static files come from the
 // assets binding, which lives under dist/stick-fight/ so the file path equals the URL path
-// (vite build fills it). Only /stick-fight/api/* runs the script first: quick rooms and crew
+// (vite build fills it). /stick-fight/api/*, crew/*, room/*, play/ and the homepage run the script first: quick rooms and crew
 // rooms (one Durable Object each), profiles and email sign-in (D1), see worker/index.ts.
 // Anything else the assets don't have reaches the script and gets a 404.
 {
@@ -23,7 +23,7 @@
     // /stick-fight redirects to /stick-fight/, so the page's relative ./src/... paths resolve
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "none",
-    "run_worker_first": ["/stick-fight/api/*", "/stick-fight/play/", "/stick-fight/play/index.html", "/stick-fight/", "/stick-fight/index.html"]
+    "run_worker_first": ["/stick-fight/api/*", "/stick-fight/crew/*", "/stick-fight/room/*", "/stick-fight/play/", "/stick-fight/play/index.html", "/stick-fight/", "/stick-fight/index.html"]
   },
   "durable_objects": {
     // ROOMS: one per quick room, named by its four-letter code (worker/index.ts).

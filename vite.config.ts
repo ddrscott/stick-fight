@@ -25,6 +25,22 @@ export default defineConfig({
     name: 'version-json',
     apply: 'build',
     writeBundle(opts) { writeFileSync(join(opts.dir || 'dist/stick-fight', 'version.json'), JSON.stringify({ build: BUILD_ID, at: new Date().toISOString() }) + '\n'); },
+  }, {
+    // crew/<slug> and room/<CODE> are the game page under the room's own address (README, Site, Old links).
+    // In production the Worker answers them (worker/og.ts); here the dev server does the same: it serves
+    // play/index.html with a <base href="/play/"> so the page's play/-relative paths resolve.
+    name: 'room-links',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const m = /^\/(crew|room)\/[^/?#]+\/?(\?.*)?$/.exec(req.url || '');
+        if (m) req.url = '/play/index.html' + (m[2] || '');
+        next();
+      });
+    },
+    transformIndexHtml(html, ctx) {
+      return /^\/(crew|room)\//.test(ctx.originalUrl || '') ? html.replace(/<head>/, '<head><base href="/play/">') : html;
+    },
   }, sitePlugin()],
   build: {
     outDir: 'dist/stick-fight',
