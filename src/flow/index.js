@@ -780,7 +780,7 @@ export function createFlow(ctx) {
   function submitInitials(auto = false) {
     if (state !== 'enterInitials' || !entry) return;
     if (blockedInitials(initials.join(''))) {
-      if (!auto) { if (initialsMsg) initialsMsg.textContent = 'PICK OTHER INITIALS'; return; }
+      if (!auto) { cursorTo(0); if (initialsMsg) initialsMsg.textContent = 'PICK OTHER INITIALS'; return; }   // back to the first letter to type them again
       initials = ['A', 'A', 'A'];
     }
     const rank = S.addScore(entry.mode, { name: initials.join(''), score: entry.score, note: entry.note });
@@ -1617,6 +1617,7 @@ export function createFlow(ctx) {
       const old = button('13 OR OLDER', pick(false), 'fl-age-a');
       const back = button('BACK', signInBack, 'fl-violet');
       const items = btnRow(root, [young, old], '22cqw');
+      for (const b of items) b.el.style.width = '24cqw';   // the same size, whichever label is longer
       btnRow(root, [back], '16cqw');
       root.appendChild(legalLinks());
       return { items: [...items, back], focus: 2, back: signInBack };
