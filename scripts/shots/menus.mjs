@@ -106,7 +106,7 @@ function audit({ upright, textMin, tapMin }) {
 
   const items = [];
   for (const { root, box, overlay } of roots) {
-    if (!overlay && overlayUp) continue;   // a screen under an open overlay isn't being read
+    if ((!overlay || root.matches('#credits')) && overlayUp) continue;   // a screen under an open overlay isn't being read (nor the title's credits link)
     const all = [root, ...root.querySelectorAll('*')];
     for (const n of all) {
       if (n.closest('.lg-bar') && !document.documentElement.matches('.dev-key, .dev-pad')) continue;
