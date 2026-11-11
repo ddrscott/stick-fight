@@ -9,6 +9,7 @@
 //   release down + 2 or 4 = rising uppercut / rising knee
 //   1+3 or 2+4 together: throw (the same press breaks a throw)     Shift: run
 //   B: guard, the same as holding back (the touch BLOCK button sends it)
+//   tap a direction twice: a dash, forward or back; hold the second forward tap and it becomes the run
 // Gamepad (USB or Bluetooth, standard mapping): X / Y / A / B = 1 / 2 / 3 / 4, D-pad or left
 //   stick moves, L1 / L2 guard, R1 throw (1+3), R2 run, Start pause, Select restart, R3 horde.
 //   While a pad is in use <html> gets .pad-ui, which hides the touch buttons; a touch brings
@@ -24,8 +25,10 @@ export const KEYMAP = {
   run: ['ShiftLeft', 'ShiftRight'], guard: ['KeyB'],
 };
 const CAPTURED = new Set(Object.values(KEYMAP).flat());
+/** the synthetic key the touch stick holds for a double flick (no keyboard has it) */
+export const DASH_CODE = 'TouchDash';
 
-export const EMPTY_INPUT = Object.freeze({ dx: 0, jump: false, block: false, down: false, run: false, lp: false, rp: false, lk: false, rk: false });
+export const EMPTY_INPUT = Object.freeze({ dx: 0, jump: false, block: false, down: false, run: false, lp: false, rp: false, lk: false, rk: false, dash: false });
 
 export function createInput(target = window) {
   const held = new Set();
@@ -98,6 +101,9 @@ export function createInput(target = window) {
     const down = on('down');
     const s = { dx: (on('right') ? 1 : 0) - (on('left') ? 1 : 0), jump: on('jump'), block: on('guard'), down, run: on('run'),
       lp: on('lp'), rp: on('rp'), lk: on('lk'), rk: on('rk'),
+      // a double tap made for the player: the touch stick's double flick holds this while the flick is out (src/touch.js),
+      // and the sim reads it with the direction as a dash (sim.js edges). A keyboard or a pad double-taps the direction itself.
+      dash: held.has(DASH_CODE) && !swallowed.has(DASH_CODE),
       // the touch layer's stick provides run; a wobbling thumb must not double-tap into one
       touch: typeof document !== 'undefined' && document.documentElement.classList.contains('touch-ui') && !document.documentElement.classList.contains('pad-ui') };
     const g = pad();

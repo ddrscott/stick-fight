@@ -26,7 +26,8 @@
 // FIGHT (arcade, horde, training; online uses the same keys, except pause asks to leave)
 //   1 left punch U / X (□)    2 right punch I / Y (△)    3 left kick J / A (✕)    4 right kick K / B (○)
 //   move A D or arrows / stick or D-pad, jump W / up, crouch S / down, guard hold back or B / L1 L2,
-//   throw 1+3 or 2+4 / R1, run Shift / R2, pause P or Esc / Start or Select (online: leave
+//   throw 1+3 or 2+4 / R1, dash tap toward twice, back dash tap away twice (touch: flick the stick twice),
+//   run Shift / R2 or the dash's second tap held, pause P or Esc / Start or Select (online: leave
 //   confirm), the quick move strip F1; the full MOVE LIST is in the pause menu (src/flow/movelist.js).
 
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
@@ -135,7 +136,9 @@ export const FIGHT = [
   ['JUMP / CROUCH', 'W / S', 'UP / DOWN'],
   ['GUARD', 'HOLD BACK, B', 'HOLD BACK, L1 L2'],
   ['THROW', '1+3 OR 2+4', 'R1'],
-  ['RUN', 'SHIFT', 'R2'],
+  ['DASH', 'TAP → →', 'TAP → →'],
+  ['BACK DASH', 'TAP ← ←', 'TAP ← ←'],
+  ['RUN', 'SHIFT, OR HOLD THE DASH', 'R2, OR HOLD THE DASH'],
   ['PAUSE', 'P / ESC', 'start'],
 ];
 export const MENUS = [

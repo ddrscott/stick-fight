@@ -3,7 +3,8 @@
 // the difference. Does nothing on a device without a touch screen.
 //
 //   left thumb   floating stick: left/right move (away from the opponent walks back and guards a strike that's coming), past RUN_PX adds
-//                Shift, up = jump, down = crouch, down-away = crouching guard
+//                Shift, up = jump, down = crouch, down-away = crouching guard. A quick double flick the same way
+//                (out, back to the middle or off the glass, out again) is a dash, forward or back: see flick() below
 //   right thumb  Tekken diamond of round arcade buttons, one per limb: 1 LP (U)  2 RP (I) /
 //                3 LK (J)  4 RK (K), plus GUARD (B), which means hold back (it walks back and guards what's coming). Stick + button gives
 //                the directional and crouch moves; two buttons together (1+3, 2+4) throw.
@@ -31,6 +32,8 @@ const TARGET = window;                  // must match createInput(window) in mai
 // the stick's travel in px at scale 1 with a 16px rem; it grows and shrinks with the drawn stick,
 // so the knob reaching the rim still means RUN at every size
 const DEAD_PX = 14, RUN_PX = 52, VERT_PX = 26, KNOB_MAX = 56;
+// the double flick (a dash): the second flick starts within FLICK_MS of the first, and the first was let go within FLICK_HOLD
+const FLICK_MS = 320, FLICK_HOLD = 220, DASH_CODE = 'TouchDash';   // DASH_CODE: src/combat/input.js reads it as the input's dash bit
 // The layout in rem at scale 1. The CSS below and fit() both read these, so they can't drift apart.
 const D = {
   btn: 4.5,                 // a main button: 72px, about an adult thumb pad
@@ -172,7 +175,26 @@ function init() {
     else if (dy > VERT_PX * K && dy > Math.abs(dx) * 0.6) k.add('KeyS');
     return k;
   }
+  // The double flick. The sim ignores a touch stick's own double taps (a thumb resting on the edge of the dead zone
+  // wobbles across it), so the dash is decided here, from a flick that is clearly one: the stick leaves the dead
+  // zone left or right, comes back (or the thumb lifts) within FLICK_HOLD, and leaves the same way again within
+  // FLICK_MS of the first. The second flick holds DASH_CODE for as long as it's out; the sim reads that with the
+  // direction as the double tap (sim.js edges), with the same rules a keyboard's has. Walking and running are
+  // untouched: one push is a walk, the rim is the run, and a flick held on after a forward dash runs.
+  let flickDir = 0, flickAt = -1e9, flickHeld = 1e9, flickOn = 0, dashing = false;
+  function flick(next) {
+    const dir = next.has('KeyD') ? 1 : next.has('KeyA') ? -1 : 0, now = performance.now();
+    if (dir === flickOn) return;
+    if (flickOn) { flickHeld = now - flickAt; if (dashing) { dashing = false; release(DASH_CODE); } }
+    if (dir) {
+      if (dir === flickDir && now - flickAt <= FLICK_MS && flickHeld <= FLICK_HOLD) { dashing = true; press(DASH_CODE); flickAt = -1e9; }   // a third flick starts over
+      else flickAt = now;
+      flickDir = dir;
+    }
+    flickOn = dir;
+  }
   function setStickKeys(next) {
+    flick(next);   // before the direction keys go down: the dash bit and the direction land on the same step
     for (const c of stick.keys) if (!next.has(c)) release(c);
     for (const c of next) if (!stick.keys.has(c)) press(c);
     stick.keys = next;

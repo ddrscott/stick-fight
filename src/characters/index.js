@@ -4,6 +4,8 @@
 // tables the sim reads when it starts.
 import { registerCharacter } from './registry.js';
 import { registerBotchMoves } from '../combat/botch.js';
+import { registerDashMoves } from '../combat/dash.js';
+import { roster } from './registry.js';
 import temp from './temp.js';
 import intern from './intern.js';
 import helpdesk from './helpdesk.js';
@@ -30,5 +32,8 @@ for (const def of [temp, intern, helpdesk, courier, security, janitor, manager, 
 // the botch flail and the happy-accident techniques (src/combat/botch.js): shared by everyone, added after
 // the characters so they land at the end of the move tables
 registerBotchMoves();
+// the dashes' clips, the dash attacks on 1, 3 and 4, the rising jab and kick and their string (src/combat/dash.js):
+// shared by everyone too, and last, for the same reason
+registerDashMoves(roster());
 
 export * from './registry.js';
