@@ -55,6 +55,16 @@ if (doc && typeof window !== 'undefined') {
   window.addEventListener('keydown', f11, { capture: true });
   window.addEventListener('keyup', f11, { capture: true });
 
+  // the icon's two states. Always in the page: iPhone Safari has no fullscreen, but its touch pill still draws
+  // this icon (it opens the Add to Home Screen how-to, src/homescreen.js) and must show only the "enter" half.
+  // The button's look and place are the corner row's (src/corner.js).
+  const style = doc.createElement('style');
+  style.id = 'sf-fs-style';
+  style.textContent = `
+  .fs-exit, html.fs-on .fs-enter { display: none; }
+  html.fs-on .fs-exit { display: inline; }`;
+  doc.head.appendChild(style);
+
   if (canFullscreen) {
     de.classList.add('fs-ok');
     const sync = () => {
@@ -67,14 +77,6 @@ if (doc && typeof window !== 'undefined') {
     };
     doc.addEventListener('fullscreenchange', sync);
     doc.addEventListener('webkitfullscreenchange', sync);
-
-    const style = doc.createElement('style');
-    style.id = 'sf-fs-style';
-    // the button's look and place are the corner row's (src/corner.js); only the icon's two states are here
-    style.textContent = `
-  .fs-exit, html.fs-on .fs-enter { display: none; }
-  html.fs-on .fs-exit { display: inline; }`;
-    doc.head.appendChild(style);
 
     // "sf-" keeps the attract screen's tap-to-start off it (main.js), like the menu button
     const btn = cornerButton('sf-fs', 'Fullscreen (F11)', 3, FS_ICON);

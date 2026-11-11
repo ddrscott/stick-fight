@@ -231,7 +231,7 @@ function injectStyle() {
 
   .sf-panel {
     position: fixed; left: 50%; top: 50%; z-index: 40; transform: translate(-50%, -50%) scale(0.96);
-    width: min(340px, calc(100vw - 32px)); max-height: calc(100vh - 24px); overflow: auto; box-sizing: border-box;
+    width: min(340px, calc(100vw - 32px)); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow: auto; box-sizing: border-box;
     padding: 12px 14px 10px; background: var(--face); color: var(--ink);
     border: 2px solid var(--pink); border-radius: 2px;
     box-shadow: 0 0 18px rgba(255,43,214,0.55), inset 0 0 22px rgba(255,43,214,0.12);

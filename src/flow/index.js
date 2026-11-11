@@ -59,10 +59,9 @@ import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
   off: ['attract', 'onlineJoin', 'onlineConnecting', 'charSelect', 'nameEntry', 'crewLobby', 'signInCode', 'watching'],
-  attract: ['modeSelect', 'highScores', 'controls', 'install'],
+  attract: ['modeSelect', 'highScores', 'controls'],
   highScores: ['attract', 'modeSelect'],
   controls: ['attract', 'modeSelect'],
-  install: ['attract', 'modeSelect'],
   modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry'],
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
   stageIntro: ['fighting', 'modeSelect'],
@@ -101,7 +100,7 @@ const TEXT = new Set(['nameEntry', 'signInEmail', 'signInCode', 'crewCreate', 'c
 // the crew's lobby connection stays open in these (the lobby, and a match the crew started)
 const CREW_KEEP = new Set(['crewLobby', 'crewLinking', 'onlineFighting', 'onlinePost', 'onlineSelect', 'onlineEnd']);
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
-const DEMO = new Set(['attract', 'controls', 'install', 'modeSelect', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'crewLobby', 'crewLinking']);
+const DEMO = new Set(['attract', 'controls', 'modeSelect', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'crewLobby', 'crewLinking']);
 // the sim steps in these (plus onlineFighting, unless the net module steps it)
 const STEPS = new Set([...DEMO, 'fighting', 'roundEnd', 'result']);
 // the HUD draws in these; everything else is a menu over a dimmed scene, HUD off
@@ -131,7 +130,7 @@ const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
 const ENDING_ROLL = 22;   // seconds the ending's roll takes to scroll by (the story and the credits); it moves on 3s after
-const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'install', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'crewLobby', 'crewLinking', 'watchList']);
+const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'crewLobby', 'crewLinking', 'watchList']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -228,7 +227,6 @@ export function createFlow(ctx) {
       case 'attract': mode = null; if (ctx.sceneName() !== 'attract') demo(); return screenTitle();
       case 'highScores': demo(); return screenScores();
       case 'controls': ensureDemo(); return screenControls();
-      case 'install': ensureDemo(); return screenInstall();
       case 'modeSelect': mode = null; ensureDemo(); return screenModes();
       case 'charSelect': ensureDemo(); return screenSelect();
       case 'stageIntro': return screenStage();
@@ -292,7 +290,7 @@ export function createFlow(ctx) {
       // the demo's KO card holds a beat longer
       if (sim.phase === 'ko' && !demoKO) { demoKO = true; sim.phaseTimer = 1.6; }
       // (never the crew lobby, the typing screens or sign-in: friends wait there, and a code takes a trip to the inbox)
-      if (idle > IDLE_MS && (state === 'watchList' || state === 'controls' || state === 'install' || state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || (state === 'onlineEnd' && !crewMatch) || state === 'profile')) go('attract');
+      if (idle > IDLE_MS && (state === 'watchList' || state === 'controls' || state === 'modeSelect' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || (state === 'onlineEnd' && !crewMatch) || state === 'profile')) go('attract');
     }
     if ((state === 'charSelect' || state === 'onlineSelect') && selCtl) selCtl.tick(dt);
     if (BETWEEN.has(state)) paintBetween();   // the countdowns tick
@@ -554,11 +552,11 @@ export function createFlow(ctx) {
       const scores = button('HIGH SCORES', openScores, 'fl-mini');
       const how = button('CONTROLS', () => go('controls'), 'fl-mini fl-violet');
       row.append(scores.el, how.el);
-      // INSTALL: the browser's own prompt, or on iPhone/iPad Safari the Add to Home Screen how-to
+      // INSTALL: the browser's own prompt, or on iPhone/iPad Safari the Add to Home Screen how-to (src/homescreen.js)
       const inst = (typeof window !== 'undefined' && window.__install) || null;
       let instBtn = null;
       if (inst && inst.kind) {
-        instBtn = button('INSTALL', () => { if (inst.kind === 'prompt') inst.prompt().then(() => { if (state === 'attract') screenTitle(); }); else go('install'); }, 'fl-mini fl-amber');
+        instBtn = button('INSTALL', () => { if (inst.kind === 'prompt') inst.prompt().then(() => { if (state === 'attract') screenTitle(); }); else window.dispatchEvent(new CustomEvent('sf:homescreen')); }, 'fl-mini fl-amber');
         row.appendChild(instBtn.el);
       }
       // UPDATE: a newer deploy is out (src/update.js); reloads into it
@@ -593,21 +591,6 @@ export function createFlow(ctx) {
       }));
       btnRow(root, items, '17cqw');
       return { items, focus, back: () => go('attract'), legend: [MOVE, SELECT, ['back', 'TITLE']] };
-    });
-  }
-  // iPhone/iPad Safari has no install prompt and no Fullscreen API: Add to Home Screen is the way
-  function screenInstall() {
-    ui.show('fl-install', (root) => {
-      root.append(el('h1', 'fl-h2', 'PLAY FULL SCREEN'));
-      const steps = el('div', 'fl-steps');
-      const share = '<svg viewBox="0 0 20 20" width="1em" height="1em" aria-hidden="true" style="vertical-align:-0.12em"><path d="M10 2v11M6 6l4-4 4 4M4 10v7h12v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-      for (const [n, html] of [['1', `TAP SHARE ${share} IN SAFARI'S TOOLBAR`], ['2', 'CHOOSE <b>ADD TO HOME SCREEN</b>'], ['3', 'OPEN STICK FIGHT FROM YOUR HOME SCREEN AND TURN THE PHONE SIDEWAYS']]) {
-        const p = el('p', 'fl-step'); p.innerHTML = `<i>${n}</i><span>${html}</span>`; steps.appendChild(p);
-      }
-      root.appendChild(steps);
-      root.appendChild(el('div', 'fl-small', 'IT RUNS FULL SCREEN, WITHOUT SAFARI\'S BARS, AND WORKS OFFLINE'));
-      const items = btnRow(root, [button('BACK', () => go('attract'), 'fl-pink'), button('MAIN MENU', () => go('modeSelect'), 'fl-violet')]);
-      return { items, back: () => go('attract') };
     });
   }
   function screenControls() {

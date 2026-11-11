@@ -291,11 +291,6 @@ function injectStyle() {
   .fl-slot.fl-cur b { border-color: var(--pink); color: #fff; box-shadow: 0 0 1.4cqw var(--pink); }
   .fl-arrow { min-width: 7.4cqw; min-height: max(40px, 6cqh); padding: 0; font-size: 2.6cqw; }
   .fl-code b { width: 6.4cqw; height: 7.6cqw; font-size: 5cqw; line-height: 8cqw; }
-  /* install how-to (iPhone/iPad Safari) */
-  .fl-steps { display: flex; flex-direction: column; gap: 1.4cqh; }
-  .fl-step { margin: 0; display: flex; align-items: center; gap: 1.6cqw; font-size: 2.8cqw; font-weight: 600; letter-spacing: 0.1em; color: #e8dcff; }
-  .fl-step i { font-style: normal; font-family: 'Bungee', sans-serif; font-size: 2.6cqw; width: 4.4cqw; height: 4.4cqw; display: flex; align-items: center; justify-content: center; border: 2px solid var(--amber); color: var(--amber); box-shadow: 0 0 1cqw var(--amber); }
-  .fl-step b { color: var(--cyan); font-weight: 600; }
   /* the on-screen keyboard: number row on top, then QWERTY rows, each row centered like a real one */
   .fl-kb { display: flex; flex-direction: column; align-items: center; gap: 0.6cqw; }
   .fl-kbrow { display: flex; gap: 0.6cqw; justify-content: center; }
