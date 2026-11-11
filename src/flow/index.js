@@ -888,7 +888,7 @@ export function createFlow(ctx) {
       net.on('connected', guard(() => { if (state === 'onlineHost' || state === 'onlineConnecting' || state === 'crewLinking' || BETWEEN.has(state)) go('onlineFighting'); })),
       net.on('match-over', guard((v) => {
         // a crew match: the host's page reports the result to the crew room (it counts once, by match id and number)
-        if (crewMatch && v && v.role === 'host' && v.last) crewC().result({ match: crewMatch.id, n: v.n, winner: v.last.winner, wins: v.last.wins, chars: v.last.chars });
+        if (crewMatch && v && v.role === 'host' && v.last) crewC().result({ match: crewMatch.id, n: v.n, winner: v.last.winner, wins: v.last.wins, chars: v.last.chars, secs: v.last.secs | 0 });
         if (state === 'onlineFighting') go('onlinePost');
       })),
       net.on('session', guard((v) => {
