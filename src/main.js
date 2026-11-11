@@ -13,7 +13,7 @@ import { createWorldCache, viewRect } from './arena/cache.js';   // the building
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
 import { createHUD, HUD_TOP } from './combat/hud.js';
-import { onSquare, SQUARE } from './square.js';   // a phone held upright: the square crop of this frame, and the HUD band over it
+import { onSquare } from './square.js';   // a phone held upright: the view's crop of this frame, and the HUD band over it
 import { FRAME_DATA } from './combat/frameData.js';
 import { mulberry32 } from './combat/rng.js';
 import { gameAudio } from './audio/index.js';   // audio: all sound logic lives in src/audio/
@@ -52,17 +52,17 @@ const fighters = [
 ];
 const input = createInput(window);
 const hud = createHUD(hudCanvas, { width: W, height: H, dpr });
-// Held upright (src/square.js; src/touch.js lays it out): the page shows the middle SQUARE px of the frame, so the
-// camera gets that as its safe width, and the HUD draws its strip on a band canvas above the square and keeps
-// the rest inside it. Nothing about the render changes; sideways and on a desktop this never turns on.
+// Held upright (src/square.js; src/touch.js lays it out): the page shows the middle s.crop px of the frame (720,
+// a square, up to the whole 1280 on a short screen), so the camera gets that as its safe width, and the HUD draws
+// its strip on a band canvas above the view and keeps the rest inside it. Nothing about the render changes; sideways and on a desktop this never turns on.
 let bandCanvas = null;
 onSquare((s) => {
   if (!s.on) { camera.safeW = 0; camera.padTop = null; hud.setSquare(null); return; }
   if (!bandCanvas) { bandCanvas = document.createElement('canvas'); bandCanvas.id = 'hudband'; document.body.appendChild(bandCanvas); }
   const dp = Math.min(3, window.devicePixelRatio || 1), cssW = document.documentElement.clientWidth;
   bandCanvas.width = Math.max(1, Math.round(cssW * dp)); bandCanvas.height = Math.max(1, Math.round(s.band * dp));
-  hud.setSquare({ x0: (W - SQUARE) / 2, x1: (W + SQUARE) / 2, zoom: W / SQUARE, canvas: bandCanvas, w: cssW / s.k, h: s.band / s.k, scale: dp * s.k, compact: s.compact });
-  camera.safeW = SQUARE; camera.padTop = SQUARE_TOP;
+  hud.setSquare({ x0: (W - s.crop) / 2, x1: (W + s.crop) / 2, zoom: W / s.crop, canvas: bandCanvas, w: cssW / s.k, h: s.band / s.k, scale: dp * s.k, compact: s.compact });
+  camera.safeW = s.crop; camera.padTop = SQUARE_TOP;
 });
 const statusFX = createStatusFX();
 const perfectFX = createPerfectFX();   // the perfect round finisher, drawn (src/fx/perfect.js)
@@ -1189,7 +1189,7 @@ function touchInsets() {
 // The last word, once frameDraw has placed this frame's drawing: whatever the prediction in updateCamera missed
 // (a contact snap, a fade that outran it), the drawn bodies stay inside the frame and under the HUD strip.
 // The camera's safe span. camera.safeW (src/camera.js) is the width of the frame's middle that's on screen: all of
-// it normally, the middle 720 px on a phone held upright (the square). Bodies keep to that span, and the wide end
+// it normally, the view's crop on a phone held upright (720 px when it's square, up to all of it). Bodies keep to that span, and the wide end
 // of the zoom scales with it, so the same world width is on screen at the far end, in fewer px. The top margin is
 // the layout's (the HUD strip, or the square's own). The zoom's floor is 0.85 on the full frame, as it always
 // was (past about 1440 world px apart the two walk out of the sides); the narrow span goes on down to whatever

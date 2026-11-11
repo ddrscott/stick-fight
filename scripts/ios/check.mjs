@@ -49,7 +49,7 @@ const look = () => {
   const vis = (n) => { if (!n) return null; const r = n.getBoundingClientRect(); return r.width && r.height && getComputedStyle(n).display !== 'none' ? r : null; };
   const tip = vis(document.querySelector('.sf-hs-tip')), st = document.getElementById('stage').getBoundingClientRect();
   const hits = [];
-  if (tip) for (const n of document.querySelectorAll('#flow .fl-btn, #flow .fl-card, .tc-mini, .tc-rotate, #credits')) {
+  if (tip) for (const n of document.querySelectorAll('#flow .fl-btn, #flow .fl-card, .tc-mini, #credits')) {
     const r = vis(n); if (r && r.left < tip.right && r.right > tip.left && r.top < tip.bottom && r.bottom > tip.top) hits.push(n.className);
   }
   const pill = vis(document.querySelector('.tc-top [data-role="fullscreen"]'));

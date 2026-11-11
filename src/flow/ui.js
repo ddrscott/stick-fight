@@ -524,7 +524,7 @@ function injectStyle() {
     .fl-modes .fl-list .fl-btn { min-width: 0; }
     .fl-modes .fl-list .fl-btn:last-child { grid-column: 1 / -1; min-height: 32px; }
     /* pause: the menu three across. The right panel (techniques, controls) and the button that swaps it need
-       the room a sideways stage has, so they wait for the phone to be turned. */
+       the room a sideways stage has, so upright they stay hidden. */
     .fl-pause .fl-tech, .fl-pause .fl-viewbtn { display: none; }
     .fl-pause .fl-list { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.6cqh 1.4cqw; width: 96cqw; }
     .fl-pause .fl-list .fl-btn { min-width: 0; padding-left: 0.6cqw; padding-right: 0.6cqw; font-size: 3.3cqw; white-space: nowrap; }

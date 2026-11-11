@@ -32,12 +32,7 @@ export function toggleFullscreen() {
   try {
     let p;
     if (isFullscreen()) p = exit.call(doc);
-    else {
-      p = request.call(de, { navigationUI: 'hide' });
-      // a phone turns to landscape where it can; a desktop has no lock and the refusal is swallowed
-      const so = /** @type {any} */ (screen.orientation);
-      Promise.resolve(p).then(() => so && so.lock && so.lock('landscape')).catch(() => {});
-    }
+    else p = request.call(de, { navigationUI: 'hide' });   // no orientation lock: the phone stays the way it's held (upright or sideways)
     Promise.resolve(p).catch(() => {});
   } catch { /* refused: nothing to do */ }
 }
