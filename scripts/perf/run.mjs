@@ -5,7 +5,7 @@
 // DevTools. It reads the game's own profiler (src/perf.js, window.__perf) after a warm-up.
 //
 //   node scripts/perf/run.mjs [--throttle 1,4,6] [--tier 3,2,1|auto] [--secs 8] [--scenes close,horde,...]
-//                             [--device pixel7|desktop] [--gpu] [--rollback] [--load] [--json out.json]
+//                             [--device pixel7|pixel7up|desktop] [--gpu] [--rollback] [--load] [--json out.json]
 //
 //   --gpu       per-frame GPU time with no CPU throttle: each frame is followed by a 1-pixel readPixels,
 //               which waits for the GPU to finish, so the step's time is CPU plus GPU (Apple M3 Pro here)
@@ -46,6 +46,7 @@ const PICK = (opt('--scenes', Object.keys(SCENARIOS).join(','))).split(',');
 
 const DEVICES = {
   pixel7: { viewport: { width: 915, height: 412 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },
+  pixel7up: { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },   // held upright: the square (README, Controls)
   desktop: { viewport: { width: 1440, height: 810 }, deviceScaleFactor: 2, isMobile: false, hasTouch: false },
 };
 
