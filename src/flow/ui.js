@@ -577,9 +577,9 @@ function injectStyle() {
     .fl-standings.fl-v-standings { grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw; }
     .fl-v-standings .fl-sfav, .fl-v-standings .fl-sthfav { display: none; }
     .fl-standings.fl-v-arcade, .fl-standings.fl-v-horde { grid-template-columns: 3cqw minmax(0, 1fr) max-content minmax(0, 1fr) max-content; }
-    .fl-v-arcade .fl-sdate, .fl-v-horde .fl-sdate, .fl-v-arcade .fl-sth:nth-child(7), .fl-v-horde .fl-sth:nth-child(7) { display: none; }
+    .fl-standings .fl-sdate { display: none; }
     .fl-standings.fl-v-stats { grid-template-columns: 1fr; }
-    .fl-crewtab { font-size: 1.7cqw !important; letter-spacing: 0.02em; }
+    .fl-crew .fl-crewtabs .fl-btn.fl-crewtab { font-size: 1.7cqw; letter-spacing: 0.02em; min-height: 0; }
     .fl-crew .fl-btn.fl-mini { font-size: 2.3cqw; min-height: 30px; }
     .fl-crew .fl-playbtn { min-height: 44px; }
     .fl-crew .fl-playbtn small { font-size: 2cqw; }
@@ -590,12 +590,14 @@ function injectStyle() {
   /* The crew lobby's views held upright. [twgdsx] lays the lobby out as one grid when the phone is upright
      (.fl-up, its own block); these only size what this card added inside the table (the tabs, the high score
      tables, the stats), and do nothing until that layout is on. */
-  #flow > .fl-up.fl-crew .fl-crewtabs { gap: 1.6cqw; margin-bottom: 0.4em; }
-  #flow > .fl-up.fl-crew .fl-crewtab { min-height: 40px; font-size: max(12px, 3.6cqw); }
+  /* the tabs stay at the top of the scrolling list, and the column heads stick under them */
+  #flow > .fl-up.fl-crew .fl-crewtabs { position: sticky; top: 0; z-index: 2; gap: 1.6cqw; margin: 0 -2.4cqw; padding: 2.2cqw 2.4cqw 0.4em; background: #10061f; }
+  #flow > .fl-up.fl-crew .fl-crewtabs .fl-btn.fl-crewtab { min-height: 44px; font-size: max(13px, 3.8cqw); letter-spacing: 0.04em; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sth { top: calc(44px + 2.2cqw + 0.4em); }
   #flow > .fl-up.fl-crew .fl-standings .fl-sthfav { display: block; }
   #flow > .fl-up.fl-crew .fl-standings.fl-v-arcade, #flow > .fl-up.fl-crew .fl-standings.fl-v-horde { grid-template-columns: 5cqw minmax(0, 0.7fr) max-content minmax(0, 1fr) max-content; }
-  #flow > .fl-up.fl-crew .fl-v-arcade .fl-sdate, #flow > .fl-up.fl-crew .fl-v-horde .fl-sdate,
-  #flow > .fl-up.fl-crew .fl-v-arcade .fl-sth:nth-child(7), #flow > .fl-up.fl-crew .fl-v-horde .fl-sth:nth-child(7) { display: none; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sdate { display: none; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sttitle { position: static; padding-top: 0; background: none; }
   #flow > .fl-up.fl-crew .fl-standings .fl-snote { font-size: max(12px, 3.5cqw); }
   #flow > .fl-up.fl-crew .fl-standings.fl-v-stats { grid-template-columns: 1fr; row-gap: 1.2em; }
   #flow > .fl-up.fl-crew .fl-stsum { font-size: max(14px, 4.4cqw); }

@@ -1864,7 +1864,7 @@ export function createFlow(ctx) {
       const body = el('div', 'fl-row fl-crewbody');
       const left = el('div', 'fl-crewleft'), right = el('div', 'fl-crewright');
       const table = el('div', 'fl-standings'), recent = el('div', 'fl-recent');
-      table.dataset.scroll = 'y';   // held upright the list scrolls ([twgdsx]'s portrait layout)
+      table.dataset.scroll = 'y';   // held upright the whole crew is listed, and the list scrolls (sideways: the top seven)
       // the left panel's views: a row of tabs that stays put as the first thing in the table (paintLobby keeps it)
       const tabs = el('div', 'fl-crewtabs');
       const tabBtns = CREW_VIEWS.map(([v, label]) => {
@@ -1923,7 +1923,7 @@ export function createFlow(ctx) {
   /** the standings: everyone who has opened the link, the most wins first */
   function paintStandings(t, s, c, you, list) {
     for (const h of ['', 'NAME', 'W', 'L', 'D', 'VS YOU', 'FAVORITE']) t.appendChild(el('span', `fl-sth${'WLDVS YOU'.includes(h) && h ? ' fl-snum' : ''}${h === 'FAVORITE' ? ' fl-sthfav' : ''}`, h));
-    const shown = list.slice(0, 7);
+    const shown = list.slice(0, t.closest('.fl-up') ? 50 : 7);
     shown.forEach((m, i) => {
       const mine = m.id === you;
       const cls = mine ? ' fl-me' : '';
@@ -1977,7 +1977,7 @@ export function createFlow(ctx) {
   }
   /** a crew high score table in the lobby: rank, initials, score, fighter (in its color), stage or floors, date */
   function paintCrewBoard(t, kind, s, you) {
-    for (const h of ['', 'NAME', 'SCORE', 'FIGHTER', kind === 'arcade' ? 'STAGE' : 'FLOORS', 'DATE']) t.appendChild(el('span', `fl-sth${h === 'SCORE' ? ' fl-snum' : ''}`, h));
+    for (const h of ['', 'NAME', 'SCORE', 'FIGHTER', kind === 'arcade' ? 'STAGE' : 'FLOORS', 'DATE']) t.appendChild(el('span', `fl-sth${h === 'SCORE' ? ' fl-snum' : ''}${h === 'DATE' ? ' fl-sdate' : ''}`, h));
     const rows = (s && s.scores && s.scores[kind]) || [];
     rows.forEach((r, i) => {
       const cls = r.member && r.member === you ? ' fl-me' : '';
