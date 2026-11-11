@@ -21,6 +21,8 @@
 //   enterInitials   three letters for the table
 //   ending          the credits after the ladder
 //   paused          RESUME / MOVE LIST / RESTART / BOTCHES / CONTROLS / MAIN MENU over the held scene (single-player modes)
+//   ageCheck        before any email is asked for: UNDER 13 or 13 OR OLDER. Under 13 never reaches the email field
+//                   (README, Privacy and terms, The age question)
 //
 // The MOVE LIST (src/flow/movelist.js) isn't a state: it's an overlay over the pause menu or a pick screen, so
 // the screen under it keeps its state, and any state change closes it. While it's up it gets every menu key.
@@ -57,6 +59,8 @@ import * as CS from '../net/crewScores.js';   // crew high scores: which runs po
 import { linkFromUrl, setLinkInBar } from '../links.js';
 import { qrSvg } from '../qr.js';
 import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
+import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';   // the name filter (README, Privacy and terms)
+import { rootUrl } from '../root.js';
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
@@ -88,8 +92,10 @@ const TRANSITIONS = {
   onlineSelect: ['onlineFighting', 'onlineEnd', 'onlineMenu', 'modeSelect', 'crewLobby'],
   onlineEnd: ['onlineMenu', 'onlineHost', 'onlineConnecting', 'modeSelect', 'attract', 'crewLobby'],
   // profiles and crew rooms (src/net/profile.js, src/net/crew.js)
-  nameEntry: ['onlineJoin', 'crewLobby', 'onlineMenu', 'profile', 'modeSelect', 'attract', 'signInEmail'],
-  profile: ['nameEntry', 'signInEmail', 'onlineMenu', 'modeSelect', 'attract'],
+  nameEntry: ['onlineJoin', 'crewLobby', 'onlineMenu', 'profile', 'modeSelect', 'attract', 'ageCheck'],
+  profile: ['nameEntry', 'ageCheck', 'onlineMenu', 'modeSelect', 'attract'],
+  // the email field is only ever reached through the age question (or from the code screen, which an email already led to)
+  ageCheck: ['signInEmail', 'profile', 'nameEntry', 'onlineMenu', 'modeSelect'],
   signInEmail: ['signInCode', 'profile', 'modeSelect', 'nameEntry'],
   signInCode: ['profile', 'signInEmail', 'modeSelect', 'nameEntry', 'onlineMenu', 'onlineJoin', 'crewLobby'],
   crewCreate: ['crewLobby', 'onlineMenu', 'modeSelect'],
@@ -117,7 +123,7 @@ export function playTime(secs) {
 }
 const CREW_KEEP = new Set(['crewLobby', 'crewLinking', 'onlineFighting', 'onlinePost', 'onlineSelect', 'onlineEnd']);
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
-const DEMO = new Set(['attract', 'controls', 'modeSelect', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'crewLobby', 'crewLinking']);
+const DEMO = new Set(['attract', 'controls', 'modeSelect', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking']);
 // the sim steps in these (plus onlineFighting, unless the net module steps it)
 const STEPS = new Set([...DEMO, 'fighting', 'roundEnd', 'result']);
 // the HUD draws in these; everything else is a menu over a dimmed scene, HUD off
@@ -147,7 +153,7 @@ const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
 const ENDING_ROLL = 22;   // seconds the ending's roll takes to scroll by (the story and the credits); it moves on 3s after
-const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'crewLobby', 'crewLinking', 'watchList']);
+const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'modeSelect', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking', 'watchList']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -294,6 +300,7 @@ export function createFlow(ctx) {
       case 'onlineSelect': return screenOnlineSelect();
       case 'nameEntry': ensureDemo(); return screenName();
       case 'profile': ensureDemo(); return screenProfile();
+      case 'ageCheck': ensureDemo(); return screenAgeCheck();
       case 'signInEmail': ensureDemo(); return screenSignInEmail();
       case 'signInCode': ensureDemo(); return screenSignInCode();
       case 'crewCreate': ensureDemo(); return screenCrewCreate();
@@ -350,7 +357,7 @@ export function createFlow(ctx) {
       case 'continue': if (t >= 10) go('gameOver'); else tickContinue(); break;
       case 'gameOver': if (t > 6) afterGame(); break;
       case 'ending': if (t > ENDING_ROLL + 3) afterGame(); break;
-      case 'enterInitials': if (idle > IDLE_MS) submitInitials(); break;
+      case 'enterInitials': if (idle > IDLE_MS) submitInitials(true); break;
     }
     if (state === 'watching') { paintWatch(); return true; }   // main.js steps the watched match (or the demo behind the card)
     if (state === 'onlineFighting') {
@@ -807,7 +814,7 @@ export function createFlow(ctx) {
     return { el: kb, items };
   }
   // initials: three slots filled from the keyboard (or typed); DEL steps back, ENTER saves
-  let initials = ['A', 'A', 'A'], slot = 0, slotEls = [];
+  let initials = ['A', 'A', 'A'], slot = 0, slotEls = [], initialsMsg = null;
   function screenInitials() {
     initials = ['A', 'A', 'A']; slot = 0;
     const rank = entry ? S.rankFor(entry.mode, entry.score) : 0;
@@ -832,6 +839,8 @@ export function createFlow(ctx) {
       root.appendChild(kb.el);
       const items = kb.items;
       root.appendChild(el('div', 'fl-small fl-touchonly', 'TAP YOUR INITIALS, THEN ENTER'));
+      initialsMsg = el('div', 'fl-small fl-warn fl-inimsg', '');   // the name filter's PICK OTHER INITIALS
+      root.appendChild(initialsMsg);
       // no back: there's nothing behind this screen (left alone, the initials go in as they stand)
       return { items, focus: items.findIndex((k) => k.el.textContent === 'A'), legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL']] };
     });
@@ -839,9 +848,15 @@ export function createFlow(ctx) {
   }
   function paintSlots() { slotEls.forEach((s, i) => { s.classList.toggle('fl-cur', i === slot); (s.querySelector('b')).textContent = initials[i]; }); }
   function cursorTo(i) { slot = Math.max(0, Math.min(2, i)); paintSlots(); }
-  function setLetter(ch) { initials[slot] = ch; paintSlots(); if (ctx.click) ctx.click(); }
-  function submitInitials() {
+  function setLetter(ch) { initials[slot] = ch; paintSlots(); if (initialsMsg) initialsMsg.textContent = ''; if (ctx.click) ctx.click(); }
+  /** ENTER, or 30 idle seconds (auto). Initials off the cabinet list (src/namefilter.js) stay on screen with a
+   *  note; left alone, they go in as AAA instead */
+  function submitInitials(auto = false) {
     if (state !== 'enterInitials' || !entry) return;
+    if (blockedInitials(initials.join(''))) {
+      if (!auto) { cursorTo(0); if (initialsMsg) initialsMsg.textContent = 'PICK OTHER INITIALS'; return; }   // back to the first letter to type them again
+      initials = ['A', 'A', 'A'];
+    }
     const name = initials.join('');
     const rank = S.rankFor(entry.mode, entry.score) >= 0 ? S.addScore(entry.mode, { name, score: entry.score, note: entry.note }) : -1;
     // a run that only made a crew's table shows that table; the rest show this device's
@@ -1527,6 +1542,14 @@ export function createFlow(ctx) {
   // ---- typing screens: a name, a crew name, a crew link, an email, a code ---------------------------------
   // One builder: a field, a message line, the on-screen keyboard (tap, mouse, or D-pad and A; pad X is
   // DEL), and OK / BACK. A physical keyboard types into it (onText above), and a paste goes in too.
+  /** the privacy notice and the house rules, as two small links (they open in a new tab: the game stays where it is) */
+  function legalLinks(lead = '') {
+    const box = el('div', 'fl-small fl-legal');
+    if (lead) box.append(lead + '  ');
+    const a = (text, path) => { const n = /** @type {HTMLAnchorElement} */ (el('a', '', text)); n.href = rootUrl(path).href; n.target = '_blank'; n.rel = 'noopener'; return n; };
+    box.append(a('PRIVACY', 'privacy/'), '  ·  ', a('HOUSE RULES', 'terms/'));
+    return box;
+  }
   let te = null;
   function textScreen(cls, o) {
     te = { value: o.value || '', max: o.max, lower: !!o.lower, accept: o.accept, valid: o.valid, submit: o.submit, paste: o.paste || null, busy: false, fieldEl: null, msgEl: null, okBtn: null };
@@ -1537,6 +1560,7 @@ export function createFlow(ctx) {
       me.fieldEl = el('div', `fl-field${me.lower ? ' fl-lower' : ''}`);
       me.msgEl = el('div', 'fl-small fl-temsg', o.msg || '');
       root.append(me.fieldEl, me.msgEl);
+      if (o.legal) root.appendChild(legalLinks(o.legal === true ? '' : o.legal));   // next to the field: what we keep, and the rules
       const extras = (o.extraKeys || []).map((ch) => ({ label: ch === ' ' ? 'SPACE' : ch, act: () => teType(ch), narrow: ch !== ' ' }));
       const kb = keyboard(o.keys, (ch) => teType(me.lower ? ch.toLowerCase() : ch), [...extras, { label: 'DEL', act: () => teType('DEL'), cls: 'fl-violet' }]);
       root.appendChild(kb.el);
@@ -1596,15 +1620,16 @@ export function createFlow(ctx) {
     textScreen('fl-name', {
       title: p.name && !p.auto ? 'CHANGE YOUR NAME' : 'WHAT DO WE CALL YOU?',
       label: 'YOUR NAME ONLINE  ·  3 TO 12 LETTERS OR NUMBERS',
-      msg: 'OTHER PLAYERS SEE THIS NAME, AND NOTHING ELSE ABOUT YOU',
+      msg: 'USE A NICKNAME, NOT YOUR REAL NAME. OTHER PLAYERS SEE IT, AND NOTHING ELSE ABOUT YOU',
       value: p.name, max: 12,
       keys: (ch) => /[A-Z0-9]/.test(ch), extraKeys: [' '],
       accept: (ch, v) => /^[A-Z0-9]$/.test(ch) || (ch === ' ' && v.length > 0 && !v.endsWith(' ')),
       valid: (v) => !!cleanName(v),
       okLabel: 'OK',
       // a returning player on a new device signs in instead (the name comes back with the profile)
-      more: p.name || p.email ? [] : [button('SIGN IN', () => { signInReturn = { then: nameThen, back: nameBack }; nameThen = null; nameBack = null; go('signInEmail'); }, 'fl-amber')],
+      more: p.name || p.email ? [] : [button('SIGN IN', () => { signInReturn = { then: nameThen, back: nameBack }; nameThen = null; nameBack = null; go('ageCheck'); }, 'fl-amber')],
       submit: (v) => {
+        if (blockedName(v)) { teSay(`${PICK_ANOTHER}: THAT ONE ISN'T ALLOWED`); return; }   // the name filter (src/namefilter.js)
         saveName(v);
         const name = profile().name;
         try { getNet().setName?.(name); } catch { /* stub */ }
@@ -1634,9 +1659,10 @@ export function createFlow(ctx) {
           if (!signOutArmed) { signOutArmed = true; acct.el.textContent = 'SIGN OUT? PRESS AGAIN'; return; }
           signOut().then(() => { profileMsg = 'SIGNED OUT: THIS DEVICE STARTS FRESH'; if (state === 'profile') { askName(() => go('profile'), () => go('onlineMenu')); } });
         }, 'fl-amber')
-        : button('SAVE MY PROFILE', () => go('signInEmail'), 'fl-amber');
+        : button('SAVE MY PROFILE', () => go('ageCheck'), 'fl-amber');
       const back = button('BACK', () => go('onlineMenu'), 'fl-violet');
       const items = btnRow(root, [name, acct, back, mainMenuBtn()], '17cqw');
+      root.appendChild(legalLinks(p.email ? 'WHAT WE KEEP:' : ''));
       return { items, focus: p.email ? 0 : 1, back: () => go('onlineMenu') };
     });
     profileMsg = '';
@@ -1651,10 +1677,46 @@ export function createFlow(ctx) {
     'too-many': 'TOO MANY TRIES: WAIT AN HOUR AND TRY AGAIN', busy: 'SERVER BUSY: TRY AGAIN SHORTLY', 'send-failed': "COULDN'T SEND THE EMAIL: TRY AGAIN IN A MINUTE",
     unreachable: "CAN'T REACH THE SERVER", 'other-email': 'THIS PROFILE IS SAVED TO ANOTHER EMAIL: SIGN IN WITH THAT ONE', expired: 'THAT CODE EXPIRED: SEND A NEW ONE', 'used-up': 'TOO MANY WRONG CODES: SEND A NEW ONE', 'bad-code': 'THE CODE IS 6 DIGITS',
   };
+  // The age question (README, Privacy and terms, The age question). Before the email field, every time: two
+  // answers side by side, the same size and color, and the focus on BACK, so nothing hints at the "right" one.
+  // UNDER 13 never reaches the email field: the profile stays on this device, the screen says so kindly, and this
+  // browser remembers the answer (stick-fight-age), so BACK and trying again lands here too. 13 OR OLDER goes on
+  // to the email as before and isn't remembered. Not legal advice: see the README.
+  const AGE_KEY = 'stick-fight-age';
+  const under13 = () => { try { return localStorage.getItem(AGE_KEY) === 'under13'; } catch { return ageMem; } };
+  let ageMem = false;
+  function screenAgeCheck() {
+    const kid = under13();
+    ui.show(`fl-age${kid ? ' fl-kid' : ''}`, (root) => {
+      root.append(el('h1', 'fl-h2', 'SAVE MY PROFILE'));
+      if (kid) {
+        root.append(el('div', 'fl-h3 fl-age-ok', 'YOU\'RE ALL SET. NO EMAIL NEEDED'),
+          el('div', 'fl-small fl-age-note', 'YOUR NAME AND SCORES STAY ON THIS DEVICE. ARCADE, HORDE, QUICK MATCHES AND CREWS ALL WORK WITHOUT AN EMAIL. USE A NICKNAME, NOT YOUR REAL NAME'));
+        const ok = button('OK', signInBack, 'fl-pink');
+        const items = btnRow(root, [ok, mainMenuBtn()], '18cqw');
+        root.appendChild(legalLinks('FOR PARENTS:'));
+        return { items, back: signInBack };
+      }
+      root.append(el('div', 'fl-label', 'FIRST: HOW OLD ARE YOU?'));
+      const pick = (isKid) => () => {
+        if (isKid) { try { localStorage.setItem(AGE_KEY, 'under13'); } catch { ageMem = true; } screenAgeCheck(); return; }
+        go('signInEmail');
+      };
+      const young = button('UNDER 13', pick(true), 'fl-age-a');
+      const old = button('13 OR OLDER', pick(false), 'fl-age-a');
+      const back = button('BACK', signInBack, 'fl-violet');
+      const items = btnRow(root, [young, old], '22cqw');
+      for (const b of items) b.el.style.width = '24cqw';   // the same size, whichever label is longer
+      btnRow(root, [back], '16cqw');
+      root.appendChild(legalLinks());
+      return { items: [...items, back], focus: 2, back: signInBack };
+    });
+  }
   function screenSignInEmail() {
     textScreen('fl-email', {
       title: 'SAVE MY PROFILE', label: 'YOUR EMAIL  ·  WE SEND YOU A 6-DIGIT CODE',
       msg: 'ONLY YOU SEE IT. NO PASSWORD, NO NEWSLETTER',
+      legal: true,
       value: signIn.email, max: 64, lower: true,
       keys: (ch) => /[A-Z0-9]/.test(ch), extraKeys: ['@', '.', '-', '_'],
       accept: (ch) => /^[a-z0-9@._+-]$/.test(ch),
@@ -1683,6 +1745,7 @@ export function createFlow(ctx) {
     textScreen('fl-code6', {
       title: 'ENTER THE CODE', label: signIn.email ? `SENT TO ${signIn.email}` : 'FROM YOUR EMAIL',
       msg: signIn.dev ? `DEV MODE: YOUR CODE IS ${signIn.dev}` : auto ? 'CHECKING THE CODE FROM YOUR EMAIL…' : 'CHECK YOUR EMAIL. THE CODE LASTS 10 MINUTES',
+      legal: true,
       value: signIn.code || '', max: 6,
       keys: (ch) => /[0-9]/.test(ch),
       accept: (ch) => /^[0-9]$/.test(ch),
@@ -1739,7 +1802,7 @@ export function createFlow(ctx) {
       paintBetween();
     });
     c.on('error', (reason) => {
-      const msg = { 'no-crew': 'NO CREW AT THAT LINK', 'crew-full': 'THIS CREW IS FULL (50 MEMBERS)', full: 'THIS CREW ROOM IS FULL RIGHT NOW', 'bad-hello': 'SET A NAME FIRST', busy: 'SERVER BUSY: TRYING AGAIN', flood: 'TOO MUCH TRAFFIC: RECONNECTING' }[reason] || 'SOMETHING WENT WRONG';
+      const msg = { 'no-crew': 'NO CREW AT THAT LINK', 'crew-full': 'THIS CREW IS FULL (50 MEMBERS)', full: 'THIS CREW ROOM IS FULL RIGHT NOW', 'bad-hello': 'SET A NAME FIRST', 'blocked-name': "THAT NAME ISN'T ALLOWED HERE: PICK ANOTHER UNDER ONLINE MENU, PROFILE", busy: 'SERVER BUSY: TRYING AGAIN', flood: 'TOO MUCH TRAFFIC: RECONNECTING' }[reason] || 'SOMETHING WENT WRONG';
       if (!c.active) { crewFail = msg; if (state === 'crewLobby') screenCrewLobby(); }
       else { crewNote = msg; if (lob) lob.noteUntil = performance.now() + 4000; if (state === 'crewLobby') paintLobby(); }
     });
@@ -1811,17 +1874,19 @@ export function createFlow(ctx) {
   function screenCrewCreate() {
     textScreen('fl-crewname', {
       title: 'NEW CREW ROOM', label: 'NAME YOUR CREW  ·  3 TO 20 LETTERS OR NUMBERS',
-      msg: 'YOU GET A LINK TO SHARE AND BOOKMARK. ANYONE WITH IT CAN JOIN',
+      msg: "USE A NICKNAME, NOT ANYONE'S REAL NAME. YOU GET A LINK TO SHARE, AND ANYONE WITH IT CAN JOIN",
+      legal: 'NO BULLYING IN CREW NAMES:',
       value: '', max: 20,
       keys: (ch) => /[A-Z0-9]/.test(ch), extraKeys: [' '],
       accept: (ch, v) => /^[A-Z0-9]$/.test(ch) || (ch === ' ' && v.length > 0 && !v.endsWith(' ')),
       valid: (v) => !!cleanName(v, 3, 20),
       okLabel: 'CREATE',
       submit: async (v) => {
+        if (blockedName(v)) { teSay(`${PICK_ANOTHER}: THAT ONE ISN'T ALLOWED`); return; }   // the name filter; the Worker checks too
         teSay('OPENING THE ROOM…', false);
         const r = await createCrewRoom(cleanName(v, 3, 20));
         if (state !== 'crewCreate') return;
-        if (r.error) { teSay(r.error === 'busy' ? 'SERVER BUSY: TRY AGAIN SHORTLY' : r.error === 'bad-name' ? 'THAT NAME WON\'T WORK' : "CAN'T REACH THE SERVER"); return; }
+        if (r.error) { teSay(r.error === 'busy' ? 'SERVER BUSY: TRY AGAIN SHORTLY' : r.error === 'bad-name' ? 'THAT NAME WON\'T WORK' : r.error === 'blocked-name' ? `${PICK_ANOTHER}: THAT ONE ISN'T ALLOWED` : "CAN'T REACH THE SERVER"); return; }
         rememberCrew(r.slug, r.name);
         openCrew(r.slug);
       },
@@ -1832,6 +1897,7 @@ export function createFlow(ctx) {
     textScreen('fl-crewjoin', {
       title: 'JOIN A CREW', label: 'PASTE THE CREW LINK, OR TYPE ITS CODE (LIKE TUESDAY-CREW-7K2QM)',
       msg: 'OPEN THE LINK YOUR FRIEND SENT, OR TYPE THE PART AFTER /CREW/',
+      legal: true,
       value: '', max: 40, lower: true,
       keys: (ch) => /[A-Z0-9]/.test(ch), extraKeys: ['-'],
       accept: (ch) => /^[a-z0-9-]$/.test(ch),

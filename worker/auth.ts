@@ -24,6 +24,7 @@
 // linkAccount() + createSession() as a verified code (it needs a Google OAuth client the owner
 // registers, so it isn't built).
 import { type Env, json, allowed, BUSY, sha256, PID_RE, cleanName, siteOrigin } from "./env";
+import { blockedName } from "../src/namefilter.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 30 * 1000;
@@ -229,7 +230,8 @@ async function linkAccount(env: Env, email: string, pid: unknown, name: unknown)
   }
   const id = typeof pid === "string" && PID_RE.test(pid) ? pid : newPid();
   if (await env.DB.prepare("SELECT 1 FROM accounts WHERE player_id = ?").bind(id).first()) return null;
-  const acct: Account = { email, player_id: id, name: cleanName(name) || "", crews: "[]", prefs: "{}" };   // prefs: the column's default
+  const clean = cleanName(name) || "";
+  const acct: Account = { email, player_id: id, name: blockedName(clean) ? "" : clean, crews: "[]", prefs: "{}" };   // a filtered name isn't saved   // prefs: the column's default
   await env.DB.prepare("INSERT INTO accounts (email, player_id, name, crews, created_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)")
     .bind(acct.email, acct.player_id, acct.name, acct.crews, now, now).run();
   return { acct, restored: id !== pid };
@@ -277,6 +279,7 @@ async function saveMe(req: Request, env: Env): Promise<Response> {
   if (!acct) return json({ error: "signed-out" });
   const name = body.name === undefined ? acct.name : cleanName(body.name);
   if (name === null) return json({ error: "bad-name" }, 400);
+  if (name !== acct.name && blockedName(name)) return json({ error: "blocked-name" }, 400);   // the name filter (src/namefilter.js)
   // the crew list merges: what this device knows plus what the account had, newest first
   const crews = body.crews === undefined ? parseCrews(acct.crews) : cleanCrews([...cleanCrews(body.crews), ...parseCrews(acct.crews)]);
   const prefs = body.prefs === undefined ? parsePrefs(acct.prefs) : mergePrefs(parsePrefs(acct.prefs), cleanPrefs(body.prefs));

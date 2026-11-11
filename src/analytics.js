@@ -13,7 +13,8 @@ import { linkFromUrl } from './links.js';
 const local = typeof window !== 'undefined' && /^(localhost|127\.)/.test(location.hostname);
 const forced = local && (() => { try { return localStorage.getItem('stick-fight-track') === '1'; } catch { return false; } })();
 const ok = typeof window !== 'undefined' && !new URLSearchParams(location.search).has('scene') && !window.__noAnalytics
-  && (forced || (location.protocol === 'https:' && !local && navigator.doNotTrack !== '1'));
+  // Do Not Track, or Global Privacy Control (the newer signal, navigator.globalPrivacyControl), turns them off (the privacy page says so)
+  && (forced || (location.protocol === 'https:' && !local && navigator.doNotTrack !== '1' && !(/** @type {any} */ (navigator).globalPrivacyControl)));
 
 /** Are events going out from this page? The online result a page reports to its room follows it too. */
 export const analyticsOn = ok;

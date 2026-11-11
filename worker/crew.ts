@@ -31,6 +31,7 @@ import { DurableObject } from "cloudflare:workers";
 import { type Env, claimRoom, sha256, PID_RE, cleanName, track } from "./env";
 import { isFighter } from "./roster";
 import { scoreCap, MAX_STAGE, MAX_FLOORS } from "../src/flow/scorecap.js";
+import { blockedName } from "../src/namefilter.js";
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const CREW_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -179,8 +180,10 @@ export class Crew extends DurableObject<Env> {
     if (m.t === "hello") return this.hello(ws, a, m);
     if (!a.mid) return;   // nothing before hello
     if (m.t === "name") {
-      const name = cleanName(m.name);
-      if (!name) return;
+      const sent = cleanName(m.name);
+      if (!sent) return;
+      if (blockedName(sent)) { this.send(ws, { t: "error", reason: "blocked-name" }); return; }   // the name filter: the old name stays
+      const name = this.heldName(a.mid, sent);
       this.ctx.storage.sql.exec("UPDATE members SET name = ? WHERE id = ?", name, a.mid);
       for (const w of this.sockets()) { const b = this.att(w); if (b.mid === a.mid) this.setAtt(w, { ...b, name }); }
       this.broadcast();
@@ -199,10 +202,13 @@ export class Crew extends DurableObject<Env> {
 
   private async hello(ws: WebSocket, a: Att, m: Record<string, unknown>) {
     const pid = typeof m.pid === "string" ? m.pid : "";
-    const name = cleanName(m.name);
-    if (!PID_RE.test(pid) || !name) { this.send(ws, { t: "error", reason: "bad-hello" }); try { ws.close(4000, "bad-hello"); } catch { /* gone */ } return; }
+    const sent = cleanName(m.name);
+    if (!PID_RE.test(pid) || !sent) { this.send(ws, { t: "error", reason: "bad-hello" }); try { ws.close(4000, "bad-hello"); } catch { /* gone */ } return; }
+    // a name off the filter's list (src/namefilter.js) doesn't come into the crew: the page asks for another
+    if (blockedName(sent)) { this.send(ws, { t: "error", reason: "blocked-name" }); try { ws.close(4000, "blocked-name"); } catch { /* gone */ } return; }
     // the member id: a hash of the player id, salted with the slug (the id itself is the player's key)
     const mid = (await sha256(`crew:${this.meta("slug")}:${pid}`)).slice(0, 16);
+    const name = this.heldName(mid, sent);
     const now = Date.now();
     const known = this.sql("SELECT 1 FROM members WHERE id = ?", mid).length > 0;
     if (!known && this.sql<{ n: number }>("SELECT COUNT(*) AS n FROM members")[0].n >= MAX_MEMBERS) {
@@ -400,6 +406,65 @@ export class Crew extends DurableObject<Env> {
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
     this.schema = false;
+  }
+
+  // ---- the admin route (worker/admin.ts): acting on a report (README, Privacy and terms, Admin) ----
+
+  /**
+   * A member the admin renamed keeps that name while their page still sends the old one (every
+   * hello and rename carries the page's own name). A new name the player picks replaces it.
+   */
+  private heldName(mid: string, sent: string): string {
+    const raw = this.meta(`held:${mid}`);
+    if (raw === null) return sent;
+    try {
+      const h = JSON.parse(raw) as { from: string; to: string };
+      if (h.from === sent) return h.to;
+    } catch { /* bad row: drop it */ }
+    this.ctx.storage.sql.exec("DELETE FROM meta WHERE k = ?", `held:${mid}`);
+    return sent;
+  }
+
+  /** the crew as the admin sees it: its name and every member's id and name, or null when there's no such crew */
+  async adminShow(): Promise<{ name: string; slug: string; created: number; expires: number; members: { id: string; name: string; seen: number }[] } | null> {
+    if (!this.exists()) return null;
+    return {
+      name: this.meta("name") || "", slug: this.meta("slug") || "", created: Number(this.meta("created") || 0), expires: Number(this.meta("expires") || 0),
+      members: this.sql<{ id: string; name: string; last_seen: number }>("SELECT id, name, last_seen FROM members ORDER BY last_seen DESC").map((r) => ({ id: r.id, name: r.name, seen: r.last_seen })),
+    };
+  }
+
+  /** a new name for the crew (its link keeps the old words: close the crew when the link is the problem) */
+  async adminRename(raw: string): Promise<string | null> {
+    if (!this.exists()) return null;
+    const name = cleanName(raw, 3, 20);
+    if (!name) return null;
+    this.setMeta("name", name);
+    this.broadcast();
+    return name;
+  }
+
+  /** a new name for one member, found by id or by the name they show; PLAYER when none is given */
+  async adminRenameMember(who: string, raw: string): Promise<{ id: string; from: string; to: string } | null> {
+    if (!this.exists()) return null;
+    const to = cleanName(raw || "PLAYER");
+    const key = String(who || "").trim();
+    const row = this.sql<{ id: string; name: string }>("SELECT id, name FROM members WHERE id = ? OR name = ? ORDER BY last_seen DESC LIMIT 1", key.toLowerCase(), cleanName(key) || "")[0];
+    if (!to || !row) return null;
+    this.ctx.storage.sql.exec("UPDATE members SET name = ? WHERE id = ?", to, row.id);
+    this.setMeta(`held:${row.id}`, JSON.stringify({ from: row.name, to }));
+    for (const w of this.sockets()) { const b = this.att(w); if (b.mid === row.id) this.setAtt(w, { ...b, name: to }); }
+    this.broadcast();
+    return { id: row.id, from: row.name, to };
+  }
+
+  /** close the crew now: everyone in the lobby is told NO CREW AT THAT LINK, and nothing is left in storage */
+  async adminClose(): Promise<boolean> {
+    this.ensure();
+    if (this.meta("name") === null) return false;
+    for (const w of this.ctx.getWebSockets()) { this.send(w, { t: "error", reason: "no-crew" }); try { w.close(4000, "no-crew"); } catch { /* gone */ } }
+    await this.wipe();
+    return true;
   }
 
   /** test hook (DEV_HOOKS=1 only, worker/index.ts): expire the crew now and run the alarm */
