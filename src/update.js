@@ -56,6 +56,8 @@ function paint() {
       .up-pill span { color: #0a0414; background: #ffb02e; padding: 3px 8px 1px; }
       .up-pill[hidden] { display: none; }
       /* held upright a menu fills the screen: the pill goes up to the top strip, left of the corner buttons, a thumb's size */
+      /* a phone sideways: the menu fills the screen, so the pill takes the bottom-left corner, smaller, clear of a centered menu */
+      @media (orientation: landscape) and (max-height: 500px) { .up-pill { bottom: max(8px, env(safe-area-inset-bottom)); left: max(8px, env(safe-area-inset-left)); right: auto; min-height: 40px; padding: 4px 10px 2px; font-size: 15px; } }
       html.sq .up-pill { top: calc(env(safe-area-inset-top) + 6px); bottom: auto; left: max(8px, env(safe-area-inset-left)); right: auto; min-height: 44px; }`;
     document.head.appendChild(st); document.body.appendChild(pill);
   }

@@ -1754,8 +1754,8 @@ export function createFlow(ctx) {
   }
   function screenCrewJoin() {
     textScreen('fl-crewjoin', {
-      title: 'JOIN A CREW', label: 'PASTE THE CREW LINK, OR TYPE ITS CODE (LIKE TUESDAY-CREW-7K2QM)',
-      msg: 'OPEN THE LINK YOUR FRIEND SENT, OR TYPE THE PART AFTER CREW=',
+      title: 'JOIN A CREW', label: 'PASTE THE CREW LINK, OR TYPE ITS CODE',   // (one line that clears the corner buttons on a small phone held sideways)
+      msg: 'THE CODE IS THE PART AFTER CREW=, LIKE TUESDAY-CREW-7K2QM',
       value: '', max: 40, lower: true,
       keys: (ch) => /[A-Z0-9]/.test(ch), extraKeys: ['-'],
       accept: (ch) => /^[a-z0-9-]$/.test(ch),

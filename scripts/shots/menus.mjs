@@ -146,6 +146,10 @@ function audit({ upright, textMin, tapMin }) {
           const fpx = parseFloat(getComputedStyle(n).fontSize) * (n.currentCSSZoom || 1);
           if (/hidden|clip/.test(getComputedStyle(n).overflowY) && r.height < fpx * 0.85) out.push(`CUT OFF ${name(n)}: ${Math.round(fpx)} px letters in a ${Math.round(r.height)} px box`);
           ta = cut(u, a); if (area(ta) <= 0) continue;   // clipped text (an ellipsis) ends at its box
+          // the letters, not the line box: a glyph range is the font's whole ascent to descent (Bungee's is half again
+          // its capitals), so it's narrowed to the middle 0.8 em, where capitals and digits sit
+          const mid = (ta.t + ta.b) / 2, half = Math.min((ta.b - ta.t) / 2, fpx * 0.4);
+          ta = { l: ta.l, r: ta.r, t: mid - half, b: mid + half };
         }
       }
       items.push({ n, a: ta || a, box: box, press, text, scr, sc });
@@ -262,8 +266,8 @@ for (const size of SIZES) {
     const tile = await page.$('#flow .fl-qrtile');
     if (!tile) { report(label, ['QR: no tile']); return; }
     const box = await tile.boundingBox();
+    if (!size.upright) return;   // (sideways the tile is sized to the 16:9 stage, as before: 120 to 135 px on a phone)
     if (box.width < 140) report(label, [`QR: ${Math.round(box.width)} px, under 140`]);
-    if (!size.upright) return;
     // a phone camera sees the screen at its real pixels: take it at 1x CSS px, the worst case
     const buf = await page.screenshot({ clip: { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 }, scale: 'css' });
     const got = await page.evaluate(async (b64) => {
@@ -360,7 +364,12 @@ for (const size of SIZES) {
       await R.goto(URL_);
       await R.waitForFunction(() => window.__flow && window.__flow.state === 'attract');
       await R.evaluate(() => { const f = window.__flow.debug; f.go('modeSelect'); f.go('onlineMenu'); f.go('onlineHost'); });
-      const code = await until(() => R.evaluate(() => (window.__net.state === 'waiting' && window.__net.code) || null));
+      let code = await until(() => R.evaluate(() => (window.__net.state === 'waiting' && window.__net.code) || null));
+      if (!code) {   // the room didn't open (the local Worker's 10 new rooms a minute): wait it out and host again
+        await sleep(30000);
+        await R.evaluate(() => { const f = window.__flow.debug; f.go('onlineMenu'); f.go('onlineHost'); });
+        code = await until(() => R.evaluate(() => (window.__net.state === 'waiting' && window.__net.code) || null));
+      }
       await go('modeSelect', 'onlineMenu', 'onlineJoin');
       for (let k = 0; k < 4; k++) await page.keyboard.press('Backspace');   // the code typed last time is still there
       await page.keyboard.type(String(code || 'ZZZZ'));

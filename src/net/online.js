@@ -799,7 +799,7 @@ function injectStyle() {
     color: #9df8ff; animation: nf-blink 1.1s steps(1) infinite; }
   @keyframes nf-blink { 70% { opacity: 0.35; } }
   .nf-panel { position: relative; padding-bottom: clamp(40px, 9vmin, 56px); }
-  .nf-panel .lg-bar { --lg-size: clamp(13px, 2.6vmin, 18px); bottom: clamp(10px, 2.2vmin, 16px); }
+  .nf-panel .lg-bar { --lg-size: clamp(13px, 2.6vmin, 18px); bottom: clamp(10px, 2.2vmin, 16px); gap: 1.2em; max-width: calc(100% - 16px); }   /* (at the legend's usual 2.4em gaps, LEAVE / STAY's three actions ran past both sides of the panel) */
   .nf-row, .nf-col { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   .nf-col { flex-direction: column; align-items: stretch; }
   .nf-btn { --c: var(--cyan); appearance: none; cursor: pointer; min-height: 44px; padding: 6px 18px; border-radius: 2px;
