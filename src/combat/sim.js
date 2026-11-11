@@ -947,7 +947,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.wakeUp = fd0.wake ? 1 : 0;
     u.state = 'attack'; u.move = move; u.phase = 'startup'; u.hitConfirmed = false; u.attackId++; u.launchCancelAt = 0; u.otgConfirm = false;
     u.attackStart = sim.stepCount; u.crouch = !!fd0.tc; u.activeAt = -1; u.recoverAt = -1;
-    u.lowStance = !!fd0.tc && !fd0.travel && !!u.downHeld && u.grounded;   // a crouching attack thrown with down held: letting go of down in it is rising (risingNow)
+    u.lowStance = !!fd0.tc && !fd0.travel && !fd0.ender && !!u.downHeld && u.grounded;   // a crouching attack thrown with down held (never an ender or a slide): letting go of down in it is rising (risingNow)
     // throws whiff on a croucher (crouch beats throws, mids beat crouch)
     u.grabOK = !!fd0.throw && opp && Math.abs(opp.x - u.x) <= (fd0.range || FRAME_DATA.throw.range) && !opp.crouch;
     u.armorLeft = fd0.armor ? (fd0.armor.hits || 1) : 0; u.hitN = 0; u.hitKey = 0;   // character hooks: armor, multi-hit

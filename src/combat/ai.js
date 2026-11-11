@@ -597,9 +597,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // showcase: at the tip of his reach, step back so it whiffs (the punish reflex takes it from there)
       if (show && dist > reach(opp.move) - 20 && opp.move !== 'throw' && chance(0.45)) { queue = [move(-toward, 10 + irnd(6))]; act = null; }
       else if (chance(show ? 0.7 : 0.1 + 0.5 * difficulty + (turtle ? 0.15 : rush ? -0.1 : 0))) {
-        // a duck under a high, and up out of it with a rising attack: a launcher (2 or 4) from close, the rising kick or jab from a step further
+        // a duck under a high, and up out of it with a rising attack: a launcher (2 or 4) from close, the rising kick or jab from a step further (never at the bottom of the ladder, 40% at THE MANAGER's 0.8)
         if (guess === 'high' || guess === 'throw') queue = dist < reach('risingKnee') + 10 && chance(0.6) ? [duck(16 + irnd(6)), { ...press(chance(0.5) ? '4' : '2'), ok: true }]
-          : dist < reach('risingKick') - 6 && chance(0.2 + 0.4 * difficulty) ? [duck(16 + irnd(6)), { ...press(chance(0.65) ? '3' : '1'), ok: true }] : [duck(18 + irnd(8))];
+          : dist < reach('risingKick') - 6 && chance(show ? 0.5 : Math.max(0, difficulty - 0.3) * 0.8) ? [duck(16 + irnd(6)), { ...press(chance(0.65) ? '3' : '1'), ok: true }] : [duck(18 + irnd(8))];
         else if (guess === 'low') queue = [lowGuard(18 + irnd(10))];
         else queue = [blockFor(18 + irnd(10))];
         act = null;

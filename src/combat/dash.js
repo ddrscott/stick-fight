@@ -74,7 +74,7 @@ const CLIPS = {
   ] },
   // release ↓, 1: the lead fist drives up and out of the crouch into the chest as the knees straighten. Mid.
   risingJab: { blend: 40, limb: 'lHand', height: 'mid', keys: [
-    K({ ...crouchP, ...F(-1, CH + 2, LF + 2, RF - 2), torso: 16, la: [36, 150] }, 40, 'in'),
+    K({ ...crouchP, ...F(-1, CH + 2, LF + 2, RF - 2), torso: 16, la: [36, 150] }, 70, 'in'),
     K({ ...F(4, CH + 8, LF + 2, RF - 2), torso: 18, bend: 5, head: -8, tw: -6, la: [58, 100], ra: [28, 166] }, 40, 'linear'),
     K({ ...F(9, HIP - 4, LF + 2, RF - 2), torso: 20, bend: 4, head: -8, tw: -12, la: [80, 82], ra: [32, 164] }, 40, 'out', 'active'),
     K({ ...F(9, HIP - 3, LF + 2, RF - 2), torso: 20, bend: 4, head: -7, tw: -12, la: [81, 83], ra: [32, 164] }, 50, 'inOut'),
@@ -85,7 +85,7 @@ const CLIPS = {
   // release ↓, 3: out of the crouch the lead knee chambers as he stands and the foot snaps out at the belt,
   // the torso leaning away from it; rechamber and plant. Mid.
   risingKick: { blend: 40, limb: 'lFoot', height: 'mid', keys: [
-    K({ ...crouchP, hx: -3, rl: L(-3, CH + 2, RF - 2), ll: [50, -40], torso: 14, head: -6 }, 50, 'in'),
+    K({ ...crouchP, hx: -3, rl: L(-3, CH + 2, RF - 2), ll: [50, -40], torso: 14, head: -6 }, 80, 'in'),
     K({ hx: 0, rl: L(0, HIP - 6, RF), ll: [98, -10], torso: 0, bend: 0, head: 4, tw: 2, la: [30, 160], ra: [22, 168] }, 40, 'linear'),
     K({ hx: 13, rl: L(13, HIP, RF), ll: [96, 92], torso: -18, bend: -4, head: 12, tw: -4, la: [20, 165], ra: [10, 170] }, 40, 'out', 'active'),
     K({ hx: 13.5, rl: L(13.5, HIP + 0.5, RF), ll: [98, 95], torso: -19, bend: -4, head: 12, tw: -4, la: [20, 165], ra: [10, 170] }, 60, 'inOut'),
@@ -98,7 +98,8 @@ const CLIPS = {
 
 // What each is for, and what it gives up (README has the measured frames):
 //   bulletJab    the fast way in: live about as soon as a jab, with the dash's ground under it. High (a crouch
-//                ducks it), and blocked he's stuck in a longer recovery than a jab's.
+//                ducks it), and blocked it isn't bounced off the guard like other strikes (blockPush 0): he's left
+//                standing in jab range through a long recovery.
 //   skidKick     the low off a dash, for a standing guard. No knockdown, and blocked low (down-back) it has no
 //                blockstun at all: the whole recovery is open.
 //   runningBoot  the mid off a dash: beats a crouch, knocks down and shoves him a long way. The slowest of the
@@ -107,8 +108,8 @@ const CLIPS = {
 //   risingKick   the lead kick out of the rise, the second hit of ↓1, release ↓, 3. More damage and a push; a
 //                jab punishes it blocked.
 const FRAMES = {
-  bulletJab:   { limb: 'hand', damage: 7,  kb: { x: 320, y: 0 },   hitstun: 26, blockstun: 8,  hitstop: 5, height: 'high', travel: { vx: 520, at: 40, ms: 110 }, cost: 19, reach: 95, flashR: 36 },
-  skidKick:    { limb: 'foot', damage: 8,  kb: { x: 0, y: 0 },     hitstun: 24, blockstun: 0,  hitstop: 5, height: 'low',  travel: { vx: 460, at: 50, ms: 150 }, cost: 20, reach: 85, flashR: 24 },
+  bulletJab:   { limb: 'hand', damage: 7,  kb: { x: 320, y: 0 },   hitstun: 26, blockstun: 4,  hitstop: 5, height: 'high', travel: { vx: 520, at: 40, ms: 110 }, blockPush: 0, cost: 19, reach: 95, flashR: 36 },
+  skidKick:    { limb: 'foot', damage: 8,  kb: { x: 0, y: 0 },     hitstun: 30, blockstun: 0,  hitstop: 5, height: 'low',  travel: { vx: 460, at: 50, ms: 150 }, cost: 20, reach: 85, flashR: 24 },
   runningBoot: { limb: 'foot', damage: 13, kb: { x: 620, y: 200 }, hitstun: 0,  blockstun: 14, hitstop: 8, knockdown: true, height: 'mid', travel: { vx: 480, at: 40, ms: 170 }, cost: 24, reach: 100, flashR: 32 },
   risingJab:   { limb: 'hand', damage: 7,  kb: { x: 0, y: 0 },     hitstun: 22, blockstun: 8,  hitstop: 5, height: 'mid', cost: 17, reach: 80, flashR: 30 },
   risingKick:  { limb: 'foot', damage: 11, kb: { x: 260, y: 0 },   hitstun: 28, blockstun: 10, hitstop: 6, height: 'mid', cost: 22, reach: 85, flashR: 30 },
