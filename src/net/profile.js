@@ -11,8 +11,9 @@
 // never set a size takes the account's; after that whichever was changed last wins, here and on
 // the server. Signed out, the size lives in localStorage alone.
 //
-//   profile()                 { id, name, email, crews: [{ slug, name, at }] }
+//   profile()                 { id, name, auto, email, crews: [{ slug, name, at }] }   (auto: the name was handed out)
 //   setName(name)             saves it (and to the account when signed in); false if it isn't a name
+//   guestName()               a player with no name gets one (GUEST 427), so a join link asks nothing
 //   rememberCrew(slug, name)  puts a crew at the top of the list
 //   syncProfile()             asks the server who's signed in here (the session cookie) and adopts it
 //   startSignIn(email)        { ok, devCode?, devLink? } or { error }
@@ -41,6 +42,7 @@ function read() {
   if (!p && memory) p = memory;
   if (!p || typeof p !== 'object' || !ID_RE.test(p.id)) p = { id: newId(), name: '', email: '', crews: [] };
   p.name = cleanName(p.name) || '';
+  p.auto = !!p.auto && !!p.name;   // the name was handed out by guestName(), not picked
   p.email = typeof p.email === 'string' ? p.email : '';
   p.crews = Array.isArray(p.crews) ? p.crews.filter((c) => c && typeof c.slug === 'string' && typeof c.name === 'string').slice(0, MAX_CREWS) : [];
   return p;
@@ -73,9 +75,21 @@ async function api(path, method = 'GET', body) {
 export function setName(name) {
   const n = cleanName(name);
   if (!n) return false;
-  const p = read(); p.name = n; write(p);
+  const p = read(); p.name = n; p.auto = false; write(p);
   if (p.email) api('me', 'PUT', { name: n }).catch(() => {});
   return true;
+}
+
+/**
+ * A join link asks nothing: a player with no name yet is handed one (GUEST and three digits) and
+ * goes straight in. It's marked `auto` until they pick their own (PROFILE, CHANGE NAME), and it stays
+ * on this device: an account that has no name doesn't get this one. Returns the name in use.
+ */
+export function guestName() {
+  const p = read();
+  if (p.name) return p.name;
+  p.name = `GUEST ${100 + Math.floor(Math.random() * 900)}`; p.auto = true; write(p);
+  return p.name;
 }
 
 /** a crew at the top of the list (and on the account when signed in) */
@@ -95,14 +109,14 @@ function adopt(acct) {
   const crews = [...(acct.crews || []), ...p.crews];
   const merged = [];
   for (const c of crews.sort((a, b) => (b.at || 0) - (a.at || 0))) if (!merged.some((m) => m.slug === c.slug)) merged.push(c);
-  write({ id: acct.pid, name: cleanName(acct.name) || p.name, email: acct.email, crews: merged.slice(0, MAX_CREWS) });
+  write({ id: acct.pid, name: cleanName(acct.name) || p.name, auto: p.auto && !cleanName(acct.name), email: acct.email, crews: merged.slice(0, MAX_CREWS) });
   // the touch-control size: the account's when this device never set one, else the newer of the two
   const touch = mergeTouchPref(acct.prefs && acct.prefs.touch);
   // anything this device knew that the account didn't goes up too (and a name the account lacks)
   const extra = p.crews.filter((c) => !(acct.crews || []).some((a) => a.slug === c.slug));
   const up = {};
   if (extra.length) up.crews = extra;
-  if (!cleanName(acct.name) && p.name) up.name = p.name;
+  if (!cleanName(acct.name) && p.name && !p.auto) up.name = p.name;
   if (touch === 'push') up.prefs = { touch: touchPref() };
   if (Object.keys(up).length) api('me', 'PUT', up).catch(() => {});
   return restored;
