@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Neon Stick Fight</title>
 <meta name="description" content="Play Neon Stick Fight in your browser: a stick-figure fighting game with an arcade ladder, horde floors and online versus.">
-<link rel="canonical" href="https://askscottpierce.com/stick-fight/play/">
+<link rel="canonical" href="https://neonstickfight.com/play/">
 <!-- share preview. For ?crew= and ?room= links the Worker swaps these for the room's own (worker/og.ts) -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Neon Stick Fight">
 <meta property="og:title" content="Neon Stick Fight">
 <meta property="og:description" content="A temp's climb to the corner office, one stick-figure fistfight at a time. Free in your browser, on your phone, and online against a coworker.">
-<meta property="og:url" content="https://askscottpierce.com/stick-fight/play/">
-<meta property="og:image" content="https://askscottpierce.com/stick-fight/og.jpg">
+<meta property="og:url" content="https://neonstickfight.com/play/">
+<meta property="og:image" content="https://neonstickfight.com/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="COURIER lands a string on a fainted SECURITY in a neon office hallway">
@@ -43,22 +43,23 @@
   #hud { pointer-events: none; }
   /* attract mode (the demo bout): no touch controls until a tap starts the game */
   html.attract .tc-root { display: none; }
-  /* source and credits link, shown only on the attract screen, just above the DEMO tag */
-  #credits { display: none; position: absolute; right: 2.2%; bottom: 9%; font: 500 15px/1 'Teko', sans-serif; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-decoration: none; padding: 4px 6px; }
-  #credits:hover { color: #4df3ff; }
+  /* the source and credits, privacy and house rules links, shown only on the attract screen, just above the DEMO tag */
+  #credits { display: none; position: absolute; right: 2.2%; bottom: 9%; font: 500 15px/1 'Teko', sans-serif; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); }
+  #credits a { color: inherit; text-decoration: none; padding: 4px 6px; display: inline-block; }
+  #credits a:hover { color: #4df3ff; }
   html.attract #credits { display: block; }
   /* the arcade flow (src/flow/): touch controls only while fighting (or while the settings panel
      previews their size: .tc-preview, src/audio/ui.js), no HORDE hotkey button (the mode select has HORDE), and the credits link only on the title screen, above the flow's overlay */
   html.flow-on:not(.fl-play):not(.tc-preview) .tc-stickzone, html.flow-on:not(.fl-play):not(.tc-preview) .tc-cluster { display: none !important; }
   html.flow-on .tc-top [data-tap="KeyG"] { display: none; }
   html.fl-attract #credits { display: block; z-index: 6; }</style>
-<script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
+<script defer data-domain="neonstickfight.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
 </head>
 <body>
 <div id="stage">
   <canvas id="game"></canvas>
   <canvas id="hud"></canvas>
-  <a id="credits" href="https://github.com/ddrscott/stick-fight#license-and-credits" target="_blank" rel="noopener">SOURCE &amp; CREDITS</a>
+  <div id="credits"><a href="https://github.com/ddrscott/stick-fight#license-and-credits" target="_blank" rel="noopener">SOURCE &amp; CREDITS</a>·<a href="../privacy/" target="_blank" rel="noopener">PRIVACY</a>·<a href="../terms/" target="_blank" rel="noopener">HOUSE RULES</a></div>
 </div>
 <script type="module" src="../src/install.js"></script>
 <script type="module" src="../src/update.js"></script>

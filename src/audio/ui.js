@@ -17,6 +17,7 @@
 // touchmove on the page and a native range input on Android needs those. The panel itself is a
 // data-scroll box (touch.js), so where it's taller than the screen a finger scrolls it.
 
+import { rootUrl } from '../root.js';   // the privacy and house rules pages, at the site's root
 import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 import { MENU_ICON, cornerButton, cornerRow } from '../corner.js';
@@ -57,7 +58,8 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
       </div>
     </div>
     <p class="sf-keys">M MUSIC ON/OFF &nbsp; N NEXT TRACK</p>
-    <p class="sf-credit">MUSIC MADE WITH <a href="https://strudel.cc" target="_blank" rel="noopener">STRUDEL</a> (<a href="https://codeberg.org/uzu/strudel" target="_blank" rel="noopener">AGPL-3.0</a>) &nbsp;·&nbsp; GAME <a href="https://github.com/ddrscott/stick-fight" target="_blank" rel="noopener">SOURCE</a></p>`;
+    <p class="sf-credit">MUSIC MADE WITH <a href="https://strudel.cc" target="_blank" rel="noopener">STRUDEL</a> (<a href="https://codeberg.org/uzu/strudel" target="_blank" rel="noopener">AGPL-3.0</a>) &nbsp;·&nbsp; GAME <a href="https://github.com/ddrscott/stick-fight" target="_blank" rel="noopener">SOURCE</a></p>
+    <p class="sf-credit sf-legal"><a href="${rootUrl('privacy/').href}" target="_blank" rel="noopener">PRIVACY</a> &nbsp;·&nbsp; <a href="${rootUrl('terms/').href}" target="_blank" rel="noopener">HOUSE RULES</a></p>`;
   panel.dataset.scroll = 'y';   // taller than the screen (a phone sideways with Safari's bars up), it scrolls by finger: touch.js
   document.body.appendChild(panel);
   const $ = (s) => panel.querySelector(s);

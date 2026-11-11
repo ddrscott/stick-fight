@@ -3,27 +3,28 @@
 // localStorage. SAVE MY PROFILE links that id to an email, so signing in on another device
 // restores the same id (and with it the name, the crew list and every crew record).
 //
-//   POST /stick-fight/api/auth/start   { email }                    -> { ok } (dev: + devCode, devLink)
-//   POST /stick-fight/api/auth/verify  { email, code, pid, name }   -> { email, pid, name, crews, prefs, restored } + cookie
-//   GET  /stick-fight/api/me                                        -> { email, pid, name, crews, prefs } | null
-//   PUT  /stick-fight/api/me           { name?, crews?, prefs? }    -> { ok }
+//   POST /api/auth/start               { email }                    -> { ok } (dev: + devCode, devLink)
+//   POST /api/auth/verify              { email, code, pid, name }   -> { email, pid, name, crews, prefs, restored } + cookie
+//   GET  /api/me                                                    -> { email, pid, name, crews, prefs } | null
+//   PUT  /api/me                       { name?, crews?, prefs? }    -> { ok }
 //
 // prefs is a small JSON object of settings that follow the account (migrations/0002_prefs.sql).
 // Only known keys with values in range are kept (cleanPrefs); today that's the touch-control size.
-//   POST /stick-fight/api/auth/logout                               -> { ok }, cookie cleared
+//   POST /api/auth/logout                                           -> { ok }, cookie cleared
 //
 // The code is 6 digits, lasts 10 minutes and takes 5 tries; the email also carries a link to the
 // page with the code in the fragment, which the page submits from JavaScript, so a mail scanner
 // that opens links can't use it up. Only hashes of codes and session tokens are stored. Sends are
 // capped per email (one per 30 s, 5 an hour) and per IP (20 an hour), guesses per email (10 an
 // hour, 20 a day) and per IP (30 an hour), on top of the AUTH_LIMIT binding (20 calls a minute
-// per IP). The session is a 30-day HttpOnly cookie scoped to Path=/stick-fight, because the
-// askscottpierce.com origin is shared with other apps. Emails never go to anyone but their owner.
+// per IP). The session is a 30-day HttpOnly cookie, Path=/ on neonstickfight.com (the old
+// address, askscottpierce.com/stick-fight, scopes it to Path=/stick-fight: worker/index.ts oldPath). Emails never go to anyone but their owner.
 //
 // Google sign-in would plug in beside this: an OAuth callback that ends in the same
 // linkAccount() + createSession() as a verified code (it needs a Google OAuth client the owner
 // registers, so it isn't built).
-import { type Env, json, allowed, BUSY, sha256, PID_RE, cleanName } from "./env";
+import { type Env, json, allowed, BUSY, sha256, PID_RE, cleanName, siteOrigin } from "./env";
+import { blockedName } from "../src/namefilter.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 30 * 1000;
@@ -72,7 +73,7 @@ function cookieValue(req: Request, name: string): string | null {
 }
 function sessionCookie(req: Request, token: string, maxAge: number): string {
   const secure = new URL(req.url).protocol === "https:" ? "; Secure" : "";
-  return `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/stick-fight; Max-Age=${maxAge}${secure}`;
+  return `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`;
 }
 /** the crew list as stored: at most MAX_CREWS well-formed entries, newest first */
 function cleanCrews(raw: unknown): CrewRef[] {
@@ -166,13 +167,15 @@ async function start(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const fragment = `#signin=${encodeURIComponent(email)}&code=${code}`;
   if (env.DEV_LOGIN_CODES === "1") {
-    // dev: the page shows the code; the link points at the page that asked (Vite serves the game at /play/)
-    let page = `${url.origin}/stick-fight/play/`;
+    // dev: the page shows the code; the link points at the page that asked (Vite serves the game at /play/),
+    // else at the game where the real email's link would
+    let page = `${siteOrigin(url)}/play/`;
     try { const p = new URL(String(body.page || "")); if (p.protocol === "http:" || p.protocol === "https:") page = p.origin + p.pathname; } catch { /* default */ }
     console.log(`[dev] sign-in code for ${email}: ${code}`);
     return json({ ok: true, devCode: code, devLink: page + fragment });
   }
-  const link = `${url.origin}/stick-fight/play/${fragment}`;   // the game; the homepage forwards an old #signin link there too
+  // the game on neonstickfight.com, whichever address asked (the homepage forwards an old #signin link there too)
+  const link = `${siteOrigin(url)}/play/${fragment}`;
   try {
     await env.EMAIL.send({
       from: { email: env.EMAIL_FROM, name: "Neon Stick Fight" },
@@ -227,7 +230,8 @@ async function linkAccount(env: Env, email: string, pid: unknown, name: unknown)
   }
   const id = typeof pid === "string" && PID_RE.test(pid) ? pid : newPid();
   if (await env.DB.prepare("SELECT 1 FROM accounts WHERE player_id = ?").bind(id).first()) return null;
-  const acct: Account = { email, player_id: id, name: cleanName(name) || "", crews: "[]", prefs: "{}" };   // prefs: the column's default
+  const clean = cleanName(name) || "";
+  const acct: Account = { email, player_id: id, name: blockedName(clean) ? "" : clean, crews: "[]", prefs: "{}" };   // a filtered name isn't saved   // prefs: the column's default
   await env.DB.prepare("INSERT INTO accounts (email, player_id, name, crews, created_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)")
     .bind(acct.email, acct.player_id, acct.name, acct.crews, now, now).run();
   return { acct, restored: id !== pid };
@@ -275,6 +279,7 @@ async function saveMe(req: Request, env: Env): Promise<Response> {
   if (!acct) return json({ error: "signed-out" });
   const name = body.name === undefined ? acct.name : cleanName(body.name);
   if (name === null) return json({ error: "bad-name" }, 400);
+  if (name !== acct.name && blockedName(name)) return json({ error: "blocked-name" }, 400);   // the name filter (src/namefilter.js)
   // the crew list merges: what this device knows plus what the account had, newest first
   const crews = body.crews === undefined ? parseCrews(acct.crews) : cleanCrews([...cleanCrews(body.crews), ...parseCrews(acct.crews)]);
   const prefs = body.prefs === undefined ? parsePrefs(acct.prefs) : mergePrefs(parsePrefs(acct.prefs), cleanPrefs(body.prefs));
@@ -289,7 +294,7 @@ async function logout(req: Request, env: Env): Promise<Response> {
   return json({ ok: true }, 200, { "set-cookie": sessionCookie(req, "", 0) });
 }
 
-/** The profile routes (parts after /stick-fight/api/), or null when it isn't one of them. */
+/** The profile routes (parts after /api/), or null when it isn't one of them. */
 export async function handleAuth(req: Request, env: Env, parts: string[]): Promise<Response | null> {
   const route = `${req.method} ${parts.join("/")}`;
   const routes: Record<string, (req: Request, env: Env) => Promise<Response>> = {

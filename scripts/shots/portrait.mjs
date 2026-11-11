@@ -53,7 +53,7 @@ if (argv[0] === '--same') process.exit(same(argv[1], argv[2]));
 const OUT = path.resolve(opt('--out', 'gauntlet/tmp/portrait'));
 const root = path.resolve(opt('--dist', path.join(here, '../../dist')));
 const ONLY = opt('--only', ''), PICK = opt('--shots', ''), CHECK = argv.includes('--check');
-if (!fs.existsSync(path.join(root, 'stick-fight/play/index.html'))) { console.error('no build: run npm run build first'); process.exit(2); }
+if (!fs.existsSync(path.join(root, 'play/index.html'))) { console.error('no build: run npm run build first'); process.exit(2); }
 fs.mkdirSync(OUT, { recursive: true });
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' };
@@ -65,7 +65,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', () => r(null)));
-const base = `http://127.0.0.1:${/** @type {any} */ (server.address()).port}/stick-fight/play/`;
+const base = `http://127.0.0.1:${/** @type {any} */ (server.address()).port}/play/`;
 const browser = await chromium.launch({ headless: true, executablePath, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let bad = 0;

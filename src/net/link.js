@@ -34,7 +34,7 @@ export async function fetchIceServers() {
   return ICE_SERVERS;
 }
 
-/** The API base: under the app's root (src/root.js), so it works at /stick-fight/ and on the dev server. */
+/** The API base: under the app's root (src/root.js), so it works at any path, the dev server included. */
 export function apiUrl(path, ws = false) {
   const u = rootUrl('api/' + path);
   if (ws) u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';

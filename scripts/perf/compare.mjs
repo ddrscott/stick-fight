@@ -17,6 +17,7 @@ const [other, out] = argv;
 fs.mkdirSync(out, { recursive: true });
 const mine = opt('--mine') ? path.resolve(opt('--mine')) : path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../dist');
 function serve(root) {
+  if (fs.existsSync(path.join(root, 'stick-fight', 'play'))) root = path.join(root, 'stick-fight');   // a build from before the move to neonstickfight.com
   const s = http.createServer((req, res) => {
     let p = path.join(root, decodeURIComponent(req.url.split('?')[0]));
     if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
@@ -46,7 +47,7 @@ for (const [name, q, ms] of SHOTS) {
     const page = await ctx.newPage();
     // every random draw seeded the same in both builds (particles, rain, the attract pick), so only the drawing differs
     await page.addInitScript(() => { let a = 12345; Math.random = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; });
-    await page.goto(`http://127.0.0.1:${srv.address().port}/stick-fight/play/?${q}&tier=${tier}${opt('--query', '')}`);
+    await page.goto(`http://127.0.0.1:${srv.address().port}/play/?${q}&tier=${tier}${opt('--query', '')}`);
     await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
     await page.evaluate(([q, ms]) => { const s = new URLSearchParams(q).get('scene'); window.__gauntlet.setScene(s); window.__game.fx.seed(1); window.__game.fx.particles.clear(); window.__game.arena.time = 0; for (let t = 0; t < ms; t += 1000 / 60) window.__gauntlet.step(1000 / 60); }, [q, ms]);
     const f = path.join(out, `${name}-${i ? 'after' : 'before'}.png`);

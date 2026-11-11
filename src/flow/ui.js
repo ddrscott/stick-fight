@@ -291,6 +291,12 @@ function injectStyle() {
   .fl-table .fl-score { text-align: right; font-variant-numeric: tabular-nums; }
   .fl-table .fl-note { font-size: 2.2cqw; color: rgba(214,190,255,0.7); }
   .fl-table .fl-new { color: #ffc2f3; animation: fl-blink 0.9s steps(1) infinite; }
+  /* a crew's table (src/net/crewScores.js): ten rows, with the fighter in its neon */
+  .fl-table.fl-table5 { grid-template-columns: auto auto auto auto auto; font-size: 2.4cqw; row-gap: 0.2cqh; column-gap: 2.4cqw; }
+  .fl-table5 .fl-note { font-size: 1.8cqw; }
+  .fl-table .fl-fighter { font-size: 1.9cqw; color: color-mix(in srgb, var(--fc, var(--violet)) 55%, #fff); }
+  .fl-table .fl-empty { grid-column: 1 / -1; text-align: center; }
+  .fl-crewpost { color: var(--amber); letter-spacing: 0.08em; }
 
   /* stage card */
   .fl-stage { gap: 1.2cqh; }
@@ -506,6 +512,14 @@ function injectStyle() {
   .fl-pemail { text-transform: none; letter-spacing: 0.08em; }
   .fl-profile .fl-small { max-width: 70cqw; }
 
+  /* the privacy and house rules links (index.js legalLinks), and the age question before an email */
+  .fl-legal { pointer-events: auto; }
+  .fl-legal a { color: #4df3ff; text-decoration: none; border-bottom: 1px solid rgba(77,243,255,0.4); padding: 0.4cqw 0.2cqw; }
+  .fl-legal a:hover, .fl-legal a:focus-visible { color: #fff; border-bottom-color: #fff; }
+  .fl-age-note { max-width: 66cqw; line-height: 1.3; }
+  .fl-age-ok { max-width: 70cqw; line-height: 1.15; }
+  .fl-inimsg { min-height: 2.2cqw; }
+
   /* the crew lobby: standings on the left, PLAY and the link on the right */
   .fl-crew { gap: 1cqh; }
   .fl-crew .fl-h2 { font-size: 3.6cqw; }
@@ -540,6 +554,24 @@ function injectStyle() {
   .fl-crewpair { gap: 1cqw; }
   .fl-crewpair .fl-btn { flex: 1; min-width: 0; padding-left: 0; padding-right: 0; font-size: 1.9cqw; letter-spacing: 0.08em; }
   .fl-crewfail .fl-h3 { max-width: 70cqw; }
+  /* the lobby's views (paintLobby): the tabs over the table, then the standings, a crew high score table, or the stats */
+  .fl-crewtabs { grid-column: 1 / -1; display: flex; gap: 0.6cqw; margin-bottom: 0.5cqh; }
+  .fl-crewtab { flex: 1; min-width: 0; min-height: 0; padding: 0.5cqw 0 0.2cqw; font-size: 1.4cqw; letter-spacing: 0.06em; }
+  .fl-crewtab.fl-on { color: var(--deep); background: var(--amber); border-color: var(--amber); text-shadow: none; }
+  .fl-standings.fl-v-arcade, .fl-standings.fl-v-horde { grid-template-columns: 2.2cqw minmax(0, 0.6fr) max-content minmax(0, 1fr) max-content max-content; row-gap: 0.35cqh; }
+  .fl-standings .fl-sinit { letter-spacing: 0.18em; }
+  .fl-standings .fl-snote, .fl-standings .fl-sdate { text-align: right; font-size: 1.9cqw; color: rgba(214,190,255,0.8); font-variant-numeric: tabular-nums; }
+  .fl-standings.fl-v-stats { grid-template-columns: 1fr 1fr; column-gap: 1.6cqw; row-gap: 0.8cqh; align-items: start; }
+  .fl-stsum { grid-column: 1 / -1; font-size: 2.3cqw; letter-spacing: 0.08em; color: rgba(214,190,255,0.85); }
+  .fl-stsum b { color: var(--amber); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fl-stsec { display: flex; flex-direction: column; gap: 0.4cqh; min-width: 0; }
+  .fl-stsec.fl-stwide { grid-column: 1 / -1; }   /* MOST PICKED across, then PLAYERS and MATCHUPS side by side */
+  .fl-standings .fl-sttitle { display: block; }
+  .fl-stpicks { display: flex; flex-wrap: wrap; gap: 0.3cqh 1.6cqw; }
+  .fl-stgrid { display: grid; column-gap: 0.8cqw; row-gap: 0.3cqh; align-items: baseline; font-size: 2cqw; }
+  .fl-stmem { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+  .fl-stmu { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
+  .fl-stgrid .fl-sfav { font-size: 1.8cqw; }
 
   /* A narrow stage: a phone held upright, where the stage is about 390 by 219. A column of seven or nine
      44px buttons can't fit that, so the long menus go wide instead of tall, and the small print grows
@@ -574,8 +606,12 @@ function injectStyle() {
     /* the crew lobby: the FAVORITE column gives its room to the QR code, and the small buttons keep their words inside */
     .fl-crewleft { width: 43cqw; }
     .fl-crewbody > .fl-qr { --qr: 27cqw; }
-    .fl-standings { grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw; }
-    .fl-standings .fl-sfav, .fl-standings .fl-sth:nth-child(7) { display: none; }
+    .fl-standings.fl-v-standings { grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw; }
+    .fl-v-standings .fl-sfav, .fl-v-standings .fl-sthfav { display: none; }
+    .fl-standings.fl-v-arcade, .fl-standings.fl-v-horde { grid-template-columns: 3cqw minmax(0, 1fr) max-content minmax(0, 1fr) max-content; }
+    .fl-standings .fl-sdate { display: none; }
+    .fl-standings.fl-v-stats { grid-template-columns: 1fr; }
+    .fl-crew .fl-crewtabs .fl-btn.fl-crewtab { font-size: 1.7cqw; letter-spacing: 0.02em; min-height: 0; }
     .fl-crew .fl-btn.fl-mini { font-size: 2.3cqw; min-height: 30px; }
     .fl-crew .fl-playbtn { min-height: 44px; }
     .fl-crew .fl-playbtn small { font-size: 2cqw; }
@@ -761,7 +797,7 @@ function injectStyle() {
   #flow > .fl-up.fl-crew .fl-standings { grid-area: tb; align-content: start; grid-template-columns: 5cqw minmax(0, 1fr) 5cqw 5cqw 5cqw 12cqw 18cqw;
     grid-auto-rows: max-content;   /* the cells clip (ellipsis), so in a box shorter than the list auto rows would shrink to nothing */
     column-gap: 1.6cqw; row-gap: 0.5em; padding: 0 2.4cqw 2cqw; font-size: max(13px, 3.9cqw); }
-  #flow > .fl-up.fl-crew .fl-standings .fl-sfav, #flow > .fl-up.fl-crew .fl-standings .fl-sth:nth-child(7) { display: block; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sfav { display: block; }
   #flow > .fl-up.fl-crew .fl-standings .fl-sfav { font-size: max(12px, 3.5cqw); }
   /* the header stays put while the names scroll under it */
   #flow > .fl-up.fl-crew .fl-standings .fl-sth { position: sticky; top: 0; z-index: 1; font: 600 max(12px, 3.4cqw)/1 'Teko', sans-serif; letter-spacing: 0.1em; padding: 2.2cqw 0 0.4em; background: #10061f; align-self: stretch; }
@@ -778,6 +814,23 @@ function injectStyle() {
     #flow > .fl-up.fl-crew .fl-crewbody > .fl-qr { --qr: 140px; }
     #flow > .fl-up.fl-crew .fl-playbtn { min-height: 54px; }
   }
+
+  /* The crew lobby's views held upright. [twgdsx] lays the lobby out as one grid when the phone is upright
+     (.fl-up, its own block); these only size what this card added inside the table (the tabs, the high score
+     tables, the stats), and do nothing until that layout is on. */
+  /* the tabs stay at the top of the scrolling list, and the column heads stick under them */
+  #flow > .fl-up.fl-crew .fl-crewtabs { position: sticky; top: 0; z-index: 2; gap: 1.6cqw; margin: 0 -2.4cqw; padding: 2.2cqw 2.4cqw 0.4em; background: #10061f; }
+  #flow > .fl-up.fl-crew .fl-crewtabs .fl-btn.fl-crewtab { min-height: 44px; font-size: max(13px, 3.8cqw); letter-spacing: 0.04em; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sth { top: calc(44px + 2.2cqw + 0.4em); }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sthfav { display: block; }
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-arcade, #flow > .fl-up.fl-crew .fl-standings.fl-v-horde { grid-template-columns: 5cqw minmax(0, 0.7fr) max-content minmax(0, 1fr) max-content; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sdate, #flow > .fl-up.fl-crew .fl-standings.fl-standings .fl-sth.fl-sdate { display: none; }   /* (outranks the layout's FAVORITE-column rule, which counts children) */
+  #flow > .fl-up.fl-crew .fl-standings .fl-sttitle { position: static; padding-top: 0; background: none; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-snote { font-size: max(12px, 3.5cqw); }
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-stats { grid-template-columns: 1fr; row-gap: 1.2em; }
+  #flow > .fl-up.fl-crew .fl-stsum { font-size: max(14px, 4.4cqw); }
+  #flow > .fl-up.fl-crew .fl-stgrid { font-size: max(13px, 3.9cqw); column-gap: 2.4cqw; }
+  #flow > .fl-up.fl-crew .fl-stgrid .fl-sfav, #flow > .fl-up.fl-crew .fl-stpicks .fl-sfav { font-size: max(12px, 3.6cqw); }
 
   /* the LIVE list: every match, scrolling past what fits */
   #flow > .fl-up .fl-livelist { width: 100%; flex: 0 1 auto; padding: 1cqw; margin: -1cqw; }

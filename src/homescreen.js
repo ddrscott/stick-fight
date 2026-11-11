@@ -15,6 +15,7 @@
 // Everything is "sf-" classed, which keeps the attract screen's tap-to-start off it (main.js).
 import { install } from './install.js';
 import { PLAIN } from './plaintext.js';
+import { linkFromUrl } from './links.js';
 
 const KEY = 'sf-homescreen-seen';
 const SHARE = '<svg viewBox="0 0 20 20" width="1em" height="1em" aria-hidden="true"><path d="M10 2v11M6 6l4-4 4 4M4 10v7h12v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -80,8 +81,7 @@ export function openHomescreenHelp() {
   style();
   markSeen();
   // the home-screen app keeps its own storage and opens at the title: a room joined in this tab doesn't follow
-  const q = new URLSearchParams(location.search);
-  const inRoom = q.has('room') || q.has('crew') || document.documentElement.classList.contains('online');
+  const inRoom = !!linkFromUrl('room') || !!linkFromUrl('crew') || document.documentElement.classList.contains('online');
   panel = document.createElement('div');
   panel.className = 'sf-hs';
   panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Play full screen');

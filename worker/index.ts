@@ -1,22 +1,28 @@
-// The Worker behind https://askscottpierce.com/stick-fight/api/*: online rooms, crew rooms and
-// profiles (see README, "Multiplayer"). Everything else under /stick-fight is the static game,
-// served by the assets binding before this script runs (wrangler.jsonc: run_worker_first covers
-// the API, play/ and the homepage; the last two go straight back to the assets unless the query has
-// a crew or a room). A request that reaches the script anywhere else is a 404.
+// The Worker behind https://neonstickfight.com: online rooms, crew rooms and profiles under /api/*
+// (see README, "Multiplayer"). Everything else is the static game, served by the assets binding
+// (wrangler.jsonc: run_worker_first covers the API and the pages; crew/<slug> and room/<CODE> get the
+// game page with the room's share tags, play/ and the homepage a 301 to that link when the query has an
+// old ?crew= or ?room=, every other page goes straight back to the
+// assets). www.neonstickfight.com is a 301 to the bare domain, and askscottpierce.com/stick-fight,
+// the old address, is served or redirected by oldPath (README, Hosting).
 //
-//   POST /stick-fight/api/rooms              -> { code }   a new quick room, four characters
-//   GET  /stick-fight/api/rooms/<code>/ws    -> WebSocket   ?role=host|guest
-//   GET  /stick-fight/api/rooms/<code>/watch -> WebSocket   a spectator (quick rooms only; see Spectators below)
-//   GET  /stick-fight/api/live               -> { live: [...] }   the quick matches on right now, cached 5 s
-//   GET  /stick-fight/api/ice                -> { iceServers, ttl, turn }   for RTCPeerConnection
-//   POST /stick-fight/api/crews              -> { slug }   a new crew room ({ name }), worker/crew.ts
-//   GET  /stick-fight/api/crews/<slug>/ws    -> WebSocket   the crew lobby
-//   POST /stick-fight/api/e                  -> 204         analytics events from the page (README, Analytics)
-//   GET  /stick-fight/api/stats              -> the all-time pick and matchup rollups, worker/stats.ts
-//   GET  /stick-fight/api/og/crew/<slug>.jpg, og/room/<CODE>.jpg   share images, worker/og.ts
-//   GET  /stick-fight/play/?crew=|?room=     the game page with the room's share tags, worker/og.ts
-//   GET  /stick-fight/?crew=|?room=          301 to play/ (a link from before the move, for bots)
-//   POST /stick-fight/api/auth/start, auth/verify, auth/logout; GET and PUT /stick-fight/api/me
+//   POST /api/rooms              -> { code }   a new quick room, four characters
+//   GET  /api/rooms/<code>/ws    -> WebSocket   ?role=host|guest
+//   GET  /api/rooms/<code>/watch -> WebSocket   a spectator (quick rooms only; see Spectators below)
+//   GET  /api/live               -> { live: [...] }   the quick matches on right now, cached 5 s
+//   GET  /api/now                -> { matches, quick, crew, pairs }   every match on right now, no names, cached 5 s
+//   GET  /api/ice                -> { iceServers, ttl, turn }   for RTCPeerConnection
+//   POST /api/crews              -> { slug }   a new crew room ({ name }), worker/crew.ts
+//   GET  /api/crews/<slug>/ws    -> WebSocket   the crew lobby
+//   GET  /api/crews/<slug>/scores -> { name, arcade, horde }   the crew's high score tables
+//   POST /api/crews/<slug>/scores -> { ok, rank } | { error }   a member's run ({ pid, run })
+//   POST /api/e                  -> 204         analytics events from the page (README, Analytics)
+//   GET  /api/stats              -> the all-time pick and matchup rollups, worker/stats.ts
+//   GET  /api/og/crew/<slug>.jpg, og/room/<CODE>.jpg   share images, worker/og.ts
+//   GET  /crew/<slug>, /room/<CODE>   the game page with the room's share tags, worker/og.ts
+//   GET  /play/?crew=|?room=, /?crew=|?room=   301 to that clean link, rest of the query kept
+//   GET and POST /api/admin/crews/<slug>   rename or close a crew, behind ADMIN_TOKEN (worker/admin.ts)
+//   POST /api/auth/start, auth/verify, auth/logout; GET and PUT /api/me
 //                                            profiles and email sign-in, worker/auth.ts
 //
 // /ice hands out Cloudflare TURN credentials (Realtime TURN, the key in the TURN_KEY_ID and
@@ -48,14 +54,17 @@
 // A spectator's socket is tagged "spectator": nothing it sends is passed on or read (a "ping" is
 // answered without waking the object). A room a crew claimed is private: no spectators, never listed.
 import { DurableObject } from "cloudflare:workers";
-import { type Env, type LiveEntry, API, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName, track } from "./env";
+import { type Env, type LiveEntry, API, OLD_PREFIX, SITE_HOST, siteOrigin, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName, track } from "./env";
 import { isBatch } from "../src/net/watchlog.js";
 import { createWatchRoom } from "../src/net/watchroom.js";
 
+import { blockedName } from "../src/namefilter.js";
 import { Crew, SLUG_RE } from "./crew";
 import { handleAuth } from "./auth";
-import { ogImage, oldLink, playPage } from "./og";
-import { offlineMatch, recordMatch, recordPick, roomResult, statsResponse } from "./stats";
+import { handleAdmin } from "./admin";
+import { cleanLink, linkPage, ogImage, oldLink, playPage } from "./og";
+import { offlineMatch, recordMatch, recordPick, recordPlay, roomResult, statsResponse } from "./stats";
+import { isFighter } from "./roster";
 
 // the events the page may send (src/analytics.js); anything else is dropped. `match` and `pick` also
 // update the D1 rollups, so they're checked field by field (worker/stats.ts) instead of passed through
@@ -76,6 +85,17 @@ async function liveList(env: Env): Promise<Response> {
     liveMemo = { body: JSON.stringify({ live }), until: Date.now() + LIVE_MEMO_MS };
   }
   return new Response(liveMemo.body, { headers: { "content-type": "application/json", "cache-control": `public, max-age=${LIVE_MAX_AGE_S}` } });
+}
+
+// the live count: one answer per isolate for 3 seconds, and the same from the edge cache for 5 (like the LIVE list)
+let nowMemo: { body: string; until: number } | null = null;
+async function nowCount(env: Env): Promise<Response> {
+  if (!nowMemo || nowMemo.until < Date.now()) {
+    let body: unknown;
+    try { body = await env.LOBBY.get(env.LOBBY.idFromName("live")).count(); } catch (e) { console.error("live count failed", e); body = { error: "unavailable" }; }
+    nowMemo = { body: JSON.stringify(body), until: Date.now() + LIVE_MEMO_MS };
+  }
+  return new Response(nowMemo.body, { headers: { "content-type": "application/json", "cache-control": `public, max-age=${LIVE_MAX_AGE_S}` } });
 }
 
 // A room nobody has joined yet (the host is still sharing the code) lives this long; once players
@@ -141,12 +161,78 @@ async function iceServers(env: Env): Promise<Response> {
   return json({ iceServers: [{ urls: STUN }], ttl: 0, turn: false });
 }
 
+// ---- the front door: which host and path asked -----------------------------------------------------
+
+const moved = (location: string, cache = "public, max-age=3600") => new Response(null, { status: 301, headers: { location, "cache-control": cache } });
+
+// What an old service worker at askscottpierce.com/stick-fight/sw.js is replaced with once the old path
+// redirects: it clears this app's caches and unregisters itself, so an old install stops answering
+// pages from its cache and its next visit follows the redirect. A redirect can't stand in for a
+// service worker script (the browser refuses it and keeps the old one).
+const RETIRED_SW = `self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys()
+  .then((keys) => Promise.all(keys.filter((k) => k.startsWith('stick-fight-')).map((k) => caches.delete(k))))
+  .then(() => self.registration.unregister())));
+`;
+
+/** askscottpierce.com/stick-fight and everything under it, where the game lived until 2026-11-11.
+ *  OLD_PATH "redirect": a 301 to the same page on neonstickfight.com, query and all (a fragment such as
+ *  #signin=... rides along: the browser keeps it across a redirect). The API is still answered here,
+ *  so a tab opened before the move finishes its match. "serve" (until the new domain is checked): the
+ *  game itself, the request handed to the app with the prefix taken off and the answer's paths put
+ *  back. */
+async function oldPath(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(req.url);
+  const rest = url.pathname.slice(OLD_PREFIX.length) || "/";
+  const api = rest.startsWith(API);
+  if (env.OLD_PATH === "redirect" && !api) {
+    if (rest === "/sw.js") return new Response(RETIRED_SW, { headers: { "content-type": "text/javascript", "cache-control": "no-cache" } });
+    // an old ?crew= or ?room= link on the homepage or play/ goes straight to its clean link (crew/<slug>,
+    // room/<CODE>) rather than through a second 301 there; crew/ and room/ links just change host
+    const clean = ["/", "/index.html", "/play/", "/play/index.html"].includes(rest) ? cleanLink(url) : null;
+    return moved(`${siteOrigin(url)}${clean || rest + url.search}`);
+  }
+  if (url.pathname === OLD_PREFIX) return moved(`${OLD_PREFIX}/${url.search}`, "no-store");   // the page's relative paths need the slash
+  const inner = new URL(url);
+  inner.pathname = rest;
+  const res = await app(new Request(inner.toString(), req), env, ctx);
+  if (res.webSocket) return res;
+  const location = res.headers.get("location"), cookie = res.headers.get("set-cookie");
+  if (!(location?.startsWith("/") && !location.startsWith("//")) && !cookie) return res;
+  const out = new Response(res.body, res);
+  if (location?.startsWith("/") && !location.startsWith("//")) out.headers.set("location", OLD_PREFIX + location);
+  if (cookie) out.headers.set("set-cookie", cookie.replace(/; Path=\/(?=;|$)/, `; Path=${OLD_PREFIX}`));   // the origin there is shared with other apps
+  return out;
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
-    if (url.pathname === "/stick-fight/play/" || url.pathname === "/stick-fight/play/index.html") return playPage(req, env, ctx);
-    if (url.pathname === "/stick-fight/" || url.pathname === "/stick-fight/index.html") return oldLink(req, env);
-    if (!url.pathname.startsWith(API)) return notFound();
+    if (url.hostname === `www.${SITE_HOST}`) return moved(`https://${SITE_HOST}${url.pathname}${url.search}`, "public, max-age=86400");
+    if (url.pathname === OLD_PREFIX || url.pathname.startsWith(OLD_PREFIX + "/")) {
+      // on the new domain a stray /stick-fight/... path just loses its prefix
+      if (url.hostname === SITE_HOST) return moved((url.pathname.slice(OLD_PREFIX.length) || "/") + url.search);
+      return oldPath(req, env, ctx);
+    }
+    return app(req, env, ctx);
+  },
+} satisfies ExportedHandler<Env>;
+
+/** The game at the root of its own host: the API, the two pages with share tags, and the assets. */
+async function app(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  {
+    const url = new URL(req.url);
+    if (url.pathname === "/play/" || url.pathname === "/play/index.html") return playPage(req, env);
+    const link = /^\/(crew|room)\/([^/]*)(\/?)$/.exec(url.pathname);
+    if (link) {
+      // crew/ alone has nothing to open, and crew/<slug>/ is the same link: one address each
+      if (!link[2]) return moved("/play/");
+      if (link[3]) return moved(`/${link[1]}/${link[2]}${url.search}`);
+      return linkPage(req, env, ctx, link[1] as "crew" | "room", link[2]);
+    }
+    if (url.pathname === "/" || url.pathname === "/index.html") return oldLink(req, env);
+    // run_worker_first also sends every page here (for the www redirect above): the rest is the assets'
+    if (!url.pathname.startsWith(API)) return env.ASSETS.fetch(req);
     const parts = url.pathname.slice(API.length).split("/").filter(Boolean);
 
     if (parts.length === 1 && parts[0] === "rooms") {
@@ -185,6 +271,16 @@ export default {
       return res;
     }
 
+    // the live count: how many matches are on right now, quick and crew, and their fighter pairs; no names
+    if (parts.length === 1 && parts[0] === "now") {
+      if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
+      const cache = (caches as unknown as { default: Cache }).default, key = new Request(new URL(API + "now", req.url).toString());
+      try { const hit = await cache.match(key); if (hit) return hit; } catch { /* no cache here */ }
+      const res = await nowCount(env);
+      try { ctx.waitUntil(cache.put(key, res.clone())); } catch { /* no cache here */ }
+      return res;
+    }
+
     // analytics events from the page (src/analytics.js); a fixed list, short labels, no ids
     if (parts.length === 1 && parts[0] === "e") {
       if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
@@ -199,6 +295,10 @@ export default {
           // a vs-CPU match or a horde run, as the page tells it (online results come through the room)
           const m = offlineMatch(ev.m);
           if (m) ctx.waitUntil(recordMatch(env, req, m));
+        } else if (e === "play") {
+          // training's play time, a heartbeat a minute (worker/stats.ts recordPlay)
+          const p = recordPlay(env, ev.m);
+          if (p) ctx.waitUntil(p);
         } else if (e === "pick") recordPick(env, req, ctx, labels);
         else if (EVENT_NAMES.has(e)) {
           const more = Array.isArray(ev.d) ? ev.d.filter((x) => typeof x === "number").slice(0, 8) : [];
@@ -224,6 +324,7 @@ export default {
       const body = await req.json<{ name?: unknown }>().catch(() => ({} as { name?: unknown }));
       const name = cleanName(body.name, 3, 20);
       if (!name) return json({ error: "bad-name" }, 400);
+      if (blockedName(name)) return json({ error: "blocked-name" }, 400);   // the name filter (src/namefilter.js)
       for (let i = 0; i < 6; i++) {
         const slug = newSlug(name);
         if (await env.CREWS.get(env.CREWS.idFromName(slug)).create(slug, name)) { track(env, req, "crew_create"); return json({ slug, name }); }
@@ -239,17 +340,38 @@ export default {
       return env.CREWS.get(env.CREWS.idFromName(slug)).fetch(req);
     }
 
+    // a crew's high score tables: read them (the attract loop, the initials screen), or post a member's run
+    if (parts.length === 3 && parts[0] === "crews" && parts[2] === "scores") {
+      const slug = parts[1].toLowerCase();
+      if (!SLUG_RE.test(slug) || slug.length > 40) return json({ error: "bad crew" }, 400);
+      const crew = env.CREWS.get(env.CREWS.idFromName(slug));
+      if (req.method === "GET") {
+        if (!(await allowed(env.STATS_LIMIT, req))) return json({ error: "busy", message: BUSY }, 429, { "retry-after": "60" });
+        const board = await crew.scoreBoard();
+        return board ? json(board) : json({ error: "no-crew" }, 404);
+      }
+      if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+      if (!(req.headers.get("content-type") || "").includes("application/json")) return json({ error: "expected JSON" }, 415);
+      if (!(await allowed(env.EVENT_LIMIT, req))) return json({ error: "busy", message: BUSY }, 429, { "retry-after": "60" });
+      const body = await req.json<{ pid?: unknown; run?: unknown }>().catch(() => ({} as { pid?: unknown; run?: unknown }));
+      // expected refusals answer 200 with { error }, like the profile calls, so the page's console stays clean
+      return json(await crew.submitScore(typeof body.pid === "string" ? body.pid : "", body.run));
+    }
+
     // test hook, only with DEV_HOOKS=1 (.dev.vars): expire a crew room now, as 90 idle days would
     if (env.DEV_HOOKS === "1" && parts.length === 3 && parts[0] === "crews" && parts[2] === "dev-expire" && req.method === "POST") {
       return json({ wiped: await env.CREWS.get(env.CREWS.idFromName(parts[1].toLowerCase())).devExpire() });
     }
 
+    const admin = await handleAdmin(req, env, parts);   // acting on a report: rename or close a crew (worker/admin.ts)
+    if (admin) return admin;
+
     const auth = await handleAuth(req, env, parts);
     if (auth) return auth;
 
     return notFound();
-  },
-} satisfies ExportedHandler<Env>;
+  }
+}
 
 type Role = "host" | "guest";
 const other = (r: Role): Role => (r === "host" ? "guest" : "host");
@@ -270,7 +392,45 @@ const other = (r: Role): Role => (r === "host" ? "guest" : "host");
 const LIVE_TTL_MS = 150 * 1000, LIVE_SHOWN = 40, LIVE_REWRITE_MS = 75 * 1000, LIVE_FLUSH_MS = 7000, LIVE_QUIET_MS = 6000;
 type Listed = LiveEntry & { seen: number; stored: number };
 const sameShown = (a: LiveEntry, b: LiveEntry) => a.round === b.round && a.watching === b.watching && a.wins[0] === b.wins[0] && a.wins[1] === b.wins[1];
+/** The live count (api/now): every match being played right now, quick and crew alike, watchable or not. A
+ *  room's host page says when a match starts ({t:'sys', ev:'live', chars}); the room puts it here and takes it
+ *  out when the match's result comes in or a player leaves. One storage write at the start and one delete at
+ *  the end, and nothing about the players: the room's code (the key, never shown), the two fighters, quick or
+ *  crew, and when it started. An entry left behind by a room that died quietly falls off after BUSY_TTL_MS. */
+const BUSY_TTL_MS = 20 * 60 * 1000, BUSY_PAIRS = 40;
+type Busy = { chars: [string, string]; crew: boolean; at: number };
+export type NowCount = { at: number; matches: number; quick: number; crew: number; pairs: string[][] };
+
 export class Lobby extends DurableObject<Env> {
+  private busy: Map<string, Busy> | null = null;
+  private async loadBusy(): Promise<Map<string, Busy>> {
+    if (this.busy) return this.busy;
+    const rows = await this.ctx.storage.list<Busy>({ prefix: "b:" });
+    const m = new Map<string, Busy>();
+    for (const [k, v] of rows) if (v && Array.isArray(v.chars)) m.set(k.slice(2), v);
+    return (this.busy ??= m);
+  }
+  /** a match started in room `code` (its previous match, if any, is over) */
+  async begin(code: string, chars: [string, string], crew: boolean): Promise<void> {
+    const busy = await this.loadBusy(), e: Busy = { chars, crew, at: Date.now() };
+    busy.set(code, e);
+    await this.ctx.storage.put(`b:${code}`, e);
+  }
+  /** room `code` has no match on (a result, a player gone, the room closed) */
+  async end(code: string): Promise<void> {
+    const busy = await this.loadBusy();
+    if (busy.delete(code)) await this.ctx.storage.delete(`b:${code}`);
+  }
+  /** how many matches are on right now, quick and crew, and the fighter pairs (the newest first). No names. */
+  async count(): Promise<NowCount> {
+    const busy = await this.loadBusy(), old = Date.now() - BUSY_TTL_MS, gone: string[] = [];
+    for (const [k, v] of busy) if (v.at < old) { busy.delete(k); gone.push(`b:${k}`); }
+    if (gone.length) await this.ctx.storage.delete(gone.slice(0, 128));
+    const list = [...busy.values()].sort((a, b) => b.at - a.at);
+    const crew = list.filter((e) => e.crew).length;
+    return { at: Date.now(), matches: list.length, quick: list.length - crew, crew, pairs: list.slice(0, BUSY_PAIRS).map((e) => e.chars) };
+  }
+
   private live: Map<string, Listed> | null = null;
   private dirty = new Set<string>();   // entries whose stored copy is behind what's in memory
   private asked = 0;                   // the last request
@@ -476,7 +636,7 @@ export class Room extends DurableObject<Env> {
     if (role !== "host" && role !== "guest") return;
     if (!this.take(ws)) return;
     // a page's own word to the room (a match's result, worker/stats.ts); everything else goes to the other player
-    if (typeof message === "string" && message.startsWith('{"t":"sys"')) { await roomResult(this.ctx.storage, this.env, role, message); return; }
+    if (typeof message === "string" && message.startsWith('{"t":"sys"')) { await this.sys(role, message); return; }
     // the host's messages to the room itself (spectators); everything else passes through untouched
     if (typeof message !== "string") {
       if (isBatch(message)) { if (role === "host") this.desk.onBatch(message); return; }
@@ -492,6 +652,29 @@ export class Room extends DurableObject<Env> {
     for (const w of this.ctx.getWebSockets(other(role))) {
       try { w.send(message); } catch { /* closing */ }
     }
+  }
+
+  /** A page's word to the room: the match started (the live count) or ended (the books, worker/stats.ts). */
+  private async sys(role: Role, message: string) {
+    let ev = "";
+    try { ev = String((JSON.parse(message) as { ev?: unknown }).ev || ""); } catch { return; }
+    if (ev === "result") {
+      await this.notBusy();   // either side's word that it's over takes it off the count
+      await roomResult(this.ctx.storage, this.env, role, message);
+    } else if (ev === "live" && role === "host") {
+      // the host's word that a match started: its two fighters, for the live count (api/now)
+      let chars: unknown;
+      try { chars = (JSON.parse(message) as { chars?: unknown }).chars; } catch { return; }
+      if (!Array.isArray(chars) || !isFighter(chars[0]) || !isFighter(chars[1])) return;
+      const fl = await this.getFlags();
+      if (!fl.code) return;
+      await this.lobby().begin(fl.code, [chars[0], chars[1]], fl.priv).catch(() => {});
+    }
+  }
+  private async notBusy() {
+    const fl = await this.getFlags();
+    if (!fl.code) return;
+    await this.lobby().end(fl.code).catch(() => {});
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
@@ -513,6 +696,7 @@ export class Room extends DurableObject<Env> {
     // a player gone ends the match for anyone watching, as it does for the other player; an empty room
     // sends its spectators away
     await this.getFlags();
+    await this.notBusy();   // and for the live count
     const rest = this.players(ws).length;
     this.desk.stop("left", rest === 0, true);   // (off the LIVE list even if the room had forgotten its match)
     // the last one out starts the short clock: an empty room's code stops working in minutes

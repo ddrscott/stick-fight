@@ -8,7 +8,7 @@
 //   await net.join(code)        -> { code }        resolves when connected to the room
 //   net.on('status' | 'connected' | 'peer-left' | 'start' | 'end' | 'desync' | 'resync', fn)
 //   net.leave()                 hang up and end the match (endMatch is called)
-//   net.roomFromUrl()           the ?room=CODE on the page's URL, or ''
+//   net.roomFromUrl()           the room this page was opened for (room/CODE, or an old ?room=CODE), or ''
 //   net.openLobby(mode?)        the built-in panel: 'menu' | 'host' | 'join' (+ code)
 //   net.active                  a match is running (main.js steps it through net.advance)
 //   net.watchers                how many are watching this room ('watching' fires when it changes)
@@ -60,6 +60,7 @@ import { createWatchFeed } from './watchfeed.js';
 import { hashSim } from './hash.js';
 import { legend, watchDevice } from '../flow/controls.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
+import { linkFromUrl, linkUrl, setLinkInBar } from '../links.js';
 
 export const NET_VERSION = 24;   // bump when the sim or the netcode changes in a way old builds can't play against (24: dashes: a double tap is a forward or a back dash (the 'dash' state, u.dashDir / dashT, the tap count u.tapDir / tapAt / tapN in place of the old tap timer), the input's 12th bit `dash` (the touch stick's double flick), a dash attack on every button and a rising attack on every limb with the rise read out of a crouching attack too (u.lowStance), the 'r' string token and RISE AND SHINE; 23: the clash: two live strikes whose striking limbs touch stop each other with no damage, both bounce back and recover on the same step (u.clashUntil, in the state hash with tradeUntil / tradeLimb), a much heavier strike breaks through and bats the lighter aside (frame data CLASH), and a striking limb on its way is no longer body to another strike; 22: the perfect round finisher, a sim stage inside the KO phase (sim.perfectT, the winner's 'perfect' state, the body thrown at the camera) that only the winner's press skips; 21: getups by the sides (u.home fixed at touchdown, rolls away / toward with a cross under a man standing near, u.roll* fields, rig.rebase and the roll clips), a body on the floor held off to its drawn feet and short of its hip, lows that touch a floored body as its one ground hit and grazes (u.grazeId), the stomp on down+4 only; 'home', 'rollT' and 'otgHit' in the state hash; 20: a fainted fighter is rooted and shakes it off with alternating left/right presses (u.shakeDir, u.shakeAt, u.faintCut, in the state hash), the CPU's faint shake; 19: bodies never sink into the floor: the ground snap and the point simulation use each joint's drawn radius, the stairs' solid line runs through the nosings, tumbling joints stop at the risers, poses on and beside a flight are fitted to its treads, the vault faces the opening; all of it moves the rig's joints, which are the hitboxes and are hashed; 18: stamina refunds on contact and the no-faint save on a connecting strike (u.paid, u.faintPending, u.refundMove/refundRep/refundAt), so an old build's sim drifts from a new one's; 17: resync (the host sends its confirmed state on a hash mismatch), the end of a match agreed by state hash, a character's reach measured on a reset rig (it depended on what the rig was doing the first time that phone saw the character), the rng and the reach table in the state hash; 16: quick rooms from the menus open on the pick screen too (pickFirst, the 'go' at match 0), which an old guest would ignore; 15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
@@ -139,12 +140,7 @@ export function createOnline(game) {
 
   function setState(s, d = '') { state = s; detail = d; emit('status', s, d); lobby.render(); }
 
-  function shareUrl(c) {
-    const u = new URL(location.href);
-    u.search = ''; u.hash = '';
-    u.searchParams.set('room', c);
-    return u.toString();
-  }
+  const shareUrl = (c) => linkUrl('room', c).href;
 
   function wire(l) {
     link = l;
@@ -227,6 +223,9 @@ export function createOnline(game) {
     emit('connected', { mode: link.mode, role, code });
     game.startMatch({ seed, localIndex, lockstep, chars, botch, rules });
     if (localIndex === 0) track('online_match', [chars[0] || '', chars[1] || '', crewMode ? 'crew' : 'quick'], m);   // the host counts it once
+    // the live count (api/now): the host tells its room a match is on, with the two fighters and nothing else; the
+    // room takes it off when the result comes in or a player leaves (worker/index.ts Lobby)
+    if (localIndex === 0 && analyticsOn && link) { try { link.sendControl({ t: 'sys', ev: 'live', chars: [chars[0] || '', chars[1] || ''] }); } catch { /* closing */ } }
     emit('start', { seed, localIndex, chars, botch, n: m, crew: crewMode });
     readout.show(true);
   }
@@ -265,7 +264,8 @@ export function createOnline(game) {
     const me = role === 'host' ? 0 : 1;
     if (!crewMode) addRivalResult(rivalPid, winner < 0 ? 'd' : winner === me ? 'w' : 'l');   // a crew keeps its own, on the server
     feed.end({ f: ls ? ls.frame : 0, wins, tally: { host: tally.host, guest: tally.guest, draw: tally.draw } });   // spectators: the last frames, then the result
-    last = { n, winner, wins, chars: [(sim.units[0].char && sim.units[0].char.id) || '', (sim.units[1].char && sim.units[1].char.id) || ''], hash: hashSim(sim), frame: ls ? ls.frame : -1 };
+    last = { n, winner, wins, chars: [(sim.units[0].char && sim.units[0].char.id) || '', (sim.units[1].char && sim.units[1].char.id) || ''], hash: hashSim(sim), frame: ls ? ls.frame : -1,
+      secs: ls ? Math.round(Math.max(0, ls.matchAt | 0) / 120) : 0 };   // the match's length (the sim steps at 120 Hz), for the crew's play time
     // the books (README, Analytics): each page tells the room the result, and the room counts it only when the two
     // agree (so a player whose browser asks not to be tracked keeps the match off the books for both). Everything outside x comes from the final state both sims hold; x is this page's own count of the effects
     if (link && ls && analyticsOn) link.sendControl({ t: 'sys', ev: 'result', n, seed: matchSeed, mode: crewMode ? 'crew' : 'quick', chars: last.chars, wins, f: Math.max(0, ls.matchAt | 0), how: howEnded(sim),
@@ -403,11 +403,13 @@ export function createOnline(game) {
     setState('idle');
     if (was) { game.endMatch(reason); emit('end', reason); if (reason !== 'left') lobby.message(reason === 'lost' ? 'CONNECTION LOST' : 'YOUR RIVAL LEFT'); }
   }
+  /** in the room: the link that brought us here (room/<CODE> or ?room=) goes, so a reload doesn't rejoin a finished room */
+  let fromLink = !!linkFromUrl('room');
   function clearRoomParam() {
-    if (!params.has('room')) return;
+    if (!fromLink) return;
+    fromLink = false;
     params.delete('room');
-    const u = new URL(location.href); u.searchParams.delete('room');
-    try { history.replaceState(null, '', u.toString()); } catch { /* sandboxed */ }
+    setLinkInBar('room', '');
   }
 
   const net = {
@@ -444,7 +446,7 @@ export function createOnline(game) {
       return { code, link };
     },
     leave() { if (lockstep || link) finish('left'); else if (state !== 'idle') setState('idle'); },
-    roomFromUrl() { const r = (params.get('room') || '').toUpperCase(); return CODE_RE.test(r) ? r : ''; },
+    roomFromUrl() { const r = (fromLink ? linkFromUrl('room') : '').toUpperCase(); return CODE_RE.test(r) ? r : ''; },
     /** while a match runs, main.js steps the sim here (ms already scaled for slow motion) */
     advance(ms) {
       if (!lockstep) return 0;

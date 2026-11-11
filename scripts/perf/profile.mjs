@@ -31,7 +31,7 @@ if (argv.includes('--load')) {
   await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
   await cdp.send('Profiler.start');
 }
-await page.goto(`http://127.0.0.1:${server.address().port}/stick-fight/play/?${query}`);
+await page.goto(`http://127.0.0.1:${server.address().port}/play/?${query}`);
 await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
 if (!argv.includes('--load')) await page.waitForTimeout(3000);
 if (argv.includes('--alloc')) {

@@ -31,6 +31,7 @@ import { createLog, decodeBatch, cleanSetup, hashHex, HOLD_MS } from './watchlog
 import { hashSim } from './hash.js';
 import { decodeInput } from './codec.js';
 import { decodeState } from './state.js';
+import { gameUrl } from '../links.js';
 
 const STEP_MS = 1000 / 120;
 export const BUFFER_MS = 900;     // behind the newest frames the room has released
@@ -348,7 +349,7 @@ export async function fetchLive() {
 
 /** a link that opens the game on this room's match */
 export function watchUrl(code) {
-  const u = new URL(location.href);
+  const u = gameUrl();   // play/, also from a crew/ or room/ address
   u.search = ''; u.hash = '';
   u.searchParams.set('watch', code);
   return u.toString();

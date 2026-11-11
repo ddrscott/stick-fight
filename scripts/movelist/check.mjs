@@ -286,7 +286,7 @@ if (!ONLY) {
 }
 
 // ---- the online pick screen, through the local Worker (npm run build && npm run dev:worker):
-//      --online http://127.0.0.1:8787/stick-fight/play/
+//      --online http://127.0.0.1:8787/play/
 const ONLINE = opt('--online', '');
 if (ONLINE) {
   const T = '[online pick screen, phone sideways 844x390]';
