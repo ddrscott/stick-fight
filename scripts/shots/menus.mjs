@@ -358,55 +358,64 @@ for (const size of SIZES) {
       if (await at('onlineEnd', 10000)) await shot('onlineEnd-noroom'); else report('onlineEnd', ['NO ROOM WITH THAT CODE never showed']);
     }
     if (['onlineSelect', 'onlineFighting', 'onlinePost', 'onlineEnd'].some(want)) {
-      // a rival hosts on a desktop page; we join its code
-      const rctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-      await rctx.addInitScript(() => { localStorage.clear(); localStorage.setItem('stick-fight-player', JSON.stringify({ id: 'b'.repeat(32), name: 'BOB', email: '', crews: [] })); });
-      const R = await rctx.newPage();
-      await R.goto(URL_);
-      await R.waitForFunction(() => window.__flow && window.__flow.state === 'attract');
-      await R.evaluate(() => { const f = window.__flow.debug; f.go('modeSelect'); f.go('onlineMenu'); f.go('onlineHost'); });
-      let code = await until(() => R.evaluate(() => (window.__net.state === 'waiting' && window.__net.code) || null));
-      if (!code) {   // the room didn't open (the local Worker's 10 new rooms a minute): wait it out and host again
-        await sleep(30000);
-        await R.evaluate(() => { const f = window.__flow.debug; f.go('onlineMenu'); f.go('onlineHost'); });
-        code = await until(() => R.evaluate(() => (window.__net.state === 'waiting' && window.__net.code) || null));
-      }
-      await go('modeSelect', 'onlineMenu', 'onlineJoin');
-      for (let k = 0; k < 4; k++) await page.keyboard.press('Backspace');   // the code typed last time is still there
-      await page.keyboard.type(String(code || 'ZZZZ'));
-      await page.evaluate(() => window.__flow.debug.go('onlineConnecting'));
-      if (await at('onlineSelect', 20000)) {
-        await shot('onlineSelect', 900);
-        // both lock in; the host starts at once
-        await page.evaluate(() => window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true));
-        await R.evaluate(() => { window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true); });
-        await until(() => R.evaluate(() => { window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true); window.__net.startNow && window.__net.startNow(); return window.__flow.state === 'onlineFighting'; }), 15000);
-        if (await at('onlineFighting', 10000)) {
-          await sleep(1500);
-          await shot('onlineFighting', 300);
-          await page.keyboard.press('Escape');
-          await shot('onlineFighting-leave', 400);
-          await page.keyboard.press('Escape');
-          // a common stop frame on both, then the same KO on both, round after round until the match is over
-          for (let k = 0; k < 6 && (await state()) === 'onlineFighting'; k++) {
-            const f = (await page.evaluate(() => window.__net.netcode.frame)) + 60;
-            await page.evaluate((x) => { window.__net.haltAt(x); }, f); await R.evaluate((x) => { window.__net.haltAt(x); }, f);
-            await until(() => page.evaluate((x) => window.__net.netcode.frame >= x, f), 10000);
-            await until(() => R.evaluate((x) => window.__net.netcode.frame >= x, f), 10000);
-            await sleep(600);   // every frame up to the halt confirmed on both
-            const ko = await page.evaluate(() => window.__flow.debug.debugKO(1)); await R.evaluate(() => window.__flow.debug.debugKO(1));
-            await page.evaluate(() => window.__net.haltAt(Infinity)); await R.evaluate(() => window.__net.haltAt(Infinity));
-            await sleep(ko ? 4500 : 1500);
-          }
-          if (await at('onlinePost', 20000)) {
-            await shot('onlinePost', 900);
-            await R.evaluate(() => window.__flow.debug.go('onlineMenu'));   // the rival leaves the room
-            await sleep(2500);
-            await shot(`${await state()}-rivalleft`, 300);
-          } else report('onlinePost', [`never got there (${await state()})`]);
-        } else report('onlineFighting', [`never got there (${await state()}: ${await page.evaluate(() => document.querySelector('#flow')?.innerText.replace(/\s+/g, ' ').slice(0, 90))}; rival ${await R.evaluate(() => window.__flow.state)})`]);
-      } else report('onlineSelect', [`never got there (${await state()}: ${await page.evaluate(() => document.querySelector('#flow')?.innerText.replace(/\s+/g, ' ').slice(0, 80))})`]);
-      await rctx.close();
+      // A real room with a second browser. The local Worker caps WebSocket joins at 30 a minute per IP, and the crew
+      // steps above open a dozen, so a match that drops (CONNECTION LOST on both) gets one more try after a pause.
+      let failed = [];
+      const fail = (st, lines) => { failed.push([st, lines]); };
+      const room = async () => {
+        // a rival hosts on a desktop page; we join its code
+        const rctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+        await rctx.addInitScript(() => { localStorage.clear(); localStorage.setItem('stick-fight-player', JSON.stringify({ id: 'b'.repeat(32), name: 'BOB', email: '', crews: [] })); });
+        const R = await rctx.newPage();
+        await R.goto(URL_);
+        await R.waitForFunction(() => window.__flow && window.__flow.state === 'attract');
+        await R.evaluate(() => { const f = window.__flow.debug; f.go('modeSelect'); f.go('onlineMenu'); f.go('onlineHost'); });
+        let code = await until(() => R.evaluate(() => (window.__net.state === 'waiting' && window.__net.code) || null));
+        if (!code) {   // the room didn't open (the local Worker's 10 new rooms a minute): wait it out and host again
+          await sleep(30000);
+          await R.evaluate(() => { const f = window.__flow.debug; f.go('onlineMenu'); f.go('onlineHost'); });
+          code = await until(() => R.evaluate(() => (window.__net.state === 'waiting' && window.__net.code) || null));
+        }
+        await go('modeSelect', 'onlineMenu', 'onlineJoin');
+        for (let k = 0; k < 4; k++) await page.keyboard.press('Backspace');   // the code typed last time is still there
+        await page.keyboard.type(String(code || 'ZZZZ'));
+        await page.evaluate(() => window.__flow.debug.go('onlineConnecting'));
+        if (await at('onlineSelect', 20000)) {
+          await shot('onlineSelect', 900);
+          // both lock in; the host starts at once
+          await page.evaluate(() => window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true));
+          await R.evaluate(() => { window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true); });
+          await until(() => R.evaluate(() => { window.__net.pick && window.__net.pick(window.__flow.debug.sel.player, true); window.__net.startNow && window.__net.startNow(); return window.__flow.state === 'onlineFighting'; }), 15000);
+          if (await at('onlineFighting', 10000)) {
+            await sleep(1500);
+            await shot('onlineFighting', 300);
+            await page.keyboard.press('Escape');
+            await shot('onlineFighting-leave', 400);
+            await page.keyboard.press('Escape');
+            // a common stop frame on both, then the same KO on both, round after round until the match is over
+            for (let k = 0; k < 6 && (await state()) === 'onlineFighting'; k++) {
+              const f = (await page.evaluate(() => window.__net.netcode.frame)) + 60;
+              await page.evaluate((x) => { window.__net.haltAt(x); }, f); await R.evaluate((x) => { window.__net.haltAt(x); }, f);
+              await until(() => page.evaluate((x) => window.__net.netcode.frame >= x, f), 10000);
+              await until(() => R.evaluate((x) => window.__net.netcode.frame >= x, f), 10000);
+              await sleep(600);   // every frame up to the halt confirmed on both
+              const ko = await page.evaluate(() => window.__flow.debug.debugKO(1)); await R.evaluate(() => window.__flow.debug.debugKO(1));
+              await page.evaluate(() => window.__net.haltAt(Infinity)); await R.evaluate(() => window.__net.haltAt(Infinity));
+              await sleep(ko ? 4500 : 1500);
+            }
+            if (await at('onlinePost', 20000)) {
+              await shot('onlinePost', 900);
+              await R.evaluate(() => window.__flow.debug.go('onlineMenu'));   // the rival leaves the room
+              await sleep(2500);
+              await shot(`${await state()}-rivalleft`, 300);
+            } else fail('onlinePost', [`never got there (${await state()})`]);
+          } else fail('onlineFighting', [`never got there (${await state()}: ${await page.evaluate(() => document.querySelector('#flow')?.innerText.replace(/\s+/g, ' ').slice(0, 90))}; rival ${await R.evaluate(() => window.__flow.state)})`]);
+        } else fail('onlineSelect', [`never got there (${await state()}: ${await page.evaluate(() => document.querySelector('#flow')?.innerText.replace(/\s+/g, ' ').slice(0, 80))})`]);
+        await rctx.close();
+      };
+      await room();
+      if (failed.length) { failed = []; await go('onlineMenu'); await sleep(30000); await room(); }
+      for (const [st, lines] of failed) report(st, lines);
     }
     if (want('watchList') || want('watching')) {
       // two desktop pages fight in a public room; we watch
