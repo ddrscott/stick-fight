@@ -13,7 +13,11 @@
 //                     counts it only when both reports say the same thing (roomResult below), as
 //                     vs = 'pvp'. One page alone can't put a result on the books.
 //   horde             one `match` data point per run, for its length and hit counts; a run has no
-//                     opponent fighter and always ends in a loss, so it stays out of the rollups.
+//                     opponent fighter and always ends in a loss, so it stays out of the matchups
+//                     (its time still counts).
+//
+// Play time (migrations/0004_playtime.sql): every match above also adds its length to stats_time, one
+// row per UTC day and mode, and training (which has no match) adds the page's heartbeats ({ e: 'play' }).
 import { type Env, API, BUSY, json, allowed, track } from "./env";
 import { FIGHTERS, isFighter } from "./roster";
 
@@ -23,6 +27,33 @@ const SIM_HZ = 120;                       // the sim's step rate: an online matc
 const MAX_SECS = 3600;
 const STATS_TTL_S = 600;                  // the edge keeps api/stats this long
 const REPORT_TTL_MS = 5 * 60 * 1000;      // one side's report waits this long for the other's
+export const TIME_MODES = ["arcade", "horde", "training", "quick", "crew"] as const;
+type TimeMode = (typeof TIME_MODES)[number];
+const CPU_MODES = new Set<string>(["arcade", "horde", "training"]);   // one player, against the CPU or the dummy
+export const PLAY_BEAT_MAX = 90;          // training: the most one heartbeat may add (the page sends one a minute)
+
+/** today's key in stats_time: the UTC date */
+export const utcDay = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
+
+/** Seconds played (and matches finished) on today's row for a mode. Never throws: bookkeeping never breaks a match. */
+export async function recordTime(env: Env, mode: TimeMode, secs: number, matches: number): Promise<void> {
+  if (!(secs > 0 || matches > 0)) return;
+  try {
+    await env.DB.prepare(`INSERT INTO stats_time (day, mode, secs, matches, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
+      ON CONFLICT(day, mode) DO UPDATE SET secs = secs + excluded.secs, matches = matches + excluded.matches, updated_at = excluded.updated_at`)
+      .bind(utcDay(), mode, Math.max(0, Math.floor(secs)), matches, Date.now()).run();
+  } catch (e) { console.error("stats: time rollup failed", e); }
+}
+
+/** A training heartbeat ({ e: 'play', m: { mode: 'training', secs } }): the seconds since the last one, capped.
+ *  Returns the promise, or null when it isn't one we count. */
+export function recordPlay(env: Env, raw: unknown): Promise<void> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const m = raw as Record<string, unknown>;
+  if (m.mode !== "training") return null;   // every other mode's time comes with its match
+  const secs = int(m.secs, 0, PLAY_BEAT_MAX);
+  return secs > 0 ? recordTime(env, "training", secs, 0) : null;
+}
 
 const int = (v: unknown, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.floor(Number(v) || 0)));
 const pair = (v: unknown, hi: number): [number, number] => (Array.isArray(v) ? [int(v[0], 0, hi), int(v[1], 0, hi)] : [0, 0]);
@@ -70,6 +101,7 @@ export async function recordMatch(env: Env, req: Request | null, m: Match): Prom
   //          perfect rounds P1, perfect rounds P2, mirror (1 or 0), stage
   track(env, req, "match", [m.mode, m.p1, m.p2, horde ? "run" : winner < 0 ? "draw" : winner === 0 ? "p1" : "p2", pvp ? "pvp" : "cpu", m.how, m.move],
     m.secs, [m.wins[0], m.wins[1], m.level, m.hits[0], m.hits[1], m.combo[0], m.combo[1], m.perfects[0], m.perfects[1], mirror ? 1 : 0, m.stage]);
+  await recordTime(env, m.mode, m.secs, 1);   // play time: every mode, horde included
   if (horde) return;
   // vs CPU the row reads player's fighter against the CPU's; online the pair is stored once, a <= b
   const flip = pvp && m.p1 > m.p2;
@@ -145,11 +177,32 @@ type Side = { games: number; wins: number; losses: number; draws: number; secs: 
 type Row = { a: string; b: string; vs: string; games: number; a_wins: number; b_wins: number; draws: number; secs: number; a_perfects: number; b_perfects: number; timeouts: number };
 const side = (): Side => ({ games: 0, wins: 0, losses: 0, draws: 0, secs: 0, perfects: 0, mirrors: 0 });
 
+type TimeRow = { mode: string; secs: number; matches: number };
+type Spent = { secs: number; matches: number };
+/** Play time from stats_time: all time and today (UTC), by mode and by one player (cpu) or two (pvp). */
+export function playTime(day: string, all: TimeRow[], today: TimeRow[]) {
+  const sum = (rows: TimeRow[]) => {
+    const mode = Object.fromEntries(TIME_MODES.map((m) => [m, { secs: 0, matches: 0 }])) as Record<TimeMode, Spent>;
+    const vs = { cpu: { secs: 0, matches: 0 }, pvp: { secs: 0, matches: 0 } }, total = { secs: 0, matches: 0 };
+    for (const row of rows) {
+      const m = mode[row.mode as TimeMode];
+      if (!m) continue;
+      const secs = Number(row.secs) || 0, matches = Number(row.matches) || 0, v = CPU_MODES.has(row.mode) ? vs.cpu : vs.pvp;
+      m.secs += secs; m.matches += matches; v.secs += secs; v.matches += matches; total.secs += secs; total.matches += matches;
+    }
+    return { ...total, mode, vs };
+  };
+  return { day, all: sum(all), today: sum(today) };
+}
+
 /** The rollups as the pages read them. */
 async function buildStats(env: Env) {
-  const [p, r] = await env.DB.batch([
+  const day = utcDay();
+  const [p, r, ta, td] = await env.DB.batch([
     env.DB.prepare("SELECT fighter, mode, picks FROM stats_picks"),
     env.DB.prepare("SELECT a, b, vs, games, a_wins, b_wins, draws, secs, a_perfects, b_perfects, timeouts FROM stats_matchups"),
+    env.DB.prepare("SELECT mode, SUM(secs) AS secs, SUM(matches) AS matches FROM stats_time GROUP BY mode"),
+    env.DB.prepare("SELECT mode, secs, matches FROM stats_time WHERE day = ?1").bind(day),
   ]);
   const fighters: Record<string, { picks: Record<string, number>; cpu: Side; pvp: Side }> = {};
   for (const id of FIGHTERS) fighters[id] = { picks: {}, cpu: side(), pvp: side() };
@@ -170,7 +223,7 @@ async function buildStats(env: Env) {
     else if (row.a === row.b) fighters[row.a].pvp.mirrors += row.games;                        // a mirror says nothing about the fighter
     else { add(fighters[row.a].pvp, row, row.a_wins, row.b_wins, row.a_perfects); add(fighters[row.b].pvp, row, row.b_wins, row.a_wins, row.b_perfects); }
   }
-  return { at: Date.now(), ttl: STATS_TTL_S, totals, fighters, matchups };
+  return { at: Date.now(), ttl: STATS_TTL_S, totals, fighters, matchups, time: playTime(day, ta.results as TimeRow[], td.results as TimeRow[]) };
 }
 
 /** Public and the same for everyone, so the edge keeps one copy per location for ten minutes (the Cache API). */

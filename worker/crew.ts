@@ -9,6 +9,11 @@
 //   h2h       head to head for every pair that has played: wins each, draws, rounds each
 //   matches   every recorded match (the last 300), keyed by "<match id>:<n>" so a result counts once
 //   live      the matches the room has started: which quick room, who hosts, who joins
+//   mtime     each member's time played in the crew's matches (seconds, from the host's report)
+//   fpairs    the crew's own matchup table: fighter against fighter, matches, wins each, draws, seconds
+//   scores    the crew's high score tables, ARCADE and HORDE (the top 10 of each): initials, score,
+//             fighter, the stage or floors reached, when, and which member posted it (never shown)
+//   posts     when each member last posted a score (a day's worth), for the rate limit
 //
 // The lobby is the room's WebSocket (hibernating): presence (who's here and whether they're idle,
 // ready or playing), PLAY, and the standings. When two members are ready the room opens a quick room
@@ -24,6 +29,8 @@
 // A crew with no activity (nobody opening it, no result) for 90 days is deleted by the alarm.
 import { DurableObject } from "cloudflare:workers";
 import { type Env, claimRoom, sha256, PID_RE, cleanName, track } from "./env";
+import { isFighter } from "./roster";
+import { scoreCap, MAX_STAGE, MAX_FLOORS } from "../src/flow/scorecap.js";
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const CREW_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -34,7 +41,16 @@ const KEEP_MATCHES = 300;
 const MAX_MESSAGE = 4096;
 const MSG_RATE = 10, MSG_BURST = 30, MSG_STRIKES = 200;
 const LIVE_TTL_MS = 24 * 60 * 60 * 1000;
-const CHAR_RE = /^[a-z0-9_-]{1,32}$/;
+const MAX_SECS = 3600;                     // the longest match length a result may report
+// crew high scores (README, Crew rooms, High scores): the page reports a finished run; these keep it plausible
+export const SCORE_KINDS = ["arcade", "horde"] as const;
+export type ScoreKind = (typeof SCORE_KINDS)[number];
+const BOARD = 10;                          // rows kept per table
+const POST_GAP_MS = 20 * 1000;             // one score a member per 20 seconds (a run takes minutes)
+const POSTS_PER_DAY = 30;                  // and 30 a day
+const DAY_MS = 24 * 60 * 60 * 1000;
+const INITIALS_RE = /^[A-Z0-9]{3}$/;
+export type ScoreRow = { initials: string; score: number; char: string; reach: number; clear: number; at: number };
 
 type Status = "lobby" | "ready" | "match";
 type Att = { mid: string; name: string; status: Status; readyAt: number; match: string };
@@ -60,8 +76,25 @@ export class Crew extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS matches (key TEXT PRIMARY KEY, at INTEGER NOT NULL, host TEXT NOT NULL, guest TEXT NOT NULL,
         winner INTEGER NOT NULL, hw INTEGER NOT NULL, gw INTEGER NOT NULL, hc TEXT NOT NULL, gc TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS live (id TEXT PRIMARY KEY, code TEXT NOT NULL, host TEXT NOT NULL, guest TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS mtime (member TEXT PRIMARY KEY, secs INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS fpairs (a TEXT NOT NULL, b TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, aw INTEGER NOT NULL DEFAULT 0,
+        bw INTEGER NOT NULL DEFAULT 0, d INTEGER NOT NULL DEFAULT 0, secs INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (a, b));
+      CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, at INTEGER NOT NULL, member TEXT NOT NULL,
+        initials TEXT NOT NULL, score INTEGER NOT NULL, char TEXT NOT NULL, reach INTEGER NOT NULL, clear INTEGER NOT NULL DEFAULT 0);
+      CREATE INDEX IF NOT EXISTS scores_kind ON scores (kind, score DESC);
+      CREATE TABLE IF NOT EXISTS posts (member TEXT NOT NULL, at INTEGER NOT NULL);
     `);
     this.schema = true;
+    // a crew from before the matchup table: fill it once from the matches it still keeps (the last 300)
+    if (this.meta("name") !== null && this.meta("fpairs") === null) {
+      this.ctx.storage.sql.exec(`INSERT OR IGNORE INTO fpairs (a, b, n, aw, bw, d)
+        SELECT CASE WHEN hc <= gc THEN hc ELSE gc END, CASE WHEN hc <= gc THEN gc ELSE hc END, COUNT(*),
+          SUM(CASE WHEN winner < 0 THEN 0 WHEN (winner = 0) = (hc <= gc) THEN 1 ELSE 0 END),
+          SUM(CASE WHEN winner < 0 THEN 0 WHEN (winner = 0) = (hc <= gc) THEN 0 ELSE 1 END),
+          SUM(CASE WHEN winner < 0 THEN 1 ELSE 0 END)
+        FROM matches WHERE hc <> '' AND gc <> '' GROUP BY 1, 2`);
+      this.setMeta("fpairs", 1);
+    }
   }
   private meta(k: string): string | null {
     const r = this.sql<{ v: string }>("SELECT v FROM meta WHERE k = ?", k);
@@ -207,8 +240,9 @@ export class Crew extends DurableObject<Env> {
     if (!live || live.host !== a.mid || !(n >= 1 && n < 10000)) return;
     const winner = Number(m.winner) === 0 ? 0 : Number(m.winner) === 1 ? 1 : -1;
     const wins = Array.isArray(m.wins) ? m.wins.map((v) => Math.max(0, Math.min(9, Math.floor(Number(v) || 0)))) : [0, 0];
-    const chars = Array.isArray(m.chars) ? m.chars.map((c) => (typeof c === "string" && CHAR_RE.test(c) ? c : "")) : ["", ""];
+    const chars = Array.isArray(m.chars) ? m.chars.map((c) => (isFighter(c) ? c : "")) : ["", ""];
     const [hw, gw] = [wins[0] | 0, wins[1] | 0], [hc, gc] = [chars[0] || "", chars[1] || ""];
+    const secs = Math.max(0, Math.min(MAX_SECS, Math.floor(Number(m.secs) || 0)));   // the match's length (older pages send none)
     const key = `${id}:${n}`, now = Date.now();
     const recorded = this.ctx.storage.transactionSync(() => {
       const ins = this.sql("INSERT INTO matches (key, at, host, guest, winner, hw, gw, hc, gc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO NOTHING RETURNING key",
@@ -229,6 +263,19 @@ export class Crew extends DurableObject<Env> {
         ON CONFLICT(a, b) DO UPDATE SET aw = aw + excluded.aw, bw = bw + excluded.bw, d = d + excluded.d, ar = ar + excluded.ar, br = br + excluded.br`,
         x, y, aw, bw, winner < 0 ? 1 : 0, hostIsA ? hw : gw, hostIsA ? gw : hw);
       this.ctx.storage.sql.exec("DELETE FROM matches WHERE key IN (SELECT key FROM matches ORDER BY at DESC LIMIT -1 OFFSET ?)", KEEP_MATCHES);
+      // time played: the crew's total, and each member's
+      if (secs) {
+        this.setMeta("secs", Number(this.meta("secs") || 0) + secs);
+        for (const mid of [live.host, live.guest]) this.ctx.storage.sql.exec("INSERT INTO mtime (member, secs) VALUES (?, ?) ON CONFLICT(member) DO UPDATE SET secs = secs + excluded.secs", mid, secs);
+      }
+      // the crew's own matchup table, each pair of fighters once with a <= b (a = b is a mirror)
+      if (hc && gc) {
+        const hcIsA = hc <= gc, [fa, fb] = hcIsA ? [hc, gc] : [gc, hc];
+        const faw = winner < 0 ? 0 : (winner === 0) === hcIsA ? 1 : 0, fbw = winner < 0 ? 0 : 1 - faw;
+        this.ctx.storage.sql.exec(`INSERT INTO fpairs (a, b, n, aw, bw, d, secs) VALUES (?, ?, 1, ?, ?, ?, ?)
+          ON CONFLICT(a, b) DO UPDATE SET n = n + 1, aw = aw + excluded.aw, bw = bw + excluded.bw, d = d + excluded.d, secs = secs + excluded.secs`,
+          fa, fb, faw, fbw, winner < 0 ? 1 : 0, secs);
+      }
       return true;
     });
     if (!recorded) return;
@@ -250,17 +297,83 @@ export class Crew extends DurableObject<Env> {
     for (const w of this.sockets()) { const a = this.att(w); if (a.mid && (rank[a.status] || 0) > (rank[online.get(a.mid) as Status] || 0)) online.set(a.mid, a.status); }
     const fav = new Map<string, string>();
     for (const r of this.sql<{ member: string; char: string }>("SELECT member, char FROM plays ORDER BY n ASC")) fav.set(r.member, r.char);   // the last written is the most played
+    const time = new Map<string, number>();
+    for (const r of this.sql<{ member: string; secs: number }>("SELECT member, secs FROM mtime")) time.set(r.member, r.secs);
     const members = this.sql<{ id: string; name: string; first_seen: number; last_seen: number; w: number; l: number; d: number; rw: number; rl: number; last_char: string }>(
       "SELECT id, name, first_seen, last_seen, w, l, d, rw, rl, last_char FROM members ORDER BY w DESC, (w - l) DESC, (w + l + d) DESC, last_seen DESC")
-      .map((r) => ({ id: r.id, name: r.name, w: r.w, l: r.l, d: r.d, rw: r.rw, rl: r.rl, fav: fav.get(r.id) || "", last: r.last_char, first: r.first_seen, seen: r.last_seen, on: online.get(r.id) || "" }));
+      .map((r) => ({ id: r.id, name: r.name, w: r.w, l: r.l, d: r.d, rw: r.rw, rl: r.rl, fav: fav.get(r.id) || "", last: r.last_char, first: r.first_seen, seen: r.last_seen, on: online.get(r.id) || "", secs: time.get(r.id) || 0 }));
     return JSON.stringify({
       t: "state",
       crew: { name: this.meta("name"), slug: this.meta("slug"), created: Number(this.meta("created") || 0), expires: Number(this.meta("expires") || 0) },
       members,
       h2h: this.sql("SELECT a, b, aw, bw, d, ar, br FROM h2h"),
       recent: this.sql(`SELECT at, host, guest, winner, hw, gw, hc, gc FROM matches ORDER BY at DESC LIMIT ${RECENT}`),
+      stats: this.stats(members),
+      scores: this.boards(true),
     });
   }
+  /** the crew's stats (README, Crew rooms, Stats): time played, matches, the most-picked fighters, its matchup table */
+  private stats(members: { w: number; l: number; d: number }[]) {
+    // every match adds one result to each of its two members, so the matches are half the results
+    const matches = Math.round(members.reduce((n, m) => n + m.w + m.l + m.d, 0) / 2);
+    return {
+      secs: Number(this.meta("secs") || 0), matches,
+      picks: this.sql<{ char: string; n: number }>("SELECT char, SUM(n) AS n FROM plays GROUP BY char ORDER BY n DESC, char LIMIT 5").map((r) => [r.char, r.n]),
+      pairs: this.sql<{ a: string; b: string; n: number; aw: number; bw: number; d: number; secs: number }>("SELECT a, b, n, aw, bw, d, secs FROM fpairs ORDER BY n DESC, a, b LIMIT 60")
+        .map((r) => [r.a, r.b, r.n, r.aw, r.bw, r.d, r.secs]),
+    };
+  }
+  /** the two high score tables, best first (with: which member posted each row, for the lobby's YOU) */
+  private boards(withMember = false): Record<ScoreKind, (ScoreRow & { member?: string })[]> {
+    const read = (kind: ScoreKind) => this.sql<ScoreRow & { member: string }>(
+      `SELECT initials, score, char, reach, clear, at, member FROM scores WHERE kind = ? ORDER BY score DESC, at ASC LIMIT ${BOARD}`, kind)
+      .map(({ member, ...r }) => (withMember ? { ...r, member } : r));
+    return { arcade: read("arcade"), horde: read("horde") };
+  }
+
+  /** GET api/crews/<slug>/scores: the crew's name and its two tables, for the attract loop and the initials
+   *  screen (anyone with the link; initials only, never a member). null when there's no such crew. Reads only. */
+  async scoreBoard(): Promise<{ name: string; arcade: ScoreRow[]; horde: ScoreRow[] } | null> {
+    if (!this.schema && !this.sql("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").length) return null;
+    this.ensure();
+    if (!this.exists()) return null;
+    return { name: this.meta("name") || "", ...this.boards() };
+  }
+
+  /** POST api/crews/<slug>/scores: a member's finished run. { ok, rank } (rank 0..9 on the table, -1 off it) or
+   *  { error }: no-crew, not-member, bad-score (junk), too-high (over what the rules allow), slow-down (rate). */
+  async submitScore(pid: string, raw: unknown): Promise<{ ok: true; rank: number } | { error: string }> {
+    if (!this.schema && !this.sql("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").length) return { error: "no-crew" };
+    this.ensure();
+    if (!this.exists()) return { error: "no-crew" };
+    if (!PID_RE.test(pid)) return { error: "not-member" };
+    const mid = (await sha256(`crew:${this.meta("slug")}:${pid}`)).slice(0, 16);
+    if (!this.sql("SELECT 1 FROM members WHERE id = ?", mid).length) return { error: "not-member" };
+    const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    const kind = SCORE_KINDS.find((k) => k === r.kind);
+    const initials = typeof r.initials === "string" ? r.initials.toUpperCase() : "";
+    const score = typeof r.score === "number" ? r.score : NaN, reach = typeof r.reach === "number" ? r.reach : NaN;   // numbers, never strings
+    if (!kind || !INITIALS_RE.test(initials) || !isFighter(r.char) || !Number.isInteger(score) || score <= 0 || !Number.isInteger(reach)) return { error: "bad-score" };
+    if (kind === "arcade" ? reach < 1 || reach > MAX_STAGE : reach < 0 || reach > MAX_FLOORS) return { error: "bad-score" };
+    const clear = kind === "arcade" && r.clear === true && reach >= 6 ? 1 : 0;   // ALL CLEAR: past the boss
+    if (score > scoreCap(kind, reach)) return { error: "too-high" };
+    const now = Date.now();
+    this.ctx.storage.sql.exec("DELETE FROM posts WHERE at < ?", now - DAY_MS);
+    const mine = this.sql<{ at: number }>("SELECT at FROM posts WHERE member = ? ORDER BY at DESC", mid);
+    if (mine.length >= POSTS_PER_DAY || (mine.length && now - mine[0].at < POST_GAP_MS)) return { error: "slow-down" };
+    const rank = this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec("INSERT INTO posts (member, at) VALUES (?, ?)", mid, now);
+      const id = this.sql<{ id: number }>("INSERT INTO scores (kind, at, member, initials, score, char, reach, clear) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        kind, now, mid, initials, score, r.char, reach, clear)[0].id;
+      // the table keeps its top 10 (an earlier score wins a tie)
+      this.ctx.storage.sql.exec(`DELETE FROM scores WHERE kind = ? AND id NOT IN (SELECT id FROM scores WHERE kind = ? ORDER BY score DESC, at ASC, id ASC LIMIT ${BOARD})`, kind, kind);
+      return this.sql<{ id: number }>(`SELECT id FROM scores WHERE kind = ? ORDER BY score DESC, at ASC, id ASC LIMIT ${BOARD}`, kind).findIndex((x) => x.id === id);
+    });
+    await this.touch();   // a run posted is a visit: the crew lives another 90 days
+    this.broadcast();     // the lobby's HIGH SCORES, for anyone in it
+    return { ok: true, rank };
+  }
+
   private broadcast() {
     const s = this.state();
     for (const w of this.sockets()) if (this.att(w).mid) this.send(w, s);

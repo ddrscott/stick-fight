@@ -25,7 +25,8 @@
     "test:select": "node scripts/select/check.mjs",
     "test:square": "node scripts/shots/portrait.mjs --check --only 390x844,412x915,375x667,395x700,412x640 --out gauntlet/tmp/portrait && node scripts/shots/square-fit.mjs",
     "test:unfurl": "node scripts/og/check.mjs",
-    "test:move": "node scripts/move/check.mjs"
+    "test:move": "node scripts/move/check.mjs",
+    "test:crew": "node scripts/crew/check.mjs && node scripts/crew/lobby.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",

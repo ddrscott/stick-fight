@@ -223,6 +223,9 @@ export function createOnline(game) {
     emit('connected', { mode: link.mode, role, code });
     game.startMatch({ seed, localIndex, lockstep, chars, botch, rules });
     if (localIndex === 0) track('online_match', [chars[0] || '', chars[1] || '', crewMode ? 'crew' : 'quick'], m);   // the host counts it once
+    // the live count (api/now): the host tells its room a match is on, with the two fighters and nothing else; the
+    // room takes it off when the result comes in or a player leaves (worker/index.ts Lobby)
+    if (localIndex === 0 && analyticsOn && link) { try { link.sendControl({ t: 'sys', ev: 'live', chars: [chars[0] || '', chars[1] || ''] }); } catch { /* closing */ } }
     emit('start', { seed, localIndex, chars, botch, n: m, crew: crewMode });
     readout.show(true);
   }
@@ -261,7 +264,8 @@ export function createOnline(game) {
     const me = role === 'host' ? 0 : 1;
     if (!crewMode) addRivalResult(rivalPid, winner < 0 ? 'd' : winner === me ? 'w' : 'l');   // a crew keeps its own, on the server
     feed.end({ f: ls ? ls.frame : 0, wins, tally: { host: tally.host, guest: tally.guest, draw: tally.draw } });   // spectators: the last frames, then the result
-    last = { n, winner, wins, chars: [(sim.units[0].char && sim.units[0].char.id) || '', (sim.units[1].char && sim.units[1].char.id) || ''], hash: hashSim(sim), frame: ls ? ls.frame : -1 };
+    last = { n, winner, wins, chars: [(sim.units[0].char && sim.units[0].char.id) || '', (sim.units[1].char && sim.units[1].char.id) || ''], hash: hashSim(sim), frame: ls ? ls.frame : -1,
+      secs: ls ? Math.round(Math.max(0, ls.matchAt | 0) / 120) : 0 };   // the match's length (the sim steps at 120 Hz), for the crew's play time
     // the books (README, Analytics): each page tells the room the result, and the room counts it only when the two
     // agree (so a player whose browser asks not to be tracked keeps the match off the books for both). Everything outside x comes from the final state both sims hold; x is this page's own count of the effects
     if (link && ls && analyticsOn) link.sendControl({ t: 'sys', ev: 'result', n, seed: matchSeed, mode: crewMode ? 'crew' : 'quick', chars: last.chars, wins, f: Math.max(0, ls.matchAt | 0), how: howEnded(sim),
