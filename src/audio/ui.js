@@ -14,7 +14,8 @@
 // it and goes no further, so it never also resumes a paused game.
 //
 // The sliders are drawn here and driven by pointer events, because touch.js cancels every
-// touchmove on the page and a native range input on Android needs those.
+// touchmove on the page and a native range input on Android needs those. The panel itself is a
+// data-scroll box (touch.js), so where it's taller than the screen a finger scrolls it.
 
 import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
@@ -57,6 +58,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     </div>
     <p class="sf-keys">M MUSIC ON/OFF &nbsp; N NEXT TRACK</p>
     <p class="sf-credit">MUSIC MADE WITH <a href="https://strudel.cc" target="_blank" rel="noopener">STRUDEL</a> (<a href="https://codeberg.org/uzu/strudel" target="_blank" rel="noopener">AGPL-3.0</a>) &nbsp;·&nbsp; GAME <a href="https://github.com/ddrscott/stick-fight" target="_blank" rel="noopener">SOURCE</a></p>`;
+  panel.dataset.scroll = 'y';   // taller than the screen (a phone sideways with Safari's bars up), it scrolls by finger: touch.js
   document.body.appendChild(panel);
   const $ = (s) => panel.querySelector(s);
   // keep the panel's touches away from the fight: no synthetic mouse events reach the game
@@ -237,7 +239,8 @@ function injectStyle() {
     box-shadow: 0 0 18px rgba(255,43,214,0.55), inset 0 0 22px rgba(255,43,214,0.12);
     font-family: 'Teko', 'Arial Narrow', sans-serif; opacity: 0; pointer-events: none; transition: opacity 120ms, transform 120ms;
     text-shadow: ${PLAIN};   /* settings are read, so the letters don't glow (README, "The look") */
-    touch-action: none; -webkit-user-select: none; user-select: none;
+    /* on a screen shorter than the panel it scrolls by finger (data-scroll, see touch.js); the sliders keep touch-action: none */
+    touch-action: pan-y; overscroll-behavior: contain; -webkit-user-select: none; user-select: none;
   }
   .sf-panel.sf-open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
   .sf-panel * { box-sizing: border-box; }
