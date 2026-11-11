@@ -223,7 +223,6 @@ try {
   await FH.evaluate(() => document.querySelector('.fl-spec').click());
   check('and back on', /SPECTATORS: ON/.test(await sw()));
   const FG = await page(`${BASE}play/?room=${code2}`, prof('TRIN', 'b'), SMALL);
-  await FG.evaluate(() => window.__flow.debug.go('onlineConnecting'));
   check('both players are on the pick screen', !!(await until(async () => (await FH.evaluate(() => window.__net.state)) === 'select' && (await FG.evaluate(() => window.__net.state)) === 'select', 30000)));
   const FS = await spectator(code2);
   const pickWait = await until(async () => { const s = await wstats(FS); return s.state === 'waiting' && /NO MATCH ON YET/.test(s.text) ? s : null; });

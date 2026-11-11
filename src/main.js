@@ -1705,7 +1705,7 @@ input.onKey((code) => {
 // ---- loop + gauntlet hook ---------------------------------------------------------------------------
 let lastFrameMs = 16;
 let last = performance.now();
-if (attractHome) flow.start({ room: online.roomFromUrl() });   // plain index.html: the arcade flow (?room=CODE opens JOIN with the code)
+if (attractHome) flow.start({ room: online.roomFromUrl() });   // plain index.html: the arcade flow (?room=CODE joins that room)
 else setScene(params.get('scene'));
 window.__gauntlet = {
   scenes: Object.keys(scenes),

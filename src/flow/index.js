@@ -51,14 +51,14 @@ import { techniques, botchEnabled, setBotchEnabled } from './techniques.js';
 import { roundTime, bestOf, cycleRoundTime, cycleBestOf, timeLabel } from './rules.js';
 import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './netApi.js';
 import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
-import { profile, setName as saveName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
+import { profile, setName as saveName, guestName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
 import { createCrew, createCrewRoom, cleanSlug, crewLink } from '../net/crew.js';
 import { qrSvg } from '../qr.js';
 import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
-  off: ['attract', 'onlineJoin', 'charSelect', 'nameEntry', 'crewLobby', 'signInCode', 'watching'],
+  off: ['attract', 'onlineJoin', 'onlineConnecting', 'charSelect', 'nameEntry', 'crewLobby', 'signInCode', 'watching'],
   attract: ['modeSelect', 'highScores', 'controls', 'install'],
   highScores: ['attract', 'modeSelect'],
   controls: ['attract', 'modeSelect'],
@@ -1067,6 +1067,8 @@ export function createFlow(ctx) {
       msg = el('div', 'fl-label fl-dots', 'CONNECTING');
       statusEl = msg;
       root.appendChild(msg);
+      const p = profile();   // a name handed out by a join link: say what it is
+      if (p.auto) root.appendChild(el('div', 'fl-small', `YOU'RE ${p.name}  ·  CHANGE IT ANY TIME UNDER PROFILE`));
       const items = btnRow(root, [button('CANCEL', () => go('onlineJoin'), 'fl-violet'), mainMenuBtn()]);
       return { items, back: () => go('onlineJoin') };
     });
@@ -1519,7 +1521,7 @@ export function createFlow(ctx) {
   function screenName() {
     const p = profile();
     textScreen('fl-name', {
-      title: p.name ? 'CHANGE YOUR NAME' : 'WHAT DO WE CALL YOU?',
+      title: p.name && !p.auto ? 'CHANGE YOUR NAME' : 'WHAT DO WE CALL YOU?',
       label: 'YOUR NAME ONLINE  ·  3 TO 12 LETTERS OR NUMBERS',
       msg: 'OTHER PLAYERS SEE THIS NAME, AND NOTHING ELSE ABOUT YOU',
       value: p.name, max: 12,
@@ -1672,7 +1674,8 @@ export function createFlow(ctx) {
   function openCrew(slug) {
     crewSlug = slug; crewFail = '';
     const from = state;
-    if (!profile().name) { askName(() => go('crewLobby'), () => go(from === 'off' ? 'attract' : 'onlineMenu')); return; }
+    if (from === 'off') guestName();   // straight from a link: nothing to type first (a name is handed out)
+    if (!profile().name) { askName(() => go('crewLobby'), () => go('onlineMenu')); return; }
     go('crewLobby');
   }
   function setCrewParam(slug) {
@@ -1785,7 +1788,8 @@ export function createFlow(ctx) {
     const known = profile().crews.find((c) => c.slug === slug);
     ui.show('fl-crew', (root) => {
       const title = el('h1', 'fl-h2 fl-crewname fl-read', (crewCli && crewCli.state && crewCli.state.crew.name) || (known && known.name) || 'CREW ROOM');
-      const sub = el('div', 'fl-label', 'CREW ROOM  ·  BOOKMARK THIS PAGE TO COME BACK');
+      const me = profile();   // a name handed out by the link: say what it is, and where to change it
+      const sub = el('div', 'fl-label', me.auto ? `YOU'RE ${me.name}  ·  CHANGE IT UNDER ONLINE MENU, PROFILE` : 'CREW ROOM  ·  BOOKMARK THIS PAGE TO COME BACK');
       const linkEl = el('div', 'fl-link', link);
       root.append(title, sub, linkEl);
       const body = el('div', 'fl-row fl-crewbody');
@@ -1933,11 +1937,12 @@ export function createFlow(ctx) {
       demo(); signIn = { email: String(h.get('signin')).toLowerCase(), dev: '', code: String(h.get('code')), auto: true };
       go('signInCode');
     } else if (watching.length === CODE_LEN) { demo(); watchCode = watching; go('watching'); }
-    else if (crew) { demo(); openCrew(crew); }   // a crew link: the lobby (a name first, the first time)
+    else if (crew) { demo(); openCrew(crew); }   // a crew link: straight into the lobby
     else if (code) {
-      demo(); joinCode = code;
-      const toJoin = () => go('onlineJoin');   // JOIN with the code filled in; the fighters are picked in the room
-      if (!profile().name) askName(toJoin, () => go('attract')); else toJoin();
+      // a room link: straight to JOINING, and from there the pick screen. Nothing to type: a first-timer
+      // is handed a name (profile.js guestName). A code that isn't whole opens JOIN to finish it.
+      demo(); joinCode = code; guestName();
+      go(code.length === CODE_LEN ? 'onlineConnecting' : 'onlineJoin');
     } else go('attract');
   }
 
