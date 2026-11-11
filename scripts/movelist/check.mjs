@@ -120,6 +120,17 @@ async function onLongest(page, touch) {
   // the cards carry the name; find it by opening each isn't needed, the sheet's name follows the cursor
   const cards = await page.evaluate(() => [...document.querySelectorAll('#flow .fl-card')].map((c) => { const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, text: c.textContent }; }));
   const want = cards.find((c) => c.text.replace(/\s+/g, ' ').toUpperCase().includes(LONGEST.toUpperCase())) || cards[0];
+  // held upright the roster is a carousel (most cards are round the back): step to it with ›, the way a thumb would
+  if (await page.evaluate(() => !!document.querySelector('#flow .fl-tall'))) {
+    const nx = await page.evaluate(() => { const r = document.querySelector('#flow .fl-next').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    for (let i = 0; i < cards.length; i++) {
+      const on = await page.evaluate(() => document.querySelector('#flow .fl-cname').textContent);
+      if (on.toUpperCase() === LONGEST.toUpperCase()) break;
+      await page.touchscreen.tap(nx[0], nx[1]); await sleep(120);
+    }
+    await sleep(300);
+    return;
+  }
   if (touch) await page.touchscreen.tap(want.x, want.y); else await page.mouse.move(want.x, want.y);
   await sleep(300);
 }

@@ -32,14 +32,16 @@ let bad = 0;
 
 // everything a player reads or presses in the menu that's up, against the stage's box (and the screen's)
 function clipped() {
-  const st = document.getElementById('stage').getBoundingClientRect();
+  // the upright character select (.fl-tall) leaves the 16:9 box for the whole viewport (README, Character select)
+  const tall = document.querySelector('#flow .fl-screen.fl-tall');
+  const st = tall ? { top: 0, left: 0, right: innerWidth, bottom: innerHeight, width: innerWidth, height: innerHeight } : document.getElementById('stage').getBoundingClientRect();
   const out = [];
   const flow = document.querySelector('#flow .fl-screen');
   if (flow) for (const n of flow.querySelectorAll('.fl-h1, .fl-h2, .fl-h3, .fl-label, .fl-btn, .fl-tech, .fl-detail, .fl-small, .lg-bar, .fl-table')) {
     const r = n.getBoundingClientRect();
     if (!r.width || !r.height) continue;
     // inside a scrolling menu an item may be out of view; the scroller itself has to be inside the stage
-    const sc = n.closest('.fl-scroll');
+    const sc = n.closest('.fl-scroll, .fl-ring, .fl-gridscroll');
     const box = sc && sc !== n ? sc.getBoundingClientRect() : r;
     if (box.top < st.top - 1 || box.bottom > st.bottom + 1 || box.left < st.left - 1 || box.right > st.right + 1)
       out.push(`${n.className.split(' ').slice(0, 2).join('.')} "${(n.textContent || '').trim().slice(0, 18)}" ${Math.round(box.left - st.left)},${Math.round(box.top - st.top)} ${Math.round(box.width)}x${Math.round(box.height)} (stage ${Math.round(st.width)}x${Math.round(st.height)})`);

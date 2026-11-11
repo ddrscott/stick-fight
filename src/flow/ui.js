@@ -44,6 +44,7 @@ export function createUI(onSound) {
   let focus = -1;
   let backFn = null;
   let focusFn = null;
+  let moveFn = null;
   let token = 0;
 
   // an item is off when its screen says so, or when this layout doesn't show it (the upright pause menu drops one)
@@ -55,6 +56,7 @@ export function createUI(onSound) {
   let zoomNow = 1;
   function fit() {
     if (!screen) return;
+    if (screen.classList.contains('fl-nofit')) { if (zoomNow !== 1) { zoomNow = 1; screen.style.zoom = ''; } return; }   // it fits itself (the upright select: its carousel takes what's left)
     const st = root.getBoundingClientRect();
     if (!st.width || !st.height) return;
     let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
@@ -106,8 +108,10 @@ export function createUI(onSound) {
     items = out.items || [];
     backFn = out.back || null;
     focusFn = out.onFocus || null;   // the screen follows the cursor (the character select's detail panel)
+    moveFn = out.move || null;       // the screen's own arrows first (the character select's wrap-around), else geometry
     let tapped = -1;   // the focusFirst item this touch just focused: its click is the end of that tap, not a second one
     items.forEach((it, k) => {
+      if (it.manual) return;   // the screen handles this item's pointer itself (the upright select's carousel: a swipe isn't a tap)
       // focusFirst: a tap on an item that isn't focused only focuses it; a second tap activates (a
       // character card: look before you pick). The focus lands when the finger does (pointerdown), not
       // when it lifts (click, a tap's length later).
@@ -144,7 +148,7 @@ export function createUI(onSound) {
   function clear() {
     token++;
     if (screen) { if (watch) for (const n of screen.children) watch.unobserve(n); screen.remove(); }
-    screen = null; items = []; focus = -1; backFn = null; focusFn = null;
+    screen = null; items = []; focus = -1; backFn = null; focusFn = null; moveFn = null;
   }
   function activate() {
     const it = items[focus];
@@ -158,6 +162,7 @@ export function createUI(onSound) {
   function move(dir) {
     if (!items.length) return;
     if (focus < 0) { setFocus(0, true); return; }
+    if (moveFn && moveFn(dir, focus, items[focus])) return;
     const c = (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, top: r.top, bottom: r.bottom }; };
     const a = c(items[focus].el);
     // left and right stay in the row when the row has somewhere to go (two columns over a row of
@@ -331,6 +336,8 @@ function injectStyle() {
   .fl-selrow { display: flex; gap: 1.6cqw; align-items: stretch; }
   /* six columns of tall cards: three rows hold all 18 fighters beside the sheet */
   .fl-grid { display: grid; grid-template-columns: repeat(6, 7.2cqw); grid-auto-rows: 20.5cqh; gap: 0.9cqh 0.55cqw; align-content: start; }
+  .fl-grid.fl-gridscroll { --rowh: 20.5cqh; max-height: calc(3 * var(--rowh) + 2 * 0.9cqh + 2.4cqh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 1.2cqh 0.6cqw; margin: -1.2cqh -0.6cqw; pointer-events: auto; }
+  .fl-netpick .fl-grid.fl-gridscroll { --rowh: 18.4cqh; }
   .fl-card { min-width: 0; min-height: 0; width: 7.2cqw; height: 20.5cqh; padding: 0 0 0.7cqh; justify-content: flex-end; gap: 0; overflow: hidden; }
   /* index.html makes every canvas in #stage a full-stage layer; these are inline */
   #flow .fl-card canvas, #flow canvas.fl-big { position: static; inset: auto; }
@@ -550,6 +557,80 @@ function injectStyle() {
     .fl-crew .fl-playbtn small { font-size: 2cqw; }
     .fl-crew .fl-playbtn .fl-pl { font-size: 3.6cqw; }
     .fl-crew .fl-crewpair .fl-btn { font-size: 1.9cqw; letter-spacing: 0.02em; }
+  }
+
+  /* The character select held upright (select.js, .fl-tall): the 16:9 box is a strip a quarter of the phone's
+     height, where 18 cards were 60 px tall. So this one screen leaves the box: #flow takes the whole viewport
+     under the top buttons, and the roster is a carousel with the sheet under it. Units here are the phone's
+     (#flow is the container), so 1cqw is about 4 px, not 13. The touch controls and the turn-sideways note
+     stand down while it's up. */
+  html.sq #flow:has(> .fl-tall) { position: fixed; inset: 0; z-index: 19; }
+  html.sq:has(#flow > .fl-tall) .tc-rotate, html.sq:has(#flow > .fl-tall) .tc-stickzone, html.sq:has(#flow > .fl-tall) .tc-cluster { display: none; }
+  #flow .fl-tall { justify-content: flex-start; gap: 1.1cqh; padding: calc(var(--tc-strip, 3rem) + 0.25rem) 4cqw max(0.75rem, env(safe-area-inset-bottom)); }
+  html.sq #flow .fl-tall.fl-veil { background: radial-gradient(ellipse at 50% 28%, rgba(26,8,54,0.97), rgba(5,1,12,0.985) 70%); }   /* outranks the square's see-through veil (src/touch.js) */
+  html.sq #flow .fl-tall.fl-veil::before { display: none; }
+  /* iPhone Safari's PLAY FULL SCREEN callout (src/homescreen.js) is pinned to the bottom of the screen: the footer sits above it */
+  html:has(.sf-hs-tip.sf-hs-fits) #flow .fl-tall { padding-bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 3rem + 4px + 0.6rem); }
+  #flow .fl-tall .fl-h2 { font-size: 7.2cqw; }
+  #flow .fl-tall .fl-label { font-size: 3.5cqw; line-height: 1.1; }
+  #flow .fl-tall .fl-selstatus { flex-direction: column; align-items: center; gap: 0.5cqh; font-size: 3.8cqw; min-height: 0; }
+  #flow .fl-ring { position: relative; align-self: stretch; margin: 0 -4cqw; flex: 1 1 0; min-height: 120px; max-height: 400px; overflow: hidden; touch-action: none; pointer-events: auto; }
+  #flow .fl-tall .fl-card { position: absolute; left: 50%; top: 0; height: 100%; width: auto; aspect-ratio: 0.7; translate: -50% 0; padding: 0 0 1.2cqh;
+    transition: background 80ms, border-color 80ms; transform-origin: 50% 50%; will-change: transform;
+    background: #0c0419; }   /* solid: the cards behind the middle one don't show through it */
+  #flow .fl-tall .fl-card.fl-focus { background: color-mix(in srgb, var(--c) 24%, #0e041e); }
+  #flow .fl-tall .fl-card b { font-size: 6cqw; letter-spacing: 0.06em; }
+  #flow .fl-tall .fl-card b.fl-long { font-size: 4.8cqw; line-height: 0.9; padding: 0 1cqw; }
+  #flow .fl-tall .fl-card.fl-focus { box-shadow: 0 0 0 1px color-mix(in srgb, #fff 55%, var(--c)), 0 0 4cqw var(--c), inset 0 0 4cqw color-mix(in srgb, var(--c) 50%, transparent); }
+  #flow .fl-tall .fl-card .fl-tag, #flow .fl-tall.fl-netpick .fl-card.fl-focus::before { font-size: 3.4cqw; padding: 1cqw 1.4cqw 0.6cqw; top: 1cqh; }
+  #flow .fl-tall .fl-card .fl-tag { right: 1.4cqw; }
+  #flow .fl-tall.fl-netpick .fl-card.fl-focus::before { left: 1.4cqw; }
+  #flow .fl-tall.fl-netpick .fl-card.fl-focus .fl-tag { top: 5.4cqh; }
+  #flow .fl-tall.fl-netpick .fl-card.fl-rival { outline-offset: -1.6cqw; }
+  .fl-ringstep { position: absolute; top: 50%; z-index: 200; translate: 0 -50%; pointer-events: auto; appearance: none; margin: 0; cursor: pointer; width: 48px; height: 36px; padding: 0; border: 2px solid var(--cyan); border-radius: 0;
+    background: rgba(14,4,30,0.62); color: #d8fdff; text-shadow: none; display: flex; align-items: center; justify-content: center; }
+  .fl-ringstep svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: square; }
+  .fl-ringstep:active { background: var(--cyan); color: var(--deep); }
+  .fl-ringstep:focus { outline: none; }
+  /* the key and pad legend takes its own line at the bottom here, under the hints, not over them */
+  #flow .fl-tall .lg-bar { position: static; transform: none; align-self: center; flex-wrap: wrap; row-gap: 0.6em; column-gap: 1.6em; --lg: 3.2cqw; margin-top: auto; }
+  .fl-ringstep.fl-prev { left: 2cqw; } .fl-ringstep.fl-next { right: 2cqw; }
+  #flow .fl-tall .fl-detail { position: relative; }
+  .fl-ringcount { position: absolute; top: 2.6cqw; right: 4cqw; font: 600 4.4cqw/1 'Teko', sans-serif; letter-spacing: 0.14em; color: rgba(230,214,255,0.7); }
+  #flow .fl-tall .fl-detail { width: 100%; height: auto; flex: none; display: block; padding: 2.6cqw 4cqw 3cqw; box-shadow: 0 0 3cqw color-mix(in srgb, var(--c) 40%, transparent), inset 0 0 4cqw color-mix(in srgb, var(--c) 14%, transparent); }
+  #flow .fl-tall .fl-info { gap: 0.7cqh; }
+  #flow .fl-tall .fl-cname { font-size: 7.6cqw; }
+  #flow .fl-tall .fl-cname.fl-long { font-size: 6cqw; }
+  #flow .fl-tall .fl-cname { height: 7.6cqw; line-height: 7.6cqw; }   /* a long name is smaller type in the same line, so the sheet stays one height */
+  #flow .fl-tall .fl-tagline { font-size: 4.4cqw; min-height: 2.1em; }   /* two lines' room whether it takes one or two: the sheet is one height for every fighter */
+  #flow .fl-tall .fl-moves b, #flow .fl-tall .fl-moves em, #flow .fl-tall .fl-moves small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #flow .fl-tall .fl-moves b, #flow .fl-tall .fl-moves em { height: 1.05em; line-height: 1.05; }   /* every line one height, arrows and empty notes too */
+  #flow .fl-tall .fl-moves small { display: block; height: 1.15em; line-height: 1.15; }
+  #flow .fl-tall .fl-cname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 14cqw; }
+  #flow .fl-tall .fl-stats { column-gap: 3cqw; row-gap: 0.5cqh; }
+  #flow .fl-tall .fl-stats span { font-size: 3.9cqw; }
+  #flow .fl-tall .fl-stats i { height: 1cqh; min-height: 8px; }
+  #flow .fl-tall .fl-stats i::before { box-shadow: 0 0 2cqw var(--c); }
+  #flow .fl-tall .fl-moves { gap: 0.6cqh; padding-top: 0.9cqh; }
+  #flow .fl-tall .fl-moves p { column-gap: 3cqw; }
+  #flow .fl-tall .fl-moves b, #flow .fl-tall .fl-moves em { font-size: 4.8cqw; }
+  #flow .fl-tall .fl-moves small { font-size: 3.5cqw; }
+  #flow .fl-tall .fl-selfoot { align-self: stretch; gap: 2.4cqw; flex-wrap: wrap; }
+  #flow .fl-tall .fl-selfoot .fl-btn { flex: 1 1 26%; min-width: 0; min-height: 46px; font-size: 5cqw; letter-spacing: 0.05em; padding: 0.6cqw 1cqw 0; white-space: nowrap; }
+  .fl-selhints { align-self: stretch; display: flex; justify-content: space-between; align-items: baseline; gap: 3cqw; }
+  #flow .fl-tall .fl-small { font-size: 3.3cqw; letter-spacing: 0.08em; text-align: left; white-space: nowrap; }
+  #flow .fl-tall .fl-found { text-align: right; white-space: nowrap; }
+  /* a short phone (an iPhone SE): the move notes go, so the carousel keeps its size */
+  @container (max-height: 720px) {
+    #flow .fl-tall .fl-moves small { display: none; }
+    #flow .fl-tall .fl-tagline { font-size: 4cqw; }
+    #flow .fl-tall .fl-stats { grid-template-columns: auto 1fr auto 1fr; }   /* the five bars two to a row */
+    #flow .fl-tall .fl-stats span { font-size: 3.4cqw; }
+    #flow .fl-tall { gap: 0.9cqh; }
+  }
+  /* shorter still (an SE with Safari's bars showing): the sheet keeps the name and the bars; the moves are a tap away in MOVE LIST */
+  @container (max-height: 600px) {
+    #flow .fl-tall .fl-moves, #flow .fl-tall .fl-tagline { display: none; }
   }
   `;
   const s = document.createElement('style');
