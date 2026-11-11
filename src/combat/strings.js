@@ -1,6 +1,9 @@
 // Strings: button sequences pressed inside the rig's cancel windows. Tokens are the limb
-// buttons '1'..'4', with a 'd' prefix when down is held. After the first token, a plain token
-// also matches its down variant (holding down through a string doesn't break it).
+// buttons '1'..'4', with a 'd' prefix when down is held and an 'r' prefix when the button is pressed
+// while rising (down just let go out of a crouch or a crouching attack: sim.js risingNow). After the
+// first token, a plain token also matches its down and rising variants (holding down through a string,
+// or letting it go, doesn't break it); a 'd' or 'r' token in the table matches only itself.
+// (RISE AND SHINE, ↓1 then a rising 3, is added by src/combat/dash.js once its move exists.)
 // Strings that share a prefix agree on the moves of that prefix, so the move for the next
 // press is always unambiguous. The last move of an ender string is its ender (frameData.js).
 export const STRINGS = [
@@ -21,7 +24,7 @@ export const STRINGS = [
 // the token a plain move would have come from (the AI names moves; this starts a string for it)
 export const MOVE_TOKEN = { jab: '1', cross: '2', lkick: '3', roundhouse: '4', lowJab: 'd1', uppercut: 'd2', lowKick: 'd3', sweep: 'd4' };
 
-const tokMatch = (want, got, i) => want === got || (i > 0 && got === 'd' + want);
+const tokMatch = (want, got, i) => want === got || (i > 0 && (got === 'd' + want || got === 'r' + want));
 
 // strings whose keys start with `seq`; `list` is a character's own table (src/characters/), the
 // shared one by default

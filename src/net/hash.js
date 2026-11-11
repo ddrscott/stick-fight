@@ -9,6 +9,7 @@ const UNIT_FIELDS = [
   'x', 'y', 'vx', 'vy', 'facing', 'grounded', 'state', 'move', 'phase', 'health', 'stamina', 'faint', 'faintPending', 'faintCut', 'shakeDir', 'shakeAt',
   'hitstop', 'stun', 'downTimer', 'combo', 'floor', 'stair', 'attackId', 'hidden', 'rag', 'falling', 'airHits',
   'home', 'rollT', 'otgHit',   // the sides a body on the floor rises on, a roll's progress, the knockdown's ground hit used
+  'dashDir', 'dashT', 'tapDir', 'tapAt', 'tapN', 'crouchEnd', 'lowStance',   // a dash and how far in, the double tap's count, the rise out of a crouch
   'clashUntil', 'tradeUntil', 'tradeLimb',   // a clash's bounce back, and the limbs left out of the solid bodies while they're in each other
 ];
 

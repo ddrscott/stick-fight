@@ -1,4 +1,4 @@
-// Wire format for online play. Inputs pack into 11 bits; packets are small binary frames that
+// Wire format for online play. Inputs pack into 12 bits; packets are small binary frames that
 // go over the WebRTC DataChannel (or through the room's WebSocket when relayed). Control
 // messages (start, hashes, bye) are JSON over the WebSocket, which is reliable and ordered.
 //
@@ -10,12 +10,12 @@
 //        retransmits, and a lost packet is covered by the next one.
 // PING   u8 2 | f64 sender's clock          PONG   u8 3 | f64 the clock from the ping
 
-/** @typedef {{ dx: number, jump: boolean, block: boolean, down: boolean, run: boolean, lp: boolean, rp: boolean, lk: boolean, rk: boolean, touch: boolean }} NetInput */
+/** @typedef {{ dx: number, jump: boolean, block: boolean, down: boolean, run: boolean, lp: boolean, rp: boolean, lk: boolean, rk: boolean, touch: boolean, dash: boolean }} NetInput */
 
 export const PKT_INPUT = 1, PKT_PING = 2, PKT_PONG = 3;
 export const NO_FRAME = 0xffffffff;
 export const MAX_INPUTS_PER_PACKET = 64;
-const BITS = ['jump', 'block', 'down', 'run', 'lp', 'rp', 'lk', 'rk', 'touch'];
+const BITS = ['jump', 'block', 'down', 'run', 'lp', 'rp', 'lk', 'rk', 'touch', 'dash'];   // dash: a double tap made for the player (the touch stick's double flick)
 
 /** @param {any} s an input.snapshot() (or any object with the same fields) */
 export function encodeInput(s) {

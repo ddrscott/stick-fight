@@ -18,14 +18,19 @@ export const SHARED_INPUTS = [
   { button: '4', motion: '', move: 'roundhouse', name: 'ROUNDHOUSE' },
   { button: '1', motion: 'f', move: 'bodyBlow', name: 'BODY BLOW' },
   { button: '2', motion: 'f', move: 'lungeCross', name: 'LUNGE CROSS' },
-  { button: '2', motion: 'ff', move: 'cometCross', name: 'COMET CROSS', note: 'out of a run' },
+  { button: '1', motion: 'ff', move: 'bulletJab', name: 'BULLET JAB', note: 'out of a dash or a run; the fast way in, bounced out and punished if blocked' },
+  { button: '2', motion: 'ff', move: 'cometCross', name: 'COMET CROSS', note: 'out of a dash or a run' },
+  { button: '3', motion: 'ff', move: 'skidKick', name: 'SKID KICK', note: 'out of a dash or a run; blocked low it has no blockstun at all' },
+  { button: '4', motion: 'ff', move: 'runningBoot', name: 'RUNNING BOOT', note: 'out of a dash or a run; slow out and very slow back' },
   { button: '4', motion: 'f', move: 'overhead', name: 'OVERHEAD KICK' },
   { button: '4', motion: 'b', move: 'spinKick', name: 'SPIN KICK', note: 'near a wall: Wall Spin' },
   { button: '1', motion: 'd', move: 'lowJab', name: 'LOW JAB' },
   { button: '2', motion: 'd', move: 'uppercut', name: 'UPPERCUT' },
   { button: '3', motion: 'd', move: 'lowKick', name: 'LOW KICK' },
   { button: '4', motion: 'd', move: 'sweep', name: 'SWEEP' },
+  { button: '1', motion: 'rise', move: 'risingJab', name: 'RISING JAB', note: 'the quick one out of a crouch, and a mid' },
   { button: '2', motion: 'rise', move: 'risingUppercut', name: 'RISING UPPERCUT' },
+  { button: '3', motion: 'rise', move: 'risingKick', name: 'RISING KICK', note: 'the second hit of ↓1, release ↓, 3' },
   { button: '4', motion: 'rise', move: 'risingKnee', name: 'RISING KNEE' },
   { button: '1+3', motion: '', move: 'throw', name: 'THROW', note: 'or 2+4; near a wall: Wall Slam' },
   { button: '1', motion: 'air', move: 'jumpJab', name: 'JUMP JAB' },
@@ -50,7 +55,9 @@ export const SYSTEM = [
   { name: 'CROUCH', input: '↓', note: 'ducks highs and throws; mids still hit' },
   { name: 'PARRY', input: '→ tap', note: 'just before a strike lands (↘ for a low): it reels and you punish. A hold or a mash never parries' },
   { name: 'JUMP', input: '↑', note: '↖ or ↗ to jump back or forward; air attacks hit a croucher' },
-  { name: 'RUN', input: '→→ hold', note: 'or Shift / R2; running costs stamina' },
+  { name: 'DASH', input: '→→', note: 'tap, tap: a quick burst forward, then a short recovery with no guard; any button in it is that button\'s dash attack. Costs 6 stamina' },
+  { name: 'BACK DASH', input: '←←', note: 'tap, tap: a hop back out of a jab\'s reach. No guard and no attack until it\'s over, so a long strike catches it. Costs 8 stamina' },
+  { name: 'RUN', input: '→→ hold', note: 'hold the dash\'s second tap, or Shift / R2; running costs stamina' },
   { name: 'THROW BREAK', input: '1+3', note: 'or 2+4, the moment you\'re grabbed' },
   { name: 'GET UP', input: '↑ on the floor', note: 'leave it and you stand by yourself after a second' },
   { name: 'ROLL', input: '← or → on the floor', note: 'away stays on your side; toward him standing near rolls under him to his other side' },
@@ -69,7 +76,8 @@ export function inputFor(button, motion) {
   const g = { f: '→', b: '←', df: '↘', db: '↙', ff: '→→', run: '→→' }[motion];
   return g ? `${g} ${button}` : button;
 }
-export const tokenGlyph = (t) => (t[0] === 'd' ? '↓' + t.slice(1) : t);
+// 'd3' is ↓3; 'r3' is 3 pressed while rising (↓ let go just before it)
+export const tokenGlyph = (t) => (t[0] === 'd' ? '↓' + t.slice(1) : t[0] === 'r' ? 'release ↓ ' + t.slice(1) : t);
 export const keysGlyph = (keys) => keys.map(tokenGlyph).join(', ');
 /** a move list's written input in the HUD's arrows (f+ → b+ ← d+ ↓, an arrow hugs its button) */
 export const glyphs = (s) => String(s).replace(/\bf\+/g, '→').replace(/\bb\+/g, '←').replace(/\bd\+/g, '↓').replace(/([←→↓↑↖↗↘↙]) (?=\d)/g, '$1');

@@ -75,5 +75,6 @@ export default {
     { name: 'NEON TORNADO', input: '1, 2, 3, 4', note: 'launches into a juggle' },
     { name: 'COMET CROSS', input: '→→ 2', note: 'wall splat' },
     { name: 'SKY SPIKE', input: '↓2, 1, 2, 4', note: 'ground bounce' },
+    { name: 'RISE AND SHINE', input: '↓1, release ↓ 3', note: 'crouch jab into the rising kick' },
   ],
 };

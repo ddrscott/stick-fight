@@ -139,6 +139,16 @@ export const PARRY = { win: 12, lock: 40, stun: 16, quiet: 24 };
 // through a jab. Never a clash: a throw or grab, a counter stance, a stance, a noHit move, an armored move (its
 // armor absorbs, as ever), an invulnerable one, a wake-up strike, a botch's flail, a strike in the air.
 export const CLASH = { breakBy: 8, hitstop: 4, stun: 14, push: 320, slack: 2, batStun: 10, seat: 24 };
+// Dashes (sim.js startDash, README Controls and Fundamentals). A double tap is two fresh presses of one direction
+// within `tap` steps (120Hz); a third press inside `tap` of the last is a mash, and it and every press after it
+// count for nothing until the stick has rested `tap` steps. A double tap within `quiet` steps of a button press
+// doesn't count either. fwd / back: `steps` of burst at `speed` px/s (x the character's dash stat), then `rec`
+// steps of braking (`brake` a step) in which he can't guard, jump, crouch or walk; `cost` stamina, and a dash needs
+// more than its cost in the bar (it never faints). A forward dash can be cut by a strike at any point (the dash
+// attacks, for `attack` steps after it too) and, with forward still held when the burst ends, becomes the run.
+// A back dash can't be cut by anything, and nothing guards during it.
+export const DASH = { tap: 30, quiet: 24, attack: 14, brake: 0.8,
+  fwd: { steps: 14, speed: 660, rec: 10, cost: 6 }, back: { steps: 12, speed: 420, rec: 14, cost: 8 } };
 export const COMBO_STUN = [1, 1, 0.85, 0.65, 0.45, 0.3];
 export const COMBO_DMG = [1, 1, 1, 0.8, 0.65, 0.5];
 export const COMBO_SOFTCAP = 30, COMBO_OVERCAP = 0.25;

@@ -48,7 +48,7 @@ const HIT_STATES = new Set(['hitstun', 'blockstun']);
 const GETUP_MS = 336;   // the rig's 672ms getup clip at the sim's 2x; a meaty is timed against it
 const GRAV = 2000;      // the sim's gravity, to predict where a launched body lands
 const SWEEP_STEPS = 21; // sweep startup in 120Hz steps as measured (rig blend included, after the 50ms pre-roll)
-const CLASS = { jab: 'punch', cross: 'punch', lungeCross: 'punch', uppercut: 'punch', bodyBlow: 'mid', lkick: 'mid', roundhouse: 'kick', spinKick: 'kick', sweep: 'low', lowKick: 'low', lowJab: 'low', throw: 'throw', overhead: 'overhead', risingKnee: 'mid' };
+const CLASS = { jab: 'punch', cross: 'punch', lungeCross: 'punch', uppercut: 'punch', bodyBlow: 'mid', lkick: 'mid', roundhouse: 'kick', spinKick: 'kick', sweep: 'low', lowKick: 'low', lowJab: 'low', throw: 'throw', overhead: 'overhead', risingKnee: 'mid', bulletJab: 'punch', skidKick: 'low', runningBoot: 'mid', risingJab: 'mid', risingKick: 'mid' };
 const BTN = { 1: 'lp', 2: 'rp', 3: 'lk', 4: 'rk' };
 const heightOf = (m) => (FRAME_DATA[m] ? FRAME_DATA[m].height : 'mid');
 
@@ -103,6 +103,16 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   const move = (dx, until, run = false) => ({ dx, run, block: false, attack: null, jump: false, until });
   const attack = (name) => ({ dx: 0, run: false, block: false, attack: name, jump: false, until: 2 });
   const blockFor = (steps) => ({ dx: 0, run: false, block: true, attack: null, jump: false, until: steps });
+  // Dashes (sim.js startDash; README, Fundamentals, Dashes). The CPU sends the double tap as the input's dash bit with
+  // a direction, then waits the dash out. How often it thinks of one at all: hardly ever at the bottom of the ladder
+  // (3% of its chances at INTERN's 0.2), about a quarter at SECURITY's 0.55, 45% at THE MANAGER's 0.8, half for the showcase.
+  const dashP = () => (show ? 0.5 : Math.max(0, difficulty - 0.15) * 0.7);
+  const dashAct = (dx) => ({ dx, run: false, block: false, attack: null, jump: false, until: 2, dash: true });
+  const dashOut = () => move(0, (m) => m.state !== 'dash');
+  const backDash = (toward) => [dashAct(-toward), dashOut()];
+  // a dash in and the dash attack that fits what he's doing: the low on a standing guard, the mid on a croucher, else the jab
+  const dashIn = (toward, opp) => [dashAct(toward), move(toward, 5), { ...attack(opp.crouch ? 'runningBoot' : opp.backHeld ? 'skidKick' : chance(0.75) ? 'bulletJab' : 'runningBoot'), ok: true }];
+  const canDash = (me, sim, back) => me.stamina > 34 && !(me.faint > 0) && (!back || !(me.x - sim.bounds.x0 < 110 || sim.bounds.x1 - me.x < 110));
   // guards: standing (back) against high/mid, crouching (down-back) against low, a plain duck under highs
   const lowGuard = (steps) => ({ dx: 0, run: false, block: true, down: true, attack: null, jump: false, until: steps });
   const duck = (steps) => ({ dx: 0, run: false, block: false, down: true, attack: null, jump: false, until: steps });
@@ -265,8 +275,10 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       pressFn: (m, o) => (o.state === 'attack' && o.vy > 120 && Math.abs(o.x - m.x) < reach('jab') + 12 ? '1' : 'd2') },
   ];
 
-  function footsies(toward) {
+  function footsies(toward, me, sim, dist) {
     const k = rng();
+    // a hop back out of his reach now and then (the whiff punish reflexes take it from there)
+    if (me && dist < 130 && canDash(me, sim, true) && chance(dashP() * 0.3)) return backDash(toward);
     if (turtle && k < 0.5) return k < 0.3 ? [blockFor(10 + irnd(8))] : [move(-toward, 4 + irnd(4))];
     if (k < 0.3) return [move(toward, 3 + irnd(4))];
     if (k < 0.55) return [move(-toward, 3 + irnd(4))];
@@ -280,6 +292,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   function spacing(me, opp, dist, toward) {
     const edge = reach('cross') + 22 + irnd(16);
     const k = rng();
+    if (dist < edge - 28 && k < 0.2 && me.stamina > 34) return backDash(toward);                                   // hop out of the pocket
+    if (dist > 150 && dist < 210 && k > 0.86 && me.stamina > 50) return dashIn(toward, opp);                       // a dash attack from the edge
     if (dist < edge - 28 && k < 0.55) return [move(-toward, 6 + irnd(6))];
     if (dist > edge + 30) return k < 0.7 ? [move(toward, 4 + irnd(5))] : [move(toward, 5, true)];
     if (k < 0.22) return [move(toward, 3), move(-toward, 4 + irnd(4))];                  // step in, step out (bait)
@@ -307,6 +321,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       return [move(toward, closer(reach('cross') + 24), dist > 260), move(-toward, 7), move(toward, closer(reach('jab') + 6), true), opener(opp, reach('jab') - 1)]; // bait
     }
     const pokeAt = reach('jab') - 4;
+    // a dash in: with a dash attack from where one reaches, or just to close the room from further out
+    if (me.stamina > 50 && dist > 150 && dist < 320 && chance(dashP() * (rush ? 0.6 : 0.4))) return dist < 212 ? dashIn(toward, opp) : [dashAct(toward), dashOut()];
     if (aerial && k < 0.55 && dist < 330) return jumpIn(toward, chance(0.5) ? 'sweep' : 'jab');
     if (rush && k < 0.6) return [move(toward, closer(reach('jab') + 6), true), press(pick(['1', '1', '2', 'd1', '3']))];
     if (grap && k < 0.2 + 0.2 * difficulty) return [move(toward, closer(80), true), attack('throw')];
@@ -483,7 +499,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (options.length) return [attack(pick(options))];
       return [move(toward, 4)];
     }
-    return footsies(toward);
+    return footsies(toward, me, sim, dist);
   }
 
   function think(me, opp, sim) {
@@ -581,7 +597,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       // showcase: at the tip of his reach, step back so it whiffs (the punish reflex takes it from there)
       if (show && dist > reach(opp.move) - 20 && opp.move !== 'throw' && chance(0.45)) { queue = [move(-toward, 10 + irnd(6))]; act = null; }
       else if (chance(show ? 0.7 : 0.1 + 0.5 * difficulty + (turtle ? 0.15 : rush ? -0.1 : 0))) {
-        if (guess === 'high' || guess === 'throw') queue = dist < reach('risingKnee') + 10 && chance(0.6) ? [duck(16 + irnd(6)), { ...press(chance(0.5) ? '4' : '2'), ok: true }] : [duck(18 + irnd(8))];
+        // a duck under a high, and up out of it with a rising attack: a launcher (2 or 4) from close, the rising kick or jab from a step further (never at the bottom of the ladder, 40% at THE MANAGER's 0.8)
+        if (guess === 'high' || guess === 'throw') queue = dist < reach('risingKnee') + 10 && chance(0.6) ? [duck(16 + irnd(6)), { ...press(chance(0.5) ? '4' : '2'), ok: true }]
+          : dist < reach('risingKick') - 6 && chance(show ? 0.5 : Math.max(0, difficulty - 0.3) * 0.8) ? [duck(16 + irnd(6)), { ...press(chance(0.65) ? '3' : '1'), ok: true }] : [duck(18 + irnd(8))];
         else if (guess === 'low') queue = [lowGuard(18 + irnd(10))];
         else queue = [blockFor(18 + irnd(10))];
         act = null;
@@ -645,7 +663,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (Math.abs(me.vx) < 420 && dist < reach('cross') + 20) {
         relag();
         if (me.stamina > 26 && step >= breatheUntil && chance(show ? 0.2 : Math.min(0.4, 0.03 + 0.4 * difficulty * difficulty))) { queue = [attack(dist < reach('jab') + 45 ? 'jab' : 'cross')]; act = null; }
-        else if (chance(show ? 0.6 : 0.5)) { queue = chance(show ? 0.6 : 0.35) ? [blockFor(14)] : [move(-toward, 12 + irnd(8))]; act = null; }   // respect his advantage
+        else if (chance(show ? 0.6 : 0.5)) { queue = chance(show ? 0.6 : 0.35) ? [blockFor(14)] : /^(idle|walk|block)$/.test(me.state) && canDash(me, sim, true) && chance(dashP() * 0.5) ? backDash(toward) : [move(-toward, 12 + irnd(8))]; act = null; }   // respect his advantage
       }
     }
     // my stomp landed: he's pinned for about my recovery, then a wake-up strike can come: guard it
@@ -743,12 +761,13 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     if (act) {
       out.dx = typeof act.dx === 'function' ? act.dx(me, opp) : act.dx; out.run = act.run; out.block = act.block; out.jump = act.jump;
+      if (act.dash) out.dash = true;
       if (/^(down|getup|knockdown|roll)$/.test(me.state) && !act.roll) out.dx = 0;   // on the floor a direction means roll: only when meant
       if (act.attack) out[act.attack] = true;
       if (act.down) out.down = true;
       if (act.lk) out.lk = true;
       if (act.pressFn && !act.pressed) { act.press = act.pressFn(me, opp); act.pressed = true; }
-      if (act.press) { const t = act.press; out[BTN[t[t.length - 1]]] = true; if (t[0] === 'd') out.down = true; }
+      if (act.press) { const t = act.press; out[BTN[t[t.length - 1]]] = true; if (t[0] === 'd') out.down = true; }   // an 'r' token (a string's rising press) is the button with down let go
       if (me.stamina < (show ? 55 : 40) && !act.attack) out.run = false;   // running drains the meter: walk when it's low
       // a press that would botch (it lands in my own strike, outside anything that carries on from it):
       // decided once per act, the CPU holds it until it's clean (the grace at the end of the recovery)
@@ -790,7 +809,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // every 2 to 4 steps (25 ms) over a downed body, which restarted the walk, idle and run clips each time:
     // the arms seized. Walking, running or standing, the direction holds at least STICK_DWELL steps before
     // it changes, about as fast as a person reverses a stick. Jumps, rolls, guards and the floor pass through.
-    if (/^(idle|walk|run)$/.test(me.state) && !out.jump && !out.block) {
+    if (/^(idle|walk|run)$/.test(me.state) && !out.jump && !out.block && !out.dash) {
       const dx = out.dx || 0, run = !!out.run && dx !== 0;
       if (dx !== stickDx || run !== stickRun) {
         if (step - stickAt < STICK_DWELL) { out.dx = stickDx; out.run = stickRun; }

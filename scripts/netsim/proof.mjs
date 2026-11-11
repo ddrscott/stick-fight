@@ -4,8 +4,9 @@
 //
 // 1. Rollback: CPU-vs-CPU bouts across round and match ends, their inputs recorded per step (the CPUs read
 //    the reference sim; the inputs are then replayed through 'net'-style controllers). The replay saves at
-//    random steps (and, more often, in hitstop, throws, ragdolls, KOs, stair falls and vaults), runs 1 to 16
+//    random steps (and, more often, in hitstop, throws, ragdolls, KOs, stair falls, vaults and dashes), runs 1 to 16
 //    steps, restores, runs again, and every step's deep hash of saveState() must match the reference.
+//    One more bout after those is the dash drill (drill() below) instead of CPUs.
 // 2. Resync: at random steps the reference's state is encoded as text (src/net/state.js), decoded by a second
 //    sim that has played something else entirely (its own characters, demo and reach table), and loaded there;
 //    both then run 240 steps on the same inputs and must hash the same on every step.
@@ -27,6 +28,25 @@ function thumbs(sim, i, seed) {
   const shadow = {}, mine = ['aaJump', 'grabId', 'rollId'];
   return (me, opp, s) => { const keep = mine.map((k) => shadow[k]); Object.assign(shadow, me); mine.forEach((k, j) => { shadow[k] = keep[j]; }); return ai(shadow, opp, s) || EMPTY_INPUT; };
 }
+// the dash drill (the last bout): two hands that do little but double-tap both ways, press a button in the dash, send
+// the touch stick's dash bit, and crouch, jab and rise into a kick, so saves land inside dashes, dash attacks and the rise
+function drill(seed) {
+  const rng = mulberry32(seed), plan = [];
+  const hold = (n, inp) => { for (let i = 0; i < n; i++) plan.push(inp); };
+  return (me, opp) => {
+    if (!plan.length) {
+      const toward = Math.sign(opp.x - me.x) || 1, k = rng(), b = ['lp', 'rp', 'lk', 'rk'][Math.floor(rng() * 4)];
+      hold(6 + Math.floor(rng() * 30), {});
+      if (k < 0.3) { hold(3, { dx: toward }); hold(5, {}); hold(3, { dx: toward }); hold(4, {}); if (rng() < 0.7) hold(3, { [b]: true }); }
+      else if (k < 0.5) { hold(3, { dx: -toward }); hold(5, {}); hold(3, { dx: -toward }); if (rng() < 0.4) hold(3, { [b]: true }); }
+      else if (k < 0.6) { hold(3, { dx: rng() < 0.5 ? toward : -toward, dash: true }); hold(8, { dx: toward }); }
+      else if (k < 0.8) { hold(12, { down: true }); hold(3, { down: true, lp: true }); hold(8, {}); hold(3, { lk: true }); }
+      else if (k < 0.9) { hold(14, { down: true }); hold(6, {}); hold(3, { [b]: true }); }
+      else hold(20, { dx: toward });
+    }
+    return { ...EMPTY_INPUT, ...plan.shift() };
+  };
+}
 const { deepHash } = await import('./client.mjs');
 
 function makeSim() {
@@ -39,17 +59,17 @@ function makeSim() {
 const argv = process.argv.slice(2), arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? +argv[i + 1] : d; };
 const STEPS = arg('steps', 9000), BOUTS = arg('bouts', 4);
 const PAIRS = [['temp', 'temp'], ['helpdesk', 'janitor'], ['courier', 'security'], ['windowWasher', 'intern'], ['manager', 'barista'], ['ceo', 'wellness'], ['chef', 'electrician'], ['receptionist', 'lawyer']];
-const INTERESTING = (sim) => sim.units.some((u) => u.hitstop > 0 || u.state === 'grabbed' || u.rag || u.state === 'ko' || u.falling || u.state === 'vault' || u.stair >= 0 || u.state === 'celebrate') || sim.phase !== 'fight';
+const INTERESTING = (sim) => sim.units.some((u) => u.hitstop > 0 || u.state === 'grabbed' || u.rag || u.state === 'ko' || u.falling || u.state === 'vault' || u.stair >= 0 || u.state === 'celebrate' || u.state === 'dash') || sim.phase !== 'fight';
 
 function diffJson(a, b, p) { if (JSON.stringify(a) === JSON.stringify(b)) return; if (a && b && typeof a === 'object' && typeof b === 'object') { for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) diffJson(a[k], b[k], p + '.' + k); return; } console.log('   ', p, JSON.stringify(a)?.slice(0, 120), '|', JSON.stringify(b)?.slice(0, 120)); }
-let rbChecks = 0, rbBad = 0, rbCount = 0, syncChecks = 0, syncBad = 0, syncCount = 0, maxBytes = 0, sumBytes = 0;
-for (let b = 0; b < BOUTS; b++) {
-  const pair = PAIRS[b % PAIRS.length], seed = 1000 + b * 17;
+let rbDash = 0, rbChecks = 0, rbBad = 0, rbCount = 0, syncChecks = 0, syncBad = 0, syncCount = 0, maxBytes = 0, sumBytes = 0;
+for (let b = 0; b <= BOUTS; b++) {
+  const drilled = b === BOUTS, pair = drilled ? ['temp', 'courier'] : PAIRS[b % PAIRS.length], seed = 1000 + b * 17;
   // the reference: two CPUs, their inputs recorded
   const ref = makeSim();
   ref.setCharacters(pair);
   const inputs = [[], []];
-  ref.units.forEach((u, i) => { const ai = thumbs(ref, i, seed * 3 + i); ref.setController(i, 'net', (me, opp, s) => { const v = ai(me, opp, s); inputs[i][ref.tickNo] = v; return v; }); });
+  ref.units.forEach((u, i) => { const ai = drilled ? drill(seed * 3 + i) : thumbs(ref, i, seed * 3 + i); ref.setController(i, 'net', (me, opp, s) => { const v = ai(me, opp, s); inputs[i][ref.tickNo] = v; return v; }); });
   ref.roundTime = 30; ref.resetMatch({ seed, fresh: true });
   const hashes = [];
   ref.tickNo = 0;
@@ -65,6 +85,7 @@ for (let b = 0; b < BOUTS; b++) {
   for (tick = 0; tick < STEPS;) {
     if ((INTERESTING(rep) ? r() < 0.25 : r() < 0.04) && tick < STEPS - 20) {
       const s = rep.saveState(), from = tick, n = 1 + Math.floor(r() * 16);
+      if (rep.units.some((u) => u.state === 'dash')) rbDash++;
       for (let k = 0; k < n; k++) { rep.tick(); tick++; }
       rep.loadState(s); tick = from; rbCount++;
       for (let k = 0; k < n; k++) { rep.tick(); rbChecks++; if (deepHash(rep) !== hashes[tick]) { rbBad++; if (process.env.DBG && rbBad < 3) { console.log('restored differs at', tick, 'saved', from, 'n', n); diffJson(JSON.parse(texts[tick]), JSON.parse(encodeState(rep, rep.saveState())), ''); } } tick++; }
@@ -111,6 +132,6 @@ for (let b = 0; b < BOUTS; b++) {
   }
   console.log(`bout ${b + 1} ${pair.join(' v ')}: round ${ref.round}, wins ${ref.wins.join("-")}, phase ${ref.phase}, ${ref.stepCount} steps into this match, ${rbCount} rollbacks so far, resync points ${points.join(' ')}`);
 }
-console.log(`\nrollback: ${rbCount} rollbacks, ${rbChecks} restored steps checked, ${rbBad} differed from the reference`);
+console.log(`\nrollback: ${rbCount} rollbacks (${rbDash} saved inside a dash), ${rbChecks} restored steps checked, ${rbBad} differed from the reference`);
 console.log(`resync: ${syncCount} states sent as text (avg ${(sumBytes / Math.max(1, syncCount) / 1024).toFixed(1)} KB, max ${(maxBytes / 1024).toFixed(1)} KB), ${syncChecks} steps after loading checked, ${syncBad} differed`);
 process.exit(rbBad || syncBad ? 1 : 0);

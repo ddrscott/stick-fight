@@ -428,7 +428,54 @@ const lowTwice = (inp, at2 = 170, d = 190) => (me, o, t) => {
   if (t >= 40 && t < 112) return standOff(d)(me, o, t);
   return (t >= 112 && t < 115) || (t >= at2 && t < at2 + 3) ? (typeof inp === 'function' ? inp(me) : inp) : {};
 };
+// dash-test: tap(at, way) is one tap of the stick (3 steps), way 1 toward the way he faces and -1 away; dtap is the
+// double tap, the second 8 steps after the first; then(...) adds presses at fixed steps on top
+const tapOf = (t, at, way) => (t >= at && t < at + 3 ? way : 0);
+const dtap = (at, way, more) => (me, o, t) => {
+  const w = tapOf(t, at, way) || tapOf(t, at + 8, way), out = w ? { dx: w * me.facing } : {};
+  if (more) for (const [a, inp] of more) if (t >= a && t < a + 3) Object.assign(out, typeof inp === 'function' ? inp(me) : inp);
+  return out;
+};
+const dashPhase = (ph) => ({ ...ph, setup: () => { const u = sim.units[0]; if (u.char.id !== (ph.char || TEMP_ID)) { sim.setCharacter(0, ph.char || TEMP_ID); place(0, u.x, u.facing); u.maxHealth = u.health = 100; } if (ph.also) ph.also(); } });
+// P2 in dash-test: stands still and guards only once P1's strike is out (holding back all along would walk him away),
+// low with down-back; then(inp) is his punish, pressed once P1's blocked or whiffed strike is recovering
+const guardThen = (low, then) => (me, o) => (then && me.state !== 'blockstun' && o.state === 'attack' && o.phase === 'recovery' ? clean(me, typeof then === 'function' ? then(me) : then)
+  : o.state === 'attack' || me.state === 'blockstun' ? { back: true, down: low } : low ? { down: true } : {});
 const PHASES = {
+  // dash-test (README, Fundamentals, Dashes): the two dashes, the dash attack on every button hit and blocked, the
+  // rising attacks, a character's own →→ move still on its button, and what a double tap never does
+  dash: [
+    { name: 'FORWARD DASH: tap, tap toward him', at: () => [380, 800], p1: [], p1f: dtap(10, 1), dur: 110 },
+    { name: 'the second tap held: the dash goes on into the RUN', at: () => [300, 900], p1: [], p1f: (me, o, t) => (tapOf(t, 10, 1) || (t >= 18 && t < 70) ? { dx: me.facing } : {}), dur: 120 },
+    { name: "BACK DASH out of a jab's range: it whiffs, and a dash back in with the BULLET JAB punishes it", at: () => [560, 650], p1: [],
+      p1f: (me, o, t) => (t < 40 ? dtap(14, -1)(me, o, t) : dtap(50, 1, [[60, B('lp')]])(me, o, t)), p2: (me, o, t) => (t >= 24 && t < 27 ? { lp: true } : {}), dur: 200 },
+    { name: 'a BACK DASH has no guard: a lunge cross thrown as he hops catches him', at: () => [560, 660], p1: [], p1f: dtap(14, -1), p2: (me, o, t) => (t >= 16 && t < 19 ? { rp: true, dx: me.facing } : {}), dur: 160 },
+    { name: 'holding back to guard is no dash: the jab is blocked where he stands', at: () => [560, 650], p1: [], p1f: (me, o, t) => (t >= 6 ? { dx: -me.facing } : {}), p2: (me, o, t) => (t >= 24 && t < 27 ? { lp: true } : {}), dur: 130 },
+    { name: 'BULLET JAB →→1 hits', at: () => [420, 650], p1: [], p1f: dtap(10, 1, [[26, B('lp')]]), dur: 150 },
+    { name: 'BULLET JAB blocked (standing guard): left in front of him, and his jab punishes the recovery', at: () => [420, 650], p1: [], p1f: dtap(10, 1, [[26, B('lp')]]), p2: guardThen(false, { lp: true }), dur: 170 },
+    { name: 'BULLET JAB is a high: it goes over a croucher', at: () => [420, 650], p1: [], p1f: dtap(10, 1, [[26, B('lp')]]), p2: { down: true }, dur: 150 },
+    { name: 'COMET CROSS →→2 hits (as before)', at: () => [470, 650], p1: [], p1f: dtap(10, 1, [[26, B('rp')]]), dur: 200 },
+    { name: 'COMET CROSS blocked', at: () => [470, 650], p1: [], p1f: dtap(10, 1, [[26, B('rp')]]), p2: guardThen(false), dur: 200 },
+    { name: 'SKID KICK →→3 hits a standing guard (low)', at: () => [450, 650], p1: [], p1f: dtap(10, 1, [[26, B('lk')]]), p2: guardThen(false), dur: 160 },
+    { name: 'SKID KICK blocked low (down-back): no blockstun, his cross punishes', at: () => [420, 650], p1: [], p1f: dtap(10, 1, [[26, B('lk')]]),
+      p2: guardThen(true, { rp: true }), dur: 190 },
+    { name: 'RUNNING BOOT →→4 hits a croucher (mid): knockdown, a long shove', at: () => [400, 650], p1: [], p1f: dtap(10, 1, [[26, B('rk')]]), p2: { down: true }, dur: 220 },
+    { name: 'RUNNING BOOT blocked: a long recovery, his cross punishes', at: () => [430, 650], p1: [], p1f: dtap(10, 1, [[26, B('rk')]]), p2: guardThen(false, { rp: true }), dur: 220 },
+    { name: 'RISE AND SHINE: ↓1, let go of ↓, 3: the crouch jab into the rising kick, a 2-hit combo', at: () => [578, 650], p1: [],
+      p1f: (me, o, t) => ({ down: t >= 8 && t < 23, lp: t >= 20 && t < 23, lk: t >= 30 && t < 33 }), dur: 170 },
+    { name: 'the same with ↓ still held on the 3: no rising kick (a mistimed low kick: a botch)', at: () => [578, 650], p1: [],
+      p1f: (me, o, t) => ({ down: t >= 8 && t < 40, lp: t >= 20 && t < 23, lk: t >= 30 && t < 33 }), dur: 170 },
+    { name: 'RISING JAB: out of a crouch, let go of ↓, 1 (a mid: it hits a croucher)', at: () => [574, 650], p1: [], p1f: (me, o, t) => ({ down: t >= 8 && t < 40, lp: t >= 46 && t < 49 }), p2: { down: true }, dur: 150 },
+    { name: 'RISING KICK alone, blocked: his cross punishes it', at: () => [574, 650], p1: [], p1f: (me, o, t) => ({ down: t >= 8 && t < 40, lk: t >= 46 && t < 49 }),
+      p2: guardThen(false, { rp: true }), dur: 190 },
+    { name: 'the rise runs out: 1 pressed 30 steps after ↓ is let go is the standing jab', at: () => [574, 650], p1: [], p1f: (me, o, t) => ({ down: t >= 8 && t < 40, lp: t >= 70 && t < 73 }), dur: 150 },
+    { name: "COURIER's own →→3 still wins its button: EXPRESS SLIDE, not the skid kick", char: 'courier', at: () => [400, 650], p1: [], p1f: dtap(10, 1, [[26, B('lk')]]), dur: 200 },
+    { name: 'and COURIER gets the shared one on 1: BULLET JAB', char: 'courier', at: () => [420, 650], p1: [], p1f: dtap(10, 1, [[26, B('lp')]]), dur: 150 },
+    { name: 'mashing ←: the first two taps are one hop, and no tap after them is another', at: () => [700, 800], p1: [], p1f: (me, o, t) => (t >= 10 && t % 10 < 5 ? { dx: -me.facing } : {}), dur: 260 },
+    { name: 'mashing buttons and ← together: no dash at all', at: () => [700, 900], p1: [], p1f: (me, o, t) => ({ dx: t >= 10 && t % 10 < 5 ? -me.facing : 0, lp: t >= 10 && t % 14 < 2 }), dur: 200 },
+    { name: 'a double tap → never parries: the second tap, timed where a parry would be, is a dash into his jab', p1: [],
+      p1f: (me, o, t) => (tapOf(t, 12, 1) ? { dx: me.facing } : tapAt(3)(me, o, t)), p2: (me, o, t) => (t >= 20 && t < 23 ? { lp: true } : {}), dur: 150 },
+  ].map(dashPhase),
   // ground-test: each low on a floored body, the first one the ground hit (about half damage, counted in the combo),
   // the second a graze (a flick, no damage); a mid that touches grazes; the stomp still the biggest
   ground: [
@@ -859,6 +906,7 @@ const scenes = {
   'ground-test'(o) { timeline(PHASES.ground, o); },
   'air-recovery-test'(o) { timeline(PHASES.airRecovery, o); },
   'parry-test'(o) { timeline(PHASES.parry, o); },
+  'dash-test'(o) { timeline(PHASES.dash, o); },
   'mixup-test'(o) { timeline(PHASES.mixup, o); },
   'stamina-test'(o) { timeline(PHASES.stamina, o); },
   'refund-test'(o) { timeline(PHASES.refund, o); },
@@ -1549,7 +1597,7 @@ function drawnPoints(u) {
 // body draws raw, the jump and air moves keep drawOffset's catch-up, and a strike that connects draws
 // touching: both end on the contact frame, under the impact flash.
 const TURN_MS = 100, FADE_MS = 110, SNAP_PX = 18, SNAP_HEAD = 1e9, SNAP_MAX = 260;
-const UPRIGHT = new Set(['idle', 'walk', 'run', 'block', 'blockstun', 'crouch', 'attack', 'landing', 'hitstun', 'botch', 'getup']);   // getup: the turn to face him as a roll comes up (sim rollStep)
+const UPRIGHT = new Set(['idle', 'walk', 'run', 'dash', 'block', 'blockstun', 'crouch', 'attack', 'landing', 'hitstun', 'botch', 'getup']);   // getup: the turn to face him as a roll comes up (sim rollStep)
 const poseState = new Map(), drawnJ = new Map();
 const cloneJ = (j) => { const o = {}; for (const k in j) o[k] = { x: j[k].x, y: j[k].y }; return o; };
 function frameDraw(u) {
