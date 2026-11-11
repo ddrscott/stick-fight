@@ -2112,7 +2112,7 @@ export function createFlow(ctx) {
     get demo() { return DEMO.has(state) || state === 'highScores'; },
     debug: { history, run, sel, go, debugKO, ui, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S,
       // crew high scores (scripts/crew/lobby.mjs): the run's end as the flow does it, the tables the attract loop turns through
-      crewScores: CS, startHorde, decide, afterGame, attractTables, get hs() { return hs; }, get crewView() { return crewView; } },
+      crewScores: CS, startHorde, startTraining, decide, afterGame, attractTables, get hs() { return hs; }, get crewView() { return crewView; } },
   };
 }
 
