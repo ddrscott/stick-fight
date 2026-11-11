@@ -129,6 +129,10 @@ function resolveButton(btn, inp, u, step) {
 const ANIM = {};
 const missingAnim = new Set();
 function warnOnce(key, msg) { if (!missingAnim.has(key)) { missingAnim.add(key); console.info('[combat] ' + msg); } }
+// Horde: the hero heals HORDE_REGEN health a second once he's gone HORDE_REGEN_DELAY seconds without losing any
+const HORDE_REGEN = 1, HORDE_REGEN_DELAY = 3;
+// Horde: the longest the hero's trip down to the next floor may take before its wave starts anyway (seconds)
+const TRANSIT_MAX = 8;
 const GOON_COLORS = ['#E85D00', '#3fa7ff', '#8cff5a', '#ff4fa3', '#ffd84f', '#c08bff', '#ff6a3d', '#5ee8d8'];
 
 export function createCombat({ fighters, arena, input, onEvent: emitEvent = () => {}, makeRig = null, moves = [], moveData = null }) {
@@ -523,8 +527,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
     }
   }
-  // Horde: P1 faces one goon after another; each KO adds a body and a fresh goon runs in.
-  // { goonHealth, goonDifficulty, heal } ; sim.horde.count is the pile so far.
+  // Horde: P1 faces one goon after another; each KO adds a body and a fresh goon runs in. It never ends
+  // until the hero goes down: no clock, and the floors loop.
+  // { goonHealth, goonDifficulty, heal, regen, regenDelay } ; sim.horde.count is the pile so far.
   // Horde, floor by floor: each floor sends a wave of 5 to 8 goons in through its doors (one at a
   // time, two at once from the wave's third goon). Clearing a floor calls FLOOR CLEAR and the hero
   // vaults down the stairwell to the next; after the lowest floor the run loops back to the top.
@@ -596,12 +601,31 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       H.transit = { kind: 'loop', to: 0, t: 0.9 };
     }
   }
+  // The hero gets his breath back: once he's gone H.regenDelay seconds without losing health he heals H.regen
+  // a second, up to his full bar. Any loss starts the wait over. Only while the fight is on and he's standing
+  // (not KO'd), so a run that's over stays over.
+  function hordeRegen(H, p) {
+    if (!H.regen || p.state === 'ko' || p.health <= 0) { H.lastHp = p.health; return; }
+    if (H.lastHp != null && p.health < H.lastHp) H.calm = 0; else H.calm = (H.calm || 0) + DT;
+    const max = p.maxHealth || sim.startHealth;
+    if (H.calm >= H.regenDelay && p.health < max) p.health = Math.min(max, p.health + H.regen * DT);
+    H.lastHp = p.health;
+  }
   function hordeStep() {
     const H = sim.horde, p = sim.units[0];
-    if (!H || !H.transit || sim.phase !== 'fight') return;
+    if (!H || sim.phase !== 'fight') return;
+    hordeRegen(H, p);
+    if (!H.transit) return;
     const T = H.transit;
     if (T.kind === 'down') {
-      if ((p.floor || 0) === T.to && p.state !== 'vault') { p.followDown = null; H.floor = T.to; sim.floor = T.to; refreshBounds(); startWave(); }
+      // the next wave starts once he's down there, or once the vault is behind him wherever it left him: an attack
+      // pressed on the way down (vaultFall) lands him high on the flight, still upstairs, and the run used to wait
+      // there with no goons until TIME ended it. The goons come up the stairs for him. After TRANSIT_MAX it
+      // starts whatever he's doing.
+      T.t += DT;
+      const there = (p.floor || 0) === T.to && p.state !== 'vault';
+      const vaulted = !p.followDown && p.state !== 'vault' && p.grounded && !p.falling;
+      if (there || vaulted || T.t > TRANSIT_MAX) { p.followDown = null; H.floor = T.to; sim.floor = T.to; refreshBounds(); startWave(); }
     } else if ((T.t -= DT) <= 0) {
       const info = floorInfo(T.to);
       H.floor = T.to; sim.floor = T.to; refreshBounds();
@@ -618,7 +642,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (fresh) freshState();
     sim.seed = seed; sim.startHealth = startHealth; sim.introTime = introTime;
     sim.hordeCfg = horde;   // a lost run restarts as a fresh run, not as a 1v1
-    sim.horde = horde ? { goonHealth: 40, goonDifficulty: 0.5, heal: 6, count: 0, goonsAI: true, floor: 0, floorsCleared: 0, doorTurn: 0, wave: null, transit: null, ...horde } : null;
+    sim.horde = horde ? { goonHealth: 40, goonDifficulty: 0.5, heal: 6, regen: HORDE_REGEN, regenDelay: HORDE_REGEN_DELAY, calm: 0, lastHp: null, count: 0, goonsAI: true, floor: 0, floorsCleared: 0, doorTurn: 0, wave: null, transit: null, ...horde } : null;
+    if (sim.horde) sim.roundTime = 0;   // a run is endless: no clock to run out (TIME used to end it, the hero standing)
     sim.ragdolls.length = 0; sim.card = null; sim.combo = null; sim.lastCombo = null;
     if (sim.units.length > 2) sim.units.length = 2;   // extra horde goons go away with the match
     sim.rng = mulberry32(seed);

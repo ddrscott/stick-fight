@@ -831,7 +831,7 @@ export function createFlow(ctx) {
       const sw = button(label(), () => { setBotchEnabled(!botchEnabled()); sw.el.firstChild.textContent = label(); }, 'fl-amber');
       sw.el.appendChild(el('small', '', 'FROM THE NEXT FIGHT'));
       items.push(sw);
-      if (mode !== 'horde') items.push(...rulesButtons('fl-amber', 'FROM THE NEXT FIGHT'));   // horde has no rounds and resets the clock per goon
+      if (mode !== 'horde') items.push(...rulesButtons('fl-amber', 'FROM THE NEXT FIGHT'));   // horde has no rounds and no clock
       // the right panel: the book of happy accidents, or the controls (keyboard and gamepad)
       const panel = el('div', 'fl-tech');
       const view = button('', () => { pauseView = pauseView === 'tech' ? 'controls' : 'tech'; paint(); }, 'fl-viewbtn');
