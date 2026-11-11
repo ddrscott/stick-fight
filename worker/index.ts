@@ -1,7 +1,8 @@
 // The Worker behind https://askscottpierce.com/stick-fight/api/*: online rooms, crew rooms and
 // profiles (see README, "Multiplayer"). Everything else under /stick-fight is the static game,
 // served by the assets binding before this script runs (wrangler.jsonc: run_worker_first covers
-// only the API). A request that reaches the script outside the API is a 404.
+// the API, play/ and the homepage; the last two go straight back to the assets unless the query has
+// a crew or a room). A request that reaches the script anywhere else is a 404.
 //
 //   POST /stick-fight/api/rooms              -> { code }   a new quick room, four characters
 //   GET  /stick-fight/api/rooms/<code>/ws    -> WebSocket   ?role=host|guest
@@ -12,6 +13,9 @@
 //   GET  /stick-fight/api/crews/<slug>/ws    -> WebSocket   the crew lobby
 //   POST /stick-fight/api/e                  -> 204         analytics events from the page (README, Analytics)
 //   GET  /stick-fight/api/stats              -> the all-time pick and matchup rollups, worker/stats.ts
+//   GET  /stick-fight/api/og/crew/<slug>.jpg, og/room/<CODE>.jpg   share images, worker/og.ts
+//   GET  /stick-fight/play/?crew=|?room=     the game page with the room's share tags, worker/og.ts
+//   GET  /stick-fight/?crew=|?room=          301 to play/ (a link from before the move, for bots)
 //   POST /stick-fight/api/auth/start, auth/verify, auth/logout; GET and PUT /stick-fight/api/me
 //                                            profiles and email sign-in, worker/auth.ts
 //
@@ -50,6 +54,7 @@ import { createWatchRoom } from "../src/net/watchroom.js";
 
 import { Crew, SLUG_RE } from "./crew";
 import { handleAuth } from "./auth";
+import { ogImage, oldLink, playPage } from "./og";
 import { offlineMatch, recordMatch, recordPick, roomResult, statsResponse } from "./stats";
 
 // the events the page may send (src/analytics.js); anything else is dropped. `match` and `pick` also
@@ -139,6 +144,8 @@ async function iceServers(env: Env): Promise<Response> {
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/stick-fight/play/" || url.pathname === "/stick-fight/play/index.html") return playPage(req, env, ctx);
+    if (url.pathname === "/stick-fight/" || url.pathname === "/stick-fight/index.html") return oldLink(req, env);
     if (!url.pathname.startsWith(API)) return notFound();
     const parts = url.pathname.slice(API.length).split("/").filter(Boolean);
 
@@ -200,6 +207,8 @@ export default {
       }
       return new Response(null, { status: 204 });
     }
+
+    if (parts.length === 3 && parts[0] === "og") return ogImage(req, env, ctx, parts);
 
     if (parts.length === 1 && parts[0] === "stats") return statsResponse(req, env, ctx);
 

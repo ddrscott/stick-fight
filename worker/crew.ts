@@ -91,6 +91,17 @@ export class Crew extends DurableObject<Env> {
     return true;
   }
 
+  /** For a share preview (worker/og.ts): the crew's name and how many members it has, or null when
+   *  there's no such crew or it expired. Reads only: a slug nobody made gets no storage. Never a
+   *  member's name or record (the preview is public). */
+  async card(): Promise<{ name: string; members: number } | null> {
+    if (!this.schema && !this.sql("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").length) return null;
+    const name = this.meta("name");
+    if (name === null || Number(this.meta("expires") || 0) <= Date.now()) return null;
+    const has = this.schema || this.sql("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'members'").length > 0;
+    return { name, members: has ? this.sql<{ n: number }>("SELECT COUNT(*) AS n FROM members")[0].n : 0 };
+  }
+
   /** The lobby's WebSocket (the Worker checked the slug and the join limit). */
   async fetch(req: Request): Promise<Response> {
     const pair = new WebSocketPair();
