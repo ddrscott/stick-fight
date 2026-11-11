@@ -22,7 +22,8 @@ export interface Env {
   TURN_KEY_ID?: string;      // secrets; absent in local dev unless .dev.vars has them
   TURN_KEY_API_TOKEN?: string;
   DEV_LOGIN_CODES?: string;  // "1" only in .dev.vars: no email is sent, the code comes back in the answer
-  DEV_HOOKS?: string;        // "1" only in .dev.vars: test routes (expire a crew room now)
+  DEV_HOOKS?: string;
+  ADMIN_TOKEN?: string;      // a secret: the admin route (worker/admin.ts) answers 404 without it        // "1" only in .dev.vars: test routes (expire a crew room now)
 }
 
 /** One match in the LIVE list (GET api/live): a quick room with a match on that anyone may watch. */

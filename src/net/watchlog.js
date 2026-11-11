@@ -19,6 +19,7 @@
 // log so far (old frames in big batches, the last few seconds stamp by stamp) and runs the sim through it.
 // The stamps also pace the playback: watch.js plays frame f about when the host did, plus its delay.
 
+import { blockedName } from '../namefilter.js';
 export const PKT_WATCH = 16;
 export const HEADER = 13;
 /** how far behind the newest stamp the room keeps spectators (ms of the host's clock): the delay a viewer can't get around */
@@ -195,7 +196,8 @@ export function cleanSetup(m) {
   const n = m.n | 0, v = m.v | 0;
   if (!(n >= 1 && n < 100000) || !(v >= 1)) return null;
   const id = (s) => (typeof s === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(s) ? s : 'temp');
-  const name = (s) => (typeof s === 'string' ? s.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim().slice(0, 12) : '');
+  // a name off the filter's list (src/namefilter.js) is shown to spectators and on the LIVE list as PLAYER
+  const name = (s) => { const n = typeof s === 'string' ? s.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim().slice(0, 12) : ''; return n && blockedName(n) ? 'PLAYER' : n; };
   const num = (x, lo, hi, d) => (Number.isFinite(+x) && +x >= lo && +x <= hi ? Math.floor(+x) : d);
   const chars = Array.isArray(m.chars) ? m.chars : [], names = Array.isArray(m.names) ? m.names : [], wins = Array.isArray(m.wins) ? m.wins : [];
   const r = m.rules && typeof m.rules === 'object' ? m.rules : {}, t = m.tally && typeof m.tally === 'object' ? m.tally : {};

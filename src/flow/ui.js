@@ -482,6 +482,14 @@ function injectStyle() {
   .fl-pemail { text-transform: none; letter-spacing: 0.08em; }
   .fl-profile .fl-small { max-width: 70cqw; }
 
+  /* the privacy and house rules links (index.js legalLinks), and the age question before an email */
+  .fl-legal { pointer-events: auto; }
+  .fl-legal a { color: #4df3ff; text-decoration: none; border-bottom: 1px solid rgba(77,243,255,0.4); padding: 0.4cqw 0.2cqw; }
+  .fl-legal a:hover, .fl-legal a:focus-visible { color: #fff; border-bottom-color: #fff; }
+  .fl-age-note { max-width: 66cqw; line-height: 1.3; }
+  .fl-age-ok { max-width: 70cqw; line-height: 1.15; }
+  .fl-inimsg { min-height: 2.2cqw; }
+
   /* the crew lobby: standings on the left, PLAY and the link on the right */
   .fl-crew { gap: 1cqh; }
   .fl-crew .fl-h2 { font-size: 3.6cqw; }

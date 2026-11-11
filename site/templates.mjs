@@ -36,9 +36,10 @@ export function head({ root, title, description, path, page }) {
 <link rel="icon" type="image/png" sizes="32x32" href="${root}icons/favicon-32.png">
 <link rel="apple-touch-icon" href="${root}icons/apple-touch-icon.png">
 <meta name="theme-color" content="#07020f">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Teko:wght@500;600&display=swap">
+<!-- the game's own two faces, self-hosted (public/fonts/, Latin subsets, SIL OFL): no request leaves the site -->
+<link rel="preload" href="${root}fonts/bungee-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>@font-face { font-family: 'Bungee'; font-style: normal; font-weight: 400; font-display: swap; src: url(${root}fonts/bungee-latin.woff2) format('woff2'); }
+@font-face { font-family: 'Teko'; font-style: normal; font-weight: 300 700; font-display: swap; src: url(${root}fonts/teko-latin.woff2) format('woff2'); }</style>
 <link rel="stylesheet" href="${root}site/site.css">
 <script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
 </head>`;
@@ -64,7 +65,7 @@ export function footer(root) {
   <div class="s-foot-in">
     <p><a class="s-logo" href="${root}"><span>NEON</span> STICK FIGHT</a></p>
     <nav class="s-foot-nav" aria-label="Footer">
-      <a href="${root}play/">Play</a><a href="${root}fighters/">Fighters</a><a href="${root}how-to-play/">How to play</a><a href="${root}how-to-play/strategy/">Strategy</a><a href="${root}#online">Online</a><a href="${root}#about">About and credits</a><a href="${REPO}">GitHub</a>
+      <a href="${root}play/">Play</a><a href="${root}fighters/">Fighters</a><a href="${root}how-to-play/">How to play</a><a href="${root}how-to-play/strategy/">Strategy</a><a href="${root}#online">Online</a><a href="${root}#about">About and credits</a><a href="${REPO}">GitHub</a><a href="${root}privacy/">Privacy</a><a href="${root}terms/">House rules</a>
     </nav>
     <p>Free and open source under the GNU AGPL v3. Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL).</p>
     <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>

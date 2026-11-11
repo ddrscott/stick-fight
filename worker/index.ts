@@ -16,6 +16,7 @@
 //   GET  /stick-fight/api/og/crew/<slug>.jpg, og/room/<CODE>.jpg   share images, worker/og.ts
 //   GET  /stick-fight/crew/<slug>, room/<CODE>   the game page with the room's share tags, worker/og.ts
 //   GET  /stick-fight/play/?crew=|?room=, /stick-fight/?crew=|?room=   301 to that clean link, rest of the query kept
+//   GET and POST /stick-fight/api/admin/crews/<slug>   rename or close a crew, behind ADMIN_TOKEN (worker/admin.ts)
 //   POST /stick-fight/api/auth/start, auth/verify, auth/logout; GET and PUT /stick-fight/api/me
 //                                            profiles and email sign-in, worker/auth.ts
 //
@@ -52,8 +53,10 @@ import { type Env, type LiveEntry, API, BUSY, json, notFound, allowed, refusedSo
 import { isBatch } from "../src/net/watchlog.js";
 import { createWatchRoom } from "../src/net/watchroom.js";
 
+import { blockedName } from "../src/namefilter.js";
 import { Crew, SLUG_RE } from "./crew";
 import { handleAuth } from "./auth";
+import { handleAdmin } from "./admin";
 import { linkPage, ogImage, oldLink, playPage } from "./og";
 import { offlineMatch, recordMatch, recordPick, roomResult, statsResponse } from "./stats";
 
@@ -231,6 +234,7 @@ export default {
       const body = await req.json<{ name?: unknown }>().catch(() => ({} as { name?: unknown }));
       const name = cleanName(body.name, 3, 20);
       if (!name) return json({ error: "bad-name" }, 400);
+      if (blockedName(name)) return json({ error: "blocked-name" }, 400);   // the name filter (src/namefilter.js)
       for (let i = 0; i < 6; i++) {
         const slug = newSlug(name);
         if (await env.CREWS.get(env.CREWS.idFromName(slug)).create(slug, name)) { track(env, req, "crew_create"); return json({ slug, name }); }
@@ -250,6 +254,9 @@ export default {
     if (env.DEV_HOOKS === "1" && parts.length === 3 && parts[0] === "crews" && parts[2] === "dev-expire" && req.method === "POST") {
       return json({ wiped: await env.CREWS.get(env.CREWS.idFromName(parts[1].toLowerCase())).devExpire() });
     }
+
+    const admin = await handleAdmin(req, env, parts);   // acting on a report: rename or close a crew (worker/admin.ts)
+    if (admin) return admin;
 
     const auth = await handleAuth(req, env, parts);
     if (auth) return auth;

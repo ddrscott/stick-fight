@@ -32,9 +32,10 @@
 <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <meta name="theme-color" content="#07020f">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Teko:wght@500;600&display=swap">
+<!-- the game's own two faces, self-hosted (public/fonts/, Latin subsets, SIL OFL): no request leaves the site -->
+<link rel="preload" href="./fonts/bungee-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>@font-face { font-family: 'Bungee'; font-style: normal; font-weight: 400; font-display: swap; src: url(./fonts/bungee-latin.woff2) format('woff2'); }
+@font-face { font-family: 'Teko'; font-style: normal; font-weight: 300 700; font-display: swap; src: url(./fonts/teko-latin.woff2) format('woff2'); }</style>
 <link rel="stylesheet" href="./site/site.css">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoGame","name":"Neon Stick Fight","url":"https://askscottpierce.com/stick-fight/","image":"https://askscottpierce.com/stick-fight/og.jpg","description":"A temp fights their way to the top of a neon office tower in a stick-figure fighting game for the browser: an arcade climb, horde floors and online versus.","genre":["Fighting"],"gamePlatform":["Web browser","Android","iOS"],"applicationCategory":"Game","operatingSystem":"Any","playMode":["SinglePlayer","MultiPlayer"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Scott Pierce","url":"https://askscottpierce.com/"},"license":"https://www.gnu.org/licenses/agpl-3.0.html"}</script>
 <script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
@@ -240,7 +241,7 @@
   <div class="s-foot-in">
     <p><a class="s-logo" href="./"><span>NEON</span> STICK FIGHT</a></p>
     <nav class="s-foot-nav" aria-label="Footer">
-      <a href="./play/">Play</a><a href="./fighters/">Fighters</a><a href="./how-to-play/">How to play</a><a href="./how-to-play/strategy/">Strategy</a><a href="#stats">Stats</a><a href="#online">Online</a><a href="#about">About and credits</a><a href="https://github.com/ddrscott/stick-fight">GitHub</a>
+      <a href="./play/">Play</a><a href="./fighters/">Fighters</a><a href="./how-to-play/">How to play</a><a href="./how-to-play/strategy/">Strategy</a><a href="#stats">Stats</a><a href="#online">Online</a><a href="#about">About and credits</a><a href="https://github.com/ddrscott/stick-fight">GitHub</a><a href="./privacy/">Privacy</a><a href="./terms/">House rules</a>
     </nav>
     <p>Free and open source under the GNU AGPL v3. Music runs on <a href="https://strudel.cc">Strudel</a> (AGPL-3.0, <a href="https://codeberg.org/uzu/strudel">source</a>). Fonts: Bungee and Teko (SIL OFL).</p>
     <p>A side project by <a href="https://askscottpierce.com/">Scott Pierce</a>.</p>

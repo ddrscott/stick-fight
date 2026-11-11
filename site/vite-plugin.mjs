@@ -24,7 +24,8 @@ export function sitePlugin() {
   const generate = () => execFileSync(process.execPath, [join(root, 'site', 'generate.mjs')], { stdio: 'inherit', cwd: root });
   const pages = () => {
     const input = { main: resolve(root, 'index.html'), play: resolve(root, 'play/index.html'), fighters: resolve(root, 'fighters/index.html'),
-      guide: resolve(root, 'how-to-play/index.html'), 'guide-philosophy': resolve(root, 'how-to-play/philosophy/index.html'), 'guide-strategy': resolve(root, 'how-to-play/strategy/index.html') };
+      guide: resolve(root, 'how-to-play/index.html'), 'guide-philosophy': resolve(root, 'how-to-play/philosophy/index.html'), 'guide-strategy': resolve(root, 'how-to-play/strategy/index.html'),
+      privacy: resolve(root, 'privacy/index.html'), terms: resolve(root, 'terms/index.html') };
     for (const d of readdirSync(join(root, 'fighters'), { withFileTypes: true })) {
       if (d.isDirectory() && existsSync(join(root, 'fighters', d.name, 'index.html'))) input[`fighter-${d.name}`] = resolve(root, 'fighters', d.name, 'index.html');
     }

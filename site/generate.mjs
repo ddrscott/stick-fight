@@ -3,6 +3,7 @@
 //   fighters/index.html          the roster index
 //   fighters/<id>/index.html     one page per registered character
 //   how-to-play/[philosophy/|strategy/]index.html   the How to Play pages (site/guide.mjs)
+//   privacy/index.html, terms/index.html   the privacy notice and the house rules (site/legal.mjs)
 //   .site/home.json              the homepage's fills: the cast grid, the fighter
 //                                and ladder counts, the roster for the stats section (site/vite-plugin.mjs puts each in its <!--@key--> marker)
 //   public/sprites/<id>-idle[-2x].webp   the roster cards' idle loops (site/sprites.mjs)
@@ -18,6 +19,7 @@ import { FIGHT, MENUS, FACE, PILL } from '../src/flow/controls.js';
 import { LADDER } from '../src/flow/ladder.js';
 import { writeSprites } from './sprites.mjs';
 import { rulesPage, philosophyPage, strategyPage } from './guide.mjs';
+import { privacyPage, termsPage } from './legal.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'fighters');
@@ -46,6 +48,11 @@ const GUIDE = join(ROOT, 'how-to-play');
 for (const [dir, html] of [['', rulesPage({ FIGHT, MENUS, FACE, PILL })], ['philosophy', philosophyPage()], ['strategy', strategyPage()]]) {
   mkdirSync(join(GUIDE, dir), { recursive: true });
   writeFileSync(join(GUIDE, dir, 'index.html'), html);
+}
+// the privacy notice and the house rules (site/legal.mjs)
+for (const [dir, html] of [['privacy', privacyPage()], ['terms', termsPage()]]) {
+  mkdirSync(join(ROOT, dir), { recursive: true });
+  writeFileSync(join(ROOT, dir, 'index.html'), html);
 }
 mkdirSync(join(ROOT, '.site'), { recursive: true });
 writeFileSync(join(ROOT, '.site', 'home.json'), JSON.stringify({
