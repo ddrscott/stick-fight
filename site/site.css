@@ -259,6 +259,16 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
 .s-fd div { background: var(--bg2); padding: 6px 8px 4px; }
 .s-fd dt { font: 600 15px/1 var(--label); letter-spacing: 0.08em; color: var(--dim); }
 .s-fd dd { margin: 2px 0 0; font: 600 23px/1 var(--label); color: #fff; font-variant-numeric: tabular-nums; }
+/* STRATEGY: how to beat each unique move. One block per move, the tips as a short list; body copy is the plain sans, no glow */
+.s-strat { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px; }
+.s-counter { background: var(--panel); border: 1px solid var(--line); padding: 16px 18px 12px; scroll-margin-top: 70px; min-width: 0; }
+.s-counter .s-h3 { color: color-mix(in srgb, var(--c) 45%, #fff); }
+.s-counter .s-inputs { margin: 0 0 10px; }
+.s-counter ul { margin: 0; padding: 0 0 0 1.15em; }
+.s-counter li { font-size: 17px; line-height: 1.45; margin: 0 0 8px; max-width: 34em; }
+.s-counter li::marker { color: var(--c); }
+.s-strat-more { margin: 16px 0 0; }
+.s-strat-more a { color: color-mix(in srgb, var(--c) 45%, #fff); }
 .s-chips { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .s-chips li { font: 600 17px/1 var(--label); letter-spacing: 0.05em; padding: 5px 8px 2px; border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); color: var(--ink); text-transform: uppercase; }
 .s-also { margin: 10px 0 0; padding-top: 8px; border-top: 1px dashed var(--line); }

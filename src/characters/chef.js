@@ -179,4 +179,26 @@ export default {
     { name: 'FLAMBÉ', input: '← 1', note: 'short upward flick, launches' },
     { name: 'EIGHTY-SIX', input: '1, 1, 4', note: 'string, push kick to the wall' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs chef`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'chef_cleaver', tips: [
+      "Don't hit into it. It has armor: your strike lands, the cleaver comes down anyway, and you're the one on the floor.",
+      "Stand-block it. It's an overhead, so crouching loses. Then punish with the cross (2) or →2.",
+      "Within arm's reach, a throw (1+3) goes through the armor. From farther out it only trades.",
+      "→ parries it.",
+    ] },
+    { move: 'chef_flambe', tips: [
+      "Stand-block it. It's a mid that launches, and crouching puts you in the air.",
+      "Blocked, he's open: jab (1), snap kick (3) or →2.",
+      "A low jab (↓1) thrown the moment he starts gets there first.",
+      "→ parries it.",
+    ] },
+    { string: 'EIGHTY-SIX', tips: [
+      "Stand-block all three, then punish. The push kick leaves him open for the cross (2) or →2.",
+      "After you block the first jab, a low kick (↓3) goes under the second one and hits first.",
+      "Crouch from the start and the first jab misses. The string stops there.",
+    ] },
+  ],
 };

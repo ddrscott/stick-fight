@@ -306,10 +306,43 @@ function basicsOf(c) {
   });
 }
 
+// STRATEGY: how to beat each unique move and string. The tips are the character file's `strategy` field (next
+// to moveList): [{ move: 'expressSlide', tips: [...] }] keyed by the move's id, or { string: 'SAME DAY', tips }
+// keyed by a string's name; `also: [ids]` names own moves the same tips answer (a parry's reversal, say). Only
+// the site reads the field: site/vite-plugin.mjs cuts it out of every browser bundle, so the game never
+// carries it. Each tip is measured by gauntlet/counters.mjs, which prints the tips beside its numbers.
+// Every unique move and unique string needs an entry (TEMP: every shared string), each with 2 to 4 tips, or
+// the build fails, the same as a fighter that can't be drawn.
+function strategyOf(c, moves, strings) {
+  const fail = (msg) => { throw new Error(`[site] ${c.id}: strategy ${msg} (src/characters/, README Site)`); };
+  const wanted = c.id === TEMP_ID ? c.strings : c.strings.filter((s) => s.moves.some((m) => FRAME_DATA[m] && FRAME_DATA[m].owner === c.id));
+  const list = c.strategy || [];
+  const out = list.map((e) => {
+    const tips = e.tips || [];
+    const key = e.move || e.string;
+    if (tips.length < 2 || tips.length > 4) fail(`for '${key}' needs 2 to 4 tips, it has ${tips.length}`);
+    if (e.string) {
+      const st = strings.list.find((x) => x.name === e.string);
+      if (!st) fail(`names the string '${e.string}', which ${c.name} doesn't have`);
+      return { id: e.string.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: st.name, inputs: [{ input: st.input, how: st.moves.join(' › ') }], tips };
+    }
+    const card = moves.find((m) => m.move === e.move);
+    if (!card) fail(`names the move '${e.move}', which isn't one of ${c.name}'s own`);
+    for (const a of e.also || []) if (!moves.some((m) => m.move === a)) fail(`for '${e.move}' also names '${a}', which isn't one of ${c.name}'s own`);
+    return { id: e.move, name: card.name, inputs: card.inputs.filter((x) => !/^(second hit of|ends) /.test(x.how || '')).concat(card.feints.map((f) => ({ input: f.input, how: 'the feint' }))).map((x) => ({ input: x.input, how: x.how || '' })), tips };
+  });
+  for (const st of wanted) if (!list.some((e) => e.string === st.name)) fail(`has no tips for the string ${st.name}`);
+  const covered = new Set(list.flatMap((e) => [e.move, ...(e.also || [])]).filter(Boolean));
+  for (const st of wanted) for (const m of st.moves) covered.add(m);
+  for (const m of moves) if (!covered.has(m.move)) fail(`has no tips for the move '${m.move}' (${m.name})`);
+  return out;
+}
+
 /** Everything the site shows about one character. */
 export function sheetOf(c) {
   const moves = uniqueMovesOf(c);
   const names = new Map(moves.map((m) => [m.move, m.name]));
+  const strings = stringsOf(c);
   return {
     id: c.id, name: c.name, tagline: c.tagline,
     color: c.color, altColor: c.altColor, accent: c.accent, pants: c.pants || null, altPants: c.altPants || null,
@@ -320,7 +353,8 @@ export function sheetOf(c) {
     dance: c.dance || null,
     perfect: c.perfect ? { clip: c.perfect.clip, name: c.perfect.name, note: c.perfect.note, stamp: c.perfect.stamp } : null,   // the perfect round finisher (registry `perfect`)   // the celebration clip (registry `dance`), played by the match winner
     moves,
-    strings: stringsOf(c),
+    strings,
+    strategy: strategyOf(c, moves, strings),
     basics: basicsOf(c),
     damageMul: c.stats.damage,
   };

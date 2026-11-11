@@ -158,6 +158,26 @@ export default {
     { name: 'REBOOT', input: '← 2', note: 'palm push, carries him to the wall' },
     { name: 'CTRL ALT DEL', input: '1, 3, 2', note: 'string, rising palms launch' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs helpdesk`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'ticketClosed', also: ['ticketReversal'], tips: [
+      "It only catches highs and mids. A low kick (↓3), a sweep (↓4) or a throw (1+3) beats it at any moment.",
+      "Don't jab or cross the instant he sets it. That's what it's for: you get caught and knocked down.",
+      "It's over fast, and then he's stuck for about half a second. If you didn't swing, hit him as his guard drops: the cross (2) lands up close, and →2 reaches from a step back.",
+    ] },
+    { move: 'reboot', tips: [
+      "Stand-block it. It's a mid, so a crouch-block gets you shoved over.",
+      "Blocked, it's a free hit for you. A jab (1) or a snap kick (3) lands every time.",
+      "It's too quick to out-punch once it has started, so block it or parry it with →.",
+    ] },
+    { string: 'CTRL ALT DEL', tips: [
+      "Stand-block all three hits. There's no low in it.",
+      "The last hit leaves him wide open. As soon as you've blocked it, punish with the cross (2) or →2.",
+      "Or crouch from the start. The first jab goes over your head and the string stops there.",
+    ] },
+  ],
 };
 
 // a strike the stance can take: a grounded high or mid, never a throw or an air attack

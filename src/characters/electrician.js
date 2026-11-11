@@ -181,4 +181,25 @@ export default {
     { name: 'GROUND FAULT', input: '↘ 3', note: 'low stamp, roots him in place' },
     { name: 'SHORT CIRCUIT', input: '2, 1, 2', note: 'string, two-palm thrust' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs electrician`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'electrician_liveWire', tips: [
+      "It's a mid, so stand-block it. Crouching gets you shocked.",
+      "Blocked, →2 (the lunge cross) punishes. He's pushed back too far for most other buttons.",
+      "It's too quick to out-press once you see it. Block it, or parry it with →.",
+    ] },
+    { move: 'electrician_groundFault', tips: [
+      "Crouch-block it. It's a low, and a standing block gets stamped.",
+      "Blocked, a jab (1) or →2 punishes.",
+      "It only reaches about one step. Hold ← from just outside that and it misses.",
+      "↘ parries it.",
+    ] },
+    { string: 'SHORT CIRCUIT', tips: [
+      "Stand-block the opening cross. It pushes you back far enough that the jab behind it falls short, and the string dies there.",
+      "Press snap kick (3) right after you block the cross. It lands before his jab does.",
+      "Crouching from the start works too. The cross is a high and goes over your head.",
+    ] },
+  ],
 };

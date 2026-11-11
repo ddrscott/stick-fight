@@ -214,4 +214,24 @@ export default {
     { name: 'STREAK FREE', input: '1, 3, 4', note: 'string, dropkick, wall splat' },
     { name: 'AIR JUMP', input: '↑ in air', note: 'one more jump, or kick off a wall' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs windowWasher`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'squeegeeDive', tips: [
+      "It's an overhead. Stand-block it. Crouching gets you kicked, blocking or not.",
+      "→ parries it. Tap as he comes down on you.",
+      "It's safe once it's blocked, so don't swing after it. To stop it, swing early: an uppercut (↓2) thrown while he's still rising in his jump knocks him out of the air.",
+    ] },
+    { move: 'updraft', tips: [
+      "Stand-block it. It's a mid, it's fast, and whatever you press into it trades or loses. Lows don't stop it either.",
+      "Blocked, he's stuck in the air for a long time. Punish with the cross (2).",
+      "→ parries it.",
+    ] },
+    { string: 'STREAK FREE', tips: [
+      "Stand-block all three. There's no gap to hit him in, so don't press until the dropkick is blocked.",
+      "Then he's flat on the floor. The cross (2) or →2 punishes every time.",
+      "Or crouch from the start. The first jab goes over your head and the string stops there.",
+    ] },
+  ],
 };

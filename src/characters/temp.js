@@ -76,4 +76,70 @@ export default {
     { name: 'COMET CROSS', input: '→→ 2', note: 'wall splat' },
     { name: 'SKY SPIKE', input: '↓2, 1, 2, 4', note: 'ground bounce' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs temp`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { string: 'ONE-TWO', tips: [
+      "Stand-block all three, then punish the cross with your own cross (2) or →2.",
+      "After you block the first jab, low kick (↓3). It goes under the next punch and hits first.",
+      "Crouch from the start and the first jab goes over your head. The string stops there.",
+    ] },
+    { string: 'FLASH ROUNDHOUSE', tips: [
+      "Stand-block all four. The roundhouse at the end leaves him open for the cross (2) or →2.",
+      "The roundhouse is slow to arrive. After you block the cross, a sweep (↓4) goes under it, or tap → to parry it.",
+      "After you block the first jab, a low kick (↓3) goes under everything that follows.",
+      "Crouch from the start and the first jab goes over your head. The string stops there.",
+    ] },
+    { string: 'TRIPLE JAB', tips: [
+      "Stand-block all three, then jab (1) or cross (2) back. He's open after the third.",
+      "After you block the first jab, low kick (↓3). It goes under the second.",
+      "Crouch from the start and the first jab goes over your head. The string stops there.",
+    ] },
+    { string: 'ONE-TWO KICK', tips: [
+      "Stand-block all three, then punish the roundhouse with the cross (2) or →2.",
+      "After you block the first jab, jab back (1). His cross is slow to follow and yours lands first.",
+      "The roundhouse is slow too. After you block the cross, sweep (↓4) under it, or parry it with →.",
+      "Crouch from the start and the first jab goes over your head. The string stops there.",
+    ] },
+    { string: 'UPTOWN', tips: [
+      "Stand-block all three, then punish with the cross (2).",
+      "After you block the first jab, jab back (1) or low kick (↓3). His cross is slow to follow.",
+      "Crouch from the start and the first jab goes over your head. The string stops there.",
+    ] },
+    { string: 'NEON TORNADO', tips: [
+      "Stand-block it. Blocked, the launcher at the end never comes out: the string dies after the third hit, and your cross (2) punishes.",
+      "After you block the first jab, jab back (1) or low kick (↓3). His cross is slow to follow.",
+      "Crouch from the start and the first jab goes over your head. The string stops there.",
+    ] },
+    { string: 'CROSS SNAP', tips: [
+      "Stand-block both hits, then punish the snap kick with your own cross (2).",
+      "Or crouch from the start. The cross goes over your head and the kick never comes.",
+    ] },
+    { string: 'SPIN HEEL', tips: [
+      "Stand-block the opening cross. It pushes you back far enough that the jab behind it falls short, and the spin heel never comes.",
+      "Press snap kick (3) right after you block the cross. It lands before his jab does.",
+      "Crouching from the start works too. The cross is a high and goes over your head.",
+    ] },
+    { string: 'CRESCENT', tips: [
+      "Stand-block it. The kicks are mids, so crouching eats the whole string.",
+      "The crescent kick at the end is slow enough to parry. Tap → as it comes around.",
+      "Blocked, he's open for the cross (2) or →2, if you press it right away.",
+    ] },
+    { string: 'LOW RUSH', tips: [
+      "It's all lows, so crouch-block the whole string. A standing block gets hit.",
+      "After you block the first low jab, press the cross (2). It lands before the next one.",
+      "If you block all three, the cross (2) or →2 still catches him, but only if you press at once.",
+    ] },
+    { string: 'GROUND RUSH', tips: [
+      "Crouch-block it. The two low kicks push you back far enough that the knee after them misses.",
+      "Then he's stuck, and anything lands: jab (1), cross (2), whatever you like.",
+      "A standing block gets kicked in the shin, and crouching without blocking takes all three hits.",
+    ] },
+    { string: 'SKY SPIKE', tips: [
+      "Stand-block it. It opens with an uppercut, which is a mid, and crouching gets you launched into the rest.",
+      "After you block the uppercut, jab (1) or snap kick (3) back. The punches behind it are slow to arrive.",
+      "If you block all four he's stuck for a long time. Punish with the cross (2) or a snap kick (3).",
+    ] },
+  ],
 };

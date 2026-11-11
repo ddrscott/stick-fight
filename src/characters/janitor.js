@@ -145,4 +145,26 @@ export default {
     { name: 'MOP SPIN', input: '← 3', note: 'full turn, hits behind him too' },
     { name: 'AISLE 3', input: '3, 3, 3', note: 'string, long side kick, wall splat' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs janitor`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'wetFloor', tips: [
+      "Crouch-block it. It's a low that slides in from far away, and a standing block or a jump gets swept.",
+      "Blocked, he's on the floor for over half a second. The cross (2) or →2 punishes with time to spare.",
+      "↘ parries it.",
+      "You can beat it to the punch: a jab (1) or a body blow (→1) thrown as he starts lands first. A roundhouse or a sweep only trades.",
+    ] },
+    { move: 'mopSpin', tips: [
+      "It's slow. Jab (1) the moment he starts to turn and you hit him first. A throw (1+3) works too.",
+      "Or hold ← and walk back. It only reaches about one step, so it whiffs, and the cross (2) punishes.",
+      "Don't crouch. It's a mid, and it knocks you down whether you're crouch-blocking or not.",
+      "Jumping doesn't avoid it either.",
+    ] },
+    { string: 'AISLE 3', tips: [
+      "Stand-block it. All three kicks are mids, so crouching eats the whole string, blocking or not.",
+      "Up close there's no gap between the kicks, and after the last one he's out of reach. Block it and let it go.",
+      "At the very tip of his kick the third one arrives late. Jab (1) after you block the second and you hit him first.",
+    ] },
+  ],
 };

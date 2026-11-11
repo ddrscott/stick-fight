@@ -166,4 +166,24 @@ export default {
     { name: 'TRANSFER', input: '← 1+3', note: 'grab over her head, can’t be broken: sides swap' },
     { name: 'HANG UP', input: '3, 1, 1', note: 'string, the handset slams down (overhead)' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs receptionist`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'receptionist_pleaseHold', tips: [
+      "Stand-block it, or parry it with →. From across the room nothing you press beats the cord.",
+      "Blocked from range it's safe: she's too far away to punish, so don't swing at air.",
+      "Get inside it. The lash only hits at its far end, so right next to her a low kick (↓3) or an uppercut (↓2) beats it clean.",
+    ] },
+    { move: 'receptionist_transfer', tips: [
+      "It's a grab. You can't block it or break it, and it comes out almost instantly. Crouch (↓) and it goes over your head.",
+      "When it misses she's stuck for over half a second. Punish with your biggest hit: the uppercut (↓2) launches.",
+      "It only reaches about one step, so stepping back makes it miss too. Jumping doesn't: she catches you on the way up.",
+    ] },
+    { string: 'HANG UP', tips: [
+      "Stand-block all three. Crouching loses to the very first kick.",
+      "Up close it's safe once it's blocked. She ends up out of reach, so don't swing after it.",
+      "It only reaches about a step. Hold ← from just outside and the whole string misses, and then the cross (2) punishes.",
+    ] },
+  ],
 };

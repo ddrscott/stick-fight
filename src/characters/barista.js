@@ -181,4 +181,24 @@ export default {
     { name: 'POUR OVER', input: '← 2', note: 'four-hit flurry, knocks down' },
     { name: 'LATTE ART', input: '1, 2, 1', note: 'string, whirling backfist' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs barista`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'ba_espresso', tips: [
+      "He can't block or move while he drinks. If you're close, hit him: the cross (2) lands if you press it as he lifts the cup, and →2 reaches from a step farther out.",
+      "Right next to him, a throw (1+3) works for the whole drink.",
+      "The drink never hits you, so blocking it does nothing. It only makes his strikes come out faster for a couple of seconds.",
+    ] },
+    { move: 'ba_pourOver', tips: [
+      "Stand-block all four hits. It's a mid, so crouching loses.",
+      "It comes out almost instantly. Up close, don't try to out-press it: everything you throw trades or loses.",
+      "It's safe once it's blocked. He ends up out of reach, so don't swing after it.",
+    ] },
+    { string: 'LATTE ART', tips: [
+      "Stand-block all three, then punish the backfist with the cross (2) or →2.",
+      "After you block his first jab, jab back (1) or low kick (↓3). His cross is slow to follow and you hit first.",
+      "Crouch from the start and the first jab goes over your head. The string stops there.",
+    ] },
+  ],
 };

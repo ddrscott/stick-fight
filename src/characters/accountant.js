@@ -156,4 +156,25 @@ export default {
     { name: 'BALANCE SHEET', input: '↓3, 4', note: 'overhead out of Fine Print' },
     { name: 'WRITE-OFF', input: '↓3, 3, 2', note: 'low, low, then the ender' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs accountant`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'finePrint', tips: [
+      "Crouch-block it. It's a low, and it's too fast to interrupt.",
+      "Blocking it doesn't give you a turn. He recovers first, and nothing you press afterwards catches him.",
+      "↘ parries it, but only as a guess: it lands almost as soon as he presses.",
+    ] },
+    { string: 'WRITE-OFF', tips: [
+      "Crouch-block the first two kicks, then stand up: the last hit is a mid. Staying down gets you knocked over, and so does standing the whole way.",
+      "Better, after you block the second low, press snap kick (3). It beats the last hit.",
+      "The second kick is slow to arrive. A low jab (↓1) pressed right after you block Fine Print gets there first.",
+      "If you do block all three, a jab (1) or a snap kick (3) punishes.",
+    ] },
+    { string: 'BALANCE SHEET', tips: [
+      "Crouch-block Fine Print, then stand up and block. The second hit is an overhead, and it hits you if you stay down.",
+      "Once both are blocked, jab (1) punishes.",
+      "After Fine Print he can go low again (WRITE-OFF) or overhead (this), and both land at about the same moment. Up close no button covers both, so it's a guess.",
+    ] },
+  ],
 };

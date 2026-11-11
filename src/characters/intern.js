@@ -179,4 +179,35 @@ export default {
     { name: 'PAPER CUT', input: '↓1, ↓1, 2', note: 'quick lows, then a mid finisher' },
     { name: 'REPLY ALL', input: '1, 2, 2', note: 'string, a wild haymaker' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs intern`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'coffeeRun', tips: [
+      "Stand-block it. It's a mid, so crouching gets you elbowed, blocking or not.",
+      "Blocked, he's open. Jab (1) or snap kick (3) him right after.",
+      "Or meet the run: a jab (1) or a snap kick (3) thrown as he dashes in hits him first.",
+      "→ parries it.",
+    ] },
+    { move: 'paperCut', tips: [
+      "Crouch-block it. It's a low, and it lands almost as soon as he presses, so every button you throw at it trades or loses.",
+      "One of these barely hurts. What matters is the string behind it, so keep crouch-blocking.",
+      "After a single blocked one, only →2 reaches him in time.",
+    ] },
+    { string: 'PAPER CUT', tips: [
+      "Crouch-block the two low jabs. They push you back far enough that the uppercut after them swings at air.",
+      "Then he's stuck, and anything lands. Take the cross (2) or the uppercut (↓2).",
+      "A standing block gets hit low, and crouching without blocking gets hit by all three.",
+    ] },
+    { string: 'PAPER CUTS', tips: [
+      "It's all lows, so crouch-block the whole string. A standing block gets hit three times.",
+      "After you block the second low jab, press the cross (2) or the snap kick (3). It beats the low kick he follows with.",
+      "If you block all three, he's barely open: only the cross (2) or →2, pressed at once, still catches him.",
+    ] },
+    { string: 'REPLY ALL', tips: [
+      "Stand-block all three, then jab (1) at once. The haymaker leaves him open for a jab and nothing slower.",
+      "Or cut it off: after you block the first jab, a low kick (↓3) goes under his cross and hits first.",
+      "Crouch from the start and the first jab goes over your head. The string stops there.",
+    ] },
+  ],
 };
