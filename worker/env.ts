@@ -23,6 +23,7 @@ export interface Env {
   TURN_KEY_API_TOKEN?: string;
   DEV_LOGIN_CODES?: string;  // "1" only in .dev.vars: no email is sent, the code comes back in the answer
   DEV_HOOKS?: string;        // "1" only in .dev.vars: test routes (expire a crew room now)
+  OLD_PATH?: string;         // askscottpierce.com/stick-fight: "serve" the game there too, or "redirect" it here (worker/index.ts)
 }
 
 /** One match in the LIVE list (GET api/live): a quick room with a match on that anyone may watch. */
@@ -31,7 +32,16 @@ export type LiveEntry = {
   tally: { host: number; guest: number; draw: number }; watching: number; at: number;
 };
 
-export const API = "/stick-fight/api/";
+export const API = "/api/";
+// The game's home (README, Hosting). It was askscottpierce.com/stick-fight until 2026-11-11; the Worker
+// still answers there (worker/index.ts oldPath).
+export const SITE_HOST = "neonstickfight.com";
+export const OLD_PREFIX = "/stick-fight";
+const isLocal = (u: URL) => u.hostname === "localhost" || u.hostname === "127.0.0.1";
+/** The origin a link the server writes points at (share tags, the sign-in email): the game's domain,
+ *  whichever host asked, so a link made on the old address still lands on the new one. Local dev keeps
+ *  its own (wrangler dev hands the script http://localhost). */
+export const siteOrigin = (u: URL) => (isLocal(u) ? u.origin : `https://${SITE_HOST}`);
 export const BUSY = "Too many tries from your network. Try again shortly.";
 
 export const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>

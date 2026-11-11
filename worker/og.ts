@@ -2,19 +2,19 @@
 //
 // A link pasted into iMessage, Slack, Discord, WhatsApp and the rest is fetched by a bot that reads the
 // page's Open Graph tags and runs no script. play/index.html carries the plain set (the game's title,
-// og.jpg). A crew's link is /stick-fight/crew/<slug> and a quick room's /stick-fight/room/<CODE>: the
+// og.jpg). A crew's link is /crew/<slug> and a quick room's /room/<CODE>: the
 // Worker runs first there (wrangler.jsonc, run_worker_first), answers with play/index.html from the
 // assets (no redirect, the address stays clean), and swaps the tags for the room's own: "Join CREW NAME
 // on Neon Stick Fight", a line saying what tapping does, and a picture of the room's name. Everyone gets
 // the same tags, bot or not. The page's paths are relative to play/, so it also gets
-// <base href="/stick-fight/play/"> as the first thing in its head. An unknown or expired crew gets the
+// <base href="../play/"> as the first thing in its head. An unknown or expired crew gets the
 // plain tags and still loads the game, which says there's no such crew.
 //
 // The old forms, play/?crew=, play/?room=, /?crew= and /?room=, are a 301 to the clean link with the
 // rest of the query kept (?pick=, say), so a bot following an old link unfurls it as the room too.
 //
-//   GET /stick-fight/api/og/crew/<slug>.jpg?v=<v>   the crew's image, 1200x630
-//   GET /stick-fight/api/og/room/<CODE>.jpg         a quick room's image
+//   GET /api/og/crew/<slug>.jpg?v=<v>   the crew's image, 1200x630
+//   GET /api/og/room/<CODE>.jpg         a quick room's image
 //
 // The image is an SVG drawn here (public/og/bg.jpg behind it, Bungee and Teko from public/og/*.ttf) and
 // rasterized by resvg, then encoded as a JPEG by mozjpeg (both WebAssembly; a PNG of the photo-like
@@ -25,11 +25,14 @@ import { Resvg, initWasm } from "@resvg/resvg-wasm";
 import resvgWasm from "@resvg/resvg-wasm/index_bg.wasm";
 import encodeJpeg, { init as initJpeg } from "@jsquash/jpeg/encode";
 import jpegWasm from "@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm";
-import { type Env, API, CODE_RE, allowed, sha256 } from "./env";
+import { type Env, API, CODE_RE, allowed, sha256, siteOrigin } from "./env";
 import { SLUG_RE } from "./crew";
 import { NAME_W, fitName, textWidth } from "./og-layout";
 
-const ROOT = "/stick-fight/";
+const ROOT = "/";
+// crew/<slug> and room/<CODE> sit one level below the root, so ../play/ is the game's folder both here and
+// at askscottpierce.com/stick-fight/ while the old address serves the game (worker/index.ts oldPath)
+const BASE = "../play/";
 const W = 1200, H = 630;
 /** bump when the image's layout changes, so every cached crew image is drawn again */
 const LOOK = 2;
@@ -41,8 +44,8 @@ const PITCH = "Tap to join: no sign-up, pick a fighter and fight.";
 type Card = { name: string; members: number };
 type Preview = { title: string; description: string; url: string; image: string; alt: string };
 
-/** the origin a share tag points at: https on the public host (wrangler dev hands the script http) */
-const publicOrigin = (u: URL) => (u.hostname === "localhost" || u.hostname === "127.0.0.1" ? u.origin : `https://${u.host}`);
+/** the origin a share tag points at: neonstickfight.com, even when the old address asked (env.ts siteOrigin) */
+const publicOrigin = siteOrigin;
 const cache = () => (caches as unknown as { default: Cache }).default;
 
 // ---- the crew's name, from its Durable Object (cached) --------------------------------------------
@@ -104,7 +107,7 @@ type Link = { kind: "crew" | "room"; id: string };
 /** The clean link an old ?crew= or ?room= query stands for, with the rest of the query, or null. A crew
  *  wins over a room (the game reads them in that order). A value that can't be a slug or a whole code
  *  isn't moved: play/ shows the game's own answer to it, as before. */
-function cleanLink(url: URL): string | null {
+export function cleanLink(url: URL): string | null {
   const q = new URLSearchParams(url.search);
   const slug = (q.get("crew") || "").toLowerCase(), code = (q.get("room") || "").toUpperCase();
   let path: string;
@@ -117,14 +120,14 @@ function cleanLink(url: URL): string | null {
 
 const moved = (location: string) => new Response(null, { status: 301, headers: { location } });
 
-/** GET /stick-fight/play/ (and play/index.html): the asset, untouched, unless the query is an old crew
+/** GET /play/ (and play/index.html): the asset, untouched, unless the query is an old crew
  *  or room link, which is a 301 to its clean address. */
 export async function playPage(req: Request, env: Env): Promise<Response> {
   const to = req.method === "GET" || req.method === "HEAD" ? cleanLink(new URL(req.url)) : null;
   return to ? moved(to) : env.ASSETS.fetch(req);
 }
 
-/** GET /stick-fight/crew/<slug> and /stick-fight/room/<CODE>: the game page under the room's own address,
+/** GET /crew/<slug> and /room/<CODE>: the game page under the room's own address,
  *  with the room's share tags and a <base> so its play/-relative paths still resolve. */
 export async function linkPage(req: Request, env: Env, ctx: ExecutionContext, kind: "crew" | "room", raw: string): Promise<Response> {
   const url = new URL(req.url);
@@ -138,7 +141,7 @@ export async function linkPage(req: Request, env: Env, ctx: ExecutionContext, ki
   const plain = new Request(new URL(`${ROOT}play/`, url), { method: "GET", headers: [...req.headers].filter(([k]) => !/^if-/i.test(k)) });
   const [res, p] = await Promise.all([env.ASSETS.fetch(plain), preview(req, env, ctx, { kind, id: norm }).catch(() => null)]);
   if (res.status !== 200 || !(res.headers.get("content-type") || "").includes("text/html")) return res;
-  let rw = new HTMLRewriter().on("head", { element(el: Element) { el.prepend(`<base href="${ROOT}play/">`, { html: true }); } });
+  let rw = new HTMLRewriter().on("head", { element(el: Element) { el.prepend(`<base href="${BASE}">`, { html: true }); } });
   if (p) {
     const set = (v: string) => ({ element(el: Element) { el.setAttribute("content", v); } });
     rw = rw
@@ -160,9 +163,8 @@ export async function linkPage(req: Request, env: Env, ctx: ExecutionContext, ki
   return new Response(req.method === "HEAD" ? null : out.body, { status: 200, headers });
 }
 
-/** /stick-fight/ with ?crew= or ?room=: a link from before the game moved to play/. The page's script
- *  forwards people, but unfurl bots run no script, so the Worker answers with a real redirect, straight
- *  to the clean address. */
+/** The homepage with ?crew= or ?room=: a link from before the game moved to play/. The page's script
+ *  forwards people, but unfurl bots run no script, so the Worker answers with a real redirect. */
 export function oldLink(req: Request, env: Env): Promise<Response> | Response {
   const url = new URL(req.url);
   if (!url.searchParams.has("crew") && !url.searchParams.has("room")) return env.ASSETS.fetch(req);

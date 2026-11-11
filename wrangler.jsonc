@@ -1,9 +1,17 @@
-// The game at https://askscottpierce.com/stick-fight (see README, "Hosting" and "Multiplayer").
-// The routes hand /stick-fight and /stick-fight/* to this Worker. Static files come from the
-// assets binding, which lives under dist/stick-fight/ so the file path equals the URL path
-// (vite build fills it). /stick-fight/api/*, crew/*, room/*, play/ and the homepage run the script first: quick rooms and crew
-// rooms (one Durable Object each), profiles and email sign-in (D1), see worker/index.ts.
-// Anything else the assets don't have reaches the script and gets a 404.
+// The game at https://neonstickfight.com (see README, "Hosting" and "Multiplayer").
+// Two custom domains hand neonstickfight.com and www.neonstickfight.com to this Worker (Cloudflare
+// makes their DNS records and certificates); www gets a 301 to the bare domain. Static files come from
+// the assets binding (dist/, file path = URL path, vite build fills it). The script runs first for
+// /api/* (quick rooms and crew rooms, one Durable Object each; profiles and email sign-in in D1; see
+// worker/index.ts), for a crew's or a room's own link (crew/<slug>, room/<CODE>: the game page with
+// the room's share tags, worker/og.ts) and for every page, so it can send www away and 301 old ?crew= links; the
+// pages' scripts, styles and pictures never wake it. Anything else the assets don't have gets a 404.
+//
+// The old address, askscottpierce.com/stick-fight, keeps its two zone routes on the same Worker (no
+// path in dist/ starts with /stick-fight, so all of it reaches the script; wrangler warns that these
+// routes "will attempt to serve Assets on a configured path" on every deploy, and that's expected). OLD_PATH says what it does:
+// "serve" the game there as before, or "redirect" every page to the same one here with a 301. Flip it
+// to "redirect" once neonstickfight.com is checked (README, Hosting, Moving day).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "stick-fight",
@@ -11,6 +19,8 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-11-01",
   "routes": [
+    { "pattern": "neonstickfight.com", "custom_domain": true },
+    { "pattern": "www.neonstickfight.com", "custom_domain": true },
     { "pattern": "askscottpierce.com/stick-fight", "zone_name": "askscottpierce.com" },
     { "pattern": "askscottpierce.com/stick-fight/*", "zone_name": "askscottpierce.com" }
   ],
@@ -20,10 +30,11 @@
   "assets": {
     "directory": "dist",
     "binding": "ASSETS",
-    // /stick-fight redirects to /stick-fight/, so the page's relative ./src/... paths resolve
+    // /play redirects to /play/, so the page's relative ./src/... paths resolve
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "none",
-    "run_worker_first": ["/stick-fight/api/*", "/stick-fight/crew/*", "/stick-fight/room/*", "/stick-fight/play/", "/stick-fight/play/index.html", "/stick-fight/", "/stick-fight/index.html"]
+    // the API, crew/ and room/ links, and the pages (every HTML file in dist/ is one of these); everything else is served without the script
+    "run_worker_first": ["/api/*", "/", "/index.html", "/play", "/play/*", "/fighters", "/fighters/*", "/how-to-play", "/how-to-play/*", "/crew/*", "/room/*"]
   },
   "durable_objects": {
     // ROOMS: one per quick room, named by its four-letter code (worker/index.ts).
@@ -42,7 +53,8 @@
   ],
   // Sign-in codes go out from hey@askscottpierce.com (Email Sending is set up on the zone)
   "send_email": [{ "name": "EMAIL" }],
-  "vars": { "EMAIL_FROM": "hey@askscottpierce.com" },
+  // OLD_PATH: "serve" | "redirect", what askscottpierce.com/stick-fight does (see the top of this file)
+  "vars": { "EMAIL_FROM": "hey@askscottpierce.com", "OLD_PATH": "serve" },
   // Abuse limits per client IP (worker/index.ts clientKey), counted per Cloudflare location.
   // Free on every plan; the period can only be 10 or 60 seconds. namespace_id must be unique on
   // the account (other projects use 1001-1003).

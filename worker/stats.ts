@@ -1,7 +1,7 @@
 // Match bookkeeping (README, "Analytics"): who was picked, who fought whom, and who won.
 //
 // Every finished match becomes one `match` data point in Analytics Engine (raw, three months) and one
-// upsert into the D1 rollups (all time, migrations/0003_stats.sql), which GET /stick-fight/api/stats
+// upsert into the D1 rollups (all time, migrations/0003_stats.sql), which GET /api/stats
 // serves to the homepage and the fighter pages. Fighters and modes only: never a player id, a name
 // or an email.
 //
@@ -140,7 +140,7 @@ export async function roomResult(storage: DurableObjectStorage, env: Env, role: 
   await recordMatch(env, null, role === "host" ? mine.match : theirs.match);
 }
 
-// ---- GET /stick-fight/api/stats -------------------------------------------------------------------------
+// ---- GET /api/stats -------------------------------------------------------------------------
 type Side = { games: number; wins: number; losses: number; draws: number; secs: number; perfects: number; mirrors: number };
 type Row = { a: string; b: string; vs: string; games: number; a_wins: number; b_wins: number; draws: number; secs: number; a_perfects: number; b_perfects: number; timeouts: number };
 const side = (): Side => ({ games: 0, wins: 0, losses: 0, draws: 0, secs: 0, perfects: 0, mirrors: 0 });

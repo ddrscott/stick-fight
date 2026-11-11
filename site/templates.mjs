@@ -1,12 +1,12 @@
 // HTML for the generated pages (the roster index and one page per fighter) and the homepage's roster
 // grid. Plain template strings, no framework. Every link and asset is relative to the page (`root` is
-// the way back to /stick-fight/ from it), so the pages work at the subpath, on the dev server and in
+// the way back to the site's root from it), so the pages work at any path, on the dev server and in
 // `vite preview`. Absolute URLs appear only where they have to: canonical and Open Graph tags.
 
 import { FRAMES, W, H } from './sprites.mjs';
 const SPRITE = { FRAMES, W, H };
 
-export const SITE = 'https://askscottpierce.com/stick-fight/';
+export const SITE = 'https://neonstickfight.com/';
 export const REPO = 'https://github.com/ddrscott/stick-fight';
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -40,7 +40,7 @@ export function head({ root, title, description, path, page }) {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Teko:wght@500;600&display=swap">
 <link rel="stylesheet" href="${root}site/site.css">
-<script defer data-domain="askscottpierce.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
+<script defer data-domain="neonstickfight.com" src="https://plausible.ljs.app/js/script.hash.outbound-links.pageview-props.revenue.tagged-events.js"></script>
 </head>`;
 }
 

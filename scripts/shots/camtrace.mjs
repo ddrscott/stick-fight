@@ -9,7 +9,8 @@ import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 const here = path.dirname(new URL(import.meta.url).pathname);
 const dists = [path.resolve(process.argv[2]), path.resolve(process.argv[3] || path.join(here, '../../dist'))];
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2' };
-const serve = (root) => new Promise((r) => { const s = http.createServer((req, res) => {
+const serve = (root) => new Promise((r) => { if (fs.existsSync(path.join(root, 'stick-fight', 'play'))) root = path.join(root, 'stick-fight');   // a build from before the move
+  const s = http.createServer((req, res) => {
   let p = path.join(root, decodeURIComponent(req.url.split('?')[0]));
   if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
   if (!p.startsWith(root) || !fs.existsSync(p)) { res.writeHead(404); return res.end(); }
@@ -26,7 +27,7 @@ for (const size of SIZES) for (const scene of SCENES) {
     const ctx = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.touch ? 2 : 1, hasTouch: size.touch, isMobile: size.touch });
     await ctx.addInitScript(() => { let a = 12345; Math.random = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; });
     const page = await ctx.newPage();
-    await page.goto(`http://127.0.0.1:${srv.address().port}/stick-fight/play/?scene=${scene}&tier=3`);
+    await page.goto(`http://127.0.0.1:${srv.address().port}/play/?scene=${scene}&tier=3`);
     await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
     await page.waitForTimeout(700);   // the touch layout is read twice a second: let it settle before the trace
     traces.push(await page.evaluate((s) => {

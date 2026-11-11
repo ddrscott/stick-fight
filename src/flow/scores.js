@@ -1,7 +1,7 @@
 // Score rules and the high score tables. Two top-5 tables (arcade and horde), kept in
-// localStorage under one key. The origin is shared with every app on askscottpierce.com, so the
-// key starts with stick-fight-, and every storage call is wrapped: a private window or blocked
-// storage just means the table lives for this page only.
+// localStorage under one key. The key starts with stick-fight- from when the origin was shared
+// with every app on askscottpierce.com (kept, so nothing resets), and every storage call is
+// wrapped: a private window or blocked storage just means the table lives for this page only.
 
 export const POINTS = {
   damage: 10,   // per point of health you take off

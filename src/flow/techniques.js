@@ -1,7 +1,7 @@
 // The happy-accident techniques a player has found (src/combat/botch.js) and the botch switch, kept in
-// localStorage. The origin is shared with the rest of askscottpierce.com, so the keys start with
-// stick-fight-. Every access is wrapped: a private window or blocked storage just finds nothing and
-// keeps the default (botches on).
+// localStorage. The keys start with stick-fight- from when the origin was shared with the rest of
+// askscottpierce.com, kept so nothing resets. Every access is wrapped: a private window or blocked
+// storage just finds nothing and keeps the default (botches on).
 import { ACCIDENTS } from '../combat/botch.js';
 
 const FOUND_KEY = 'stick-fight-techniques', SWITCH_KEY = 'stick-fight-botch';

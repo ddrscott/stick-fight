@@ -1,7 +1,7 @@
 // Spectators, end to end (README, Multiplayer, Spectators): real browsers through the local Worker.
 //
 //   npm run build && npx wrangler dev --port 8787      (the Worker serving dist/ and the API)
-//   node scripts/watch/e2e.mjs [http://127.0.0.1:8787/stick-fight/] [--shots dir]
+//   node scripts/watch/e2e.mjs [http://127.0.0.1:8787/] [--shots dir]
 //
 // A host and a guest (each its own Chromium, scripted inputs, 30-second single-round matches) play in a quick
 // room while spectators come and go: one from before the first frame, one mid-match, one who reloads, one who
@@ -12,7 +12,7 @@ import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 import fs from 'node:fs';
 
 const argv = process.argv.slice(2);
-const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/stick-fight/').replace(/\/?$/, '/');
+const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const SHOTS = argv.includes('--shots') ? argv[argv.indexOf('--shots') + 1] : '';
 const ONLY = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : '';   // quick | menus | crew: one part of the run
 const part = (name) => !ONLY || ONLY.split(',').includes(name);

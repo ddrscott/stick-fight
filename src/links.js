@@ -8,7 +8,7 @@ import { ROOT } from './root.js';
 /** the game page's address: <root>play/ */
 export const gameUrl = () => new URL('play/', ROOT);
 
-/** the clean link for a crew or a room, e.g. https://askscottpierce.com/stick-fight/crew/lunch-crew-7k2qm */
+/** the clean link for a crew or a room, e.g. https://neonstickfight.com/crew/lunch-crew-7k2qm */
 export const linkUrl = (kind, id) => new URL(`${kind}/${encodeURIComponent(id)}`, ROOT);
 
 const PATH = /\/(crew|room)\/([^/?#]+)\/?$/;

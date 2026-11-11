@@ -1,7 +1,7 @@
 // Join links ask nothing (README, Arcade flow, Versus online): real browsers through the local Worker.
 //
 //   npm run build && npm run dev:worker        (the Worker serving dist/ and the API on :8787)
-//   node scripts/join/check.mjs [http://127.0.0.1:8787/stick-fight/] [--shots dir]
+//   node scripts/join/check.mjs [http://127.0.0.1:8787/] [--shots dir]
 //
 // A host opens a quick room; a visitor with empty storage opens its room/<CODE> link and has to land on the
 // pick screen without a key, a tap or a letter typed. Then the same for a crew/<slug> link and the crew lobby,
@@ -17,9 +17,9 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 const jsQR = createRequire(import.meta.url)('jsqr');
 
 const argv = process.argv.slice(2);
-const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/stick-fight/').replace(/\/?$/, '/');
+const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const SHOTS = argv.includes('--shots') ? argv[argv.indexOf('--shots') + 1] : '';
-const API = BASE + 'api/', PLAY = BASE + 'play/';
+const API = BASE + 'api/', PLAY = BASE + 'play/', ROOT = new URL(BASE).pathname;
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
@@ -98,7 +98,7 @@ try {
     check(`${label}: the flow never showed the name screen`, !/nameEntry|onlineJoin/.test(await hist(G)), await hist(G));
     check(`${label}: no page errors`, !G.errors.length && !H.errors.length, [...G.errors, ...H.errors].join(' | ').slice(0, 200));
     check(`${label}: nothing in the room link's network log failed`, !G.missing.length, G.missing.slice(0, 3).join(' | '));
-    check(`${label}: in the room, the address is the clean room/<CODE>`, (await where(G)) === `/stick-fight/room/${code}`, await where(G));
+    check(`${label}: in the room, the address is the clean room/<CODE>`, (await where(G)) === `${ROOT}room/${code}`, await where(G));
     await sleep(600); await shot(G, `room-2-pick-${label}`);
     if (label === 'desktop') await shot(H, 'room-3-host-sees');
     await closeAll();
@@ -112,7 +112,7 @@ try {
   for (const [label, size, touch] of SIZES) {
     const C = await page(CLEAN, {}, size, touch);
     check(`${label}: a crew link opens on the lobby`, (await flow(C)) === 'crewLobby', await flow(C));
-    check(`${label}: the address bar stays crew/<slug>`, (await where(C)) === `/stick-fight/crew/${crew.slug}`, await where(C));
+    check(`${label}: the address bar stays crew/<slug>`, (await where(C)) === `${ROOT}crew/${crew.slug}`, await where(C));
     const shown = await C.evaluate(() => (document.querySelector('.fl-crew .fl-link') || {}).textContent || '');
     check(`${label}: the lobby shows the clean link`, shown === CLEAN, shown);
     const p = await me(C);
@@ -131,7 +131,7 @@ try {
     if (label === 'desktop') {
       // picking a real name clears the mark, and the crew sees the new one
       await C.evaluate(() => { const f = window.__flow.debug; f.go('onlineMenu'); f.go('profile'); });
-      check('out of the crew to the menus: the address is back to play/', (await where(C)) === '/stick-fight/play/', await where(C));
+      check('out of the crew to the menus: the address is back to play/', (await where(C)) === `${ROOT}play/`, await where(C));
       await C.evaluate(() => [...document.querySelectorAll('button')].find((b) => /CHANGE NAME/.test(b.textContent)).click());
       const title = await C.evaluate(() => document.querySelector('h1').textContent);
       check('CHANGE NAME on a handed-out name asks WHAT DO WE CALL YOU?', /WHAT DO WE CALL YOU/.test(title), title);
@@ -145,7 +145,7 @@ try {
   {
     const O = await page(`${PLAY}?crew=${crew.slug}&pick=intern`, {});
     check('old ?crew= link: lands in the lobby', (await flow(O)) === 'crewLobby', await flow(O));
-    check('old ?crew= link: the address is the clean link, pick kept', (await where(O)) === `/stick-fight/crew/${crew.slug}?pick=intern`, await where(O));
+    check('old ?crew= link: the address is the clean link, pick kept', (await where(O)) === `${ROOT}crew/${crew.slug}?pick=intern`, await where(O));
     check('old ?crew= link: no 404s, no page errors', !O.missing.length && !O.errors.length, [...O.missing, ...O.errors].slice(0, 3).join(' | '));
   }
   // ---- an unknown crew at a clean link: the game loads and says so ----

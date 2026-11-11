@@ -18,7 +18,7 @@ for (const tier of [3, 2, 1]) {
   const ctx = await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   await page.addInitScript(() => { let a = 12345; Math.random = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; });
-  await page.goto(`http://127.0.0.1:${srv.address().port}/stick-fight/play/?${query}&tier=${tier}`);
+  await page.goto(`http://127.0.0.1:${srv.address().port}/play/?${query}&tier=${tier}`);
   await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
   await page.evaluate((ms) => { const g = window.__gauntlet; g.setScene(new URLSearchParams(location.search).get('scene')); window.__game.fx.seed(1); window.__game.fx.particles.clear(); window.__game.arena.time = 0; for (let t = 0; t < ms; t += 1000 / 60) g.step(1000 / 60); }, +ms);
   const f = out.replace(/\.png$/, `-t${tier}.png`);

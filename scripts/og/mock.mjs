@@ -2,7 +2,7 @@
 // built from the tags and images the local Worker serves (README, Site, Share image).
 //
 //   node scripts/og/mock.mjs <base> <out dir> <play/ query>...
-//   node scripts/og/mock.mjs http://127.0.0.1:8787/stick-fight/ gauntlet/tmp/og-mock '?crew=lunch-crew-abcde' '?room=K7QM' ''
+//   node scripts/og/mock.mjs http://127.0.0.1:8787/ gauntlet/tmp/og-mock '?crew=lunch-crew-abcde' '?room=K7QM' ''
 //
 // Writes <out>/mock.html (the images saved beside it) and <out>/mock.png, a screenshot of the page.
 import fs from 'node:fs';
@@ -20,7 +20,7 @@ const cards = [];
 for (const [i, q] of queries.entries()) {
   const html = await (await fetch(`${BASE}play/${q}`, { headers: { 'user-agent': ua } })).text();
   const t = Object.fromEntries([...html.matchAll(/<meta (?:property|name)="((?:og|twitter):[^"]+)" content="([^"]*)">/g)].map((m) => [m[1], m[2].replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"')]));
-  const img = await fetch(t['og:image'].replace(/^https:\/\/askscottpierce\.com\/stick-fight\//, BASE.replace(/\/stick-fight\/$/, '/stick-fight/')));
+  const img = await fetch(t['og:image'].replace(/^https:\/\/neonstickfight\.com\//, BASE));
   const file = `img-${i}${t['og:image'].endsWith('.jpg') ? '.jpg' : path.extname(new URL(t['og:image']).pathname) || '.jpg'}`;
   fs.writeFileSync(path.join(out, file), new Uint8Array(await img.arrayBuffer()));
   cards.push({ q: q || '(plain play/)', file, t, link: t['og:url'] });
@@ -49,7 +49,7 @@ const page = `<!doctype html><meta charset="utf-8"><title>Share previews</title>
 <h1>SHARE PREVIEWS · mock iMessage (cut at one line) and Slack unfurls, from the local Worker's tags</h1>
 ${cards.map((c) => `<div class="row">
   <div class="q">${esc(c.q)}</div>
-  <div><div class="lab">IMESSAGE</div><div class="im"><img src="${c.file}"><div class="cap"><div class="t">${esc(c.t['og:title'])}</div><div class="d">askscottpierce.com</div></div></div></div>
+  <div><div class="lab">IMESSAGE</div><div class="im"><img src="${c.file}"><div class="cap"><div class="t">${esc(c.t['og:title'])}</div><div class="d">neonstickfight.com</div></div></div></div>
   <div><div class="lab">SLACK</div><div class="sl"><div class="msg">${esc(c.link)}</div><div class="un"><div class="site">${esc(c.t['og:site_name'])}</div><div class="t">${esc(c.t['og:title'])}</div><div class="d">${esc(c.t['og:description'])}</div><img src="${c.file}"></div></div></div>
 </div>`).join('\n')}`;
 fs.writeFileSync(path.join(out, 'mock.html'), page);

@@ -19,7 +19,7 @@ import { createMusic } from './music.js';
 import { createSoundUI } from './ui.js';
 
 const W = 1280;
-const KEY = 'stick-fight-audio';   // askscottpierce.com shares one origin across apps, so keys carry the app's slug
+const KEY = 'stick-fight-audio';   // keys carry the app's slug from when the origin was shared (askscottpierce.com)
 const DEFAULTS = { sound: true, music: true, musicVolume: 0.55, sfxVolume: 0.8, track: 0 };
 
 function loadSettings() {

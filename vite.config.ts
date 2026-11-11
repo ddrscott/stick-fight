@@ -12,9 +12,9 @@ let commit = 'dev';
 try { commit = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { /* not a git checkout */ }
 const BUILD_ID = `${commit}-${Date.now().toString(36)}`;
 
-// The app is served at https://askscottpierce.com/stick-fight/ but uses only relative URLs
-// (base './'), so the same build runs at any path. The output goes to dist/stick-fight/ because
-// the Worker's assets directory is dist/, which makes file path equal URL path.
+// The app is served at https://neonstickfight.com/ and uses only relative URLs (base './'), so the
+// same build runs at any path (the Worker still serves it at askscottpierce.com/stick-fight/ while
+// that address is on "serve", README Hosting). The output is the Worker's assets directory, dist/.
 // It's several pages (README, "Site"): the homepage (index.html), the game (play/index.html) and the
 // fighter pages that site/vite-plugin.mjs generates into fighters/ and lists as build inputs.
 export default defineConfig({
@@ -24,7 +24,7 @@ export default defineConfig({
   plugins: [{
     name: 'version-json',
     apply: 'build',
-    writeBundle(opts) { writeFileSync(join(opts.dir || 'dist/stick-fight', 'version.json'), JSON.stringify({ build: BUILD_ID, at: new Date().toISOString() }) + '\n'); },
+    writeBundle(opts) { writeFileSync(join(opts.dir || 'dist', 'version.json'), JSON.stringify({ build: BUILD_ID, at: new Date().toISOString() }) + '\n'); },
   }, {
     // crew/<slug> and room/<CODE> are the game page under the room's own address (README, Site, Old links).
     // In production the Worker answers them (worker/og.ts); here the dev server does the same: it serves
@@ -43,7 +43,7 @@ export default defineConfig({
     },
   }, sitePlugin()],
   build: {
-    outDir: 'dist/stick-fight',
+    outDir: 'dist',
     emptyOutDir: true,
     target: 'es2022',
   },
@@ -52,16 +52,10 @@ export default defineConfig({
     strictPort: true,
     host: true,
     allowedHosts: ['.dataturd.com'],   // the dev tunnel for phone testing
-    // online rooms: the page calls ./api/..., which in production is /stick-fight/api/* on the
-    // Worker. In development that Worker runs under `npm run dev:worker` (wrangler dev, :8787).
+    // online rooms: the page calls ./api/..., which is /api/* on the Worker, in production and under
+    // `npm run dev:worker` (wrangler dev, :8787) alike.
     proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8787',
-        ws: true,
-        rewrite: (p) => '/stick-fight' + p,
-        // the session cookie is scoped to /stick-fight (the domain is shared); here the page is at /
-        cookiePathRewrite: { '/stick-fight': '/' },
-      },
+      '/api': { target: 'http://127.0.0.1:8787', ws: true },
     },
   },
 });
