@@ -194,7 +194,7 @@ export default {
     ] },
     { string: 'EXIT INTERVIEW', tips: [
       "Stand-block the opening cross. It pushes you back far enough that the jab behind it falls short, and the string dies there.",
-      "Then punish the missed jab with a snap kick (3) or your own cross (2).",
+      "Then punish the missed jab with a snap kick (3).",
       "Crouching from the start works too. The cross is a high and goes over your head.",
     ] },
   ],

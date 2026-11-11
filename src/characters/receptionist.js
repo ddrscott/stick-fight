@@ -173,12 +173,12 @@ export default {
     { move: 'receptionist_pleaseHold', tips: [
       "Stand-block it, or parry it with →. From across the room nothing you press beats the cord.",
       "Blocked from range it's safe: she's too far away to punish, so don't swing at air.",
-      "Get inside it. The lash only hits at its far end, so right next to her a low kick (↓3) or an uppercut (↓2) beats it clean.",
+      "Up close it's weak. At arm's length a low kick (↓3) or an uppercut (↓2) thrown as she starts beats it clean, and any closer than that the lash goes past you.",
     ] },
     { move: 'receptionist_transfer', tips: [
       "It's a grab. You can't block it or break it, and it comes out almost instantly. Crouch (↓) and it goes over your head.",
-      "When it misses she's stuck for over half a second. Punish with your biggest hit: the uppercut (↓2) launches.",
-      "It only reaches about one step, so stepping back makes it miss too. Jumping doesn't: she catches you on the way up.",
+      "When it goes over your crouch she's stuck for over half a second. Punish with your biggest hit: the uppercut (↓2) launches.",
+      "It only reaches about one step, so from the edge of that, holding ← walks you out of it. Jumping doesn't: she catches you on the way up.",
     ] },
     { string: 'HANG UP', tips: [
       "Stand-block all three. Crouching loses to the very first kick.",

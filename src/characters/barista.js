@@ -198,7 +198,7 @@ export default {
     { string: 'LATTE ART', tips: [
       "Stand-block all three, then punish the backfist with the cross (2) or →2.",
       "After you block his first jab, jab back (1) or low kick (↓3). His cross is slow to follow and you hit first.",
-      "Crouch from the start and the first jab goes over your head. The string stops there.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
   ],
 };

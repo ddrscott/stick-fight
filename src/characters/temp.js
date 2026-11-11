@@ -83,13 +83,13 @@ export default {
     { string: 'ONE-TWO', tips: [
       "Stand-block all three, then punish the cross with your own cross (2) or →2.",
       "After you block the first jab, low kick (↓3). It goes under the next punch and hits first.",
-      "Crouch from the start and the first jab goes over your head. The string stops there.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
     { string: 'FLASH ROUNDHOUSE', tips: [
       "Stand-block all four. The roundhouse at the end leaves him open for the cross (2) or →2.",
       "The roundhouse is slow to arrive. After you block the cross, a sweep (↓4) goes under it, or tap → to parry it.",
-      "After you block the first jab, a low kick (↓3) goes under everything that follows.",
-      "Crouch from the start and the first jab goes over your head. The string stops there.",
+      "After you block the first jab, a low kick (↓3) goes under the second one and hits first.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
     { string: 'TRIPLE JAB', tips: [
       "Stand-block all three, then jab (1) or cross (2) back. He's open after the third.",
@@ -100,26 +100,26 @@ export default {
       "Stand-block all three, then punish the roundhouse with the cross (2) or →2.",
       "After you block the first jab, jab back (1). His cross is slow to follow and yours lands first.",
       "The roundhouse is slow too. After you block the cross, sweep (↓4) under it, or parry it with →.",
-      "Crouch from the start and the first jab goes over your head. The string stops there.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
     { string: 'UPTOWN', tips: [
       "Stand-block all three, then punish with the cross (2).",
       "After you block the first jab, jab back (1) or low kick (↓3). His cross is slow to follow.",
-      "Crouch from the start and the first jab goes over your head. The string stops there.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
     { string: 'NEON TORNADO', tips: [
       "Stand-block it. Blocked, the launcher at the end never comes out: the string dies after the third hit, and your cross (2) punishes.",
       "After you block the first jab, jab back (1) or low kick (↓3). His cross is slow to follow.",
-      "Crouch from the start and the first jab goes over your head. The string stops there.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
     { string: 'CROSS SNAP', tips: [
       "Stand-block both hits, then punish the snap kick with your own cross (2).",
-      "Or crouch from the start. The cross goes over your head and the kick never comes.",
+      "Or crouch from the start. The cross goes over your head, the kick never comes, and a low kick (↓3) punishes.",
     ] },
     { string: 'SPIN HEEL', tips: [
       "Stand-block the opening cross. It pushes you back far enough that the jab behind it falls short, and the spin heel never comes.",
-      "Press snap kick (3) right after you block the cross. It lands before his jab does.",
-      "Crouching from the start works too. The cross is a high and goes over your head.",
+      "Press snap kick (3) as you come out of blocking the cross. It lands before his jab does.",
+      "Crouching from the start works too. The cross is a high and goes over your head, and a low kick (↓3) punishes.",
     ] },
     { string: 'CRESCENT', tips: [
       "Stand-block it. The kicks are mids, so crouching eats the whole string.",
@@ -139,7 +139,7 @@ export default {
     { string: 'SKY SPIKE', tips: [
       "Stand-block it. It opens with an uppercut, which is a mid, and crouching gets you launched into the rest.",
       "After you block the uppercut, jab (1) or snap kick (3) back. The punches behind it are slow to arrive.",
-      "If you block all four he's stuck for a long time. Punish with the cross (2) or a snap kick (3).",
+      "If you block all four he's stuck for a long time. As soon as you can move, punish with the cross (2).",
     ] },
   ],
 };

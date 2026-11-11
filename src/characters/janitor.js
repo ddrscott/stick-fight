@@ -150,10 +150,10 @@ export default {
   // prints the numbers behind each one. Measure again when the frame data changes.
   strategy: [
     { move: 'wetFloor', tips: [
-      "Crouch-block it. It's a low that slides in from far away, and a standing block or a jump gets swept.",
+      "Crouch-block it. It's a low that slides in from far away, and a standing block up close or a jump gets swept.",
       "Blocked, he's on the floor for over half a second. The cross (2) or →2 punishes with time to spare.",
       "↘ parries it.",
-      "You can beat it to the punch: a jab (1) or a body blow (→1) thrown as he starts lands first. A roundhouse or a sweep only trades.",
+      "You can beat it to the punch: a body blow (→1) thrown as he starts lands first. A roundhouse or a sweep only trades.",
     ] },
     { move: 'mopSpin', tips: [
       "It's slow. Jab (1) the moment he starts to turn and you hit him first. A throw (1+3) works too.",
@@ -164,7 +164,7 @@ export default {
     { string: 'AISLE 3', tips: [
       "Stand-block it. All three kicks are mids, so crouching eats the whole string, blocking or not.",
       "Up close there's no gap between the kicks, and after the last one he's out of reach. Block it and let it go.",
-      "At the very tip of his kick the third one arrives late. Jab (1) after you block the second and you hit him first.",
+      "From the very tip of his kick, hold ← and the string falls short.",
     ] },
   ],
 };

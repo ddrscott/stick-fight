@@ -202,12 +202,12 @@ export default {
     { string: 'PAPER CUTS', tips: [
       "It's all lows, so crouch-block the whole string. A standing block gets hit three times.",
       "After you block the second low jab, press the cross (2) or the snap kick (3). It beats the low kick he follows with.",
-      "If you block all three, he's barely open: only the cross (2) or →2, pressed at once, still catches him.",
+      "If you block all three he's barely open. The cross (2) or →2 still catches him, but only if you press as soon as you can move.",
     ] },
     { string: 'REPLY ALL', tips: [
-      "Stand-block all three, then jab (1) at once. The haymaker leaves him open for a jab and nothing slower.",
+      "Stand-block all three, then jab (1) as soon as you can move. The haymaker leaves him open for a jab and nothing slower.",
       "Or cut it off: after you block the first jab, a low kick (↓3) goes under his cross and hits first.",
-      "Crouch from the start and the first jab goes over your head. The string stops there.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
   ],
 };

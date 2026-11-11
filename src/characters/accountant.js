@@ -166,9 +166,9 @@ export default {
       "↘ parries it, but only as a guess: it lands almost as soon as he presses.",
     ] },
     { string: 'WRITE-OFF', tips: [
-      "Crouch-block the first two kicks, then stand up: the last hit is a mid. Staying down gets you knocked over, and so does standing the whole way.",
+      "Crouch-block the first two kicks, then stand up: the last hit is a mid. Staying down gets you knocked over, and a standing block loses to the first kick.",
       "Better, after you block the second low, press snap kick (3). It beats the last hit.",
-      "The second kick is slow to arrive. A low jab (↓1) pressed right after you block Fine Print gets there first.",
+      "The second kick is slow to arrive. A low jab (↓1) thrown a beat after you block Fine Print gets there first.",
       "If you do block all three, a jab (1) or a snap kick (3) punishes.",
     ] },
     { string: 'BALANCE SHEET', tips: [

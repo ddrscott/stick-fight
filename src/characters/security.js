@@ -138,7 +138,7 @@ export default {
   strategy: [
     { move: 'escort', tips: [
       "You can't block it and you can't break it. Crouch (↓) and it goes over your head.",
-      "When it misses he's stuck for a long time and any button punishes. Use the uppercut (↓2) and take the launch.",
+      "Crouch under it and he's stuck for a long time. Any button punishes, so use the uppercut (↓2) and take the launch.",
       "It only reaches about one step. A low jab (↓1) or a low kick (↓3) beats it clean, even pressed a moment after he starts reaching.",
       "Jumping doesn't get you out. He grabs you before you leave the ground.",
     ] },

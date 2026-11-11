@@ -190,7 +190,7 @@ export default {
     ] },
     { move: 'lawyer_crossExam', tips: [
       "Stand-block it. It's a quick mid, and after you block it he still moves first, so a jab back loses.",
-      "What comes next is a throw or a kick. Press throw (1+3) the moment you've blocked it: that breaks his throw, and it grabs him out of the snap kick or the overhead.",
+      "What comes next is a throw or a kick. Press throw (1+3) as you come out of the block. That breaks his throw, and you have about a third of a second to do it. Pressed promptly, it also grabs him out of the snap kick or the overhead.",
       "Crouching is wrong twice. Cross-Examination hits a croucher, and there's no time to duck the throw behind it.",
       "→ parries it, but only as a guess. It lands almost as soon as he presses.",
     ] },

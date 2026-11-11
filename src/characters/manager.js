@@ -156,20 +156,20 @@ export default {
   // prints the numbers behind each one. Measure again when the frame data changes.
   strategy: [
     { move: 'downsizing', tips: [
-      "It's an overhead, so stand-block it. Crouching gets you flattened, blocking or not.",
+      "It's an overhead, so stand-block it. Crouching gets you hit, blocking or not.",
       "It's slow. When you see the leg go up, a cross (2) or →2 thrown right away knocks him out of it.",
-      "Blocked, he's stuck and anything punishes. Take the cross (2).",
+      "Blocked, he's stuck. Punish with the cross (2).",
       "→ parries it.",
     ] },
     { string: 'PERFORMANCE REVIEW', tips: [
       "Stand-block all of it. The rush at the end is four hits, so keep holding ← until the last one lands.",
       "It shoves you a long way back. Only →2, the lunge cross, reaches him afterwards.",
       "Stop it before the rush: after you block his first jab, jab back (1) or low kick (↓3). His cross is slow and you hit first.",
-      "Crouch from the start and the first jab goes over your head. The string stops there.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
     { string: 'TOP-DOWN', tips: [
       "Stand-block it. It's a mid, a high and an overhead, and crouching gets you hit by all three.",
-      "The axe kick at the end is slow. After you block his cross, throw your own cross (2) or a roundhouse (4) and you knock him out of it.",
+      "The axe kick at the end is slow. After you block his cross, a roundhouse (4) knocks him out of it.",
       "If you block the axe kick too, he's open. Punish with the cross (2) or →2.",
     ] },
   ],

@@ -182,10 +182,10 @@ export default {
   // prints the numbers behind each one. Measure again when the frame data changes.
   strategy: [
     { move: 'sr_coldCall', tips: [
-      "The dash is a three-way guess: the lunge jab (a mid), THE PITCH (a low) or CLOSE THE DEAL (a grab). So don't guess. Hit the run: a jab (1) or a snap kick (3) thrown as he dashes in beats all three.",
-      "If you have to block, crouch-block. It stops the low, and the grab goes over your head. Only the jab itself gets through, and it's the weakest of the three.",
+      "The dash is a three-way guess: the lunge jab (a mid), THE PITCH (a low) or CLOSE THE DEAL (a grab). So don't guess. Hit the run: from close or mid range, a jab (1) or a snap kick (3) thrown as he dashes in beats all three.",
+      "If you have to block, crouch-block. It stops the low, and the grab goes over your head. Only the jab itself gets through, for a small hit and no knockdown.",
       "When the grab misses over your crouch he's wide open. Punish with the uppercut (↓2).",
-      "A plain Cold Call blocked standing is hard to punish. Only →2 reaches him, and only if you blocked it up close.",
+      "A plain Cold Call blocked standing is hard to punish. →2 reaches him, but only if you blocked it up close.",
     ] },
     { move: 'sr_pitch', tips: [
       "Crouch-block it. It's a quick low, and nothing you press beats it once it has started.",
@@ -193,7 +193,7 @@ export default {
       "↘ parries it, if you guess it.",
     ] },
     { move: 'sr_closeDeal', tips: [
-      "It's a grab, so blocking in place does nothing. Crouch (↓) and it goes over your head, or hold ← and step back out of it.",
+      "It's a grab, so blocking in place does nothing. Crouch (↓) and it goes over your head, hold ← and step back out of it, or break it with 1+3 as he grabs.",
       "When it misses, anything punishes. The cross (2) has plenty of time.",
       "A low jab (↓1) or a low kick (↓3) beats it clean, even pressed a moment after he reaches. Highs and mids only trade.",
     ] },

@@ -4,26 +4,37 @@
 // frame data, reach, stamina or the guard and parry rules change, and fix any tip that stopped being true.
 //
 //   node gauntlet/counters.mjs courier            one fighter (any number of ids), every unique move and string
-//   node gauntlet/counters.mjs all                the whole roster (about ten minutes; run fighters in parallel
-//                                                 with `ls src/characters | ...` or a few shells if you're in a hurry)
-//   node gauntlet/counters.mjs courier --move expressSlide     one move (a move id, or a string's name)
+//   node gauntlet/counters.mjs all                the whole roster, one fighter after another (about an hour on
+//                                                 one core; it's one process per run, so start a shell per
+//                                                 fighter, or `... | xargs -P 8`, to use the others)
+//   node gauntlet/counters.mjs courier --move expressSlide     one case (a move id, or a string's name; --list shows them)
+//   node gauntlet/counters.mjs courier --move "SAME DAY" --trace "crouch-block@80"
+//                                                 one exchange behind that hold from 80 px: both fighters' states and the log
+//   node gauntlet/counters.mjs courier --move expressSlide --trace "3@-10@180"
+//                                                 one press (here 3), 10 steps before contact, from 180 px
 //   node gauntlet/counters.mjs security --json    the raw rows instead of the tables
-//   node gauntlet/counters.mjs all --list         just the cases, with the tips each one has
+//   node gauntlet/counters.mjs all --list         just the cases, and how many tips each has
+//   --step N                                      try every Nth step in the timed sweeps (2 by default; parries always every step)
 //
 // It runs the real sim in Node (no browser: the same setup as scripts/netsim), P1 the fighter and P2 a TEMP,
-// both mid-floor, far from a wall. P1 does the move the way a player would (a dash and a press, a string
-// with each press buffered, a stance and its follow-up). P2 tries every answer a player has:
-//   holds      nothing, stand-block (hold away), crouch-block (down and away), crouch
-//   timed      a parry tap (toward, and down-toward), a jump (up, back), a crouch held for a third of a second
-//              (it "works" when nothing touches P2), and each button
-//              (1 2 3 4, with down, toward and away, and a throw) pressed at every step from the start of
-//              P1's script to the end of his move
-//   after      holding the guard that works (or crouching under a grab, or standing out of range), then each
-//              button at a spread of delays once P2 is free and P1 is recovering, standing and stepping in
-// each at three start distances. An answer "works" when P1 loses health and P2 loses none (W), or P2 parries
-// (P) or breaks a throw; T is a trade, B a block, L means P2 got hit or grabbed, and "-" means nothing touched. Timed answers
-// print the window of steps where they work, counted from the step P1's move goes live (negative is before
-// it; 1 step is 1/120 s, so 2 steps are one 60fps frame).
+// both mid-floor, far from a wall. P1 does the move the way a player would: a dash and a press, a jump and a
+// press, a string with each press buffered, a stance and its follow-up (pressed at once, and after holding
+// it), a feint, and for a move that only sets up the next one (FOLLOW) each thing that comes next. P2 tries
+// every answer a player has, from three start distances across the move's reach:
+//   holds      nothing, stand-block (hold away, which also walks back), crouch-block (down and away), crouch,
+//              and the right guard for each hit on reaction
+//   timed      a parry tap (toward, and down-toward) at every step; a jump (up, back), a crouch held for a third
+//              of a second, and each of thirteen presses (1 2 3 4, with down, toward and away, and a throw) at
+//              every second step from the start of the move (or of its dash) to its end. A single move is met
+//              standing; a string is blocked with the right guard up to the press
+//   after      behind each hold that survives it, each press at every second step from the last block (or from
+//              the step it went by) until he has recovered, standing still and stepping in first
+// An answer works when P1 is hit out of his move or his run-in and P2 isn't touched (a hit on a P1 who had
+// already recovered proves nothing and counts for nothing), when P2 parries, when P2 breaks a throw, or, for
+// the crouch, when nothing touches P2. A trade, a block and getting hit don't count. The tables print the
+// windows of steps where each answer worked, counted from the step the move connects on a TEMP who stands
+// still (negative is before it; 1 step is 1/120 s, so 2 steps are one 60fps frame), and under them the tips
+// the fighter page shows for that move, so each tip can be checked against its rows.
 //
 // Both sides are frame-perfect scripts, so a window here is the most a person can get, not what they will get.
 import path from 'node:path';
@@ -38,7 +49,6 @@ const { createArena } = await load('src/arena/index.js');
 const { createCombat } = await load('src/combat/sim.js');
 const { EMPTY_INPUT } = await load('src/combat/input.js');
 const { FRAME_DATA } = await load('src/combat/frameData.js');
-const { STRINGS } = await load('src/combat/strings.js');
 const { roster, getCharacter } = await load('src/characters/index.js');
 console.info = () => {};
 
@@ -276,7 +286,7 @@ function measure(c, k) {
     // holds
     for (const h of Object.keys(HOLDS)) {
       const r = run(c.id, d, P1(), (t, me, opp) => HOLDS[h](me, opp), steps, k.final);
-      (res.holds[h] = res.holds[h] || [])[di] = { code: r.code, d2: r.d2, on2: r.on2, gap: r.gap, flags: [...r.flags], open: r.lastBlock != null && r.end >= 0 ? r.end - r.lastBlock : null, down: r.down2, out: r.start >= 0 };
+      (res.holds[h] = res.holds[h] || [])[di] = { code: r.code, d2: r.d2, on2: r.on2, gap: r.gap, flags: [...r.flags], open: r.lastBlock != null && r.end >= 0 ? r.end - r.lastBlock : null, down: r.down2, out: r.start >= 0, touched: r.contact >= 0 };
     }
     // timed answers: a string is blocked up to the press, a single move is met standing
     const base = k.kind === 'string' ? 'right guard' : 'nothing';
@@ -338,7 +348,7 @@ function print(c, k, res, tips) {
   console.log(`   from ${res.dists.join(' / ')} px${res.reach ? ` (touches a standing TEMP from ${res.reach[0]} to ${res.reach[1]} px)` : ''} · his move starts at step ${per(res, (i) => res.ref[i].start)} · contact ${per(res, (i) => res.ref[i].contact)} · over ${per(res, (i) => res.ref[i].end)}${k.kind === 'string' && res.hits ? ` · unguarded, the hits land at ${res.hits.join(', ')}` : ''}`);
   for (const [h, row] of Object.entries(res.holds)) {
     const hit = row.find((x) => x.code === 'L'), blk = row.find((x) => x.code === 'B');
-    console.log(`   hold ${h.padEnd(13)} ${per(res, (i) => HOLD_WORD[row[i].code])}${hit ? `   (${hit.d2} damage${hit.down ? ', knocked down' : ''}${hit.flags.includes('grabbed') ? ', grabbed' : ''})` : ''}${blk ? `   (ends ${per(res, (i) => (row[i].code === 'B' && row[i].out ? row[i].gap : '-'))} px apart, he is still recovering ${per(res, (i) => (row[i].code === 'B' && row[i].out ? row[i].open : '-'))} steps after the last block)` : ''}${row.some((x) => !x.out) ? `   (his last move never came out from ${res.dists.filter((d, i) => !row[i].out).join(' and ')} px: the string stopped)` : ''}`);
+    console.log(`   hold ${h.padEnd(13)} ${per(res, (i) => HOLD_WORD[row[i].code])}${hit ? `   (${hit.d2} damage${hit.down ? ', knocked down' : ''}${hit.flags.includes('grabbed') ? ', grabbed' : ''})` : ''}${blk ? `   (ends ${per(res, (i) => (row[i].code === 'B' && row[i].out ? row[i].gap : '-'))} px apart, he is still recovering ${per(res, (i) => (row[i].code === 'B' && row[i].out ? row[i].open : '-'))} steps after the last block)` : ''}${row.some((x) => !x.out) ? `   (his last move never came out from ${res.dists.filter((d, i) => !row[i].out).join(' and ')} px: the string stopped)` : ''}${row.some((x) => x.out && !x.touched && x.code === 'B') ? `   (his last move came out and missed from ${res.dists.filter((d, i) => row[i].out && !row[i].touched && row[i].code === 'B').join(' and ')} px)` : ''}`);
   }
   const rows = (table, pad, indent) => {
     const never = [];
@@ -388,7 +398,8 @@ for (const c of chars) {
   const strat = c.strategy || [];
   for (const k of casesFor(c)) {
     if (ONLY && k.key !== ONLY && k.name !== ONLY) continue;
-    const tips = (strat.find((s) => (k.string ? s.string === k.key : s.move === k.key || s.move === k.feintOf || s.move === k.tipKey)) || {}).tips || null;
+    const mine = [k.key, k.feintOf, k.tipKey].filter(Boolean);
+    const tips = (strat.find((s) => (k.string ? s.string === k.key : !!s.move && (mine.includes(s.move) || (s.also || []).some((m) => mine.includes(m))))) || {}).tips || null;
     if (flag('--list')) { console.log(`${c.id.padEnd(13)} ${k.key.padEnd(28)} ${k.input.padEnd(16)} ${tips ? tips.length + ' tips' : 'NO TIPS'}`); continue; }
     if (opt('--trace', null)) { trace(c, k, opt('--trace', '')); continue; }
     const res = measure(c, k);
@@ -396,4 +407,3 @@ for (const c of chars) {
   }
 }
 if (flag('--json')) console.log(JSON.stringify(json));
-void STRINGS;

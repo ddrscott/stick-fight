@@ -163,7 +163,7 @@ export default {
   // prints the numbers behind each one. Measure again when the frame data changes.
   strategy: [
     { move: 'ticketClosed', also: ['ticketReversal'], tips: [
-      "It only catches highs and mids. A low kick (↓3), a sweep (↓4) or a throw (1+3) beats it at any moment.",
+      "It only catches highs and mids. A low kick (↓3) or a sweep (↓4) beats it at any moment, and so does a throw (1+3) from right next to him.",
       "Don't jab or cross the instant he sets it. That's what it's for: you get caught and knocked down.",
       "It's over fast, and then he's stuck for about half a second. If you didn't swing, hit him as his guard drops: the cross (2) lands up close, and →2 reaches from a step back.",
     ] },
@@ -174,8 +174,8 @@ export default {
     ] },
     { string: 'CTRL ALT DEL', tips: [
       "Stand-block all three hits. There's no low in it.",
-      "The last hit leaves him wide open. As soon as you've blocked it, punish with the cross (2) or →2.",
-      "Or crouch from the start. The first jab goes over your head and the string stops there.",
+      "The last hit leaves him wide open. As soon as you can move, punish with the cross (2) or →2.",
+      "Or crouch from the start. The first jab goes over your head, the string stops there, and a low kick (↓3) punishes.",
     ] },
   ],
 };

@@ -192,13 +192,13 @@ export default {
     ] },
     { move: 'electrician_groundFault', tips: [
       "Crouch-block it. It's a low, and a standing block gets stamped.",
-      "Blocked, a jab (1) or →2 punishes.",
+      "Blocked, →2 punishes.",
       "It only reaches about one step. Hold ← from just outside that and it misses.",
       "↘ parries it.",
     ] },
     { string: 'SHORT CIRCUIT', tips: [
       "Stand-block the opening cross. It pushes you back far enough that the jab behind it falls short, and the string dies there.",
-      "Press snap kick (3) right after you block the cross. It lands before his jab does.",
+      "Press snap kick (3) as you come out of blocking the cross. It lands before his jab does.",
       "Crouching from the start works too. The cross is a high and goes over your head.",
     ] },
   ],

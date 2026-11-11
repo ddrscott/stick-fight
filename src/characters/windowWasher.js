@@ -221,17 +221,17 @@ export default {
     { move: 'squeegeeDive', tips: [
       "It's an overhead. Stand-block it. Crouching gets you kicked, blocking or not.",
       "→ parries it. Tap as he comes down on you.",
-      "It's safe once it's blocked, so don't swing after it. To stop it, swing early: an uppercut (↓2) thrown while he's still rising in his jump knocks him out of the air.",
+      "It's safe once it's blocked, so don't swing after it.",
     ] },
     { move: 'updraft', tips: [
-      "Stand-block it. It's a mid, it's fast, and whatever you press into it trades or loses. Lows don't stop it either.",
+      "Stand-block it. It's a mid and it's fast. Up close, any strike you press into it trades or loses, lows included.",
       "Blocked, he's stuck in the air for a long time. Punish with the cross (2).",
       "→ parries it.",
     ] },
     { string: 'STREAK FREE', tips: [
       "Stand-block all three. There's no gap to hit him in, so don't press until the dropkick is blocked.",
-      "Then he's flat on the floor. The cross (2) or →2 punishes every time.",
-      "Or crouch from the start. The first jab goes over your head and the string stops there.",
+      "Then he's flat on the floor. As soon as you can move, the cross (2) or →2 punishes.",
+      "Or crouch from the start. The first jab goes over your head, the string stops there, and a low kick (↓3) punishes.",
     ] },
   ],
 };

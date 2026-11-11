@@ -198,7 +198,7 @@ export default {
     { string: 'EIGHTY-SIX', tips: [
       "Stand-block all three, then punish. The push kick leaves him open for the cross (2) or →2.",
       "After you block the first jab, a low kick (↓3) goes under the second one and hits first.",
-      "Crouch from the start and the first jab misses. The string stops there.",
+      "Crouch from the start and the first jab goes over your head. The string stops there, and a low kick (↓3) punishes.",
     ] },
   ],
 };

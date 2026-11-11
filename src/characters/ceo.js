@@ -148,7 +148,7 @@ export default {
   // prints the numbers behind each one. Measure again when the frame data changes.
   strategy: [
     { move: 'ceo_parachute', tips: [
-      "Don't swing at it. Strikes and throws pass through him as he hops, and he has recovered before anything reaches him. Nothing we tried punished it afterwards.",
+      "Don't swing at it. Strikes and throws pass through him as he hops, and he has recovered before anything reaches him. Nothing punishes it afterwards.",
       "The one exception is a guess, not a reaction: right next to him, →2 pressed at the very moment he hops still catches him.",
     ] },
     { move: 'ceo_takeover', tips: [
@@ -158,8 +158,8 @@ export default {
     ] },
     { string: 'STOCK SPLIT', tips: [
       "Stand-block the opening cross. It pushes you back far enough that the jab behind it falls short, and the string dies before the gut punch.",
-      "Press snap kick (3) right after you block the cross. It lands before his jab does.",
-      "Or crouch from the start. The cross goes over your head, the string stops, and your own cross (2) punishes.",
+      "Press snap kick (3) as you come out of blocking the cross. It lands before his jab does.",
+      "Or crouch from the start. The cross goes over your head and the string stops there.",
     ] },
   ],
 };

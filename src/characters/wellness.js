@@ -204,8 +204,8 @@ export default {
     { move: 'wellness_treePose', also: ['wellness_exhale'], tips: [
       "The pose has no guard. Hit her while she's standing on one leg: up close any button works, and the cross (2) or →2 reaches from a step back.",
       "Out of it she picks a mid (CRANE KICK, 4) or a low (ROOT SWEEP, 3). No block stops both, so don't stand there waiting to find out.",
-      "Holding ← walks you out of the kick's reach, but the sweep is longer and still catches a standing block up close.",
-      "If she steps out with EXHALE (2) nothing comes at you, and she has recovered before you can punish it.",
+      "Holding ← walks you out of the kick's reach, but the sweep is longer and can still catch a standing block up close.",
+      "If she steps out with EXHALE (2) nothing comes at you. Right next to her a jab (1) catches the step out. From farther back she has recovered first.",
     ] },
     { move: 'wellness_craneKick', tips: [
       "It's a mid, so stand-block it. Crouching gets you launched, blocking or not.",
@@ -214,14 +214,14 @@ export default {
     ] },
     { move: 'wellness_rootSweep', tips: [
       "Crouch-block it. It's a low, and it reaches farther than the kick.",
-      "It's the slow one of the two. A snap kick (3) or a low jab (↓1) thrown as she drops into it hits first.",
+      "It's the slow one of the two, but don't wait to see it. A body blow (→1) or a snap kick (3) thrown while she's still in the pose beats it.",
       "Blocked, →2 punishes.",
       "↘ parries it.",
     ] },
     { string: 'SUN SALUTATION', tips: [
       "Stand-block all three hits.",
-      "Blocked, she's stuck for a long time. The cross (2) or →2 punishes.",
-      "Or crouch from the start. The first jab goes over your head and the string stops there.",
+      "Blocked, she's stuck for a long time. As soon as you can move, the cross (2) or →2 punishes.",
+      "Or crouch from the start. The first jab goes over your head, the string stops there, and a low kick (↓3) punishes.",
     ] },
   ],
 };
