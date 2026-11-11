@@ -676,7 +676,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const line1 = padUI
       ? 'X Y A B = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   STICK MOVES, BACK OR L1 WALKS BACK AND GUARDS A STRIKE THAT\'S COMING   DOWN CROUCH, DOWN-BACK GUARDS LOWS   UP JUMP   R1 THROW   R2 RUN   START PAUSE'
       : 'U I J K = 1 2 3 4 (LEFT/RIGHT PUNCH, LEFT/RIGHT KICK)   A D MOVE, HOLD BACK TO STEP BACK (IT GUARDS A STRIKE THAT\'S COMING)   S CROUCH (DOWN-FORWARD CREEPS, DOWN-BACK GUARDS LOWS)   W JUMP   SHIFT RUN';
-    const line2 = 'AIR 1 2 3 4, d+4 DIVE   d1 d1 d3 LOW RUSH   1124 FLASH ROUNDHOUSE   1234 NEON TORNADO   214 SPIN HEEL   334 CRESCENT   d3 d3 4 GROUND RUSH   d2 1 2 4 SKY SPIKE   f,f DASH (+1 2 3 4)   b,b BACK DASH   RISE 1 2 3 4   1+3 / 2+4 THROW   TAP TOWARD PARRY   d3/d4 STOMP   d+TOWARD STAIRS DOWN';
+    const line2 = 'AIR 1 2 3 4, d+4 DIVE   d1 d1 d3 LOW RUSH   1124 FLASH ROUNDHOUSE   1234 NEON TORNADO   214 SPIN HEEL   334 CRESCENT   d3 d3 4 GROUND RUSH   d2 1 2 4 SKY SPIKE   f,f DASH (+1234)   b,b BACK DASH   RISE 1234   1+3 / 2+4 THROW   TAP TOWARD PARRY   d3/d4 STOMP   d+TOWARD STAIRS DOWN';
     plainText(line1, width / 2, y0 + 12, 17, NEON.cyan, { align: 'center', weight: 500 });
     plainText(line2, width / 2, y0 + 31, 17, NEON.pink, { align: 'center', weight: 500 });
     if (extra) plainText('FOUND   ' + foundTech.map(t => `${t.input} ${t.name}`).join('   '), width / 2, y0 + 50, 17, KIND_COLOR.accident, { align: 'center', weight: 500 });
