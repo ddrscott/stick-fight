@@ -1,4 +1,4 @@
-// Installing the game as an app, so it opens fullscreen in landscape like a native game.
+// Installing the game as an app, so it opens fullscreen like a native game, upright or sideways.
 //   Android / desktop Chrome and Edge: the browser's own install prompt (beforeinstallprompt), offered
 //     from an INSTALL button on the title.
 //   iPhone / iPad Safari: there's no prompt and no Fullscreen API; the only way to full screen is

@@ -40,10 +40,7 @@ if (game && fsBtn) {
     let p;
     try { p = req.call(game, { navigationUI: 'hide' }); } catch { return ownPage(); }
     focusGame();
-    Promise.resolve(p).then(() => {
-      focusGame();
-      try { screen.orientation.lock('landscape').catch(() => {}); } catch { /* no orientation lock */ }
-    }, ownPage);
+    Promise.resolve(p).then(focusGame, ownPage);   // no orientation lock: upright or sideways, the game fits either
   });
 }
 

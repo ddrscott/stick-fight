@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Fight screenshots on a phone held upright (README, Controls, "Held upright: the square"), with the
+// Fight screenshots on a phone held upright (README, Controls, "Held upright: the view"), with the
 // sideways phone and the desktop beside them to show those didn't move. Every scene is seeded and stepped
 // frame by frame, so two builds give the same fight and only the layout differs.
 //
@@ -9,8 +9,9 @@
 //   node scripts/shots/portrait.mjs --same /tmp/before /tmp/after                 (844x390 and 1280x720: pixel for pixel?)
 //
 // --check (with --out) also measures the layout at each upright size and exits 1 when something is off: the
-// square inside the screen, the HUD band between the top buttons and the square, the controls under the
-// square and whole, and both fighters inside the square in every fight shot.
+// view inside the screen and as wide as it (inside the side insets: no dark bar at either side), the HUD band
+// between the top buttons and the view, the controls under the view and whole, and both fighters inside the
+// view in every fight shot. 395x700 and 412x640 are a phone with its browser's bars showing.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,6 +26,8 @@ const SIZES = [
   { name: '390x844', w: 390, h: 844, touch: true },
   { name: '412x915', w: 412, h: 915, touch: true },
   { name: '375x667', w: 375, h: 667, touch: true },
+  { name: '395x700', w: 395, h: 700, touch: true },
+  { name: '412x640', w: 412, h: 640, touch: true },
   { name: '844x390', w: 844, h: 390, touch: true },
   { name: '1280x720', w: 1280, h: 720, touch: false },
 ];
@@ -71,19 +74,22 @@ const fail = (msg) => { bad++; console.log(`FAIL ${msg}`); };
 // every random draw seeded the same in both builds (particles, rain, the attract pick)
 const seedRandom = () => { let a = 12345; Math.random = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
 
-// the layout as the page has it, in CSS px (the square is what's visible of the canvas)
+// the layout as the page has it, in CSS px (`square` is the view: what's visible of the canvas)
 function measure() {
   const r = (n) => { if (!n) return null; const b = n.getBoundingClientRect(); return b.width && b.height ? { x: Math.round(b.left * 10) / 10, y: Math.round(b.top * 10) / 10, w: Math.round(b.width * 10) / 10, h: Math.round(b.height * 10) / 10, b: Math.round(b.bottom * 10) / 10, r: Math.round(b.right * 10) / 10 } : null; };
   const q = (s) => r(document.querySelector(s));
   const de = document.documentElement, cs = getComputedStyle(de);
   const sq = de.classList.contains('sq');
   const canvas = q('#game'), stage = q('#stage');
-  // the visible square: the canvas's height, centred on the stage
-  const side = sq && canvas ? canvas.h : 0;
-  const square = sq && stage ? { x: stage.x + (stage.w - side) / 2, y: canvas.y, w: side, h: side, b: canvas.y + side, r: stage.x + (stage.w + side) / 2 } : null;
+  // the view: the canvas less what's clipped off each side (--sq-clip of its width; a build from before the
+  // variable crop always clipped 21.875%, a 720 square)
+  const clip = parseFloat(cs.getPropertyValue('--sq-clip')), cl = Number.isFinite(clip) ? clip : 0.21875;
+  const square = sq && canvas ? { x: canvas.x + canvas.w * cl, y: canvas.y, w: canvas.w * (1 - 2 * cl), h: canvas.h, b: canvas.b, r: canvas.r - canvas.w * cl } : null;
+  const probe = document.querySelector('.tc-probe'), ps = probe ? getComputedStyle(probe) : null;
+  const insets = { l: ps ? parseFloat(ps.paddingLeft) || 0 : 0, r: ps ? parseFloat(ps.paddingRight) || 0 : 0 };
   const g = /** @type {any} */ (window).__game;
   const frame = square || stage;
-  const k = square ? side / 720 : stage.w / 1280, ox = square ? square.x - 280 * k : stage.x;
+  const k = square ? square.h / 720 : stage.w / 1280, ox = square ? square.x - (1280 - square.w / k) / 2 * k : stage.x;
   const cam = g.camera;
   const units = g.sim.units.filter((u) => !u.hidden && u.rig && u.rig.joints && u.rig.joints.head).slice(0, 2).map((u) => {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -93,13 +99,14 @@ function measure() {
     const a = sx(x0), b = sx(x1);
     return { x0: Math.min(a, b), x1: Math.max(a, b), y0: sy(y0), y1: sy(y1), h: (y1 - y0) * cam.zoom * k };
   });
-  return { sq, vw: innerWidth, vh: innerHeight, scale: +cs.getPropertyValue('--tc-scale') || 1, stage, square, band: q('#hudband'), top: q('.tc-top'), cluster: q('.tc-cluster'), stick: q('.tc-base'),
-    btn: q('.tc-l1'), guard: q('.tc-guard'), rotate: q('.tc-rotate'), zoom: Math.round(cam.zoom * 1000) / 1000, units };
+  return { sq, insets, vw: innerWidth, vh: innerHeight, scale: +cs.getPropertyValue('--tc-scale') || 1, stage, square, band: q('#hudband'), top: q('.tc-top'), cluster: q('.tc-cluster'), stick: q('.tc-base'),
+    btn: q('.tc-l1'), guard: q('.tc-guard'), zoom: Math.round(cam.zoom * 1000) / 1000, units };
 }
 function checkLayout(tag, m, fight) {
   if (!m.sq) return fail(`${tag}: not in the square layout`);
   const s = m.square, e = 0.6;
-  if (s.x < -e || s.r > m.vw + e || s.y < -e || s.b > m.vh + e) fail(`${tag}: the square leaves the screen (${JSON.stringify(s)})`);
+  if (s.x < -e || s.r > m.vw + e || s.y < -e || s.b > m.vh + e) fail(`${tag}: the view leaves the screen (${JSON.stringify(s)})`);
+  if (s.x > m.insets.l + e || s.r < m.vw - m.insets.r - e) fail(`${tag}: the view is narrower than the screen (${Math.round(s.x)}..${Math.round(s.r)} of 0..${m.vw}): a dark bar at the side`);
   if (!m.top || m.top.b > (m.band ? m.band.y : s.y) + e) fail(`${tag}: the top buttons overlap what's under them`);
   if (!m.band) fail(`${tag}: no HUD band`);
   else { if (m.band.b > s.y + e) fail(`${tag}: the HUD band overlaps the square (${m.band.b} > ${s.y})`); if (m.band.x < -e || m.band.r > m.vw + e) fail(`${tag}: the HUD band leaves the screen`); }
@@ -108,7 +115,6 @@ function checkLayout(tag, m, fight) {
     if (c.y < s.b - e) fail(`${tag}: the ${name} overlap the square (${c.y} < ${s.b})`);
     if (c.x < -e || c.r > m.vw + e || c.b > m.vh + e) fail(`${tag}: the ${name} are cut off (${JSON.stringify(c)})`);
   }
-  if (m.rotate && m.band && m.rotate.y < m.band.b - e) fail(`${tag}: the turn-your-phone note covers the HUD band`);
   if (fight) for (const [i, u] of m.units.entries()) if (u.x0 < s.x - 1 || u.x1 > s.r + 1 || u.y0 < s.y - 1 || u.y1 > s.b + 1) fail(`${tag}: fighter ${i + 1} is outside the square (${Math.round(u.x0)}..${Math.round(u.x1)} x ${Math.round(u.y0)}..${Math.round(u.y1)} in ${Math.round(s.x)}..${Math.round(s.r)} x ${Math.round(s.y)}..${Math.round(s.b)})`);
 }
 
@@ -117,7 +123,6 @@ for (const size of SIZES.filter((s) => !ONLY || ONLY.split(',').includes(s.name)
   const upright = size.touch && size.h > size.w;
   const ctx = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.touch ? 2 : 1, hasTouch: size.touch, isMobile: size.touch });
   await ctx.addInitScript(seedRandom);
-  await ctx.addInitScript(() => { try { sessionStorage.setItem('tc-rotate-dismissed', '1'); } catch {} });   // the note has its own shot
   const open = async (q) => {
     const page = await ctx.newPage();
     page.on('pageerror', (e) => fail(`[${size.name}] page error: ${e.message}`));
@@ -165,29 +170,18 @@ for (const size of SIZES.filter((s) => !ONLY || ONLY.split(',').includes(s.name)
     await page.keyboard.press('F1'); await shot('move-list', 900); await page.keyboard.press('Escape'); await sleep(300);
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:settings'))); await shot('settings', 1500);
     await page.close();
-    if (upright) {
-      // the turn-your-phone note, as a first visit sees it
-      const c2 = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
-      const p2 = await c2.newPage();
-      await p2.goto(`${base}?scene=idle&tier=3`);
-      await p2.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
-      await sleep(400);
-      await p2.screenshot({ path: path.join(OUT, `${size.name}-rotate-note.png`) });
-      if (CHECK) checkLayout(`[${size.name}] rotate-note`, await p2.evaluate(measure), true);
-      await c2.close();
-    }
   }
   await ctx.close();
   console.log(`[${size.name}] done`);
 }
 await browser.close(); server.close();
 if (CHECK) {
-  console.log('\nsize      controls  top buttons  HUD band  square     gap   controls   fighter close / apart');
+  console.log('\nsize      controls  top buttons  HUD band  view       crop  gap   controls   fighter close / apart');
   for (const [name, s] of Object.entries(sizes)) {
     const m = s.close || s.walls; if (!m) continue;
     const hOf = (x) => (x && x.units.length ? Math.round(Math.max(...x.units.map((u) => u.h))) : '?');
     if (!m.sq) { console.log(`${name.padEnd(9)} no square (an older build): stage ${Math.round(m.stage.w)}x${Math.round(m.stage.h)}, fighter ${hOf(s.close)} / ${hOf(s.walls)} px tall`); continue; }
-    console.log(`${name.padEnd(9)} ${String(Math.round(m.scale * 100) + '%').padEnd(9)} ${String(Math.round(m.top.h)).padEnd(12)} ${String(Math.round(m.band.h)).padEnd(9)} ${`${Math.round(m.square.w)}x${Math.round(m.square.h)}`.padEnd(10)} ${String(Math.round(m.cluster.y - m.square.b)).padEnd(5)} ${`${Math.round(m.cluster.w)}x${Math.round(m.cluster.h)}`.padEnd(10)} ${hOf(s.close)} / ${hOf(s.walls)} px tall`);
+    console.log(`${name.padEnd(9)} ${String(Math.round(m.scale * 100) + '%').padEnd(9)} ${String(Math.round(m.top.h)).padEnd(12)} ${String(Math.round(m.band.h)).padEnd(9)} ${`${Math.round(m.square.w)}x${Math.round(m.square.h)}`.padEnd(10)} ${String(Math.round(720 * m.square.w / m.square.h)).padEnd(5)} ${String(Math.round(m.cluster.y - m.square.b)).padEnd(5)} ${`${Math.round(m.cluster.w)}x${Math.round(m.cluster.h)}`.padEnd(10)} ${hOf(s.close)} / ${hOf(s.walls)} px tall`);
   }
   console.log(bad ? `\n${bad} problems` : '\nlayout ok, no page errors');
 }
@@ -200,7 +194,7 @@ function sheet(before, after, out) {
   for (const size of SIZES) {
     const files = names(after).filter((f) => f.startsWith(size.name + '-'));
     if (!files.length) continue;
-    const order = [...SHOTS.map((s) => s[0]), 'title', 'mode-select', 'select', 'fight', 'pause', 'move-list', 'settings', 'rotate-note'];
+    const order = [...SHOTS.map((s) => s[0]), 'title', 'mode-select', 'select', 'fight', 'pause', 'move-list', 'settings'];
     files.sort((a, b) => order.indexOf(a.slice(size.name.length + 1, -4)) - order.indexOf(b.slice(size.name.length + 1, -4)));
     const cells = [];
     for (const f of files) {

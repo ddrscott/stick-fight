@@ -33,7 +33,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
   // what's being drawn on: the frame, or (for the strip, held upright) the band's canvas. L is the strip's layout
   // and sw the width it's laid out across.
   let ctx = frameCtx, dpr = frameDpr, L = WIDE, sw = width;
-  // The part of the frame that's on screen. Held upright the page shows only the middle 720 px (the square), so
+  // The part of the frame that's on screen. Held upright the page shows only the middle of it (720 px when the view is square, up to all 1280), so
   // everything laid out from an edge keeps to x0..x1, and with the strip gone to its band the rows that sat under
   // it start at the top (top is where STRIP_H was). zoom: screen px of the frame per px of the 16:9 stage box.
   const FULL = { x0: 0, x1: width, top: STRIP_H, edge: 44, zoom: 1 };

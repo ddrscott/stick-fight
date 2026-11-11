@@ -27,7 +27,7 @@ import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';
 import { homescreenHelp, openHomescreenHelp } from './homescreen.js';   // iPhone Safari: the fullscreen pill opens the Add to Home Screen how-to   // shared with the desktop button and F11
 import { PLAIN } from './plaintext.js';   // readable text never glows: the shared dark outline
 import { MINI, MINI_FACE, MINI_INK, HUD_STRIP, MENU_ICON, PAUSE_ICON } from './corner.js';   // the corner buttons' size and icons, shared with the desktop row
-import { BAND, SQ_FIRST, SQ_FLOOR, setSquare } from './square.js';   // held upright: the square crop and the HUD band over it
+import { BAND, SQ_FIRST, SQ_FLOOR, FRAME_W, cropOf, setSquare } from './square.js';   // held upright: the view's crop of the frame and the HUD band over it
 
 const TARGET = window;                  // must match createInput(window) in main.js
 // the stick's travel in px at scale 1 with a 16px rem; it grows and shrinks with the drawn stick,
@@ -92,10 +92,6 @@ function init() {
       <button class="tc-btn tc-mini tc-pause" data-role="pause" aria-label="Pause">${PAUSE_ICON}</button>
       <button class="tc-btn tc-mini tc-sound" data-role="settings" aria-label="Settings">${MENU_ICON}</button>
       <button class="tc-btn tc-mini" data-role="fullscreen" aria-label="Fullscreen">${FS_ICON}</button>
-    </div>
-    <div class="tc-rotate" role="note">
-      <span>Turn your phone sideways for the full arena</span>
-      <button class="tc-x" data-role="dismiss" aria-label="Dismiss">X</button>
     </div>`;
   const base = root.querySelector('.tc-base'), knob = root.querySelector('.tc-knob');
   const zone = root.querySelector('.tc-stickzone');
@@ -104,7 +100,6 @@ function init() {
   // An installed app is already full screen, so it has no pill (src/fullscreen.js).
   if (homescreenHelp && !canFullscreen) fsBtn.setAttribute('aria-label', 'Play full screen: add to your home screen');
   else if (!canFullscreen) fsBtn.remove();
-  try { if (sessionStorage.getItem('tc-rotate-dismissed')) root.classList.add('tc-no-rotate'); } catch {}
   let K = 1;                            // px per design px: the scale in use times rem / 16
   fit();                                // the saved size, before the layer is in the page, so it never draws at another
   document.body.appendChild(root);
@@ -132,13 +127,15 @@ function init() {
     const minisDown = n * D.miniH + (n - 1) * D.miniGap, minisAcross = n * D.miniW + (n - 1) * D.miniGap;
     const grid = 2 * D.btn + D.gap;
     let u, mode = '', topY = 0;         // u: the most px one scaled rem can be
-    let sq = null;                      // held upright: the square and the HUD band over it
+    let sq = null;                      // held upright: the view and the HUD band over it
     if (vh >= vw) {
-      // Held upright, from the top: a strip holding the top buttons, the HUD band, the square (the middle of the
-      // frame, as wide as the screen), then the controls at the bottom. When the screen is too short for all
-      // four, things give way in this order and a control is never cut off: the square down to three quarters of
-      // the width; the band to its compact form (no move hints); the square down to the old 16:9 stage's height;
-      // then the controls themselves, down to MIN_SCALE; and last the square again, to whatever is left.
+      // Held upright, from the top: a strip holding the top buttons, the HUD band, the view (a crop of the frame,
+      // always as wide as the screen), then the controls at the bottom. The view is square when there's room.
+      // When the screen is too short for all four, the view gets shorter, never narrower, and shows a wider
+      // slice of the frame (src/square.js), and things give way in this order with no control ever cut off:
+      // the view down to three quarters of its width; the band to its compact form (no move hints); the view
+      // down to the whole 16:9 frame; the controls themselves, down to MIN_SCALE; and last, the view to whatever
+      // is left, which is the only step that makes it narrower than the screen.
       const across = (vw - sl - sr) / (D.base + D.edge + 0.25 + grid);
       const strip = (vw - sl - sr) / minisAcross;
       const fixed = st + 0.5 * rem + 0.5 * rem + sb;                  // the insets, the strip's air and a gap over the controls
@@ -146,19 +143,23 @@ function init() {
       const k = Math.max(BAND.kMin, Math.min(BAND.kMax, vw / BAND.w));
       const full = Math.round(BAND.full * k), compact = Math.round(BAND.compact * k);
       let s = Math.max(MIN_SCALE, Math.min(want, across / rem, strip / rem));
-      const room = () => vh - fixed - per * s * rem;                  // what's left for the band and the square
-      let side = vw, band = full;
-      if (room() < side + band) side = Math.max(SQ_FIRST * vw, room() - band);
-      if (room() < side + band) { band = compact; side = Math.max(SQ_FLOOR * vw, Math.min(vw, room() - band)); }
-      if (room() < side + band) s = Math.max(MIN_SCALE, Math.min(s, (vh - fixed - side - band) / (per * rem)));
+      const room = () => vh - fixed - per * s * rem;                  // what's left for the band and the view
+      const floor = SQ_FLOOR * vw;                                     // the whole 16:9 frame at the screen's width
+      let h = vw, band = full;                                         // h: the view's height
+      if (room() < h + band) h = Math.max(SQ_FIRST * vw, room() - band);
+      if (room() < h + band) { band = compact; h = Math.max(floor, Math.min(vw, room() - band)); }
+      if (room() < h + band) s = Math.max(MIN_SCALE, Math.min(s, (vh - fixed - h - band) / (per * rem)));
       s = Math.floor(s * 1000) / 1000;
-      if (room() < side + band) side = Math.max(0, room() - band);
-      side = Math.floor(side);
+      const last = room() < h + band;
+      if (last) h = Math.max(0, room() - band);
+      h = last ? Math.floor(h) : Math.max(floor, Math.floor(h));
+      // the view's width: the screen's, unless even the whole frame is too tall for what's left
+      const w = last ? Math.min(vw, Math.floor(h * FRAME_W / 720)) : vw;
+      const crop = last ? FRAME_W : cropOf(w, h);
+      h = w * 720 / crop;                                              // exact, so the canvas's height is the view's
       u = s * rem;
-      const stripH = st + D.miniH * u + 0.5 * rem, below = vh - stripH - band - side;
-      // the turn-your-phone note goes under the square when there's room over the controls, else over its top edge
-      const noteIn = below - (D.guardHP + D.gap + grid) * u - sb < 5.25 * rem;
-      sq = { on: true, side, band, k, compact: band < full, below, noteIn };
+      const stripH = st + D.miniH * u + 0.5 * rem, below = vh - stripH - band - h;
+      sq = { on: true, w, h, crop, band, k, compact: band < full, below };
     } else {
       const stageW = Math.min(vw, vh * 16 / 9), stageH = stageW * 9 / 16;
       const gutter = (vw - stageW) / 2, stageTop = (vh - stageH) / 2;
@@ -180,9 +181,16 @@ function init() {
     K = scale * rem / 16;
     de.style.setProperty('--tc-scale', String(scale));
     de.classList.toggle('sq', !!sq);
-    root.classList.toggle('tc-note-in', !!sq && sq.noteIn);
-    if (sq) { de.style.setProperty('--sq', `${sq.side}px`); de.style.setProperty('--sq-band', `${sq.band}px`); de.style.setProperty('--sq-below', `${Math.max(0, Math.floor(sq.below))}px`); }
-    setSquare(sq ? { on: true, side: sq.side, band: sq.band, k: sq.k, compact: sq.compact } : { on: false, side: 0, band: 0, k: 1, compact: false });
+    if (sq) {
+      // The CSS under html.sq works from these. The canvases are --sq-z times the 16:9 stage box each way (the
+      // frame's width over the crop's), --sq-over of the box's size hangs past each edge, and --sq-clip of the
+      // canvas's width is clipped off each side. A 720 crop gives 1.7778, 0.3889 and 0.21875; the whole frame 1, 0, 0.
+      const z = FRAME_W / sq.crop;
+      de.style.setProperty('--sq', `${sq.w}px`); de.style.setProperty('--sq-h', `${sq.h}px`); de.style.setProperty('--sq-band', `${sq.band}px`);
+      de.style.setProperty('--sq-z', String(z)); de.style.setProperty('--sq-over', String((z - 1) / 2)); de.style.setProperty('--sq-clip', String((1 - 1 / z) / 2));
+      de.style.setProperty('--sq-below', `${Math.max(0, Math.floor(sq.below))}px`);
+    }
+    setSquare(sq ? { on: true, w: sq.w, h: sq.h, crop: sq.crop, band: sq.band, k: sq.k, compact: sq.compact } : { on: false, w: 0, h: 0, crop: 720, band: 0, k: 1, compact: false });
     root.classList.toggle('tc-top-hud', mode !== '');
     root.classList.toggle('tc-top-row', mode === 'hud row');
     if (mode) root.style.setProperty('--tc-top-y', `${Math.round(topY)}px`); else root.style.removeProperty('--tc-top-y');
@@ -259,9 +267,6 @@ function init() {
       } else if (btn && btn.dataset.role === 'fullscreen') {
         if (canFullscreen) toggleFullscreen(); else openHomescreenHelp();
         flash(btn);
-      } else if (btn && btn.dataset.role === 'dismiss') {
-        root.classList.add('tc-no-rotate');
-        try { sessionStorage.setItem('tc-rotate-dismissed', '1'); } catch {}
       } else if (btn && btn.dataset.role === 'stick' && !stick) {
         // the stick floats: its centre jumps to wherever the thumb lands in the zone
         const r = zone.getBoundingClientRect();
@@ -363,7 +368,7 @@ function injectStyle() {
     font-family: 'Bungee', 'Arial Black', Impact, system-ui, sans-serif;
   }
   .tc-root * { box-sizing: border-box; }
-  .tc-btn, .tc-stickzone, .tc-rotate { pointer-events: auto; touch-action: none; }
+  .tc-btn, .tc-stickzone { pointer-events: auto; touch-action: none; }
   /* arcade buttons: round, a glowing ring in the limb's neon, the glyph and number lit in it */
   .tc-btn {
     --c: var(--violet);
@@ -425,42 +430,32 @@ function injectStyle() {
   .tc-mini svg { width: ${u(1.125)}; height: ${u(1.125)}; }
 
   /* portrait */
-  .tc-rotate { display: none; }
   #hudband { display: none; }
   @media (orientation: portrait) {
     html.touch-ui body { align-items: flex-start; padding-top: var(--tc-strip); box-sizing: border-box; }
     .tc-stickzone { width: max(50vw, calc(var(--sl) + ${u(D.base + 2 * D.edge)})); height: max(46vh, calc(var(--sb) + ${u(D.hint + D.base + D.edge)})); }
-    /* The square (src/square.js; fit() sets html.sq and the sizes). #stage stays a 16:9 box, as wide as the
-       square and centred on it, so every menu lays out exactly as it did; only the two canvases grow past it,
-       to the square's height, with their sides clipped to the middle 720 of 1280. The HUD band (#hudband, a
-       canvas main.js makes) sits between the strip and the square. */
-    html.sq body { padding-top: calc(var(--tc-strip) + var(--sq-band) + var(--sq) * 0.21875); }
+    /* The upright view (src/square.js; fit() sets html.sq and the sizes). #stage stays a 16:9 box, as wide as the
+       view and centred on it, so every menu lays out exactly as it did; only the two canvases grow past it, to the
+       view's height, with their sides clipped to the crop. The factors are fit()'s: --sq-z (canvas over box),
+       --sq-over (what hangs past each edge of the box, as a share of it) and --sq-clip (what's clipped off each
+       side, as a share of the canvas). The HUD band (#hudband, a canvas main.js makes) sits between the strip and
+       the view. */
+    html.sq body { padding-top: calc(var(--tc-strip) + var(--sq-band) + var(--sq) * 0.5625 * var(--sq-over)); }
     html.sq #stage { width: var(--sq); }
-    html.sq #stage > canvas { inset: auto; left: -38.8889%; top: -38.8889%; width: 177.7778%; height: 177.7778%; clip-path: inset(0 21.875%); }
-    /* a menu's veil covers the whole square, not only the 16:9 box its buttons are laid out in (0.3889 of the box's
-       height shows above it and below it); the credits link goes to the square's bottom corner, off the demo's fighters */
+    html.sq #stage > canvas { inset: auto; left: calc(var(--sq-over) * -100%); top: calc(var(--sq-over) * -100%);
+      width: calc(var(--sq-z) * 100%); height: calc(var(--sq-z) * 100%); clip-path: inset(0 calc(var(--sq-clip) * 100%)); }
+    /* a menu's veil covers the whole view, not only the 16:9 box its buttons are laid out in; the credits link
+       goes to the view's bottom corner, off the demo's fighters */
     html.sq #flow .fl-veil { background: none; }
-    html.sq #flow .fl-veil::before { content: ''; position: absolute; left: 0; right: 0; top: -38.8889%; bottom: -38.8889%; z-index: -1;
+    html.sq #flow .fl-veil::before { content: ''; position: absolute; left: 0; right: 0; top: calc(var(--sq-over) * -100%); bottom: calc(var(--sq-over) * -100%); z-index: -1;
       background: radial-gradient(ellipse at 50% 45%, rgba(18,5,38,0.80), rgba(5,1,12,0.92)); }
-    html.sq #credits { right: auto; left: 2.2%; bottom: -36.5%; }
-    /* stage-anchored pieces that would land mid-square: the online readout goes to the square's top edge, the spectator bar to its bottom */
-    html.sq .nf-readout { top: calc(-38.8889% + 0.375rem); }
-    html.sq #flow .fl-wbar { bottom: -36.7cqh; }
+    html.sq #credits { right: auto; left: 2.2%; bottom: calc(2.4% - var(--sq-over) * 100%); }
+    /* stage-anchored pieces that would land mid-view: the online readout goes to the view's top edge, the spectator bar to its bottom */
+    html.sq .nf-readout { top: calc(var(--sq-over) * -100% + 0.375rem); }
+    html.sq #flow .fl-wbar { bottom: calc(2.2cqh - var(--sq-over) * 100cqh); }
     html.sq #hudband { display: block; position: fixed; left: 0; top: var(--tc-strip); width: 100vw; height: var(--sq-band); pointer-events: none; }
-    /* a press on the square never starts the stick */
+    /* a press on the view never starts the stick */
     html.sq .tc-stickzone { height: max(var(--sq-below), calc(var(--sb) + ${u(D.hint + D.base + D.edge)})); }
-    .tc-rotate {
-      display: flex; align-items: center; gap: 0.625rem; position: absolute;
-      left: var(--sl); right: var(--sr); top: calc(var(--tc-strip) + var(--sq-band, 0px) + var(--sq, 56.25vw) + 0.5rem);
-      padding: 0.625rem 0.875rem; border: 0.125rem solid var(--violet); border-radius: 1.375rem; background: rgba(14,4,30,0.72);
-      color: var(--ink); font-family: 'Teko', 'Arial Narrow', system-ui, sans-serif; font-size: 1.25rem; line-height: 1.1;
-      box-shadow: 0 0 0.75rem rgba(166,107,255,0.5);
-    }
-    .tc-rotate span { flex: 1; }
-    .tc-note-in .tc-rotate { top: calc(var(--tc-strip) + var(--sq-band, 0px) + 0.5rem); }   /* no room under the square: over its top edge, never the HUD band */
-    .tc-no-rotate .tc-rotate { display: none; }
-    .tc-x { appearance: none; border: 0.125rem solid var(--pink); border-radius: 50%; background: transparent;
-      color: var(--pink); font: inherit; font-size: 1.125rem; width: 2.125rem; height: 2.125rem; box-shadow: 0 0 0.5rem var(--pink); }
   }
   @media (orientation: landscape) {
     /* The HUD strip owns the canvas's top corners, so these stack in the pillarbox gutter when
