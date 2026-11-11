@@ -2,7 +2,7 @@
 // physics, hit resolution with hitstop, rounds and KO. step(ms) is deterministic given
 // the same inputs and seed. Events for the glue (fx, camera) go through onEvent.
 
-import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PERFECT, PARRY, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale, CLASH } from './frameData.js';
+import { FRAME_DATA, ATTACKS, DT, f60, AIR_TECH, PERFECT, PARRY, DASH, STAMINA, COMBO_STUN, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale, CLASH } from './frameData.js';
 import { matchStrings, MOVE_TOKEN } from './strings.js';
 import { buildHitboxes, buildHurtboxes, testHit, strikeSegment, strikeTip } from './hitboxes.js';
 import { EMPTY_INPUT } from './input.js';
@@ -26,7 +26,7 @@ const INTRO_TIME = 1.4, KO_HOLD = 0.35, MATCH_HOLD = 1.8;
 // most the run to the body takes, how long the body is on the glass after the throw (src/fx/perfect.js plays
 // that part to the same clock), and how soon a press can skip it
 const PF_WAIT = 1.5, PF_RUN = 0.7, PF_SKIP_MIN = 0.3, PF_CUT = 2.6;
-const PF_FREE = new Set(['idle', 'walk', 'run', 'block', 'crouch', 'landing', 'attack', 'blockstun']);
+const PF_FREE = new Set(['idle', 'walk', 'run', 'dash', 'block', 'crouch', 'landing', 'attack', 'blockstun']);
 const PF_BUTTONS = ['lp', 'rp', 'lk', 'rk', 'jump', 'block'];
 const PF_MARKS = [['fly', 'perfectSplat'], ['slide', 'perfectSlide'], ['drop', 'perfectDrop']];
 const STUMBLE_FRICTION = 0.95;      // hitstun slide; victim keeps stumbling until slow
@@ -36,7 +36,7 @@ const FACE_STATES = new Set(['idle', 'walk', 'run', 'block', 'crouch']);
 const NOT_SOLID_BODY = new Set(['knockdown', 'down', 'ko', 'roll', 'getup']);
 const GUARD_STATES = new Set(['idle', 'walk', 'block', 'blockstun', 'crouch']);   // holding back here guards
 const JUGGLE_MAX = 4, JUGGLE_POP = 220, JUGGLE_G = 0.3;   // airborne hits; each one adds 30% gravity, so juggles end on their own
-const SPLAT_STEPS = 48, BREAK_STEPS = 36, RISE_STEPS = 24, DASH_STEPS = 14, COUNTER_DMG = 1.35, COUNTER_STUN = 1.5;
+const SPLAT_STEPS = 48, BREAK_STEPS = 36, RISE_STEPS = 24, DASH_STEPS = DASH.attack, COUNTER_DMG = 1.35, COUNTER_STUN = 1.5;
 const CROUCH_SQUASH = 0.7;
 const FLOOR_DMG = 10, VAULT_HOP_VY = 420;   // landing damage after a floor break; the vault's hop   // a crouch drawn by squashing the standing pose, until the rig has crouch clips
 const INVULN = new Set(['getup', 'ko', 'roll']);
@@ -66,7 +66,7 @@ const ROLL_GETUP_STEPS = 8;         // the roll is still available for the first
 const PREROLL = 0.05;               // an attack's first rendered frame is already 50ms into its anticipation (the rig's blend and dip are under 6px before that)
 const GRAB_PULL = 6;                // px a step a grabbed body is pulled in to the throw's hold (720 px/s)
 const HIT_SEP = 40;                 // a stumbling victim and his attacker may close to 40px (64 otherwise)
-const SOLID = new Set(['idle', 'walk', 'run', 'block', 'blockstun', 'attack', 'hitstun', 'getup']);   // a rising body pushes the man standing on it to range
+const SOLID = new Set(['idle', 'walk', 'run', 'dash', 'block', 'blockstun', 'attack', 'hitstun', 'getup']);   // a rising body pushes the man standing on it to range
 const LYING = new Set(['knockdown', 'ko', 'down', 'getup', 'roll']);
 const FEET = [['lFoot', 'lKnee'], ['rFoot', 'rKnee']];
 const LIE_PAD = 90, LIE_SLIDE = 300;   // px/s a resting body slides off a wall it lies too close to
@@ -79,10 +79,15 @@ const HEAD_REACH = 70;                            // the main floor meets a flig
 let HAS_VAULT = false, HAS_THROWN = false, HAS_HITBODY = false, HAS_HITBACK = false, HAS_HITSTUN = false, HAS_HITLOW = false, MOVE_DATA_ = null;
 // four buttons, one per limb from the fighter's own point of view (lead = left, orthodox)
 const BUTTON_LIMB = { lp: 'lHand', rp: 'rHand', lk: 'lFoot', rk: 'rFoot' };
-const BUTTON_MOVES = { lp: ['jab', 'lowJab', 'bodyBlow'], rp: ['cross', 'uppercut', 'lungeCross', 'risingUppercut'], lk: ['lkick', 'lowKick'], rk: ['roundhouse', 'sweep', 'spinKick', 'risingKnee', 'overhead'] };
+const BUTTON_MOVES = { lp: ['jab', 'lowJab', 'bodyBlow', 'risingJab', 'bulletJab'], rp: ['cross', 'uppercut', 'lungeCross', 'risingUppercut', 'cometCross'], lk: ['lkick', 'lowKick', 'risingKick', 'skidKick'], rk: ['roundhouse', 'sweep', 'spinKick', 'risingKnee', 'overhead', 'runningBoot'] };
 const BTN_NUM = { lp: '1', rp: '2', lk: '3', rk: '4' };
-// one button with the stick: down = crouch attacks, released-down = rising attacks, forward and
-// back variants, a dash into 2 = comet cross
+// one button with the stick: down = crouch attacks, released-down = rising attacks (one per limb), forward and
+// back variants, and out of a forward dash or a run the dash attacks (one per button)
+// rising: down just let go, out of a crouch (for RISE_STEPS after) or in the middle of a crouching attack
+// (u.lowStance; when that attack ends without down, the RISE_STEPS start from there)
+const risingNow = (u, down, step) => !down && u.state !== 'dash' && u.state !== 'run' && ((u.crouchEnd != null && step - u.crouchEnd <= RISE_STEPS) || (u.state === 'attack' && !!u.lowStance));
+// out of a forward dash (any point of it, the stick wherever it is), or with forward held in a run or just out of either
+const dashingNow = (u, fwd, step) => (u.state === 'dash' && u.dashDir > 0) || (fwd && (u.state === 'run' || step - (u.lastRunStep || -999) <= DASH_STEPS));
 // A character's command inputs (src/characters/) come first: { button, motion, move }, the most specific
 // motion first (the registry sorts them). A plain press with no command is the shared move.
 function commandMove(btn, inp, u, step, air) {
@@ -90,8 +95,8 @@ function commandMove(btn, inp, u, step, air) {
   if (!cmds || !cmds.length) return null;
   const b = btn === 'throw13' ? '1+3' : btn === 'throw24' ? '2+4' : BTN_NUM[btn];
   const facing = u.facing, fwd = inp.dx * facing > 0, back = inp.dx * facing < 0, down = !!inp.down;
-  const rising = !down && u.crouchEnd != null && step - u.crouchEnd <= RISE_STEPS;
-  const dash = fwd && (u.state === 'run' || step - (u.lastRunStep || -999) <= DASH_STEPS);
+  const rising = risingNow(u, down, step);
+  const dash = dashingNow(u, fwd, step);
   for (const c of cmds) {
     if (c.button !== b) continue;
     const m = c.motion;
@@ -114,12 +119,12 @@ function resolveButton(btn, inp, u, step) {
     return inp.down ? 'diveKick' : 'airRoundhouse';
   }
   const facing = u.facing, fwd = inp.dx * facing > 0, back = inp.dx * facing < 0, down = !!inp.down;
-  const rising = !down && u.crouchEnd != null && step - u.crouchEnd <= RISE_STEPS;
-  const dash = fwd && (u.state === 'run' || step - (u.lastRunStep || -999) <= DASH_STEPS);
-  if (btn === 'lp') return down ? 'lowJab' : fwd ? 'bodyBlow' : 'jab';
+  const rising = risingNow(u, down, step);
+  const dash = dashingNow(u, fwd, step);
+  if (btn === 'lp') return down ? 'lowJab' : rising ? 'risingJab' : dash ? 'bulletJab' : fwd ? 'bodyBlow' : 'jab';
   if (btn === 'rp') return down ? 'uppercut' : rising ? 'risingUppercut' : dash ? 'cometCross' : fwd ? 'lungeCross' : 'cross';
-  if (btn === 'lk') return down ? 'lowKick' : 'lkick';
-  return down ? 'sweep' : rising ? 'risingKnee' : back ? 'spinKick' : fwd ? 'overhead' : 'roundhouse';
+  if (btn === 'lk') return down ? 'lowKick' : rising ? 'risingKick' : dash ? 'skidKick' : 'lkick';
+  return down ? 'sweep' : rising ? 'risingKnee' : dash ? 'runningBoot' : back ? 'spinKick' : fwd ? 'overhead' : 'roundhouse';
 }
 const ANIM = {};
 const missingAnim = new Set();
@@ -155,6 +160,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   ANIM.blockHit = has('blockHit') ? 'blockHit' : null;
   ANIM.airLand = has('airLand') ? 'airLand' : null;
   ANIM.crouchWalk = has('crouchWalk') ? 'crouchWalk' : null;
+  ANIM.dashF = has('dashF') ? 'dashF' : 'walk'; ANIM.dashB = has('dashB') ? 'dashB' : 'walk';   // the dashes' clips (src/combat/dash.js)
   CROUCH_WALK = (moveData && moveData.crouchWalk && moveData.crouchWalk.speed) || 70;
   ANIM.crouchBlockHit = has('crouchBlockHit') ? 'crouchBlockHit' : ANIM.crouchBlock;
   // a move with its own clip takes the rig's height ('high'|'mid'|'low'|'throw')
@@ -380,7 +386,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,
       hitstop: 0, flash: 0, stun: 0, downTimer: 0, buffer: null, bufferAge: 0,
       health: 100, hidden: false, controller: null, kind: 'none', home: 0, prevX: 0, prevBX: 0, apartSteps: 0,
-      last: EMPTY_INPUT, tapDir: 0, tapTimer: 0, running: false, koDone: false, prevJoints: null,
+      last: EMPTY_INPUT, tapDir: 0, tapAt: -999, tapN: 0, dashDir: 0, dashT: 0, lowStance: false, running: false, koDone: false, prevJoints: null,
       stamina: STAMINA.max * ch.stats.stamina, faint: 0, faintDmg: 0, faintAt: -1, regenAt: 0, paid: 0, refundId: 0, faintPending: 0, shakeDir: 0, shakeAt: -999, faintCut: 0, refundMove: '', refundRep: 0, refundAt: -999, crouch: false, backHeld: false, downHeld: false,
       seq: null, seqName: '', bufferKeys: null, bufferName: '', airHits: 0, gScale: 1,
       combo: 0, comboBy: -1, comboDmg: 0, selfChain: 0, lastHitAt: -1,
@@ -467,6 +473,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
     u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1; u.parryAt = -999; u.parryLow = false; u.parryLock = -1; u.pressAt = -999;
     u.shockT = 0; u.shockUsed = false; u.rootT = 0; u.clashUntil = 0;
+    u.tapDir = 0; u.tapAt = -999; u.tapN = 0; u.dashDir = 0; u.dashT = 0; u.lowStance = false; u.lastRunStep = -999;
     u.regenMul = 1; u.regenEnd = -1; u.regenLen = 0; u.regenTag = ''; u.speedMul = 1; u.speedEnd = -1; u.speedLen = 0; u.speedTag = '';
     // cancel the rig's point simulation, crossfade, reaction and springs (older rigs: a fresh one)
     if (typeof u.rig.reset === 'function') { u.rig.x = u.x; u.rig.y = u.y; u.rig.facing = u.facing; u.rig.reset(); }
@@ -910,7 +917,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       return;
     }
     const guarding = u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld);
-    if (u.state === 'attack' || u.state === 'run' || u.state === 'botch') return;
+    if (u.state === 'attack' || u.state === 'run' || u.state === 'dash' || u.state === 'botch') return;
     const smax = u.staminaMax || STAMINA.max, rk = (u.char ? u.char.stats.regen : 1) * (sim.stepCount < u.regenEnd ? u.regenMul : 1);   // a timed regen status (applyStatus)
     if (guarding) u.stamina = Math.min(smax, u.stamina + STAMINA.regenBlock * rk * DT);
     else if (sim.stepCount >= u.regenAt) u.stamina = Math.min(smax, u.stamina + STAMINA.regen * rk * DT);
@@ -940,6 +947,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.wakeUp = fd0.wake ? 1 : 0;
     u.state = 'attack'; u.move = move; u.phase = 'startup'; u.hitConfirmed = false; u.attackId++; u.launchCancelAt = 0; u.otgConfirm = false;
     u.attackStart = sim.stepCount; u.crouch = !!fd0.tc; u.activeAt = -1; u.recoverAt = -1;
+    // a plain crouching attack thrown with down held (the low jab, the low kick, the sweep, or a character's own ↓ + button
+    // in their place; never a special on another motion, an ender or a slide): letting go of down in it is rising (risingNow)
+    u.lowStance = !!fd0.tc && !fd0.travel && !fd0.ender && !!u.downHeld && u.grounded && (!fd0.owner || u.char.commands.some((c) => c.move === move && c.motion === 'd'));
     // throws whiff on a croucher (crouch beats throws, mids beat crouch)
     u.grabOK = !!fd0.throw && opp && Math.abs(opp.x - u.x) <= (fd0.range || FRAME_DATA.throw.range) && !opp.crouch;
     u.armorLeft = fd0.armor ? (fd0.armor.hits || 1) : 0; u.hitN = 0; u.hitKey = 0;   // character hooks: armor, multi-hit
@@ -1040,7 +1050,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const back = inp.dx * u.facing < 0 || !!inp.block;
     u.backHeld = back; u.downHeld = !!inp.down;
     // the GUARD button (B, touch GUARD, the AI's `block`) means hold back: it walks back too
-    const e = { dx: inp.dx || (inp.block && !inp.down ? -u.facing : 0), dxPress: inp.dx && inp.dx !== prev.dx ? inp.dx : 0, run: inp.run, block: back, down: !!inp.down, jump: inp.jump && !prev.jump, up: !!inp.jump, attack: null, keys: null, name: '' };
+    const e = { dx: inp.dx || (inp.block && !inp.down ? -u.facing : 0), dxPress: inp.dx && inp.dx !== prev.dx ? inp.dx : 0, run: inp.run, block: back, down: !!inp.down, jump: inp.jump && !prev.jump, up: !!inp.jump, attack: null, keys: null, name: '', dash: 0 };
     const press = (b) => inp[b] && !prev[b];
     const t13 = (press('lp') || press('lk')) && inp.lp && inp.lk, t24 = (press('rp') || press('rk')) && inp.rp && inp.rk;
     if ((t13 || t24) && !inStance(u)) e.attack = (u.grounded && commandMove(t13 ? 'throw13' : 'throw24', inp, u, sim.stepCount, false)) || 'throw';   // 1+3 or 2+4 (a character's command grab first; in a stance the buttons are read one by one)
@@ -1053,14 +1063,28 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (sim.stepCount >= u.parryLock && sim.stepCount - u.pressAt > PARRY.quiet) { u.parryAt = sim.stepCount; u.parryLow = !!inp.down; }
       u.parryLock = sim.stepCount + PARRY.lock;
     }
-    // double-tap run
-    if (inp.dx && inp.dx !== prev.dx) {
-      if (u.tapTimer > 0 && u.tapDir === inp.dx && !inp.touch && u.kind !== 'ai') u.running = true;   // a double-tap is a human's run; the CPU asks with run
-      u.tapDir = inp.dx; u.tapTimer = 0.25;
+    // the double tap (README, Fundamentals, Dashes): two fresh presses of one direction within DASH.tap steps
+    // are a dash, forward or back (updateUnit starts it; forward held on turns it into the run). A third press
+    // inside DASH.tap of the last is a mash: it, and every press after it, counts for nothing until the stick has
+    // rested DASH.tap steps, so mashing a direction gets one dash and no more. The stick itself is read from a
+    // keyboard or a pad; the touch stick (the input's touch bit) and the CPU send the `dash` bit with a direction
+    // instead, which stands for the whole double tap and goes through the same count.
+    const step = sim.stepCount;
+    let dbl = 0;
+    if (inp.dx && inp.dx !== prev.dx && !inp.touch && u.kind !== 'ai') {
+      u.tapN = u.tapDir === inp.dx && step - u.tapAt <= DASH.tap ? u.tapN + 1 : 1;
+      u.tapDir = inp.dx; u.tapAt = step;
+      if (u.tapN === 2) dbl = inp.dx;
+    }
+    if (inp.dash && !prev.dash && inp.dx) {
+      u.tapN = u.tapDir === inp.dx && step - u.tapAt <= DASH.tap && u.tapN >= 2 ? u.tapN + 1 : 2;
+      u.tapDir = inp.dx; u.tapAt = step;
+      if (u.tapN === 2) dbl = inp.dx;
     }
     if (!inp.dx) u.running = false;
-    if (e.attack) u.pressAt = sim.stepCount;
-    u.tapTimer = Math.max(0, u.tapTimer - DT);
+    if (e.attack) u.pressAt = step;
+    // nor within DASH.quiet steps of a button press: a hand mashing buttons and directions doesn't dash by accident
+    if (dbl && step - u.pressAt > DASH.quiet) e.dash = dbl * u.facing;   // 1 toward the way he faces, -1 away
     u.last = inp;
     return e;
   }
@@ -1082,7 +1106,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function resolvePress(u, b, inp) {
     const sm = inStance(u) && FRAME_DATA[u.move].stance.moves[BTN_NUM[b]];
     if (sm && canUse(u.char, sm)) return { attack: sm, keys: null, name: '' };
-    const tok = (inp.down ? 'd' : '') + BTN_NUM[b];
+    // 'd' with down held, 'r' while rising (strings.js): RISE AND SHINE's second press is a rising 3
+    const tok = (inp.down ? 'd' : u.grounded && risingNow(u, !!inp.down, sim.stepCount) ? 'r' : '') + BTN_NUM[b];
     if (inp.down && b === 'rk' && stompOK(u)) return { attack: 'stomp', keys: null, name: '' };   // down+4 over a body on the floor (down+3 stays the low kick, which can land on it)
     if (u.state === 'jump' || !u.grounded) return { attack: resolveButton(b, inp, u, sim.stepCount), keys: null, name: '' };
     if (seqLive(u)) {
@@ -1131,7 +1156,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // The token a press goes by for strings and accidents: a button's digit ('d' first when down is held),
   // 'T' for a throw; a move the CPU or a script names goes by its button.
   const pressTok = (e) => (e.keys && e.keys.length ? e.keys[e.keys.length - 1] : e.attack && FRAME_DATA[e.attack] && FRAME_DATA[e.attack].throw ? 'T' : (e.attack && MOVE_TOKEN[e.attack]) || null);
-  const digitOf = (t) => (t && t[0] === 'd' ? t.slice(1) : t);
+  const digitOf = (t) => (t && (t[0] === 'd' || t[0] === 'r') ? t.slice(1) : t);
   // steps until the strike out now ends (the rig's clock over its blend and keys)
   function stepsLeft(u) {
     const md = MOVE_DATA_ && FRAME_DATA[u.move] && MOVE_DATA_[FRAME_DATA[u.move].anim];
@@ -1315,6 +1340,21 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     return null;
   };
 
+  // A dash: dir 1 forward (the way he faces), -1 back. It needs more than its cost in the bar, so it never empties
+  // it; fainted or rooted there's none. The burst and the recovery are the 'dash' state (updateUnit).
+  function startDash(u, dir) {
+    const D = dir > 0 ? DASH.fwd : DASH.back;
+    if (u.faint > 0 || u.rootT > 0 || !u.grounded || u.stamina <= D.cost) return false;
+    u.stamina -= D.cost; u.regenAt = sim.stepCount + Math.round(STAMINA.delay * 120);
+    u.followThrough = false; u.chase = false; u.running = false; u.glide = null;
+    setState(u, 'dash', dir > 0 ? ANIM.dashF : ANIM.dashB);
+    u.dashDir = dir; u.dashT = 0; u.vx = u.facing * dir * D.speed * u.char.stats.dash;
+    if (dir > 0) u.lastRunStep = sim.stepCount;
+    note({ type: 'dash', att: u.id, dir });
+    onEvent({ type: 'dust', x: u.x, y: u.y, dir: u.facing * dir });
+    return true;
+  }
+  sim.startDash = startDash;
   function updateUnit(u, opp, e) {
     // only from his feet: a vault begun in the air was cancelled by the landing and left him upstairs
     if (u.followDown && u.grounded && (MOVE_STATES.has(u.state) || u.state === 'block' || u.state === 'crouch' || u.state === 'landing' || (u.state === 'attack' && u.phase === 'recovery'))) {
@@ -1339,6 +1379,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (u.rootT > 0) { e.dx = 0; e.jump = false; u.running = false; }   // rooted (frame data root): no walk, run or jump; the guard still works
         if (tryAttack(u)) break;
         if (e.down) { u.vx = 0; u.followThrough = false; setState(u, 'crouch', e.block ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; break; }
+        // a double tap: the dash, forward (not out of a run: he's already going) or back. It comes before the
+        // guard: the second tap back gives the guard up for the hop
+        if (e.dash && !(e.dash > 0 && u.state === 'run') && startDash(u, e.dash)) break;
         // holding back walks back; the guard snaps on only when a strike that can reach him is coming
         // (a hit that lands while he holds back is blocked anyway: canGuard in applyHit)
         if (e.block && threat(u, opp)) { u.vx = 0; setState(u, 'block'); break; }
@@ -1364,6 +1407,23 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         }
         break;
       }
+      case 'dash': {
+        // A dash (startDash): `steps` of burst, then `rec` steps of braking. Nothing guards, jumps, crouches or walks
+        // in either part. Forward: a strike cuts it at any point (the dash attacks, resolveButton), and forward still
+        // held when the burst ends is the run. Back: nothing cuts it; a press waits in the buffer for the recovery.
+        const fwd = u.dashDir > 0, D = fwd ? DASH.fwd : DASH.back;
+        if (fwd) { u.lastRunStep = sim.stepCount; if (tryAttack(u)) break; }
+        u.dashT++;
+        if (u.dashT <= D.steps) { u.vx = u.facing * u.dashDir * D.speed * u.char.stats.dash; break; }
+        if (fwd && u.dashT === D.steps + 1 && e.dx === u.facing && u.stamina > 1 && !(u.rootT > 0)) { u.running = true; u.vx = u.facing * RUN * u.char.stats.run; setState(u, 'run'); break; }
+        u.vx *= DASH.brake;
+        if (u.dashT > D.steps + D.rec) {
+          u.vx = 0; u.dashDir = 0;
+          if (u.downHeld) { setState(u, 'crouch', u.backHeld ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; } else setState(u, 'idle');
+          tryAttack(u);
+        }
+        break;
+      }
       case 'celebrate':   // the winner's dance (see the 'match' phase): stand and loop it
         u.vx = 0;
         break;
@@ -1375,6 +1435,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (u.faint > 0) { setState(u, 'idle'); break; }
         if (tryAttack(u)) break;
         if (e.down) { setState(u, 'crouch', e.block ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; break; }
+        if (e.dash < 0 && startDash(u, e.dash)) break;   // the back dash out of a raised guard: the guard is gone for the hop
         if (!e.block || !threat(u, opp)) setState(u, 'idle');   // the threat is gone: back to walking back
         break;
       case 'crouch': {
@@ -1465,6 +1526,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
           // (the root already took that step when the clip ended: takeRoot)
           if (!u.hitConfirmed) note({ type: 'whiff', move: u.move, att: u.id });
           u.phase = null; u.move = null;
+          if (u.lowStance && !u.downHeld) u.crouchEnd = sim.stepCount;   // a crouching attack ending with down let go: he rises from here
+          u.lowStance = false;
           // still holding down: stay crouched (no stand-up pop between crouch attacks)
           if (u.downHeld && u.grounded) { setState(u, 'crouch', u.backHeld ? ANIM.crouchBlock : ANIM.crouch); u.crouch = true; }
           else setState(u, 'idle');
@@ -2998,7 +3061,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     sim.stepCount++;
     arena.update && arena.update(DT);
     refreshBounds();
-    sim.hitstopActive = Math.max(...sim.units.map(u => u.hitstop));
+    // a hidden unit (a KO'd goon taken off the floor) is never stepped, so a hitstop it was hidden in never counts
+    // down: counting it froze the whole fight's hitstop, and the camera with it, until the next wave
+    sim.hitstopActive = Math.max(0, ...sim.units.map(u => (u.hidden ? 0 : u.hitstop)));
     for (const u of sim.units) {
       u.prevX = u.x; u.prevBX = bodyX(u);
       // which side of the opponent he is on, remembered from the last moment both stood: separate()
