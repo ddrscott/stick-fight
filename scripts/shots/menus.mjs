@@ -332,6 +332,11 @@ for (const size of SIZES) {
     if (want('signInEmail') || want('signInCode')) {
       await go('modeSelect', 'onlineMenu', 'profile');
       await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /SAVE MY PROFILE/.test(i.el.textContent)); it && it.act(); });
+      // the age question comes first (13 OR OLDER goes on to the email; UNDER 13 is pictured at the end)
+      if (await at('ageCheck', 3000)) {
+        await shot('ageCheck');
+        await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /13 OR OLDER/.test(i.el.textContent)); it && it.act(); });
+      } else report('ageCheck', ['never got there']);
       if (await at('signInEmail', 3000)) {
         await page.keyboard.type(`scott.${tag}.${Date.now() % 100000}@example.com`);
         await shot('signInEmail');
@@ -340,6 +345,12 @@ for (const size of SIZES) {
         if (!(await at('signInCode', 8000))) await go('signInCode');
         if (await at('signInCode', 2000)) await shot('signInCode', 700); else report('signInCode', ['never got there']);
       } else report('signInEmail', ['never got there']);
+      if (want('ageCheck')) {   // UNDER 13: no email, the profile stays here
+        await go('modeSelect', 'onlineMenu', 'profile', 'ageCheck');
+        await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /UNDER 13/.test(i.el.textContent)); it && it.act(); });
+        await shot('ageCheck-under13');
+        await page.evaluate(() => localStorage.removeItem('stick-fight-age'));
+      }
     }
     if (want('onlineHost')) {
       await go('modeSelect', 'onlineMenu', 'onlineHost');
@@ -423,7 +434,7 @@ for (const size of SIZES) {
       const pctx = await browser.newContext({ viewport: { width: 960, height: 540 } });
       for (const [id, nm] of [['c', 'CAROL'], ['d', 'DMITRI']]) {
         const P = await pctx.newPage();
-        await P.addInitScript((x) => { localStorage.setItem('stick-fight-player', JSON.stringify({ id: x[0].repeat(32), name: x[1], email: '', crews: [] })); }, [id, nm]);
+        await P.addInitScript((x) => { localStorage.setItem('stick-fight-player', JSON.stringify({ id: x[0].repeat(32), name: x[1], email: '', crews: [] })); localStorage.setItem('stick-fight-track', '1'); }, [id, nm]);   // (a match is listed only when the host's events are on: off on localhost unless forced)
         await P.goto(URL_); await P.waitForFunction(() => window.__flow && window.__flow.state === 'attract');
         pages.push(P);
       }
