@@ -178,4 +178,24 @@ export default {
     { name: 'MANDATORY TRAINING', input: '← 2', note: 'slow long shove, sends him back' },
     { name: 'EXIT INTERVIEW', input: '2, 1, 2', note: 'string, writes him up, no knockdown' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs hrRep`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'hr_writeUp', tips: [
+      "It's a high. Crouch and the clipboard goes over your head, and a low kick (↓3) from down there hits him clean.",
+      "Blocked standing, a jab (1) punishes.",
+      "→ parries it.",
+    ] },
+    { move: 'hr_training', tips: [
+      "It's slow. Jab (1) or snap kick (3) as soon as he winds up and you hit him first.",
+      "It's a mid, so stand-block it. Crouching gets you shoved.",
+      "Blocked, he's wide open. The uppercut (↓2) punishes and launches.",
+    ] },
+    { string: 'EXIT INTERVIEW', tips: [
+      "Stand-block the opening cross. It pushes you back far enough that the jab behind it falls short, and the string dies there.",
+      "Then punish the missed jab with a snap kick (3).",
+      "Crouching from the start works too. The cross is a high and goes over your head.",
+    ] },
+  ],
 };

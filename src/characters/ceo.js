@@ -143,4 +143,23 @@ export default {
     { name: 'HOSTILE TAKEOVER', input: '↘ 2', note: 'launcher; in a juggle, the ender to the wall' },
     { name: 'STOCK SPLIT', input: '2, 1, 2', note: 'string, gut punch splits into an uppercut' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs ceo`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'ceo_parachute', tips: [
+      "Don't swing at it. Strikes and throws pass through him as he hops, and he has recovered before anything reaches him. Nothing punishes it afterwards.",
+      "The one exception is a guess, not a reaction: right next to him, →2 pressed at the very moment he hops still catches him.",
+    ] },
+    { move: 'ceo_takeover', tips: [
+      "Stand-block it. It's a mid that launches, and crouching puts you in the air.",
+      "Blocked, he's wide open. Jab (1) or snap kick (3) is the sure thing, and the uppercut (↓2) launches him instead.",
+      "It's too fast to out-press up close, where a jab only trades. Block it, or parry it with →.",
+    ] },
+    { string: 'STOCK SPLIT', tips: [
+      "Stand-block the opening cross. It pushes you back far enough that the jab behind it falls short, and the string dies before the gut punch.",
+      "Press snap kick (3) as you come out of blocking the cross. It lands before his jab does.",
+      "Or crouch from the start. The cross goes over your head and the string stops there.",
+    ] },
+  ],
 };

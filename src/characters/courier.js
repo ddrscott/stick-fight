@@ -110,4 +110,26 @@ export default {
     { name: 'DROP-OFF KNEE', input: '→→ 4', note: 'flying knee over lows, launches' },
     { name: 'SAME DAY', input: '1, 1, 3', note: 'string, ends in the slide' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs courier`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'expressSlide', tips: [
+      "Crouch-block it. It's a low, so a standing block gets swept, and jumping over it gets you hit every time.",
+      "Once it's blocked he's sitting on the floor just past jab range. Punish with →2, the lunge cross. A jab, a throw and every low come up short.",
+      "Better, stop it before it starts: a snap kick (3) thrown while he's still running in beats the slide. It's easy up close and from far away, and tight from the middle distance. A jab only wins up close and early. From farther out it trades.",
+      "↘ parries it. Tap just before his foot gets to you, not when he starts the dash.",
+    ] },
+    { move: 'dropOffKnee', tips: [
+      "It's a mid, so stand-block it. Crouching loses, with or without a block.",
+      "Blocked, he's open: jab (1) or snap kick (3) as soon as you can move. The cross and the roundhouse are too slow, unless the knee missed you completely.",
+      "Hit him out of the run. A jab (1), a snap kick (3) or an uppercut (↓2) thrown as he dashes in all land first. Lows are a bad bet: from mid-range the knee hops over them.",
+      "It comes off the same dash as the slide, so the dash is the tell. A snap kick (3) into the run beats both.",
+    ] },
+    { string: 'SAME DAY', tips: [
+      "Don't stand-block all three. Block the two jabs standing and the slide hits you low before you can change your guard.",
+      "Crouch-block from the start instead. The first jab goes over your head, the string stops there, and a low kick (↓3) punishes him.",
+      "Already blocked the first jab standing? Press low kick (↓3) at once. It goes under his second jab and hits first.",
+    ] },
+  ],
 };

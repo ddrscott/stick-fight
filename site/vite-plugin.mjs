@@ -5,12 +5,19 @@
 //   - fills the homepage's markers from .site/home.json: <!--@roster--> (the cast grid), <!--@count--> (how many fighters) and <!--@stages--> (the arcade ladder's
 //     length); a marker with no fill fails the build;
 //   - in dev, regenerates and reloads when a character file, the frame data, the rig or the site's own
-//     templates change.
+//     templates change;
+//   - cuts the `strategy` field (the fighter pages' STRATEGY tips) out of every character file the browser
+//     loads. The tips are for the pages only: the generator reads them in Node, straight from the file, and
+//     the game's bundle never carries them. A bundle that still holds one fails the build.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const WATCH = /[\\/](src[\\/]characters[\\/]|src[\\/]combat[\\/](frameData|strings|hitboxes)\.js|src[\\/]fighter[\\/]index\.js|src[\\/]flow[\\/](controls|ladder)\.js|site[\\/](data|templates|generate|guide)\.mjs)/;
+
+const CHAR_FILE = /[\\/]src[\\/]characters[\\/][^\\/]+\.js$/;
+// the field as the character files write it: `  strategy: [` on its own line, down to the `  ],` that closes it
+const STRATEGY = /\n  strategy: \[\n[\s\S]*?\n  \],?(?=\n)/;
 
 export function sitePlugin() {
   let root = process.cwd();
@@ -30,6 +37,17 @@ export function sitePlugin() {
       if (env.isPreview) return;
       generate();
       return { build: { rollupOptions: { input: pages() } } };
+    },
+    transform(code, id) {
+      if (!CHAR_FILE.test(id.split('?')[0]) || !code.includes('strategy:')) return null;
+      const out = code.replace(STRATEGY, '');
+      if (out.includes('strategy:')) this.error(`[site] ${id}: couldn't cut the strategy field out for the browser. Write it as "  strategy: [" on its own line, closed by "  ]," on its own line.`);
+      return { code: out, map: null };
+    },
+    generateBundle(_, bundle) {
+      for (const [name, chunk] of Object.entries(bundle)) {
+        if (chunk.type === 'chunk' && /\btips:\s*\[/.test(chunk.code)) this.error(`[site] ${name} carries STRATEGY tips: they belong on the fighter pages only`);
+      }
     },
     transformIndexHtml(html) {
       if (!/<!--@\w+-->/.test(html)) return html;

@@ -132,4 +132,26 @@ export default {
     { name: 'SHOULDER CHECK', input: '← 2', note: 'armored charge, wall bounce' },
     { name: 'LOCKDOWN', input: '1, 2, 1', note: 'string, overhead hammer' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs security`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'escort', tips: [
+      "You can't block it and you can't break it. Crouch (↓) and it goes over your head.",
+      "Crouch under it and he's stuck for a long time. Any button punishes, so use the uppercut (↓2) and take the launch.",
+      "It only reaches about one step. A low jab (↓1) or a low kick (↓3) beats it clean, even pressed a moment after he starts reaching.",
+      "Jumping doesn't get you out. He grabs you before you leave the ground.",
+    ] },
+    { move: 'shoulderCheck', tips: [
+      "Don't hit into it. It has armor: your strike lands, he keeps coming, and you're the one knocked down.",
+      "Stand-block it. It's a mid, so a crouch-block loses. Then punish with a jab (1), a snap kick (3) or →2.",
+      "A throw (1+3) goes straight through the armor when he's within arm's reach.",
+      "→ parries it like any other mid.",
+    ] },
+    { string: 'LOCKDOWN', tips: [
+      "Stand-block all three hits. It's safe once it's blocked: he ends up out of reach, so don't swing after it.",
+      "Break it early instead. After you block the first jab, jab back (1). His cross is slow to follow and yours lands first.",
+      "Or crouch from the start. The first jab goes over your head and the string stops there.",
+    ] },
+  ],
 };

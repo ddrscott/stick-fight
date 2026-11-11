@@ -202,6 +202,30 @@ function moveCard(s, card) {
     </article>`;
 }
 
+// STRATEGY: one block per unique move or string, its name and input, then how to beat it (the character
+// file's `strategy` field through site/data.mjs; every tip measured by gauntlet/counters.mjs)
+function counterCard(x) {
+  const inputs = x.inputs.map((i) => `<span class="s-in">${esc(i.input)}</span>${i.how ? `<span class="s-how">${esc(i.how)}</span>` : ''}`).join('<span class="s-or">or</span>');
+  return `<article class="s-counter" id="beat-${esc(x.id)}">
+      <h3 class="s-h3">${esc(x.name)}</h3>
+      <p class="s-inputs">${inputs}</p>
+      <ul>
+        ${x.tips.map((t) => `<li>${esc(t)}</li>`).join('\n        ')}
+      </ul>
+    </article>`;
+}
+function strategySection(s, temp) {
+  const mine = s.id === temp.id;
+  return `<section class="s-section" id="strategy">
+    <h2 class="s-h2">STRATEGY</h2>
+    <p class="s-note">How to beat ${mine ? `the strings every fighter shares. ${esc(s.name)} has no moves of its own, so this is the page for all of them` : `${esc(s.name)}'s own moves`}. Here → is toward ${esc(s.name)} and ← is away, 1 2 3 4 are your buttons, and ↘ is down and toward. Every tip was scripted against the move in the game, with a TEMP doing the answering, and kept only if it worked.</p>
+    <div class="s-strat">
+    ${s.strategy.map(counterCard).join('\n    ')}
+    </div>
+    ${mine ? '' : `<p class="s-note s-strat-more">${esc(s.name)} still has ${s.strings.dropped.length ? 'most of ' : ''}the strings every fighter shares. <a href="../${temp.id}/#strategy">How to beat those is on TEMP's page.</a></p>`}
+  </section>`;
+}
+
 function basicsTable(s) {
   const rows = s.basics.map((b) => {
     const r = b.row;
@@ -300,6 +324,8 @@ ${topbar(root)}
     ${s.moves.map((m) => moveCard(s, m)).join('\n    ')}
     </div>` : `<p class="s-lede">${esc(s.name)} has no unique moves. Every shared move and every shared string, exactly as the game started: the baseline every other fighter is measured against.</p>`}
   </section>
+
+  ${strategySection(s, sheets[0])}
 
 ${s.dance ? `<section class="s-section" id="celebration">
     <h2 class="s-h2">CELEBRATION</h2>

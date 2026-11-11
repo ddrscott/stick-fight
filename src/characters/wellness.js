@@ -197,4 +197,31 @@ export default {
     { name: 'ROOT SWEEP', input: '← 1, 3', note: 'low sweep, knocks down' },
     { name: 'SUN SALUTATION', input: '1, 3, 4', note: 'string, overhead split kick' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs wellness`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'wellness_treePose', also: ['wellness_exhale'], tips: [
+      "The pose has no guard. Hit her while she's standing on one leg: up close any button works, and the cross (2) or →2 reaches from a step back.",
+      "Out of it she picks a mid (CRANE KICK, 4) or a low (ROOT SWEEP, 3). No block stops both, so don't stand there waiting to find out.",
+      "Holding ← walks you out of the kick's reach, but the sweep is longer and can still catch a standing block up close.",
+      "If she steps out with EXHALE (2) nothing comes at you. Right next to her a jab (1) catches the step out. From farther back she has recovered first.",
+    ] },
+    { move: 'wellness_craneKick', tips: [
+      "It's a mid, so stand-block it. Crouching gets you launched, blocking or not.",
+      "Blocked, she's open: snap kick (3) or →2.",
+      "It comes out the instant she presses, so once she's in the pose don't wait for it. Hit her first, or parry it with →.",
+    ] },
+    { move: 'wellness_rootSweep', tips: [
+      "Crouch-block it. It's a low, and it reaches farther than the kick.",
+      "It's the slow one of the two, but don't wait to see it. A body blow (→1) or a snap kick (3) thrown while she's still in the pose beats it.",
+      "Blocked, →2 punishes.",
+      "↘ parries it.",
+    ] },
+    { string: 'SUN SALUTATION', tips: [
+      "Stand-block all three hits.",
+      "Blocked, she's stuck for a long time. As soon as you can move, the cross (2) or →2 punishes.",
+      "Or crouch from the start. The first jab goes over your head, the string stops there, and a low kick (↓3) punishes.",
+    ] },
+  ],
 };

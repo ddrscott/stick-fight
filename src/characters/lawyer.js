@@ -180,6 +180,26 @@ export default {
     { name: 'CROSS-EXAMINATION', input: '→ 1', note: 'quick mid, plus on block: then throw or mid' },
     { name: 'CLOSING ARGUMENT', input: '2, 3, 2', note: 'string, briefcase swing, wall splat' },
   ],
+  // STRATEGY, for the fighter page only (README, Site): how to beat each unique move. The game never shows it,
+  // and site/vite-plugin.mjs cuts it from the bundle. Every tip is measured: `node gauntlet/counters.mjs lawyer`
+  // prints the numbers behind each one. Measure again when the frame data changes.
+  strategy: [
+    { move: 'lawyer_objection', also: ['lawyer_sustained'], tips: [
+      "It only catches throws. Any strike beats it: he stands there with his hand up for over half a second, so hit him. The cross (2) or →2 has all the time it needs.",
+      "Don't throw him while the hand is up. He catches it and throws you instead, and that throw can't be broken.",
+    ] },
+    { move: 'lawyer_crossExam', tips: [
+      "Stand-block it. It's a quick mid, and after you block it he still moves first, so a jab back loses.",
+      "What comes next is a throw or a kick. Press throw (1+3) as you come out of the block. That breaks his throw, and you have about a third of a second to do it. Pressed promptly, it also grabs him out of the snap kick or the overhead.",
+      "Crouching is wrong twice. Cross-Examination hits a croucher, and there's no time to duck the throw behind it.",
+      "→ parries it, but only as a guess. It lands almost as soon as he presses.",
+    ] },
+    { string: 'CLOSING ARGUMENT', tips: [
+      "Stand-block the opening cross. It pushes you back far enough that the kick behind it falls short, and the string dies there.",
+      "Then punish the missed kick with your own cross (2) or →2.",
+      "Crouching from the start works too. The cross is a high and goes over your head.",
+    ] },
+  ],
 };
 
 // a throw or a command grab
