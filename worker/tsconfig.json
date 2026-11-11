@@ -8,6 +8,8 @@
     "lib": ["ES2022"],
     "strict": true,
     "noEmit": true,
+    // worker/og-layout.ts imports og-metrics.ts by its full name, so Node can load it for scripts/og/check.mjs
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "types": [],

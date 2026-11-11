@@ -7,6 +7,7 @@ export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
   CREWS: DurableObjectNamespace<Crew>;
   LOBBY: DurableObjectNamespace<Lobby>;   // the LIVE list of watchable quick matches (worker/index.ts Lobby)
+  ASSETS: Fetcher;           // the static files (dist/): play/ for the share previews, and og/ for their images (worker/og.ts)
   DB: D1Database;            // profiles and sign-in (worker/auth.ts, migrations/)
   EMAIL: SendEmail;          // sign-in codes, from EMAIL_FROM
   EMAIL_FROM: string;
@@ -16,6 +17,7 @@ export interface Env {
   AUTH_LIMIT?: RateLimit;    // profile and sign-in calls per IP
   EVENT_LIMIT?: RateLimit;   // analytics events per IP
   STATS_LIMIT?: RateLimit;   // GET /api/stats per IP (worker/stats.ts)
+  OG_LIMIT?: RateLimit;      // share images drawn per IP (worker/og.ts; a cached one doesn't count)
   EVENTS?: AnalyticsEngineDataset;   // game analytics (worker/index.ts track, README Analytics)
   TURN_KEY_ID?: string;      // secrets; absent in local dev unless .dev.vars has them
   TURN_KEY_API_TOKEN?: string;

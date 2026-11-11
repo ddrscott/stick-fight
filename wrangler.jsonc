@@ -19,10 +19,11 @@
   "observability": { "enabled": true },
   "assets": {
     "directory": "dist",
+    "binding": "ASSETS",
     // /stick-fight redirects to /stick-fight/, so the page's relative ./src/... paths resolve
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "none",
-    "run_worker_first": ["/stick-fight/api/*"]
+    "run_worker_first": ["/stick-fight/api/*", "/stick-fight/play/", "/stick-fight/play/index.html", "/stick-fight/", "/stick-fight/index.html"]
   },
   "durable_objects": {
     // ROOMS: one per quick room, named by its four-letter code (worker/index.ts).
@@ -55,7 +56,9 @@
     // analytics events per IP (POST /api/e)
     { "name": "EVENT_LIMIT", "namespace_id": "7105", "simple": { "limit": 60, "period": 60 } },
     // GET /api/stats per IP (the answer is cached at the edge, so this only guards the limiter itself)
-    { "name": "STATS_LIMIT", "namespace_id": "7106", "simple": { "limit": 60, "period": 60 } }
+    { "name": "STATS_LIMIT", "namespace_id": "7106", "simple": { "limit": 60, "period": 60 } },
+    // share images drawn per IP (api/og/..., worker/og.ts); one served from the edge cache doesn't count
+    { "name": "OG_LIMIT", "namespace_id": "7107", "simple": { "limit": 20, "period": 60 } }
   ],
   // Game analytics (Workers Analytics Engine): cookieless events, no player ids; query with the
   // SQL API (README, Analytics). The dataset is created on the first write.

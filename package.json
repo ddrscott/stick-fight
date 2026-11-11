@@ -22,7 +22,8 @@
     "test:ios": "node scripts/ios/check.mjs",
     "test:movelist": "node scripts/movelist/check.mjs",
     "test:horde": "node scripts/horde/check.mjs",
-    "test:square": "node scripts/shots/portrait.mjs --check --only 390x844,412x915,375x667 --out gauntlet/tmp/portrait && node scripts/shots/square-fit.mjs"
+    "test:square": "node scripts/shots/portrait.mjs --check --only 390x844,412x915,375x667 --out gauntlet/tmp/portrait && node scripts/shots/square-fit.mjs",
+    "test:unfurl": "node scripts/og/check.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",
@@ -31,5 +32,9 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.6",
     "wrangler": "^4.158.0"
+  },
+  "dependencies": {
+    "@jsquash/jpeg": "^1.6.0",
+    "@resvg/resvg-wasm": "^2.6.2"
   }
 }
