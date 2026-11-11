@@ -1,7 +1,7 @@
 // Join links ask nothing (README, Arcade flow, Versus online): real browsers through the local Worker.
 //
 //   npm run build && npm run dev:worker        (the Worker serving dist/ and the API on :8787)
-//   node scripts/join/check.mjs [http://127.0.0.1:8787/stick-fight/] [--shots dir]
+//   node scripts/join/check.mjs [http://127.0.0.1:8787/] [--shots dir]
 //
 // A host opens a quick room; a visitor with empty storage opens its ?room= link and has to land on the
 // pick screen without a key, a tap or a letter typed. Then the same for a ?crew= link and the crew lobby,
@@ -12,7 +12,7 @@ import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 import fs from 'node:fs';
 
 const argv = process.argv.slice(2);
-const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/stick-fight/').replace(/\/?$/, '/');
+const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const SHOTS = argv.includes('--shots') ? argv[argv.indexOf('--shots') + 1] : '';
 const API = BASE + 'api/', PLAY = BASE + 'play/';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });

@@ -1,5 +1,5 @@
 // Neon Stick Fight service worker: the installed app opens fast and plays offline.
-// It sits at the app's root (/stick-fight/sw.js), so its scope covers every page: the homepage, the game
+// It sits at the app's root (/sw.js), so its scope covers every page: the homepage, the game
 // at play/ (where the installed app starts) and the fighter pages.
 // Hashed build files (assets/*) never change, so they're cache-first; pages and everything else are
 // network-first with the cache as the fallback, so a deploy shows up on the next launch. Offline, a page

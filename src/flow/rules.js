@@ -1,7 +1,7 @@
 // The match rules a player picks: how many rounds (best of 1, 3 or 5) and how long a round runs (30, 60 or
 // 99 seconds, or no limit). Kept in localStorage like the botch switch (src/flow/techniques.js); the keys
-// start with stick-fight- because the origin is shared. Every access is wrapped: blocked storage keeps the
-// defaults. src/main.js puts them on the sim (sim.roundTime, sim.winsNeeded) for the flow's fights; online,
+// start with stick-fight- from when the origin was shared (askscottpierce.com), kept so nothing resets.
+// Every access is wrapped: blocked storage keeps the defaults. src/main.js puts them on the sim (sim.roundTime, sim.winsNeeded) for the flow's fights; online,
 // the host's rules ride the start message (src/net/online.js), and ?scene= test pages always use the defaults.
 export const ROUND_TIMES = [30, 60, 99, 0];   // 0 = no limit
 export const BEST_OF = [1, 3, 5];

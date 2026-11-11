@@ -1,22 +1,23 @@
-// The Worker behind https://askscottpierce.com/stick-fight/api/*: online rooms, crew rooms and
-// profiles (see README, "Multiplayer"). Everything else under /stick-fight is the static game,
-// served by the assets binding before this script runs (wrangler.jsonc: run_worker_first covers
-// the API, play/ and the homepage; the last two go straight back to the assets unless the query has
-// a crew or a room). A request that reaches the script anywhere else is a 404.
+// The Worker behind https://neonstickfight.com: online rooms, crew rooms and profiles under /api/*
+// (see README, "Multiplayer"). Everything else is the static game, served by the assets binding
+// (wrangler.jsonc: run_worker_first covers the API and the pages; play/ and the homepage get share
+// tags or a redirect when the query has a crew or a room, every other page goes straight back to the
+// assets). www.neonstickfight.com is a 301 to the bare domain, and askscottpierce.com/stick-fight,
+// the old address, is served or redirected by oldPath (README, Hosting).
 //
-//   POST /stick-fight/api/rooms              -> { code }   a new quick room, four characters
-//   GET  /stick-fight/api/rooms/<code>/ws    -> WebSocket   ?role=host|guest
-//   GET  /stick-fight/api/rooms/<code>/watch -> WebSocket   a spectator (quick rooms only; see Spectators below)
-//   GET  /stick-fight/api/live               -> { live: [...] }   the quick matches on right now, cached 5 s
-//   GET  /stick-fight/api/ice                -> { iceServers, ttl, turn }   for RTCPeerConnection
-//   POST /stick-fight/api/crews              -> { slug }   a new crew room ({ name }), worker/crew.ts
-//   GET  /stick-fight/api/crews/<slug>/ws    -> WebSocket   the crew lobby
-//   POST /stick-fight/api/e                  -> 204         analytics events from the page (README, Analytics)
-//   GET  /stick-fight/api/stats              -> the all-time pick and matchup rollups, worker/stats.ts
-//   GET  /stick-fight/api/og/crew/<slug>.jpg, og/room/<CODE>.jpg   share images, worker/og.ts
-//   GET  /stick-fight/play/?crew=|?room=     the game page with the room's share tags, worker/og.ts
-//   GET  /stick-fight/?crew=|?room=          301 to play/ (a link from before the move, for bots)
-//   POST /stick-fight/api/auth/start, auth/verify, auth/logout; GET and PUT /stick-fight/api/me
+//   POST /api/rooms              -> { code }   a new quick room, four characters
+//   GET  /api/rooms/<code>/ws    -> WebSocket   ?role=host|guest
+//   GET  /api/rooms/<code>/watch -> WebSocket   a spectator (quick rooms only; see Spectators below)
+//   GET  /api/live               -> { live: [...] }   the quick matches on right now, cached 5 s
+//   GET  /api/ice                -> { iceServers, ttl, turn }   for RTCPeerConnection
+//   POST /api/crews              -> { slug }   a new crew room ({ name }), worker/crew.ts
+//   GET  /api/crews/<slug>/ws    -> WebSocket   the crew lobby
+//   POST /api/e                  -> 204         analytics events from the page (README, Analytics)
+//   GET  /api/stats              -> the all-time pick and matchup rollups, worker/stats.ts
+//   GET  /api/og/crew/<slug>.jpg, og/room/<CODE>.jpg   share images, worker/og.ts
+//   GET  /play/?crew=|?room=     the game page with the room's share tags, worker/og.ts
+//   GET  /?crew=|?room=          301 to play/ (a link from before the game moved to play/, for bots)
+//   POST /api/auth/start, auth/verify, auth/logout; GET and PUT /api/me
 //                                            profiles and email sign-in, worker/auth.ts
 //
 // /ice hands out Cloudflare TURN credentials (Realtime TURN, the key in the TURN_KEY_ID and
@@ -48,7 +49,7 @@
 // A spectator's socket is tagged "spectator": nothing it sends is passed on or read (a "ping" is
 // answered without waking the object). A room a crew claimed is private: no spectators, never listed.
 import { DurableObject } from "cloudflare:workers";
-import { type Env, type LiveEntry, API, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName, track } from "./env";
+import { type Env, type LiveEntry, API, OLD_PREFIX, SITE_HOST, siteOrigin, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName, track } from "./env";
 import { isBatch } from "../src/net/watchlog.js";
 import { createWatchRoom } from "../src/net/watchroom.js";
 
@@ -141,12 +142,71 @@ async function iceServers(env: Env): Promise<Response> {
   return json({ iceServers: [{ urls: STUN }], ttl: 0, turn: false });
 }
 
+// ---- the front door: which host and path asked -----------------------------------------------------
+
+const moved = (location: string, cache = "public, max-age=3600") => new Response(null, { status: 301, headers: { location, "cache-control": cache } });
+
+// What an old service worker at askscottpierce.com/stick-fight/sw.js is replaced with once the old path
+// redirects: it clears this app's caches and unregisters itself, so an old install stops answering
+// pages from its cache and its next visit follows the redirect. A redirect can't stand in for a
+// service worker script (the browser refuses it and keeps the old one).
+const RETIRED_SW = `self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys()
+  .then((keys) => Promise.all(keys.filter((k) => k.startsWith('stick-fight-')).map((k) => caches.delete(k))))
+  .then(() => self.registration.unregister())));
+`;
+
+/** askscottpierce.com/stick-fight and everything under it, where the game lived until 2026-11-11.
+ *  OLD_PATH "redirect": a 301 to the same page on neonstickfight.com, query and all (a fragment such as
+ *  #signin=... rides along: the browser keeps it across a redirect). The API is still answered here,
+ *  so a tab opened before the move finishes its match. "serve" (until the new domain is checked): the
+ *  game itself, the request handed to the app with the prefix taken off and the answer's paths put
+ *  back. */
+async function oldPath(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(req.url);
+  const rest = url.pathname.slice(OLD_PREFIX.length) || "/";
+  const api = rest.startsWith(API);
+  if (env.OLD_PATH === "redirect" && !api) {
+    if (rest === "/sw.js") return new Response(RETIRED_SW, { headers: { "content-type": "text/javascript", "cache-control": "no-cache" } });
+    const q = url.searchParams;
+    // the oldest links, /stick-fight/?crew= and ?room=, go straight to the game rather than through the homepage's own 301
+    const path = (rest === "/" || rest === "/index.html") && (q.has("crew") || q.has("room")) ? "/play/" : rest;
+    return moved(`${siteOrigin(url)}${path}${url.search}`);
+  }
+  if (url.pathname === OLD_PREFIX) return moved(`${OLD_PREFIX}/${url.search}`, "no-store");   // the page's relative paths need the slash
+  const inner = new URL(url);
+  inner.pathname = rest;
+  const res = await app(new Request(inner.toString(), req), env, ctx);
+  if (res.webSocket) return res;
+  const location = res.headers.get("location"), cookie = res.headers.get("set-cookie");
+  if (!(location?.startsWith("/") && !location.startsWith("//")) && !cookie) return res;
+  const out = new Response(res.body, res);
+  if (location?.startsWith("/") && !location.startsWith("//")) out.headers.set("location", OLD_PREFIX + location);
+  if (cookie) out.headers.set("set-cookie", cookie.replace(/; Path=\/(?=;|$)/, `; Path=${OLD_PREFIX}`));   // the origin there is shared with other apps
+  return out;
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
-    if (url.pathname === "/stick-fight/play/" || url.pathname === "/stick-fight/play/index.html") return playPage(req, env, ctx);
-    if (url.pathname === "/stick-fight/" || url.pathname === "/stick-fight/index.html") return oldLink(req, env);
-    if (!url.pathname.startsWith(API)) return notFound();
+    if (url.hostname === `www.${SITE_HOST}`) return moved(`https://${SITE_HOST}${url.pathname}${url.search}`, "public, max-age=86400");
+    if (url.pathname === OLD_PREFIX || url.pathname.startsWith(OLD_PREFIX + "/")) {
+      // on the new domain a stray /stick-fight/... path just loses its prefix
+      if (url.hostname === SITE_HOST) return moved((url.pathname.slice(OLD_PREFIX.length) || "/") + url.search);
+      return oldPath(req, env, ctx);
+    }
+    return app(req, env, ctx);
+  },
+} satisfies ExportedHandler<Env>;
+
+/** The game at the root of its own host: the API, the two pages with share tags, and the assets. */
+async function app(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  {
+    const url = new URL(req.url);
+    if (url.pathname === "/play/" || url.pathname === "/play/index.html") return playPage(req, env, ctx);
+    if (url.pathname === "/" || url.pathname === "/index.html") return oldLink(req, env);
+    // run_worker_first also sends every page here (for the www redirect above): the rest is the assets'
+    if (!url.pathname.startsWith(API)) return env.ASSETS.fetch(req);
     const parts = url.pathname.slice(API.length).split("/").filter(Boolean);
 
     if (parts.length === 1 && parts[0] === "rooms") {
@@ -248,8 +308,8 @@ export default {
     if (auth) return auth;
 
     return notFound();
-  },
-} satisfies ExportedHandler<Env>;
+  }
+}
 
 type Role = "host" | "guest";
 const other = (r: Role): Role => (r === "host" ? "guest" : "host");

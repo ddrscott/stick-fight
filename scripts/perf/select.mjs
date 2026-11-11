@@ -37,7 +37,7 @@ const DEVICES = {
 };
 
 const root = opt('--dist') ? path.resolve(opt('--dist')) : path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../dist');
-if (!fs.existsSync(path.join(root, 'stick-fight/play/index.html'))) { console.error('no build: run npm run build first'); process.exit(2); }
+if (!fs.existsSync(path.join(root, 'play/index.html'))) { console.error('no build: run npm run build first'); process.exit(2); }
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
 const server = http.createServer((req, res) => {
   let p = path.join(root, decodeURIComponent(req.url.split('?')[0]));
@@ -47,7 +47,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
-const base = `http://127.0.0.1:${server.address().port}/stick-fight/play/`;
+const base = `http://127.0.0.1:${server.address().port}/play/`;
 
 const browser = await chromium.launch({ headless: true, executablePath, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-blink-features=AutomationControlled'] });
 

@@ -25,7 +25,7 @@ const ctx = await browser.newContext({ viewport: { width: 915, height: 412 }, de
 const page = await ctx.newPage();
 const cdp = await ctx.newCDPSession(page);
 await cdp.send('Emulation.setCPUThrottlingRate', { rate: +opt('--throttle', 4) });
-await page.goto(`http://127.0.0.1:${server.address().port}/stick-fight/play/?${query}`);
+await page.goto(`http://127.0.0.1:${server.address().port}/play/?${query}`);
 await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
 await page.waitForTimeout(3000);
 const events = [];

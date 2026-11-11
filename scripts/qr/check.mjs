@@ -4,7 +4,7 @@
 //
 //   node scripts/qr/check.mjs                      the encoder alone: every text length, and real links of both kinds
 //   npm run build && npx wrangler dev --port 8787  then, with the Worker up (it makes the rooms):
-//   node scripts/qr/check.mjs --url http://127.0.0.1:8787/stick-fight/ [--out dir]
+//   node scripts/qr/check.mjs --url http://127.0.0.1:8787/ [--out dir]
 //
 // With --url it opens the host screen (before the room opens, and after) and a crew lobby in headless
 // Chromium at 1280x720, 844x390 and 390x844, decodes the code out of each whole screenshot, and checks
@@ -38,9 +38,9 @@ function raster(qr, px) {
 const readBack = (text, px = 4) => { const qr = encodeQR(text); if (!qr) return null; const { d, n } = raster(qr, px); const r = jsQR(d, n, n); return { qr, text: r ? r.data : null }; };
 
 const LINKS = [
-  ['a quick room', 'https://askscottpierce.com/stick-fight/play/?room=K7QX'],
-  ['a crew room', 'https://askscottpierce.com/stick-fight/play/?crew=tuesday-crew-7k2qm'],
-  ['the longest crew name', 'https://askscottpierce.com/stick-fight/play/?crew=wwwwwwwwwwwwwwwwwwww-7k2qm'],
+  ['a quick room', 'https://neonstickfight.com/play/?room=K7QX'],
+  ['a crew room', 'https://neonstickfight.com/play/?crew=tuesday-crew-7k2qm'],
+  ['the longest crew name', 'https://neonstickfight.com/play/?crew=wwwwwwwwwwwwwwwwwwww-7k2qm'],
   ['a quick room on npm run dev', 'http://localhost:8077/play/?room=K7QX'],
   ['a crew room on a dev tunnel', 'https://stick-fight-dev.dataturd.com/play/?crew=tuesday-crew-7k2qm'],
 ];

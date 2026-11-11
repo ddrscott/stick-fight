@@ -203,7 +203,7 @@ for (const [w, h, touch] of [[844, 390, true], [1280, 720, false]]) {
 }
 
 // ---- the online pick screen held upright, through the local Worker (npm run build && npm run dev:worker):
-//      --online http://127.0.0.1:8787/stick-fight/play/   a host on a desktop, a guest on an upright phone
+//      --online http://127.0.0.1:8787/play/   a host on a desktop, a guest on an upright phone
 const ONLINE = opt('--online', '');
 if (ONLINE) {
   const T = '[online pick screen, guest upright 390x844]';

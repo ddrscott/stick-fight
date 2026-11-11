@@ -7,8 +7,8 @@
 // line saying what tapping does, and a picture of the room's name. Everyone gets the same tags, bot or
 // not; the page is otherwise byte for byte the asset. An unknown or expired crew gets the plain page.
 //
-//   GET /stick-fight/api/og/crew/<slug>.jpg?v=<v>   the crew's image, 1200x630
-//   GET /stick-fight/api/og/room/<CODE>.jpg         a quick room's image
+//   GET /api/og/crew/<slug>.jpg?v=<v>   the crew's image, 1200x630
+//   GET /api/og/room/<CODE>.jpg         a quick room's image
 //
 // The image is an SVG drawn here (public/og/bg.jpg behind it, Bungee and Teko from public/og/*.ttf) and
 // rasterized by resvg, then encoded as a JPEG by mozjpeg (both WebAssembly; a PNG of the photo-like
@@ -19,11 +19,11 @@ import { Resvg, initWasm } from "@resvg/resvg-wasm";
 import resvgWasm from "@resvg/resvg-wasm/index_bg.wasm";
 import encodeJpeg, { init as initJpeg } from "@jsquash/jpeg/encode";
 import jpegWasm from "@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm";
-import { type Env, API, CODE_RE, allowed, sha256 } from "./env";
+import { type Env, API, CODE_RE, allowed, sha256, siteOrigin } from "./env";
 import { SLUG_RE } from "./crew";
 import { NAME_W, fitName, textWidth } from "./og-layout";
 
-const ROOT = "/stick-fight/";
+const ROOT = "/";
 const W = 1200, H = 630;
 /** bump when the image's layout changes, so every cached crew image is drawn again */
 const LOOK = 2;
@@ -35,8 +35,8 @@ const PITCH = "Tap to join: no sign-up, pick a fighter and fight.";
 type Card = { name: string; members: number };
 type Preview = { title: string; description: string; url: string; image: string; alt: string };
 
-/** the origin a share tag points at: https on the public host (wrangler dev hands the script http) */
-const publicOrigin = (u: URL) => (u.hostname === "localhost" || u.hostname === "127.0.0.1" ? u.origin : `https://${u.host}`);
+/** the origin a share tag points at: neonstickfight.com, even when the old address asked (env.ts siteOrigin) */
+const publicOrigin = siteOrigin;
 const cache = () => (caches as unknown as { default: Cache }).default;
 
 // ---- the crew's name, from its Durable Object (cached) --------------------------------------------
@@ -94,7 +94,7 @@ async function preview(req: Request, env: Env, ctx: ExecutionContext): Promise<P
   return null;
 }
 
-/** GET /stick-fight/play/ (and play/index.html). No crew or room in the query: the asset, untouched. */
+/** GET /play/ (and play/index.html). No crew or room in the query: the asset, untouched. */
 export async function playPage(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const q = new URL(req.url).searchParams;
   if (req.method !== "GET" || (!q.has("crew") && !q.has("room"))) return env.ASSETS.fetch(req);
@@ -120,7 +120,7 @@ export async function playPage(req: Request, env: Env, ctx: ExecutionContext): P
   return new Response(out.body, { status: 200, headers });
 }
 
-/** /stick-fight/ with ?crew= or ?room=: a link from before the game moved to play/. The page's script
+/** The homepage with ?crew= or ?room=: a link from before the game moved to play/. The page's script
  *  forwards people, but unfurl bots run no script, so the Worker answers with a real redirect. */
 export function oldLink(req: Request, env: Env): Promise<Response> | Response {
   const url = new URL(req.url);

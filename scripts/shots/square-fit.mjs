@@ -26,7 +26,7 @@ let bad = 0;
 for (const size of SIZES) for (const scene of SCENES) {
   const ctx = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
-  await page.goto(`http://127.0.0.1:${/** @type {any} */ (server.address()).port}/stick-fight/play/?scene=${scene}&tier=1`);
+  await page.goto(`http://127.0.0.1:${/** @type {any} */ (server.address()).port}/play/?scene=${scene}&tier=1`);
   await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready && document.documentElement.classList.contains('sq'), null, { timeout: 60000 });
   const r = await page.evaluate(([s, n]) => {
     const g = window.__game, G = window.__gauntlet, cam = g.camera;

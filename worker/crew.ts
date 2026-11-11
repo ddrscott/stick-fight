@@ -1,5 +1,5 @@
 // A crew room (README, "Multiplayer", Crew rooms): a group of friends with a permanent link
-// (https://askscottpierce.com/stick-fight/?crew=<slug>). One Durable Object per crew, named by its
+// (https://neonstickfight.com/play/?crew=<slug>). One Durable Object per crew, named by its
 // slug, keeping the crew in its own SQLite storage:
 //
 //   meta      the crew's name, slug, when it was made, when it expires

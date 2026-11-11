@@ -1,7 +1,7 @@
 // Shared crew and room links unfurl as that room (README, Site, Share image). Against the local Worker:
 //
 //   npm run build && npm run dev:worker      (the Worker serving dist/ and the API on :8787; .dev.vars with DEV_HOOKS=1)
-//   node scripts/og/check.mjs [http://127.0.0.1:8787/stick-fight/] [--out dir]
+//   node scripts/og/check.mjs [http://127.0.0.1:8787/] [--out dir]
 //
 // First the image's text layout, in Node: every crew name the rules allow fits in two lines clear of the
 // fighters. Then through the Worker, as the unfurl bots see it (plain HTTP, no script): a crew link's
@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import { fitName, textWidth, NAME_W } from '../../worker/og-layout.ts';
 
 const argv = process.argv.slice(2);
-const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/stick-fight/').replace(/\/?$/, '/');
+const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const OUT = argv.includes('--out') ? argv[argv.indexOf('--out') + 1] : '';
 if (OUT) fs.mkdirSync(OUT, { recursive: true });
 const results = [];
@@ -67,7 +67,7 @@ function jpegSize(b) {
   }
   return null;
 }
-const local = (u) => u.replace(/^https:\/\/askscottpierce\.com\/stick-fight\//, BASE);
+const local = (u) => u.replace(/^https:\/\/neonstickfight\.com\//, BASE);
 async function image(url, name) {
   const res = await get(local(url));
   const buf = new Uint8Array(await res.arrayBuffer());
@@ -90,7 +90,7 @@ async function members(slug, n) {
 
 try {
   const def = await page('');
-  check('plain play/: the default tags with og.jpg', def['og:title'] === 'Neon Stick Fight' && def['og:image'] === 'https://askscottpierce.com/stick-fight/og.jpg' && def['twitter:card'] === 'summary_large_image', def['og:image']);
+  check('plain play/: the default tags with og.jpg', def['og:title'] === 'Neon Stick Fight' && def['og:image'] === 'https://neonstickfight.com/og.jpg' && def['twitter:card'] === 'summary_large_image', def['og:image']);
   const plain = await (await get(`${BASE}play/`)).text();
   check('plain play/: the same bytes for a bot as for a browser', plain === await (await get(`${BASE}play/`, UAS.slack)).text());
 
@@ -103,12 +103,12 @@ try {
   const t = JSON.parse(seen.imessage);
   check('crew link: og:title names the crew', t['og:title'] === 'Join ROCK N ROLL 2 on Neon Stick Fight', t['og:title']);
   check('crew link: og:description has the member count and no member names', /2 fighters in the crew/.test(t['og:description']) && !/PLAYER/.test(JSON.stringify(t)), t['og:description']);
-  check('crew link: og:url is the crew link', t['og:url'] === `https://askscottpierce.com/stick-fight/play/?crew=${slug}`, t['og:url']);
+  check('crew link: og:url is the crew link', t['og:url'] === `https://neonstickfight.com/play/?crew=${slug}`, t['og:url']);
   check('crew link: og:image is its own image', new RegExp(`/api/og/crew/${slug}\\.jpg\\?v=[0-9a-f]{10}$`).test(t['og:image']), t['og:image']);
   check('crew link: og:image:alt names the crew', /ROCK N ROLL 2/.test(t['og:image:alt']), t['og:image:alt']);
   await image(t['og:image'], 'crew');
   const wrong = await get(local(t['og:image']).replace(/v=\w+/, 'v=0000000000'));
-  check('crew image: a made-up version is sent to the real one', wrong.status === 302 && (wrong.headers.get('location') || '').endsWith(t['og:image'].replace(/^.*\/stick-fight\//, '')), wrong.headers.get('location'));
+  check('crew image: a made-up version is sent to the real one', wrong.status === 302 && (wrong.headers.get('location') || '').endsWith(t['og:image'].replace(/^https:\/\/neonstickfight\.com\//, '')), wrong.headers.get('location'));
   const mixed = await page(`?crew=${slug.toUpperCase()}&utm_source=x`);
   check('crew link: a slug in capitals with more in the query still unfurls', mixed['og:title'] === t['og:title']);
 
@@ -127,14 +127,14 @@ try {
   } else console.log('SKIP  expired crew (needs DEV_HOOKS=1 in .dev.vars)');
 
   const r = await page('?room=k7qm', UAS.discord);
-  check('room link: its own title, url and image', r['og:title'] === 'Join room K7QM on Neon Stick Fight' && r['og:url'] === 'https://askscottpierce.com/stick-fight/play/?room=K7QM' && /\/api\/og\/room\/K7QM\.jpg$/.test(r['og:image']), r['og:title']);
+  check('room link: its own title, url and image', r['og:title'] === 'Join room K7QM on Neon Stick Fight' && r['og:url'] === 'https://neonstickfight.com/play/?room=K7QM' && /\/api\/og\/room\/K7QM\.jpg$/.test(r['og:image']), r['og:title']);
   await image(r['og:image'], 'room');
   const badRoom = await page('?room=AB10', UAS.discord);
   check('bad room code: the default tags', badRoom['og:title'] === 'Neon Stick Fight');
 
   for (const q of [`?crew=${slug}`, '?room=K7QM']) {
     const old = await get(`${BASE}${q}`, UAS.slack);
-    check(`old link /${q}: a 301 to play/`, old.status === 301 && old.headers.get('location') === `/stick-fight/play/${q}`, `${old.status} ${old.headers.get('location')}`);
+    check(`old link /${q}: a 301 to play/`, old.status === 301 && old.headers.get('location') === `/play/${q}`, `${old.status} ${old.headers.get('location')}`);
   }
   const home = await get(BASE);
   check('homepage without a crew: the page, no redirect', home.status === 200 && /<title>Neon Stick Fight · /.test(await home.text()));

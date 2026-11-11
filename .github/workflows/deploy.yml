@@ -1,11 +1,11 @@
 name: Deploy
 
-# A push to main goes to https://askscottpierce.com/stick-fight: typecheck, D1 migrations, then the
-# build and the Worker. README: "Deploy".
+# A push to main goes to https://neonstickfight.com (and the old address, askscottpierce.com/stick-fight):
+# typecheck, D1 migrations, then the build and the Worker. README: "Hosting".
 #
 # Needs, on the repo:
 #   variable  CLOUDFLARE_ACCOUNT_ID
-#   secret    CLOUDFLARE_API_TOKEN   made by scripts/ci-token.sh
+#   secret    CLOUDFLARE_API_TOKEN   made by scripts/ci-token.sh (Workers Routes Write on both zones)
 on:
   push:
     branches: [main]
@@ -41,7 +41,7 @@ jobs:
       - name: Say so if the token isn't set
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::error::No CLOUDFLARE_API_TOKEN secret on this repo. Make one with: CF_TOKEN_MANAGER=... scripts/ci-token.sh"
+            echo "::error::No CLOUDFLARE_API_TOKEN secret on this repo. Make one with: CF_TOKEN_MANAGER=... NEW_ZONE_ID=... scripts/ci-token.sh"
             exit 1
           fi
 
