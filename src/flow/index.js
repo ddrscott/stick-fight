@@ -1896,8 +1896,10 @@ export function createFlow(ctx) {
   function frame(layout) {
     if (state !== 'attract' || !startBtn || !layout || !layout.prompt) return;
     const p = layout.prompt;
-    startBtn.style.left = `${(p.x / 1280) * 100}%`;
-    startBtn.style.top = `${(p.y / 720) * 100}%`;
+    // held upright the frame is drawn bigger than this 16:9 box, about the same centre (layout.zoom, src/square.js)
+    const k = layout.zoom || 1;
+    startBtn.style.left = `${(0.5 + (p.x / 1280 - 0.5) * k) * 100}%`;
+    startBtn.style.top = `${(0.5 + (p.y / 720 - 0.5) * k) * 100}%`;
     startBtn.style.opacity = String(Math.max(0.16, p.alpha));
   }
   /** hotkeys main.js may still act on while the flow runs */

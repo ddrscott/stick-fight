@@ -178,7 +178,7 @@ export function createPerfectFX() {
     if (grow >= 1) { ctx.lineWidth = 1.6; ctx.beginPath(); for (const [p, q] of C.rings) { ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); } ctx.stroke(); }
     ctx.restore();
   }
-  function drawStamp(ctx, text, color, x, y, age, alpha) {
+  function drawStamp(ctx, text, color, x, y, age, alpha, maxX = W) {
     if (!text || alpha <= 0) return;
     const pop = 1 + Math.max(0, 0.5 - age * 3);
     ctx.save();
@@ -186,6 +186,7 @@ export function createPerfectFX() {
     const size = text.length > 12 ? 30 : 40;
     ctx.font = `${size}px Bungee, Impact, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const tw = (ctx.measureText ? ctx.measureText(text).width : size * text.length * 0.7) + 34, th = size * 1.5;
+    if (x + tw / 2 + 30 > maxX) ctx.translate((maxX - tw / 2 - 30 - x) / pop, 0);   // held upright: inside the square
     ctx.strokeStyle = color; ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 14; ctx.lineWidth = 4;
     ctx.strokeRect(-tw / 2, -th / 2, tw, th);
     ctx.lineWidth = 1.5; ctx.strokeRect(-tw / 2 + 6, -th / 2 + 6, tw - 12, th - 12);
@@ -333,7 +334,8 @@ export function createPerfectFX() {
     if (S.crack) {
       drawCrack(ctx, S.crack, smooth(0, 0.07, tau), marks);
       if (tau < 0.2) { ctx.save(); ctx.globalAlpha = 0.5 * Math.exp(-tau * 16) * fade; ctx.fillStyle = '#fff'; ctx.fillRect(-40, -40, W + 80, H + 80); ctx.restore(); }
-      drawStamp(ctx, pf.stamp, w.color || '#2ef2ff', W * 0.74, H * 0.72, tau, marks);
+      const vw = camera.safeW > 0 ? Math.min(W, camera.safeW) : W;   // the part of the frame on screen (src/camera.js)
+      drawStamp(ctx, pf.stamp, w.color || '#2ef2ff', W / 2 + vw * 0.24, H * 0.72, tau, marks, W / 2 + vw / 2);
     }
     ctx.restore();
   }

@@ -26,6 +26,7 @@ import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';
 import { homescreenHelp, openHomescreenHelp } from './homescreen.js';   // iPhone Safari: the fullscreen pill opens the Add to Home Screen how-to   // shared with the desktop button and F11
 import { PLAIN } from './plaintext.js';   // readable text never glows: the shared dark outline
 import { MINI, MINI_FACE, MINI_INK, HUD_STRIP, MENU_ICON, PAUSE_ICON } from './corner.js';   // the corner buttons' size and icons, shared with the desktop row
+import { BAND, SQ_FIRST, SQ_FLOOR, setSquare } from './square.js';   // held upright: the square crop and the HUD band over it
 
 const TARGET = window;                  // must match createInput(window) in main.js
 // the stick's travel in px at scale 1 with a 16px rem; it grows and shrinks with the drawn stick,
@@ -128,12 +129,33 @@ function init() {
     const minisDown = n * D.miniH + (n - 1) * D.miniGap, minisAcross = n * D.miniW + (n - 1) * D.miniGap;
     const grid = 2 * D.btn + D.gap;
     let u, mode = '', topY = 0;         // u: the most px one scaled rem can be
+    let sq = null;                      // held upright: the square and the HUD band over it
     if (vh >= vw) {
-      // portrait: the stage sits under a strip holding the top buttons, the controls under the stage
+      // Held upright, from the top: a strip holding the top buttons, the HUD band, the square (the middle of the
+      // frame, as wide as the screen), then the controls at the bottom. When the screen is too short for all
+      // four, things give way in this order and a control is never cut off: the square down to three quarters of
+      // the width; the band to its compact form (no move hints); the square down to the old 16:9 stage's height;
+      // then the controls themselves, down to MIN_SCALE; and last the square again, to whatever is left.
       const across = (vw - sl - sr) / (D.base + D.edge + 0.25 + grid);
       const strip = (vw - sl - sr) / minisAcross;
-      const down = (vh - st - 0.5 * rem - vw * 9 / 16 - 0.5 * rem - sb) / (D.miniH + D.guardHP + D.gap + grid);
-      u = Math.min(across, strip, down);
+      const fixed = st + 0.5 * rem + 0.5 * rem + sb;                  // the insets, the strip's air and a gap over the controls
+      const per = D.miniH + D.guardHP + D.gap + grid;                 // scaled rem down the screen: the top buttons and the controls
+      const k = Math.max(BAND.kMin, Math.min(BAND.kMax, vw / BAND.w));
+      const full = Math.round(BAND.full * k), compact = Math.round(BAND.compact * k);
+      let s = Math.max(MIN_SCALE, Math.min(want, across / rem, strip / rem));
+      const room = () => vh - fixed - per * s * rem;                  // what's left for the band and the square
+      let side = vw, band = full;
+      if (room() < side + band) side = Math.max(SQ_FIRST * vw, room() - band);
+      if (room() < side + band) { band = compact; side = Math.max(SQ_FLOOR * vw, Math.min(vw, room() - band)); }
+      if (room() < side + band) s = Math.max(MIN_SCALE, Math.min(s, (vh - fixed - side - band) / (per * rem)));
+      s = Math.floor(s * 1000) / 1000;
+      if (room() < side + band) side = Math.max(0, room() - band);
+      side = Math.floor(side);
+      u = s * rem;
+      const stripH = st + D.miniH * u + 0.5 * rem, below = vh - stripH - band - side;
+      // the turn-your-phone note goes under the square when there's room over the controls, else over its top edge
+      const noteIn = below - (D.guardHP + D.gap + grid) * u - sb < 5.25 * rem;
+      sq = { on: true, side, band, k, compact: band < full, below, noteIn };
     } else {
       const stageW = Math.min(vw, vh * 16 / 9), stageH = stageW * 9 / 16;
       const gutter = (vw - stageW) / 2, stageTop = (vh - stageH) / 2;
@@ -154,6 +176,10 @@ function init() {
     const scale = Math.max(MIN_SCALE, Math.floor(Math.min(want, u / rem) * 1000) / 1000);
     K = scale * rem / 16;
     de.style.setProperty('--tc-scale', String(scale));
+    de.classList.toggle('sq', !!sq);
+    root.classList.toggle('tc-note-in', !!sq && sq.noteIn);
+    if (sq) { de.style.setProperty('--sq', `${sq.side}px`); de.style.setProperty('--sq-band', `${sq.band}px`); de.style.setProperty('--sq-below', `${Math.max(0, Math.floor(sq.below))}px`); }
+    setSquare(sq ? { on: true, side: sq.side, band: sq.band, k: sq.k, compact: sq.compact } : { on: false, side: 0, band: 0, k: 1, compact: false });
     root.classList.toggle('tc-top-hud', mode !== '');
     root.classList.toggle('tc-top-row', mode === 'hud row');
     if (mode) root.style.setProperty('--tc-top-y', `${Math.round(topY)}px`); else root.style.removeProperty('--tc-top-y');
@@ -366,17 +392,38 @@ function injectStyle() {
 
   /* portrait */
   .tc-rotate { display: none; }
+  #hudband { display: none; }
   @media (orientation: portrait) {
     html.touch-ui body { align-items: flex-start; padding-top: var(--tc-strip); box-sizing: border-box; }
     .tc-stickzone { width: max(50vw, calc(var(--sl) + ${u(D.base + 2 * D.edge)})); height: max(46vh, calc(var(--sb) + ${u(D.hint + D.base + D.edge)})); }
+    /* The square (src/square.js; fit() sets html.sq and the sizes). #stage stays a 16:9 box, as wide as the
+       square and centred on it, so every menu lays out exactly as it did; only the two canvases grow past it,
+       to the square's height, with their sides clipped to the middle 720 of 1280. The HUD band (#hudband, a
+       canvas main.js makes) sits between the strip and the square. */
+    html.sq body { padding-top: calc(var(--tc-strip) + var(--sq-band) + var(--sq) * 0.21875); }
+    html.sq #stage { width: var(--sq); }
+    html.sq #stage > canvas { inset: auto; left: -38.8889%; top: -38.8889%; width: 177.7778%; height: 177.7778%; clip-path: inset(0 21.875%); }
+    /* a menu's veil covers the whole square, not only the 16:9 box its buttons are laid out in (0.3889 of the box's
+       height shows above it and below it); the credits link goes to the square's bottom corner, off the demo's fighters */
+    html.sq #flow .fl-veil { background: none; }
+    html.sq #flow .fl-veil::before { content: ''; position: absolute; left: 0; right: 0; top: -38.8889%; bottom: -38.8889%; z-index: -1;
+      background: radial-gradient(ellipse at 50% 45%, rgba(18,5,38,0.80), rgba(5,1,12,0.92)); }
+    html.sq #credits { right: auto; left: 2.2%; bottom: -36.5%; }
+    /* stage-anchored pieces that would land mid-square: the online readout goes to the square's top edge, the spectator bar to its bottom */
+    html.sq .nf-readout { top: calc(-38.8889% + 0.375rem); }
+    html.sq #flow .fl-wbar { bottom: -36.7cqh; }
+    html.sq #hudband { display: block; position: fixed; left: 0; top: var(--tc-strip); width: 100vw; height: var(--sq-band); pointer-events: none; }
+    /* a press on the square never starts the stick */
+    html.sq .tc-stickzone { height: max(var(--sq-below), calc(var(--sb) + ${u(D.hint + D.base + D.edge)})); }
     .tc-rotate {
       display: flex; align-items: center; gap: 0.625rem; position: absolute;
-      left: var(--sl); right: var(--sr); top: calc(var(--tc-strip) + 56.25vw + 0.875rem);
+      left: var(--sl); right: var(--sr); top: calc(var(--tc-strip) + var(--sq-band, 0px) + var(--sq, 56.25vw) + 0.5rem);
       padding: 0.625rem 0.875rem; border: 0.125rem solid var(--violet); border-radius: 1.375rem; background: rgba(14,4,30,0.72);
       color: var(--ink); font-family: 'Teko', 'Arial Narrow', system-ui, sans-serif; font-size: 1.25rem; line-height: 1.1;
       box-shadow: 0 0 0.75rem rgba(166,107,255,0.5);
     }
     .tc-rotate span { flex: 1; }
+    .tc-note-in .tc-rotate { top: calc(var(--tc-strip) + var(--sq-band, 0px) + 0.5rem); }   /* no room under the square: over its top edge, never the HUD band */
     .tc-no-rotate .tc-rotate { display: none; }
     .tc-x { appearance: none; border: 0.125rem solid var(--pink); border-radius: 50%; background: transparent;
       color: var(--pink); font: inherit; font-size: 1.125rem; width: 2.125rem; height: 2.125rem; box-shadow: 0 0 0.5rem var(--pink); }

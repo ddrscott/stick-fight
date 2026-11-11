@@ -13,6 +13,7 @@ import { createWorldCache, viewRect } from './arena/cache.js';   // the building
 import { createCombat } from './combat/sim.js';
 import { createInput, EMPTY_INPUT } from './combat/input.js';
 import { createHUD, HUD_TOP } from './combat/hud.js';
+import { onSquare, SQUARE } from './square.js';   // a phone held upright: the square crop of this frame, and the HUD band over it
 import { FRAME_DATA } from './combat/frameData.js';
 import { mulberry32 } from './combat/rng.js';
 import { gameAudio } from './audio/index.js';   // audio: all sound logic lives in src/audio/
@@ -30,6 +31,7 @@ import { track } from './analytics.js';   // the tier a session settles on (READ
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
+const SQUARE_TOP = 44;   // held upright the bars aren't in the frame: a body keeps this far from the top, room for its overhead status line
 const glCanvas = document.getElementById('game');
 const hudCanvas = document.getElementById('hud');
 // The HUD canvas is never bigger than the screen pixels the stage covers (held sideways, the way the game is
@@ -50,6 +52,18 @@ const fighters = [
 ];
 const input = createInput(window);
 const hud = createHUD(hudCanvas, { width: W, height: H, dpr });
+// Held upright (src/square.js; src/touch.js lays it out): the page shows the middle SQUARE px of the frame, so the
+// camera gets that as its safe width, and the HUD draws its strip on a band canvas above the square and keeps
+// the rest inside it. Nothing about the render changes; sideways and on a desktop this never turns on.
+let bandCanvas = null;
+onSquare((s) => {
+  if (!s.on) { camera.safeW = 0; camera.padTop = null; hud.setSquare(null); return; }
+  if (!bandCanvas) { bandCanvas = document.createElement('canvas'); bandCanvas.id = 'hudband'; document.body.appendChild(bandCanvas); }
+  const dp = Math.min(3, window.devicePixelRatio || 1), cssW = document.documentElement.clientWidth;
+  bandCanvas.width = Math.max(1, Math.round(cssW * dp)); bandCanvas.height = Math.max(1, Math.round(s.band * dp));
+  hud.setSquare({ x0: (W - SQUARE) / 2, x1: (W + SQUARE) / 2, zoom: W / SQUARE, canvas: bandCanvas, w: cssW / s.k, h: s.band / s.k, scale: dp * s.k, compact: s.compact });
+  camera.safeW = SQUARE; camera.padTop = SQUARE_TOP;
+});
 const statusFX = createStatusFX();
 const perfectFX = createPerfectFX();   // the perfect round finisher, drawn (src/fx/perfect.js)
 
@@ -1126,6 +1140,19 @@ function touchInsets() {
 }
 // The last word, once frameDraw has placed this frame's drawing: whatever the prediction in updateCamera missed
 // (a contact snap, a fade that outran it), the drawn bodies stay inside the frame and under the HUD strip.
+// The camera's safe span. camera.safeW (src/camera.js) is the width of the frame's middle that's on screen: all of
+// it normally, the middle 720 px on a phone held upright (the square). Bodies keep to that span, and the wide end
+// of the zoom scales with it, so the same world width is on screen at the far end, in fewer px. The top margin is
+// the layout's (the HUD strip, or the square's own). The zoom's floor is 0.85 on the full frame, as it always
+// was (past about 1440 world px apart the two walk out of the sides); the narrow span goes on down to whatever
+// holds the whole building, so two fighters at its far walls are still both on screen, small.
+function camSafe() {
+  const w = camera.safeW > 0 ? Math.min(W, camera.safeW) : W, side = (W - w) / 2;
+  const x0 = Math.max(CAM.padX + insetL, side + CAM.padX), x1 = Math.min(W - CAM.padX - insetR, W - side - CAM.padX);
+  if (w >= W) return { x0, x1, w, wide: CAM.wide, low: 0.85, padTop: camera.padTop == null ? CAM.padTop : camera.padTop };
+  const q = (w - 2 * CAM.padX) / (W - 2 * CAM.padX), vb = sim.viewBounds || sim.bounds;
+  return { x0, x1, w, wide: CAM.wide * q, low: Math.min(0.85 * q, (x1 - x0) / (vb.x1 - vb.x0 + 80)), padTop: camera.padTop == null ? CAM.padTop : camera.padTop };
+}
 function fitCameraToDrawn() {
   if (sim.hitstopActive > 0) return;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -1134,19 +1161,19 @@ function fitCameraToDrawn() {
     for (const k in j) { const px = j[k].x + o.x, py = j[k].y + o.y; if (px - r < x0) x0 = px - r; if (px + r > x1) x1 = px + r; if (py - r < y0) y0 = py - r; if (py + 0.5 * r > y1) y1 = py + 0.5 * r; }
   }
   if (!(x1 >= x0)) return;
-  const sx0 = CAM.padX + insetL, sx1 = W - CAM.padX - insetR;   // the screen span bodies keep to
-  const zf = Math.min((H - CAM.padTop - CAM.padBot) / Math.max(1, y1 - y0), (sx1 - sx0) / Math.max(1, x1 - x0));
-  if (camera.zoom > zf && zf >= 0.85) { camZoom = Math.min(camZoom, zf); camera.zoom = zf; }
+  const safe = camSafe(), sx0 = safe.x0, sx1 = safe.x1, padTop = safe.padTop;   // the screen span bodies keep to
+  const zf = Math.min((H - padTop - CAM.padBot) / Math.max(1, y1 - y0), (sx1 - sx0) / Math.max(1, x1 - x0));
+  if (camera.zoom > zf && zf >= safe.low) { camZoom = Math.min(camZoom, zf); camera.zoom = zf; }
   const z = camera.zoom, hh = H / 2 / z;
   camera.x = clamp(camera.x, x1 - (sx1 - W / 2) / z, x0 - (sx0 - W / 2) / z);
-  camera.y = clamp(camera.y, y1 + CAM.padBot / z - hh, y0 - CAM.padTop / z + hh);
+  camera.y = clamp(camera.y, y1 + CAM.padBot / z - hh, y0 - padTop / z + hh);
 }
 function updateCamera(dt, snap = false) {
   if (sim.hitstopActive > 0) { camera.shakeX = 0; camera.shakeY = 0; return; }
   if (camCut) { snap = true; camCut = false; }
   const live = camLive();
   touchInsets();
-  const sx0 = CAM.padX + insetL, sx1 = W - CAM.padX - insetR;   // the screen span bodies keep to (the touch controls narrow it)
+  const safe = camSafe(), sx0 = safe.x0, sx1 = safe.x1, padTop = safe.padTop, wide = safe.wide;   // the screen span bodies keep to (the touch controls narrow it; held upright, the square)
   // where each body is on the floor: a tumbling (point-simulated) or vaulting body is wherever its hip
   // is, not its floor line (a body falling down the stairwell already belongs to the floor below)
   const at = (u) => {
@@ -1167,14 +1194,14 @@ function updateCamera(dt, snap = false) {
   const zClose = H / (standH + (CAM.headroom + CAM.footroom) * head);
   // apart: both roots plus a leg's reach each side, and every drawn limb, across the frame's width
   const needW = Math.max(xb - xa + 2 * CAM.reachK * standH, ex1 - ex0);
-  let zt = Math.min(zClose, Math.max(CAM.wide, (sx1 - sx0) / needW));
+  let zt = Math.min(zClose, Math.max(wide, (sx1 - sx0) / needW));
   // every live body fits (a launch, a jump, two floors apart), with a soft margin so the zoom eases out before
   // fitCameraToDrawn has to force it; below the wide framing only when it must
-  const fitZ = (s) => Math.min((H - CAM.padTop - CAM.padBot - 2 * s) / Math.max(1, ey1 - ey0), (sx1 - sx0 - 2 * s) / Math.max(1, ex1 - ex0));
+  const fitZ = (s) => Math.min((H - padTop - CAM.padBot - 2 * s) / Math.max(1, ey1 - ey0), (sx1 - sx0 - 2 * s) / Math.max(1, ex1 - ex0));
   const zFit = fitZ(0);
-  zt = Math.min(zt, Math.max(fitZ(CAM.soft), Math.min(zFit, CAM.wide)));
-  if (dy > 120 || zFit < CAM.wide) zt = Math.max(0.85, zt);   // two floors apart (a floor break, the follow-down)
-  else zt = Math.max(CAM.wide, zt);
+  zt = Math.min(zt, Math.max(fitZ(CAM.soft), Math.min(zFit, wide)));
+  if (dy > 120 || zFit < wide) zt = Math.max(safe.low, zt);   // two floors apart (a floor break, the follow-down)
+  else zt = Math.max(wide, zt);
   // the KO slow-mo leans in (as a share, so it reads the same at any zoom), never so far it crops
   if (sim.koSlow > 0) zt = Math.max(zt, Math.min(zt * (sim.finisher ? 1.12 : 1.065), zFit));
   camZoom = snap ? zt : camZoom + (zt - camZoom) * (1 - Math.exp(-dt * (zt < camZoom ? CAM.zoomOut : CAM.zoomIn)));
@@ -1187,7 +1214,8 @@ function updateCamera(dt, snap = false) {
   // horizontal: centered on the bodies; the view may run 120px past either wall (the exterior is painted),
   // so a body thrown into the corner lands on screen
   const vb = sim.viewBounds || sim.bounds;   // the whole building: a fight can spread over both floors and the stairs
-  const wx0 = vb.x0 - 120 + hw, wx1 = vb.x1 + 120 - hw;
+  const hwv = hw * safe.w / W;   // half of what's on screen, in world px
+  const wx0 = vb.x0 - 120 + hwv, wx1 = vb.x1 + 120 - hwv;
   const fitX = (v, s = 0) => clamp(v, ex1 - (sx1 - s - W / 2) / ze, ex0 - (sx0 + s - W / 2) / ze);
   const mid = (xa + xb) / 2 - ((sx0 + sx1) / 2 - W / 2) / z;   // the pair's middle on the middle of that span
   const tx = fitX(wx1 > wx0 ? Math.max(wx0, Math.min(wx1, mid)) : (wx0 + wx1) / 2, CAM.soft);
@@ -1195,10 +1223,10 @@ function updateCamera(dt, snap = false) {
   // (the floor line less 120); in between, a blend by zoom. Never past the lowest floor (plus a little
   // ground) or far above the highest one, and never cropping a body or putting a head under the HUD.
   const yF = Math.max(...P.map(p => p.y)), yMid = P.reduce((s, p) => s + p.y, 0) / P.length;
-  const k = Math.max(0, Math.min(1, (z - CAM.wide) / Math.max(0.01, zClose - CAM.wide)));
+  const k = Math.max(0, Math.min(1, (z - wide) / Math.max(0.01, zClose - wide)));
   const fl = sim.floors;
   const yMax = Math.max(...fl.map(f => f.y)) + 80, yMin = Math.min(...fl.map(f => f.y)) - 440;
-  const fitY = (v, s = 0) => clamp(v, ey1 + (CAM.padBot + s) / ze - hhe, ey0 - (CAM.padTop + s) / ze + hhe);
+  const fitY = (v, s = 0) => clamp(v, ey1 + (CAM.padBot + s) / ze - hhe, ey0 - (padTop + s) / ze + hhe);
   let ty = (yMid - 120) * (1 - k) + (yF + CAM.footroom * head - hh) * k;
   ty = fitY(yMax - hh < yMin + hh ? yMax - hh : Math.max(yMin + hh, Math.min(yMax - hh, ty)), CAM.soft);
   // a flying body is followed hard; otherwise the camera eases. These are targets from the predicted drawing;

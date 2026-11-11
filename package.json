@@ -19,7 +19,8 @@
     "test:watch": "node scripts/watch/e2e.mjs",
     "test:qr": "node scripts/qr/check.mjs",
     "test:join": "node scripts/join/check.mjs",
-    "test:ios": "node scripts/ios/check.mjs"
+    "test:ios": "node scripts/ios/check.mjs",
+    "test:square": "node scripts/shots/portrait.mjs --check --only 390x844,412x915,375x667 --out gauntlet/tmp/portrait && node scripts/shots/square-fit.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",

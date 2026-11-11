@@ -18,11 +18,27 @@ const TIMER = { cy: 40, r: 33, size: 38 };   // the round clock: a ring between 
 const BAR_W = 420, BAR_H = 18, BAR_Y = 16, SKEW = 12, STRIP_H = 96, ST_H = 5;   // STRIP_H: the bars plus the name and hint lines under them
 // screen px from the top that the bars, names and move hints own (with their shade): the camera keeps heads below it
 export const HUD_TOP = STRIP_H + 30;
+// The strip's two layouts. WIDE is the one inside the 1280x720 frame. BAND is the same strip laid out for a
+// phone held upright, on a canvas of its own above the square (src/square.js, README "Held upright: the
+// square"), in the band's units (about 390 across). One set of drawing code reads either, so the two can't drift.
+const WIDE = { band: false, edge: 44, barY: BAR_Y, barH: BAR_H, skew: SKEW, stH: ST_H, stGap: 6, stIn: 30, tag: 15, nameDy: 15, name: 27, role: 20, roleGap: 10, hintDy: 26, info: 24, pipR: 6, pipGap: 20, pipIn: 8, frame: 2.5, glow: 14,
+  timer: TIMER, round: 21, roundDy: 12 };
+const BAND_L = { band: true, edge: 10, barY: 8, barH: 13, skew: 7, stH: 4, stGap: 4, stIn: 16, tag: 11, nameDy: 13, name: 21, role: 15, roleGap: 6, hintDy: 20, info: 15, pipR: 4.5, pipGap: 14, pipIn: 6, frame: 1.6, glow: 7,
+  timer: { cy: 23, r: 19, size: 23 }, round: 14, roundDy: 9, centre: 30, hint: 16, hintMin: 12.5, score: 15 };
 const SIDE = [NEON.cyan, NEON.pink];
 const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, clash: '#99bfff', break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a' };
 
-export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) {
-  const ctx = canvas.getContext('2d');
+export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 1 } = {}) {
+  const frameCtx = canvas.getContext('2d');
+  // what's being drawn on: the frame, or (for the strip, held upright) the band's canvas. L is the strip's layout
+  // and sw the width it's laid out across.
+  let ctx = frameCtx, dpr = frameDpr, L = WIDE, sw = width;
+  // The part of the frame that's on screen. Held upright the page shows only the middle 720 px (the square), so
+  // everything laid out from an edge keeps to x0..x1, and with the strip gone to its band the rows that sat under
+  // it start at the top (top is where STRIP_H was). zoom: screen px of the frame per px of the 16:9 stage box.
+  const FULL = { x0: 0, x1: width, top: STRIP_H, edge: 44, zoom: 1 };
+  let view = FULL;
+  let band = null;   // { ctx, w, h, scale, compact }: the band's canvas, when the strip is drawn there
   const ghost = [100, 100], seen = [100, 100], tick = [0, 0];
   let lastBanner = '', bannerAge = 0, clock = 0;
   let foundTech = null;   // the techniques found, for the move list's third line
@@ -49,7 +65,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const t = ctx.getTransform();
     const w = measure(text, size, font, weight);
     if (typeof document !== 'undefined' && t.a === dpr && t.d === dpr && t.b === 0 && t.c === 0) {
-      const g = Math.round(glow * 20) / 20, key = `${text}|${size}|${color}|${font}|${weight}|${g}|${core ? 1 : 0}`;
+      const g = Math.round(glow * 20) / 20, key = `${text}|${size}|${color}|${font}|${weight}|${g}|${core ? 1 : 0}|${dpr}`;
       let e = textCache.get(key);
       if (e) { textCache.delete(key); textCache.set(key, e); }
       else {
@@ -61,7 +77,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
         neonDraw(o, text, pad, pad + size * 0.75, size, color, font, 'left', g, core, weight);
         e = { c, pad, oy: pad + size * 0.75 };
         textCache.set(key, e);
-        if (textCache.size > 96) textCache.delete(textCache.keys().next().value);
+        if (textCache.size > 128) textCache.delete(textCache.keys().next().value);
       }
       const left = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
       // on whole device pixels, so a stamp is as sharp as the text was
@@ -83,7 +99,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   function plainText(text, x, y, size, color, { font = LABEL, align = 'left', weight = 600 } = {}) {
     ctx.save();
     ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
-    ctx.lineWidth = Math.max(3, size * 0.24); ctx.strokeStyle = 'rgba(4,1,10,0.94)'; ctx.strokeText(text, x, y);
+    ctx.lineWidth = Math.max(L.band ? 2 : 3, size * 0.24); ctx.strokeStyle = 'rgba(4,1,10,0.94)'; ctx.strokeText(text, x, y);
     ctx.fillStyle = mix(color, '#ffffff', 0.3); ctx.fillText(text, x, y);
     ctx.restore();
     return measure(text, size, font, weight);
@@ -100,7 +116,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   }
   function para(x, y, w, h, side) {
     // a parallelogram leaning outward: left bar's outer (left) end sits lower-left
-    const k = SKEW * (h / BAR_H);
+    const k = L.skew * (h / L.barH);
     ctx.beginPath();
     if (side === 0) { ctx.moveTo(x + k, y); ctx.lineTo(x + w + k, y); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h); }
     else { ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - k, y + h); ctx.lineTo(x - k, y + h); }
@@ -118,7 +134,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (u.health < ghost[i]) { if (tick[i] <= 0) ghost[i] = Math.max(u.health, ghost[i] - 60 * dt); }
     else ghost[i] = u.health;
 
-    const x = side === 0 ? 44 : width - 44 - BAR_W, y = BAR_Y;
+    const BAR_W = L.band ? sw / 2 - L.edge - L.centre : 420, BAR_H = L.barH, SKEW = L.skew, ST_H = L.stH;
+    const x = side === 0 ? L.edge : sw - L.edge - BAR_W, y = L.barY;
     // well
     para(x, y, BAR_W, BAR_H, side); ctx.fillStyle = 'rgba(14,4,30,0.72)'; ctx.fill();
     // fills drain toward the outer end
@@ -133,43 +150,43 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     fill(u.health, color);
     // hot core line along the fill
     const w = BAR_W * Math.max(0, Math.min(1, u.health / max));
-    if (w > 0) { ctx.save(); para(x, y, BAR_W, BAR_H, side); ctx.clip(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(side === 0 ? x + BAR_W - w : x - SKEW, y + 4, w + SKEW, 3); ctx.restore(); }
+    if (w > 0) { ctx.save(); para(x, y, BAR_W, BAR_H, side); ctx.clip(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(side === 0 ? x + BAR_W - w : x - SKEW, y + BAR_H * 4 / 18, w + SKEW, BAR_H / 6); ctx.restore(); }
     // glowing frame
     ctx.save(); para(x - 2, y - 2, BAR_W + 4, BAR_H + 4, side);
-    ctx.shadowColor = color; ctx.shadowBlur = 14; ctx.lineWidth = 2.5; ctx.strokeStyle = color; ctx.stroke();
+    ctx.shadowColor = color; ctx.shadowBlur = L.glow; ctx.lineWidth = L.frame; ctx.strokeStyle = color; ctx.stroke();
     ctx.shadowBlur = 0; ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.stroke(); ctx.restore();
 
     // stamina: a thin amber bar under the health bar. Under 35 (two jabs from fainting) it turns
     // pink and flashes, and its track pulses; fainted, it dims to a violet refill and a FAINT tag flickers
-    const sy = y + BAR_H + 6, st = Math.max(0, Math.min(1, (u.stamina == null ? 100 : u.stamina) / (u.staminaMax || 100)));
+    const sy = y + BAR_H + L.stGap, IN = L.stIn, st = Math.max(0, Math.min(1, (u.stamina == null ? 100 : u.stamina) / (u.staminaMax || 100)));
     const faint = u.faint > 0, low = !faint && st < 0.35, blink = Math.floor(clock * 7) % 2 === 0;
-    para(x + (side === 0 ? 30 : 0), sy, BAR_W - 30, ST_H, side);
+    para(x + (side === 0 ? IN : 0), sy, BAR_W - IN, ST_H, side);
     ctx.fillStyle = low && blink ? 'rgba(255,43,214,0.28)' : 'rgba(14,4,30,0.7)'; ctx.fill();
     if (low) { ctx.save(); ctx.shadowColor = NEON.pink; ctx.shadowBlur = blink ? 10 : 4; ctx.lineWidth = 1; ctx.strokeStyle = blink ? NEON.pink : 'rgba(255,43,214,0.45)'; ctx.stroke(); ctx.restore(); }
-    const sw = (BAR_W - 30) * st;
-    if (sw > 0) {
-      ctx.save(); para(x + (side === 0 ? 30 : 0), sy, BAR_W - 30, ST_H, side); ctx.clip();
+    const stw = (BAR_W - IN) * st;
+    if (stw > 0) {
+      ctx.save(); para(x + (side === 0 ? IN : 0), sy, BAR_W - IN, ST_H, side); ctx.clip();
       const ra = refillAt.get(u), refill = ra != null && clock - ra < 0.6, rflash = refill && Math.floor(clock * 14) % 2 === 0;   // knocked down: it refills with a flash
       const c = rflash ? NEON.white : faint ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
       ctx.globalAlpha = faint ? 0.6 : 1;
       ctx.shadowColor = faint ? NEON.violet : low ? NEON.pink : NEON.amber; ctx.shadowBlur = faint ? 4 : low || refill ? 12 : 8; ctx.fillStyle = c;
-      ctx.fillRect(side === 0 ? x + 30 + (BAR_W - 30) - sw : x - SKEW, sy, sw + SKEW, ST_H);
+      ctx.fillRect(side === 0 ? x + IN + (BAR_W - IN) - stw : x - SKEW, sy, stw + SKEW, ST_H);
       // a hit that connected gave some back: the gained piece flashes cyan (white-cyan on a hit, dimmer on a block)
       const rf = refundAt.get(u), rk = rf ? 1 - (clock - rf.at) / REFUND_FLASH : 0;
       if (rk > 0 && !faint && st > rf.from) {
-        const gw = (BAR_W - 30) * (st - rf.from);
+        const gw = (BAR_W - IN) * (st - rf.from);
         ctx.globalAlpha = Math.min(1, rk * 1.6) * (rf.blocked ? 0.7 : 1);
         ctx.shadowColor = NEON.cyan; ctx.shadowBlur = 14; ctx.fillStyle = Math.floor(clock * 16) % 2 === 0 ? NEON.white : NEON.cyan;
-        ctx.fillRect(side === 0 ? x + 30 + (BAR_W - 30) - sw : x - SKEW + sw - gw, sy, gw + SKEW, ST_H);
+        ctx.fillRect(side === 0 ? x + IN + (BAR_W - IN) - stw : x - SKEW + stw - gw, sy, gw + SKEW, ST_H);
       }
       ctx.restore();
     }
-    if (faint && Math.floor(clock * 8) % 2 === 0) plainText('FAINT', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 15, NEON.pink, { align: side === 0 ? 'left' : 'right' });
-    else if (low && blink) plainText('LOW', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, 15, NEON.pink, { align: side === 0 ? 'left' : 'right' });
+    if (faint && Math.floor(clock * 8) % 2 === 0) plainText('FAINT', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, L.tag, NEON.pink, { align: side === 0 ? 'left' : 'right' });
+    else if (low && blink) plainText('LOW', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, L.tag, NEON.pink, { align: side === 0 ? 'left' : 'right' });
 
     // name and a small player marker (YOU / RIVAL online, P1 / P2, CPU 7, TRAINER), then pips; the
     // line under it cycles through the character's special moves (hint below)
-    const ly = sy + ST_H + 15;
+    const ly = sy + ST_H + L.nameDy;
     const diff = u.kind === 'ai' && u.controller && u.controller.getDifficulty ? u.controller.getDifficulty() : sim.difficulty;
     const named = names && names[who] ? (names[who] === 'PLAYER 1' ? 'P1' : names[who]) : '';
     const role = named || (u.controller && u.controller.label ? u.controller.label : u.kind === 'ai' ? (sim.horde && who === 1 ? 'GOON' : `CPU ${Math.round(diff * 10)}`) : u.kind === 'human' ? `P${who + 1}` : u.kind === 'script' ? 'TRAINER' : 'DUMMY');
@@ -177,24 +194,33 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const cn = (charNames && charNames[who]) || (u.char && u.char.name) || '';
     const cname = cn && !(sim.horde && who === 1) && role !== cn ? cn : '';
     const al = side === 0 ? 'left' : 'right';
+    // what sits at the bar's inner end on the name line: the horde's count, else a pip per round win the match needs
+    const hordeText = sim.horde ? (who === 0 ? `FLOOR ${sim.horde.floorsCleared + 1}   ${sim.horde.count} DOWN` : `WAVE ${(sim.horde.wave || { downed: 0 }).downed}/${(sim.horde.wave || { size: 0 }).size}`) : '';
+    let ns = L.name, rs = L.role, showRole = true;
+    if (L.band && cname) {
+      // the band is narrow: a long name (WELLNESS COACH) gets smaller, and gives up its marker, before it runs into the pips
+      const inner = sim.horde ? measure(hordeText, L.info, LABEL, 600) + 8 : L.pipIn + (sim.winsNeeded || 2) * L.pipGap;
+      const room = BAR_W - inner, nw = measure(cname, ns, LABEL, 600), rw = measure(role, rs, LABEL, 500) + L.roleGap;
+      if (nw + rw > room) { const k = Math.max(0.78, room / (nw + rw)); ns = Math.floor(ns * k * 2) / 2; rs = Math.floor(rs * k * 2) / 2; }
+      if (measure(cname, ns, LABEL, 600) + measure(role, rs, LABEL, 500) + L.roleGap > room) showRole = false;
+    }
     if (cname) {
-      const cw = measure(cname, 27, LABEL, 600) + 10;
-      plainText(cname, side === 0 ? x : x + BAR_W, ly, 27, u.color || color, { align: al });
-      plainText(role, side === 0 ? x + cw : x + BAR_W - cw, ly + 2, 20, color, { align: al, weight: 500 });
-      labelW[side] = cw + measure(role, 20, LABEL, 500);
-      hint(u, who, side, x, ly + 26);
-    } else labelW[side] = measure(role, 27, LABEL, 600), plainText(role, side === 0 ? x : x + BAR_W, ly, 27, color, { align: al });
+      const cw = measure(cname, ns, LABEL, 600) + L.roleGap;
+      plainText(cname, side === 0 ? x : x + BAR_W, ly, ns, u.color || color, { align: al });
+      if (showRole) plainText(role, side === 0 ? x + cw : x + BAR_W - cw, ly + (L.band ? 1 : 2), rs, color, { align: al, weight: 500 });
+      labelW[side] = cw + measure(role, rs, LABEL, 500);
+      if (!(band && band.compact && L.band)) hint(u, who, side, x, ly + L.hintDy, BAR_W);
+    } else labelW[side] = measure(role, L.name, LABEL, 600), plainText(role, side === 0 ? x : x + BAR_W, ly, L.name, color, { align: al });
     if (sim.horde) {
-      const H = sim.horde, wv = H.wave || { downed: 0, size: 0 };
-      plainText(who === 0 ? `FLOOR ${H.floorsCleared + 1}   ${H.count} DOWN` : `WAVE ${wv.downed}/${wv.size}`, side === 0 ? x + BAR_W : x, ly, 24, NEON.amber, { align: side === 0 ? 'right' : 'left' });
+      plainText(hordeText, side === 0 ? x + BAR_W : x, ly, L.info, NEON.amber, { align: side === 0 ? 'right' : 'left' });
     } else {
       for (let k = 0; k < (sim.winsNeeded || 2); k++) {   // a pip per round win the match needs
-        const px = side === 0 ? x + BAR_W - 8 - k * 20 : x + 8 + k * 20, py = ly;
-        ctx.save(); ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2);
+        const px = side === 0 ? x + BAR_W - L.pipIn - k * L.pipGap : x + L.pipIn + k * L.pipGap, py = ly;
+        ctx.save(); ctx.beginPath(); ctx.arc(px, py, L.pipR, 0, Math.PI * 2);
         const won = sim.wins[i] > k;
-        ctx.shadowColor = won ? NEON.amber : color; ctx.shadowBlur = won ? 12 : 4;
+        ctx.shadowColor = won ? NEON.amber : color; ctx.shadowBlur = (won ? 12 : 4) * (L.band ? 0.5 : 1);
         if (won) { ctx.fillStyle = NEON.amber; ctx.fill(); }
-        ctx.lineWidth = 2; ctx.strokeStyle = won ? '#fff1c9' : color; ctx.globalAlpha = won ? 1 : 0.7; ctx.stroke(); ctx.restore();
+        ctx.lineWidth = L.band ? 1.5 : 2; ctx.strokeStyle = won ? '#fff1c9' : color; ctx.globalAlpha = won ? 1 : 0.7; ctx.stroke(); ctx.restore();
       }
     }
   }
@@ -221,17 +247,22 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     hintCache.set(ch.id, { at: clock, list });
     return list;
   }
-  function hint(u, who, side, x, y) {
+  function hint(u, who, side, x, y, BAR_W) {
     const list = hintList(u.char);
     if (!list.length) return;
     const t = clock + who * 1.8, n = Math.floor(t / HINT_SLOT), ph = t - n * HINT_SLOT, m = list[n % list.length];
     const a = Math.min(1, ph / HINT_FADE, (HINT_SLOT - ph) / HINT_FADE);
     const cls = typeof document !== 'undefined' ? document.documentElement.classList : null;
     const phone = !!cls && cls.contains('touch-ui');   // a phone: bigger, and just the input and the name
-    const fs = phone ? 27 : 23;
+    let fs = L.band ? L.hint : phone ? 27 : 23;
+    if (L.band) {
+      // the band: the input and the name on one line, as big as fits the bar's width (never under hintMin)
+      const wAt = measure(m.input, fs, LABEL, 500) + 6 + measure(m.name, fs, LABEL, 500);
+      if (wAt > BAR_W) fs = Math.max(L.hintMin, Math.floor(fs * BAR_W / wAt * 2) / 2);
+    }
     const segs = [{ text: m.input, size: fs, color: NEON.amber, glow: 0.7, core: true }, { text: m.name, size: fs, color: m.accident ? KIND_COLOR.accident : SIDE[who], glow: 0.5, core: false }];
-    if (!phone && m.note) segs.push({ text: m.note, size: 18, color: NEON.violet, glow: 0.3, core: false });
-    const gap = 8, ws = segs.map(s => measure(s.text, s.size, LABEL, 500));
+    if (!phone && !L.band && m.note) segs.push({ text: m.note, size: 18, color: NEON.violet, glow: 0.3, core: false });
+    const gap = L.band ? 6 : 8, ws = segs.map(s => measure(s.text, s.size, LABEL, 500));
     const total = ws.reduce((p, q) => p + q, 0) + gap * (segs.length - 1);
     let cx = side === 0 ? x : x + BAR_W - total;
     ctx.save(); ctx.globalAlpha = Math.max(0, a);
@@ -338,8 +369,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       const h = (st ? fs + 2 : 0) + (st && st.bar != null ? 7 : 0) + timed.length * (tfs + 5) + (s.stamShow ? 6 : 0) + (pips ? 10 : 0) + 4;
       const me = boxes[i], other = boxes.filter((_, k) => k !== i);
       const hx = sx(u.rig.joints.head.x), headTop = me.y0 - (u.faint > 0 ? 14 * z : 0);   // fainted: clear of the stars circling the head
-      const clampX = (x) => Math.max(w / 2 + 10, Math.min(width - w / 2 - 10, x));
-      const yTop = STRIP_H + 34 + h / 2;   // never up in the bars or the hint line
+      const clampX = (x) => Math.max(view.x0 + w / 2 + 10, Math.min(view.x1 - w / 2 - 10, x));
+      const yTop = view.top + 34 + h / 2;   // never up in the bars or the hint line
       const away = other.length ? Math.sign(hx - (other[0].x0 + other[0].x1) / 2) || 1 : 1;
       const cands = [
         [clampX(hx), headTop - 8 - h / 2],
@@ -430,6 +461,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   function tally(t, boxes, taken) {
     if (!t || typeof t !== 'object' || t.you == null) return;
     const text = `YOU ${t.you}\u2013${t.rival ?? 0} RIVAL${t.draw ? `  (${t.draw} DRAW${t.draw > 1 ? 'S' : ''})` : ''}`;
+    if (band) return;   // held upright it's in the band, under ROUND (centreLine)
     const y = TIMER.cy + TIMER.r + 33, w = measure(text, 20, LABEL, 600) + 12, r = { x0: width / 2 - w / 2, x1: width / 2 + w / 2, y0: y - 12, y1: y + 12 };
     ctx.save(); ctx.globalAlpha = overlaps(r, boxes) ? 0.18 : 0.95;
     plainText(text, width / 2, y, 20, NEON.amber, { align: 'center' });
@@ -441,7 +473,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
   // ring). In the last 10 seconds it turns pink and pulses once a second: it swells and flares the moment the
   // number ticks over and settles before the next one, on the sim's own clock (so it holds in a pause or hitstop).
   function timer(sim) {
-    const cx = width / 2, { cy, r, size } = TIMER, limit = sim.roundTime > 0;
+    const cx = sw / 2, { cy, r, size } = L.timer, limit = sim.roundTime > 0, B = L.band ? 0.55 : 1;
     const secs = Math.ceil(sim.timer), hurry = limit && secs <= 10;
     // the number changes as the clock crosses a whole second; age is the time since it last did
     const age = 1 - (sim.timer - Math.floor(sim.timer));
@@ -450,15 +482,28 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.save();
     ctx.translate(cx, cy); ctx.scale(s, s);
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fillStyle = hurry ? `rgba(${40 + 50 * pulse | 0},4,40,0.82)` : 'rgba(14,4,30,0.78)'; ctx.fill();
-    ctx.shadowColor = hurry ? NEON.pink : NEON.violet; ctx.shadowBlur = 16 + 26 * pulse; ctx.lineWidth = 3 + 2 * pulse; ctx.strokeStyle = hurry ? NEON.pink : NEON.violet; ctx.stroke();
+    ctx.shadowColor = hurry ? NEON.pink : NEON.violet; ctx.shadowBlur = (16 + 26 * pulse) * B; ctx.lineWidth = (3 + 2 * pulse) * (L.band ? 0.7 : 1); ctx.strokeStyle = hurry ? NEON.pink : NEON.violet; ctx.stroke();
     const f = limit ? Math.max(0, Math.min(1, sim.timer / sim.roundTime)) : 1;
-    ctx.shadowBlur = 8; ctx.lineWidth = 2.5; ctx.strokeStyle = hurry ? NEON.pink : '#e6d6ff';
-    ctx.beginPath(); ctx.arc(0, 0, r - 6, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 8 * B; ctx.lineWidth = L.band ? 1.8 : 2.5; ctx.strokeStyle = hurry ? NEON.pink : '#e6d6ff';
+    ctx.beginPath(); ctx.arc(0, 0, r - (L.band ? 4 : 6), -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
     const text = limit ? String(secs).padStart(2, '0') : '∞';
-    if (hurry) neonText(text, 0, 2, size, NEON.pink, { glow: 0.35 + pulse });
-    else plainText(text, 0, 2, limit ? size : size + 4, NEON.white, { font: DISPLAY, align: 'center', weight: '' });
+    if (hurry) neonText(text, 0, L.band ? 1 : 2, size, NEON.pink, { glow: 0.35 + pulse });
+    else plainText(text, 0, L.band ? 1 : 2, limit ? size : size + 4, NEON.white, { font: DISPLAY, align: 'center', weight: '' });
     ctx.restore();
-    plainText(`ROUND ${sim.round}`, cx, cy + r + 12, 21, NEON.violet, { align: 'center' });
+    // the band's compact form has one line under the clock: the score or the tally takes it when there is one
+    if (!(L.band && band.compact && band.centre)) plainText(`ROUND ${sim.round}`, cx, cy + r + L.roundDy, L.round, NEON.violet, { align: 'center' });
+  }
+  // the band's middle column, under ROUND: the run's score (with its bonus), or the online tally
+  function centreLine(flow) {
+    const t = flow && flow.tally && typeof flow.tally === 'object' && flow.tally.you != null ? flow.tally : null;
+    let text = '', color = NEON.amber;
+    if (flow && flow.score != null) text = flow.bonus ? flow.bonus : String(Math.max(0, Math.floor(flow.score))).padStart(7, '0');
+    else if (t) text = `YOU ${t.you}\u2013${t.rival ?? 0} RIVAL`;
+    if (flow && flow.score != null && flow.bonus) color = NEON.white;
+    band.centre = !!text;
+    if (!text) return;
+    const T = L.timer, y = band.compact ? T.cy + T.r + L.roundDy : T.cy + T.r + L.roundDy + L.score + 1;
+    plainText(text, sw / 2, y, L.score, color, { align: 'center' });
   }
 
   // screen boxes of the live fighters (and the fresh pile isn't covered either: it lies on the floor, below every slot)
@@ -491,11 +536,13 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     const ko = text === 'KO', fight = text === 'FIGHT';
     const size = ko ? 110 : 64, color = ko ? NEON.amber : fight ? NEON.pink : NEON.cyan;
     const pop = 1 + Math.max(0, 0.35 - age * 2.5);
-    const w = measure(text, size) * pop + 30, h = size * 1.1 * pop;
-    const spot = placeFree(w, h, [[width / 2, height * 0.24], [width / 2, height * 0.2], [width / 2, STRIP_H + h / 2 + 6]], boxes, taken);
+    // (a long one, WELLNESS COACH WINS, is scaled to the part of the frame that's on screen: the square, held upright)
+    const fitK = Math.min(1, (view.x1 - view.x0 - 24) / (measure(text, size) * pop + 30));
+    const w = (measure(text, size) * pop + 30) * fitK, h = size * 1.1 * pop * fitK;
+    const spot = placeFree(w, h, [[width / 2, height * 0.24], [width / 2, height * 0.2], [width / 2, Math.max(0, view.top) + h / 2 + 6]], boxes, taken);
     ctx.save();
-    if (spot) { ctx.translate(spot.x, spot.y); ctx.scale(pop, pop); neonText(text, 0, 0, size, color, { glow: 1.2 }); }
-    else neonText(text, width / 2, STRIP_H + 2, 40, color, { glow: 1 });   // squeezed into the strip, under the timer
+    if (spot) { ctx.translate(spot.x, spot.y); ctx.scale(pop * fitK, pop * fitK); neonText(text, 0, 0, size, color, { glow: 1.2 }); }
+    else neonText(text, width / 2, band ? 26 : STRIP_H + 2, 40, color, { glow: 1 });   // squeezed into the strip, under the timer (held upright: the square's top edge)
     ctx.restore();
   }
 
@@ -546,7 +593,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     if (!at.domPrompt && (clock % 1.1) < 0.7) { ctx.save(); ctx.globalAlpha = card.alpha * card.promptAlpha; neonText(prompt, width / 2, py, 30, NEON.amber, { glow: 1.1 }); ctx.restore(); }
 
     // DEMO: a small boxed tag in the bottom-right corner, where the key hint usually sits
-    const dw = measure('DEMO', 22, LABEL, 600) + 22, dh = 28, dx = width - 30 - dw / 2, dy = height - 26;
+    const dw = measure('DEMO', 22, LABEL, 600) + 22, dh = 28, dx = view.x1 - 30 - dw / 2, dy = height - 26;
     const covered = overlaps({ x0: dx - dw / 2, x1: dx + dw / 2, y0: dy - dh / 2, y1: dy + dh / 2 }, boxes);
     ctx.save(); ctx.globalAlpha = covered ? 0.15 : 0.9;
     ctx.strokeStyle = NEON.violet; ctx.shadowColor = NEON.violet; ctx.shadowBlur = 10; ctx.lineWidth = 2;
@@ -564,20 +611,35 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     layout = {};
     names = flow && flow.names ? flow.names : null;
     charNames = flow && flow.charNames ? flow.charNames : null;
+    ctx = frameCtx; dpr = frameDpr; L = WIDE; sw = width;
+    layout.zoom = view.zoom;   // the flow maps the title's prompt slot onto its 16:9 box with this
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
+    if (band) { band.ctx.setTransform(1, 0, 0, 1, 0, 0); band.ctx.clearRect(0, 0, band.ctx.canvas.width, band.ctx.canvas.height); }
     if (flow && flow.bare) return layout;
     // under: drawn first, in screen space, so the HUD reads over it (the perfect round finisher's glass, src/fx/perfect.js)
     if (under) { ctx.save(); try { under(ctx); } catch (e) { /* never breaks the HUD */ } ctx.restore(); }
-    // a soft violet fade behind the strip so the bars read over the bright sign row
-    const g = ctx.createLinearGradient(0, 0, 0, STRIP_H + 30);   // down past the move-hint line under the bars
-    g.addColorStop(0, 'rgba(10,2,24,0.62)'); g.addColorStop(0.7, 'rgba(10,2,24,0.32)'); g.addColorStop(1, 'rgba(10,2,24,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, width, STRIP_H + 30);
     // a mirrored view (camera.mirror: the online guest) swaps the bars, so P2's is on the left like his fighter
     const flip = camera.mirror ? 1 : 0;
-    bar(sim.units[0], 0, flip, sim, dt); bar(sim.focus || sim.units[1], 1, 1 - flip, sim, dt);
-    timer(sim);
-    if (flow && flow.score != null) score(flow, flip);
+    if (band) {
+      // held upright: the strip (bars, names, pips, timer, ROUND, hints, score) on the band's canvas above the
+      // square, by the same code in the band's layout; the frame draws none of it
+      ctx = band.ctx; dpr = band.scale; L = BAND_L; sw = band.w;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      try {
+        centreLine(flow);
+        bar(sim.units[0], 0, flip, sim, dt); bar(sim.focus || sim.units[1], 1, 1 - flip, sim, dt);
+        timer(sim);
+      } finally { ctx = frameCtx; dpr = frameDpr; L = WIDE; sw = width; }
+    } else {
+      // a soft violet fade behind the strip so the bars read over the bright sign row
+      const g = ctx.createLinearGradient(0, 0, 0, STRIP_H + 30);   // down past the move-hint line under the bars
+      g.addColorStop(0, 'rgba(10,2,24,0.62)'); g.addColorStop(0.7, 'rgba(10,2,24,0.32)'); g.addColorStop(1, 'rgba(10,2,24,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, width, STRIP_H + 30);
+      bar(sim.units[0], 0, flip, sim, dt); bar(sim.focus || sim.units[1], 1, 1 - flip, sim, dt);
+      timer(sim);
+      if (flow && flow.score != null) score(flow, flip);
+    }
 
     const boxes = fighterBoxes(sim, camera), taken = [];
     if (flow && flow.tally) tally(flow.tally, boxes, taken);
@@ -597,14 +659,14 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
       const age = c.max - c.t;
       items.push({ text: c.kind === 'counter' && c.text === 'COUNTER' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' || c.kind === 'accident' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
     }
-    const rows = [STRIP_H + 32, STRIP_H + 66, STRIP_H + 100, STRIP_H + 134];   // under the move-hint line
+    const rows = [view.top + 32, view.top + 66, view.top + 100, view.top + 134];   // under the move-hint line (held upright: from the square's top)
     let row = [0, 0, 0];
     for (const it of items) {
       const pop = 1 + Math.max(0, 0.3 - it.age * 2);
       const w = measure(it.text, it.size) * pop + 16, h = it.size * 1.15;
       let side = it.by === 1 || it.by > 1 ? 1 : it.by === 0 ? 0 : 2;
       if (flip && side < 2) side = 1 - side;   // mirrored: on the attacker's side of the screen
-      const xs = [44 + w / 2, width - 44 - w / 2, width / 2];
+      const xs = [view.x0 + view.edge + w / 2, view.x1 - view.edge - w / 2, width / 2];
       const order = side === 2 ? [2, 0, 1] : [side, 1 - side, 2];
       let spot = null;
       for (const s of order) {
@@ -616,7 +678,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
         // no free slot under the strip: a small tag inside the strip beside the timer
         const sx = side === 1 ? width / 2 + 70 : width / 2 - 70;
         ctx.save(); ctx.globalAlpha = it.alpha;
-        neonText(it.text, sx, STRIP_H - 8, 16, it.color, { align: side === 1 ? 'left' : 'right', glow: 0.8 });
+        neonText(it.text, sx, band ? 14 : STRIP_H - 8, 16, it.color, { align: side === 1 ? 'left' : 'right', glow: 0.8 });
         ctx.restore(); continue;
       }
       ctx.save(); ctx.globalAlpha = it.alpha; ctx.translate(spot.x, spot.y); ctx.scale(pop, pop);
@@ -626,17 +688,17 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
 
     // a happy accident a player found for the first time (main.js): TECHNIQUE FOUND 3/8
     if (toast) {
-      const spot = placeFree(measure(toast.text, 22) + 20, 30, [[width / 2, STRIP_H + 150], [width / 2, STRIP_H + 184]], boxes, taken);
+      const spot = placeFree(measure(toast.text, 22) + 20, 30, [[width / 2, view.top + 150], [width / 2, view.top + 184]], boxes, taken);
       if (spot) { ctx.save(); ctx.globalAlpha = Math.min(1, toast.t / 0.3); plainText(toast.text, spot.x, spot.y, 22, KIND_COLOR.accident, { font: DISPLAY, align: 'center', weight: '' }); ctx.restore(); }
     }
     // horde count card
     if (sim.card) {
       const k = Math.min(1, sim.card.t / 0.2), s = 1 + 0.25 * Math.max(0, sim.card.t - 0.7) / 0.2;
-      const spot = placeFree(measure(sim.card.text, 30) * s + 20, 40, [[width / 2, STRIP_H + 26], [width / 2, STRIP_H + 60]], boxes, taken);
+      const spot = placeFree(measure(sim.card.text, 30) * s + 20, 40, [[width / 2, view.top + 26], [width / 2, view.top + 60]], boxes, taken);
       if (spot) { ctx.save(); ctx.globalAlpha = k; ctx.translate(spot.x, spot.y); ctx.scale(s, s); neonText(sim.card.text, 0, 0, 30, NEON.amber); ctx.restore(); }
     }
     if (attract) { if (debug) drawDebug(sim, camera, scene); return layout; }
-    if (paused) neonText('PAUSED', width / 2, STRIP_H + 40, 34, NEON.violet);
+    if (paused) neonText('PAUSED', width / 2, view.top + 40, 34, NEON.violet);
     const cls = typeof document !== 'undefined' ? document.documentElement.classList : null;
     const padUI = !!cls && cls.contains('pad-ui');
     const touchUI = !!cls && cls.contains('touch-ui') && !padUI;   // a pad hides the touch buttons, so the hints come back
@@ -700,10 +762,22 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr = 1 } = {}) 
     ctx.restore();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = `500 15px ${LABEL}`; ctx.fillStyle = NEON.violet;
-    ctx.fillText(`${scene}  seed ${sim.seed}  step ${sim.stepCount}  ${sim.phase}${sim.phaseName ? '  ' + sim.phaseName : ''}`, 44, height - 22);
+    ctx.fillText(`${scene}  seed ${sim.seed}  step ${sim.stepCount}  ${sim.phase}${sim.phaseName ? '  ' + sim.phaseName : ''}`, view.x0 + 44, height - 22);
   }
 
-  return { draw, event };
+  /**
+   * Held upright (src/square.js): only x0..x1 of the frame is on screen and the strip is drawn on `canvas`, a band
+   * above it, `w` band units across at `scale` canvas px per unit (`compact`: no hint line). null puts it all back.
+   * @param {null | { x0: number, x1: number, zoom: number, canvas: HTMLCanvasElement, w: number, h: number, scale: number, compact: boolean }} o
+   */
+  function setSquare(o) {
+    if (!o) { view = FULL; band = null; return; }
+    view = { x0: o.x0, x1: o.x1, top: -8, edge: 16, zoom: o.zoom };
+    band = { ctx: /** @type {CanvasRenderingContext2D} */ (o.canvas.getContext('2d')), w: o.w, h: o.h, scale: o.scale, compact: !!o.compact, centre: false };
+    textCache.clear();
+  }
+
+  return { draw, event, setSquare };
 }
 
 function mix(a, b, t) {
