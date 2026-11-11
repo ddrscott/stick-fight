@@ -39,7 +39,7 @@
 // Every screen that waits on the player has at least two buttons and a footer legend; the control
 // scheme (one for every screen) is in controls.js. "MAIN MENU" always means modeSelect.
 
-import { track } from '../analytics.js';   // cookieless game analytics (README, Analytics)
+import { track, trackAll } from '../analytics.js';   // cookieless game analytics (README, Analytics)
 import { LADDER, buildLadder, secretStage, retryDifficulty } from './ladder.js';
 import { openSelect } from './select.js';
 import { openMoveList } from './movelist.js';
@@ -53,6 +53,7 @@ import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './
 import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
 import { profile, setName as saveName, guestName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
 import { createCrew, createCrewRoom, cleanSlug, crewLink } from '../net/crew.js';
+import * as CS from '../net/crewScores.js';   // crew high scores: which runs post where (README, Crew rooms, High scores)
 import { linkFromUrl, setLinkInBar } from '../links.js';
 import { qrSvg } from '../qr.js';
 import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
@@ -99,6 +100,21 @@ const TRANSITIONS = {
 // the screens that take typing (src/flow/index.js textScreen): letters type, Backspace deletes, Enter submits
 const TEXT = new Set(['nameEntry', 'signInEmail', 'signInCode', 'crewCreate', 'crewJoin']);
 // the crew's lobby connection stays open in these (the lobby, and a match the crew started)
+const ORDINAL = ['1ST', '2ND', '3RD', '4TH', '5TH', '6TH', '7TH', '8TH', '9TH', '10TH'];
+// the crew lobby's left panel (paintLobby): the standings, the crew's two high score tables, its stats
+const CREW_VIEWS = [['standings', 'STANDINGS'], ['arcade', 'ARCADE'], ['horde', 'HORDE'], ['stats', 'STATS']];
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+/** a high score's date: NOV 11 */
+const shortDate = (at) => { const d = new Date(Number(at) || 0); return `${MONTHS[d.getMonth()]} ${d.getDate()}`; };
+/** time played as a person says it: 45S, 12M, 3H 12M, 2D 4H */
+export function playTime(secs) {
+  const s = Math.max(0, Math.floor(Number(secs) || 0));
+  if (s < 60) return `${s}S`;
+  if (s < 3600) return `${Math.floor(s / 60)}M`;
+  if (s < 86400) { const m = Math.floor((s % 3600) / 60); return `${Math.floor(s / 3600)}H${m ? ` ${m}M` : ''}`; }
+  const h = Math.floor((s % 86400) / 3600);
+  return `${Math.floor(s / 86400)}D${h ? ` ${h}H` : ''}`;
+}
 const CREW_KEEP = new Set(['crewLobby', 'crewLinking', 'onlineFighting', 'onlinePost', 'onlineSelect', 'onlineEnd']);
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
 const DEMO = new Set(['attract', 'controls', 'modeSelect', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'crewLobby', 'crewLinking']);
@@ -192,8 +208,28 @@ export function createFlow(ctx) {
     classes();
     enter(next, prev);
     music();
+    trainClock();
     return true;
   }
+  // Training's play time (README, Analytics, Play time): training has no match, so the page sends the seconds
+  // spent fighting the dummy as a heartbeat ({ e: 'play' }) a minute and when it stops (a pause, leaving, a
+  // hidden tab). The Worker caps each at 90 s and the analytics rate limit caps how often.
+  const TRAIN_BEAT_MS = 60000;
+  let trainAt = 0;
+  function trainFlush(stop) {
+    if (!trainAt) return;
+    const now = performance.now(), secs = Math.round((now - trainAt) / 1000);
+    trainAt = stop ? 0 : now;
+    if (secs >= 1) trackAll([{ e: 'play', m: { mode: 'training', secs: Math.min(90, secs) } }]);
+  }
+  /** the clock runs while a training fight is on screen and the tab is visible */
+  function trainClock() {
+    const on = mode === 'training' && state === 'fighting' && document.visibilityState !== 'hidden';
+    if (on && !trainAt) trainAt = performance.now();
+    else if (!on && trainAt) trainFlush(true);
+  }
+  document.addEventListener('visibilitychange', trainClock);
+  window.addEventListener('pagehide', () => trainFlush(true));
   function music() {
     if (!ctx.music) return;
     const pool = state === 'off' ? null
@@ -271,6 +307,14 @@ export function createFlow(ctx) {
 
   // ---- the scene behind --------------------------------------------------------------------------
   function demo() { demoKO = false; ctx.scene('attract'); }
+  /** the attract loop's tables: this device's two, then the first crew on its list that has scores (each table that has rows) */
+  function attractTables() {
+    if (CS.recentCrews().length) CS.loadBoards();   // cached a minute: the next turn has them
+    const seq = [{ mode: 'arcade', crew: '' }, { mode: 'horde', crew: '' }];
+    const b = CS.boards().find((x) => x.arcade.length || x.horde.length);
+    if (b) for (const m of ['arcade', 'horde']) if (b[m].length) seq.push({ mode: m, crew: b.slug });
+    return seq;
+  }
   function ensureDemo() { if (ctx.sceneName() !== 'attract') demo(); }
   function newRun(m) { mode = m; run.stage = 0; run.score = 0; run.stageStart = 0; run.continues = 0; run.stageContinues = 0; run.floors = 0; run.goons = 0; bonus = { text: '', t: 0 }; }
   function add(points, label = '') {
@@ -300,7 +344,7 @@ export function createFlow(ctx) {
     switch (state) {
       case 'highScores': if (hs.postGame || hs.manual ? idle > IDLE_MS : t > 7) go('attract'); break;   // the attract loop's table turns over; one the player is reading waits
       case 'stageIntro': if (t > 3.4) go('fighting'); break;
-      case 'fighting': if (mode === 'training' && idle > IDLE_MS) go('attract'); break;
+      case 'fighting': if (mode === 'training' && idle > IDLE_MS) go('attract'); else if (trainAt && performance.now() - trainAt > TRAIN_BEAT_MS) trainFlush(false); break;
       case 'result': if (t > 2.6) decide(); break;
       case 'stageClear': if (t > 5) nextStage(); break;
       case 'continue': if (t >= 10) go('gameOver'); else tickContinue(); break;
@@ -322,7 +366,10 @@ export function createFlow(ctx) {
     if (state === 'watching') { if (!watchOn() && (sim.round > 1 || sim.phase === 'match')) { demo(); return true; } return false; }
     if (DEMO.has(state)) {
       if (sim.round > 1 || sim.phase === 'match') {   // one round per demo bout
-        if (state === 'attract') { hs = { mode: hs.loop % 2 ? 'horde' : 'arcade', highlight: -1, postGame: false, loop: hs.loop + 1 }; go('highScores'); }   // the two tables take turns
+        if (state === 'attract') {   // the tables take turns: this device's arcade and horde, then a crew's (README, Crew rooms, High scores)
+          const seq = attractTables(), pick = seq[hs.loop % seq.length];
+          hs = { mode: pick.mode, crew: pick.crew || '', highlight: -1, postGame: false, loop: hs.loop + 1 }; go('highScores');
+        }
         else demo();
         return true;
       }
@@ -373,7 +420,7 @@ export function createFlow(ctx) {
   }
   function decide() {
     if (mode === 'horde') {
-      entry = { mode: 'horde', score: run.score, note: `${run.floors} FLOOR${run.floors === 1 ? '' : 'S'}` };
+      entry = { mode: 'horde', score: run.score, note: `${run.floors} FLOOR${run.floors === 1 ? '' : 'S'}`, char: sel.player, reach: run.floors };
       track('horde_end', [sel.player], run.floors);
       go('gameOver');
     } else if (resultWin) {
@@ -388,14 +435,15 @@ export function createFlow(ctx) {
     // the boss down without a continue: THE CEO is waiting upstairs (a secret seventh stage, src/flow/ladder.js)
     const secret = run.stage >= ladder().length - 1 && mode === 'arcade' && secretStage(ladder(), run.continues, sel.player, getCharacter);
     if (secret) run.ladder = [...ladder(), secret];
-    if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR' }; track('arcade_end', [sel.player, 'clear'], ladder().length); go('ending'); return; }
+    if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR', char: sel.player, reach: ladder().length, clear: true }; track('arcade_end', [sel.player, 'clear'], ladder().length); go('ending'); return; }
     track('stage', [sel.player], run.stage + 2);   // reached the next stage
     run.stage++; run.stageContinues = 0;
     go('stageIntro');
   }
   function afterGame() {
     if (state !== 'gameOver' && state !== 'ending') return;
-    if (entry && S.rankFor(entry.mode, entry.score) >= 0) { go('enterInitials'); return; }
+    // the initials go in when the run makes this device's table or one of its crews' (src/net/crewScores.js)
+    if (entry && (S.rankFor(entry.mode, entry.score) >= 0 || CS.placeFor(entry.mode, entry.score))) { go('enterInitials'); return; }
     hs = { mode: entry ? entry.mode : 'arcade', highlight: -1, postGame: true, loop: hs.loop };
     go('highScores');
   }
@@ -444,7 +492,7 @@ export function createFlow(ctx) {
   }
   const myChar = () => (sim.units[0] && sim.units[0].char) || characterOr(sel.player);
   function pressStart() { if (state === 'attract') go('modeSelect'); }
-  function openScores() { hs = { mode: 'arcade', highlight: -1, postGame: false, loop: hs.loop, manual: true }; go('highScores'); }
+  function openScores() { hs = { mode: 'arcade', highlight: -1, postGame: false, loop: hs.loop, manual: true }; go('highScores'); loadCrewTables(); }
 
   // ---- input ------------------------------------------------------------------------------------------
   // One scheme for every screen (controls.js): directions move the focus, confirm (Enter, Space, A)
@@ -573,15 +621,26 @@ export function createFlow(ctx) {
     }, { veil: false });
   }
   function screenScores(focus = 0) {
-    const rows = S.table(hs.mode);
+    // a crew's table (hs.crew: its slug) or this device's
+    const board = hs.crew ? CS.boards().find((b) => b.slug === hs.crew) : null;
+    if (hs.crew && !board) hs.crew = '';
+    const rows = board ? board[hs.mode] : S.table(hs.mode);
     ui.show('fl-scores', (root) => {
-      root.append(el('h1', 'fl-h2', 'HIGH SCORES'), el('div', 'fl-label', hs.mode === 'arcade' ? 'ARCADE' : 'HORDE'), el('div', 'fl-rule'));
-      const tb = el('div', 'fl-table');
+      const kind = hs.mode === 'arcade' ? 'ARCADE' : 'HORDE';
+      root.append(el('h1', 'fl-h2', 'HIGH SCORES'), el('div', 'fl-label', board ? `${board.name}  ·  ${kind}` : kind), el('div', 'fl-rule'));
+      const tb = el('div', board ? 'fl-table fl-table5' : 'fl-table');
+      tb.dataset.scroll = 'y';
       rows.forEach((r, i) => {
         const cls = i === hs.highlight ? ' fl-new' : '';
-        tb.append(el('span', 'fl-rank' + cls, `${i + 1}`), el('span', cls, r.name), el('span', 'fl-score' + cls, S.fmt(r.score)), el('span', 'fl-note' + cls, r.note));
+        tb.append(el('span', 'fl-rank' + cls, `${i + 1}`), el('span', cls, board ? r.initials : r.name), el('span', 'fl-score' + cls, S.fmt(r.score)));
+        if (board) { const f = el('span', 'fl-fighter' + cls, characterOr(r.char).name); f.style.setProperty('--fc', characterOr(r.char).color); tb.appendChild(f); }
+        tb.appendChild(el('span', 'fl-note' + cls, board ? CS.rowNote(hs.mode, r) : r.note));
       });
+      if (board && !rows.length) tb.appendChild(el('span', 'fl-note fl-empty', 'NO SCORES YET'));
       root.appendChild(tb);
+      // where a run just posted went, under this device's table
+      const landed = !board && hs.posted && hs.posted.length ? hs.posted.map((p) => `${p.name} ${ORDINAL[p.rank]}`).join('  ·  ') : '';
+      if (landed) root.appendChild(el('div', 'fl-small fl-crewpost', `ON THE CREW BOARDS: ${landed}`));
       // after a game CONTINUE goes back to the title, as the cabinet always did; from the attract loop or
       // the title the table is a detour, so MAIN MENU leads
       const items = hs.postGame
@@ -590,10 +649,19 @@ export function createFlow(ctx) {
       items.push(button(hs.mode === 'arcade' ? 'HORDE TABLE' : 'ARCADE TABLE', () => {
         hs.mode = hs.mode === 'arcade' ? 'horde' : 'arcade'; hs.highlight = -1; hs.manual = true; screenScores(2);
       }));
+      // this device's tables, then each crew's in turn
+      const sources = ['', ...CS.boards().map((b) => b.slug)];
+      if (sources.length > 1) {
+        const next = sources[(sources.indexOf(hs.crew || '') + 1) % sources.length];
+        const nb = next && CS.boards().find((b) => b.slug === next);
+        items.push(button(nb ? nb.name : 'THIS DEVICE', () => { hs.crew = next; hs.highlight = -1; hs.manual = true; screenScores(3); }, 'fl-crewsrc'));
+      }
       btnRow(root, items, '17cqw');
       return { items, focus, back: () => go('attract'), legend: [MOVE, SELECT, ['back', 'TITLE']] };
     });
   }
+  /** opening HIGH SCORES from the title: fetch the crews' tables, so the button to them shows */
+  function loadCrewTables() { if (CS.recentCrews().length) CS.loadBoards().then(() => { if (state === 'highScores' && hs.manual && !hs.crew) screenScores(); }); }
   function screenControls() {
     ui.show('fl-controls', (root) => {
       root.append(el('h1', 'fl-h2', 'CONTROLS'));
@@ -708,7 +776,8 @@ export function createFlow(ctx) {
   }
   function tickContinue() { if (countEl) { const n = String(Math.max(0, Math.ceil(10 - t - 0.0001))); if (countEl.textContent !== n) countEl.textContent = n; } }
   function screenGameOver() {
-    if (mode === 'arcade') { entry = { mode: 'arcade', score: run.score, note: `STAGE ${ladder()[run.stage].n}` }; track('arcade_end', [sel.player, 'over'], ladder()[run.stage].n); }
+    if (CS.recentCrews().length) CS.loadBoards();   // the crews' tables, so the initials screen knows if this run makes one
+    if (mode === 'arcade') { entry = { mode: 'arcade', score: run.score, note: `STAGE ${ladder()[run.stage].n}`, char: sel.player, reach: ladder()[run.stage].n }; track('arcade_end', [sel.player, 'over'], ladder()[run.stage].n); }
     ui.show('fl-gameover', (root) => {
       root.append(el('h1', 'fl-h1', 'GAME OVER'));
       const tl = el('div', 'fl-tally');
@@ -742,8 +811,13 @@ export function createFlow(ctx) {
   function screenInitials() {
     initials = ['A', 'A', 'A']; slot = 0;
     const rank = entry ? S.rankFor(entry.mode, entry.score) : 0;
+    const crewPlace = entry && rank < 0 ? CS.placeFor(entry.mode, entry.score) : null;
+    const crews = CS.recentCrews();
     ui.show('fl-initials', (root) => {
-      root.append(el('h1', 'fl-h2', 'NEW HIGH SCORE'), el('div', 'fl-label', `${['1ST', '2ND', '3RD', '4TH', '5TH'][rank] || ''} PLACE  ·  ${S.fmt(entry ? entry.score : 0)}`));
+      const where = crewPlace ? `${crewPlace.name}  ·  ${ORDINAL[crewPlace.rank] || ''} PLACE` : `${ORDINAL[rank] || ''} PLACE`;
+      root.append(el('h1', 'fl-h2', 'NEW HIGH SCORE'), el('div', 'fl-label', `${where}  ·  ${S.fmt(entry ? entry.score : 0)}`));
+      // which runs count: this one goes to every crew on this device's list too (the server keeps members' only)
+      if (crews.length) root.appendChild(el('div', 'fl-small fl-crewpost', `ALSO GOES TO ${crews.map((c) => c.name).join(', ')}`));
       const slots = el('div', 'fl-slots');
       slotEls = [];
       for (let i = 0; i < 3; i++) {
@@ -768,10 +842,24 @@ export function createFlow(ctx) {
   function setLetter(ch) { initials[slot] = ch; paintSlots(); if (ctx.click) ctx.click(); }
   function submitInitials() {
     if (state !== 'enterInitials' || !entry) return;
-    const rank = S.addScore(entry.mode, { name: initials.join(''), score: entry.score, note: entry.note });
-    hs = { mode: entry.mode, highlight: rank, postGame: true, loop: hs.loop, manual: false };
+    const name = initials.join('');
+    const rank = S.rankFor(entry.mode, entry.score) >= 0 ? S.addScore(entry.mode, { name, score: entry.score, note: entry.note }) : -1;
+    // a run that only made a crew's table shows that table; the rest show this device's
+    const crewPlace = rank < 0 ? CS.placeFor(entry.mode, entry.score) : null;
+    hs = { mode: entry.mode, highlight: rank, postGame: true, loop: hs.loop, manual: false, crew: crewPlace ? crewPlace.slug : '', posted: [] };
+    const run = entry.char ? { kind: entry.mode, initials: name, score: entry.score, char: entry.char, reach: entry.reach | 0, clear: !!entry.clear } : null;
     entry = null;
     go('highScores');
+    // post it to the crews (README, Crew rooms, High scores), then show where it landed
+    if (run && CS.recentCrews().length) {
+      const mine = hs;
+      CS.postRun(/** @type {any} */ (run)).then(async (res) => {
+        await CS.loadBoards(true);
+        mine.posted = res.filter((r) => !r.error && r.rank >= 0);
+        if (mine.crew) { const r = mine.posted.find((x) => x.slug === mine.crew); if (r) mine.highlight = r.rank; }
+        if (state === 'highScores' && hs === mine) screenScores();
+      });
+    }
   }
   // The ending tells the temp story (the homepage's FROM TEMP TO THE TOP): day one, how each coworker on this
   // run's ladder was handled, the new title, then the credits. THE CEO is named only once he's been beaten.
@@ -781,6 +869,7 @@ export function createFlow(ctx) {
     ceo: 'THE BOARD ACCEPTS THE RESIGNATION',
   };
   function screenEnding() {
+    if (CS.recentCrews().length) CS.loadBoards();
     ui.show('fl-ending', (root) => {
       const lad = ladder(), boss = lad[lad.length - 1], me = characterOr(sel.player);
       const top = !!boss.secret, wasManager = sel.player === 'manager';
@@ -1630,12 +1719,13 @@ export function createFlow(ctx) {
   // match the crew opens (a quick room underneath), and the host's page reports each result to the crew.
   let crewCli = null, crewSlug = '', crewMatch = null, rotating = null, crewNote = '', crewFail = '', linkTimer = 0;
   let lob = null;
+  let crewView = 'standings';   // the lobby's left panel: standings, arcade, horde (the crew's high scores) or stats
   function crewC() {
     if (crewCli) return crewCli;
     const c = createCrew();
     crewCli = c;
     c.on('state', (s) => {
-      if (s && s.crew && s.crew.slug === crewSlug && s.crew.name) rememberCrew(crewSlug, s.crew.name);
+      if (s && s.crew && s.crew.slug === crewSlug && s.crew.name) { rememberCrew(crewSlug, s.crew.name); CS.noteBoard(crewSlug, s.crew.name, s.scores); }
       if (state === 'crewLobby') paintLobby();
       else if (state === 'onlinePost') paintBetween();   // the crew record under the score
     });
@@ -1774,6 +1864,14 @@ export function createFlow(ctx) {
       const body = el('div', 'fl-row fl-crewbody');
       const left = el('div', 'fl-crewleft'), right = el('div', 'fl-crewright');
       const table = el('div', 'fl-standings'), recent = el('div', 'fl-recent');
+      table.dataset.scroll = 'y';   // held upright the list scrolls ([twgdsx]'s portrait layout)
+      // the left panel's views: a row of tabs that stays put as the first thing in the table (paintLobby keeps it)
+      const tabs = el('div', 'fl-crewtabs');
+      const tabBtns = CREW_VIEWS.map(([v, label]) => {
+        const b = button(label, () => { crewView = v; paintLobby(); }, 'fl-mini fl-crewtab');
+        b.el.dataset.view = v; tabs.appendChild(b.el); return b;
+      });
+      table.appendChild(tabs);
       left.append(table, recent);
       const status = el('div', 'fl-crewstatus');
       // (a press while still connecting counts: crew.js sends it once the room says welcome)
@@ -1796,11 +1894,11 @@ export function createFlow(ctx) {
       const main = button('MAIN MENU', () => go('modeSelect'), 'fl-violet fl-mini');
       const pair2 = el('div', 'fl-row fl-crewpair'); pair2.append(leave.el, main.el);
       btns.append(pair, pair2);
-      items.push(leave, main);
+      items.push(leave, main, ...tabBtns);
       right.appendChild(btns);
       body.append(left, right, qrBox(link).el);   // the crew's link again, for a camera
       root.appendChild(body);
-      lob = { title, table, recent, status, play, noteUntil: crewNote ? performance.now() + 5000 : 0 };
+      lob = { title, table, tabs, recent, status, play, noteUntil: crewNote ? performance.now() + 5000 : 0 };
       return { items, focus: 0, back: () => go('onlineMenu'), legend: [MOVE, SELECT, ['back', 'ONLINE MENU']] };
     });
     paintLobby();
@@ -1810,11 +1908,21 @@ export function createFlow(ctx) {
     if (state !== 'crewLobby' || !lob) return;
     const c = crewC(), s = c.state, you = c.you;
     if (s && s.crew && s.crew.name && lob.title.textContent !== s.crew.name) lob.title.textContent = s.crew.name;
-    // the standings: everyone who has opened the link, the most wins first
+    // the left panel: the tabs stay, the view under them is drawn again
     const t = lob.table;
-    t.textContent = '';
-    for (const h of ['', 'NAME', 'W', 'L', 'D', 'VS YOU', 'FAVORITE']) t.appendChild(el('span', `fl-sth${'WLDVS YOU'.includes(h) && h ? ' fl-snum' : ''}`, h));
+    while (t.lastChild && t.lastChild !== lob.tabs) t.removeChild(t.lastChild);
+    t.className = `fl-standings fl-v-${crewView}`;
+    for (const b of lob.tabs.children) b.classList.toggle('fl-on', /** @type {HTMLElement} */ (b).dataset.view === crewView);
+    lob.recent.style.display = crewView === 'standings' ? '' : 'none';   // the last matches go with the standings
     const list = members();
+    if (crewView === 'arcade' || crewView === 'horde') paintCrewBoard(t, crewView, s, you);
+    else if (crewView === 'stats') paintCrewStats(t, s, you);
+    else paintStandings(t, s, c, you, list);
+    paintLobbyRest(c, s, you, list);
+  }
+  /** the standings: everyone who has opened the link, the most wins first */
+  function paintStandings(t, s, c, you, list) {
+    for (const h of ['', 'NAME', 'W', 'L', 'D', 'VS YOU', 'FAVORITE']) t.appendChild(el('span', `fl-sth${'WLDVS YOU'.includes(h) && h ? ' fl-snum' : ''}${h === 'FAVORITE' ? ' fl-sthfav' : ''}`, h));
     const shown = list.slice(0, 7);
     shown.forEach((m, i) => {
       const mine = m.id === you;
@@ -1835,6 +1943,9 @@ export function createFlow(ctx) {
     });
     if (list.length > shown.length) { const more = el('span', 'fl-smore', `AND ${list.length - shown.length} MORE`); t.appendChild(more); }
     if (!s) { const w = el('span', 'fl-smore', c.status === 'reconnecting' ? 'RECONNECTING…' : 'CONNECTING…'); t.appendChild(w); }
+  }
+  /** the recent matches, the status line and PLAY */
+  function paintLobbyRest(c, s, you, list) {
     // the last few matches
     lob.recent.textContent = '';
     const nameOfM = (id) => (member(id) || { name: '?' }).name;
@@ -1863,6 +1974,61 @@ export function createFlow(ctx) {
     setText(sm, c.ready ? (playing.length ? 'NEXT UP: THE WINNER' : 'WAITING FOR A RIVAL') : readyOthers.length ? `${readyOthers[0].name} IS WAITING` : playing.length ? 'PLAY THE WINNER' : 'FIGHT WHOEVER IS READY');
     lob.play.el.classList.toggle('fl-amber', c.ready);
     ui.refresh();
+  }
+  /** a crew high score table in the lobby: rank, initials, score, fighter (in its color), stage or floors, date */
+  function paintCrewBoard(t, kind, s, you) {
+    for (const h of ['', 'NAME', 'SCORE', 'FIGHTER', kind === 'arcade' ? 'STAGE' : 'FLOORS', 'DATE']) t.appendChild(el('span', `fl-sth${h === 'SCORE' ? ' fl-snum' : ''}`, h));
+    const rows = (s && s.scores && s.scores[kind]) || [];
+    rows.forEach((r, i) => {
+      const cls = r.member && r.member === you ? ' fl-me' : '';
+      t.appendChild(el('span', 'fl-srank' + cls, String(i + 1)));
+      t.appendChild(el('span', 'fl-sname fl-sinit' + cls, r.initials));
+      t.appendChild(el('span', 'fl-snum' + cls, S.fmt(r.score)));
+      const f = el('span', 'fl-sfav' + cls, characterOr(r.char).name);
+      f.style.setProperty('--fc', characterOr(r.char).color);
+      t.append(f, el('span', 'fl-snote' + cls, r.clear ? 'CLEAR' : String(r.reach)), el('span', 'fl-sdate' + cls, shortDate(r.at)));
+    });
+    if (!rows.length) t.appendChild(el('span', 'fl-smore', s ? `NO ${kind.toUpperCase()} SCORES YET  ·  FINISH A RUN WITH THIS CREW ON YOUR LIST` : 'CONNECTING…'));
+  }
+  /** the crew's stats: time played and matches, the most picked, each member's time and favorite, and the crew's own matchups */
+  function paintCrewStats(t, s, you) {
+    const st = s && s.stats;
+    if (!st) { t.appendChild(el('span', 'fl-smore', 'CONNECTING…')); return; }
+    const sum = el('div', 'fl-stsum');
+    sum.append(el('b', '', playTime(st.secs)), el('span', '', ' PLAYED  ·  '), el('b', '', String(st.matches)), el('span', '', st.matches === 1 ? ' MATCH' : ' MATCHES'));
+    t.appendChild(sum);
+    const sect = (title) => { const d = el('div', 'fl-stsec'); d.appendChild(el('div', 'fl-sth fl-sttitle', title)); t.appendChild(d); return d; };
+    // the most picked fighters, in their neon
+    const picks = sect('MOST PICKED');
+    picks.classList.add('fl-stwide');
+    const pl = el('div', 'fl-stpicks');
+    for (const [ch, n] of st.picks || []) { const x = el('span', 'fl-sfav', `${characterOr(ch).name} ${n}`); x.style.setProperty('--fc', characterOr(ch).color); pl.appendChild(x); }
+    if (!(st.picks || []).length) pl.appendChild(el('span', '', 'NOBODY YET'));
+    picks.appendChild(pl);
+    // each member: time played and the fighter they use most
+    const mem = sect('PLAYERS');
+    const mg = el('div', 'fl-stgrid fl-stmem');
+    const ms = members().filter((m) => m.w + m.l + m.d > 0).sort((a, b) => (b.secs || 0) - (a.secs || 0) || (b.w + b.l + b.d) - (a.w + a.l + a.d));
+    for (const m of ms.slice(0, 50)) {
+      const cls = m.id === you ? ' fl-me' : '', fav = m.fav || m.last;
+      const f = el('span', 'fl-sfav' + cls, fav ? characterOr(fav).name : '–');
+      if (fav) f.style.setProperty('--fc', characterOr(fav).color);
+      mg.append(el('span', 'fl-sname' + cls, m.name), el('span', 'fl-snum' + cls, playTime(m.secs || 0)), f);
+    }
+    if (!ms.length) mg.appendChild(el('span', 'fl-smore', 'NO MATCHES YET'));
+    mem.appendChild(mg);
+    // the crew's own matchup table: fighter against fighter, win rates within the crew (a draw is half a win)
+    const mu = sect('MATCHUPS');
+    const mt = el('div', 'fl-stgrid fl-stmu');
+    for (const [a, b, n, aw, bw, d] of st.pairs || []) {
+      const ca = characterOr(a), cb = characterOr(b);
+      const sa = el('span', 'fl-sfav', ca.name), sb = el('span', 'fl-sfav', cb.name);
+      sa.style.setProperty('--fc', ca.color); sb.style.setProperty('--fc', cb.color);
+      const pct = a === b ? 'MIRROR' : `${Math.round(((aw + d / 2) / Math.max(1, n)) * 100)}%`;
+      mt.append(sa, el('span', 'fl-snum fl-svs', pct), sb, el('span', 'fl-snum', `${n}`));
+    }
+    if (!(st.pairs || []).length) mt.appendChild(el('span', 'fl-smore', 'NO MATCHES YET'));
+    mu.appendChild(mt);
   }
 
   // ---- what main.js asks for ------------------------------------------------------------------------------
@@ -1944,7 +2110,9 @@ export function createFlow(ctx) {
     get on() { return state !== 'off'; },
     /** the sim's demo audio gate: the demo runs behind these states */
     get demo() { return DEMO.has(state) || state === 'highScores'; },
-    debug: { history, run, sel, go, debugKO, ui, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S },
+    debug: { history, run, sel, go, debugKO, ui, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S,
+      // crew high scores (scripts/crew/lobby.mjs): the run's end as the flow does it, the tables the attract loop turns through
+      crewScores: CS, startHorde, decide, afterGame, attractTables, get hs() { return hs; }, get crewView() { return crewView; } },
   };
 }
 

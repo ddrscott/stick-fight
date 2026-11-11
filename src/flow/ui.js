@@ -270,6 +270,12 @@ function injectStyle() {
   .fl-table .fl-score { text-align: right; font-variant-numeric: tabular-nums; }
   .fl-table .fl-note { font-size: 2.2cqw; color: rgba(214,190,255,0.7); }
   .fl-table .fl-new { color: #ffc2f3; animation: fl-blink 0.9s steps(1) infinite; }
+  /* a crew's table (src/net/crewScores.js): ten rows, with the fighter in its neon */
+  .fl-table.fl-table5 { grid-template-columns: auto auto auto auto auto; font-size: 2.4cqw; row-gap: 0.2cqh; column-gap: 2.4cqw; }
+  .fl-table5 .fl-note { font-size: 1.8cqw; }
+  .fl-table .fl-fighter { font-size: 1.9cqw; color: color-mix(in srgb, var(--fc, var(--violet)) 55%, #fff); }
+  .fl-table .fl-empty { grid-column: 1 / -1; text-align: center; }
+  .fl-crewpost { color: var(--amber); letter-spacing: 0.08em; }
 
   /* stage card */
   .fl-stage { gap: 1.2cqh; }
@@ -516,6 +522,24 @@ function injectStyle() {
   .fl-crewpair { gap: 1cqw; }
   .fl-crewpair .fl-btn { flex: 1; min-width: 0; padding-left: 0; padding-right: 0; font-size: 1.9cqw; letter-spacing: 0.08em; }
   .fl-crewfail .fl-h3 { max-width: 70cqw; }
+  /* the lobby's views (paintLobby): the tabs over the table, then the standings, a crew high score table, or the stats */
+  .fl-crewtabs { grid-column: 1 / -1; display: flex; gap: 0.6cqw; margin-bottom: 0.5cqh; }
+  .fl-crewtab { flex: 1; min-width: 0; min-height: 0; padding: 0.5cqw 0 0.2cqw; font-size: 1.4cqw; letter-spacing: 0.06em; }
+  .fl-crewtab.fl-on { color: var(--deep); background: var(--amber); border-color: var(--amber); text-shadow: none; }
+  .fl-standings.fl-v-arcade, .fl-standings.fl-v-horde { grid-template-columns: 2.2cqw minmax(0, 0.6fr) max-content minmax(0, 1fr) max-content max-content; row-gap: 0.35cqh; }
+  .fl-standings .fl-sinit { letter-spacing: 0.18em; }
+  .fl-standings .fl-snote, .fl-standings .fl-sdate { text-align: right; font-size: 1.9cqw; color: rgba(214,190,255,0.8); font-variant-numeric: tabular-nums; }
+  .fl-standings.fl-v-stats { grid-template-columns: 1fr 1fr; column-gap: 1.6cqw; row-gap: 0.8cqh; align-items: start; }
+  .fl-stsum { grid-column: 1 / -1; font-size: 2.3cqw; letter-spacing: 0.08em; color: rgba(214,190,255,0.85); }
+  .fl-stsum b { color: var(--amber); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fl-stsec { display: flex; flex-direction: column; gap: 0.4cqh; min-width: 0; }
+  .fl-stsec.fl-stwide { grid-column: 1 / -1; }   /* MOST PICKED across, then PLAYERS and MATCHUPS side by side */
+  .fl-standings .fl-sttitle { display: block; }
+  .fl-stpicks { display: flex; flex-wrap: wrap; gap: 0.3cqh 1.6cqw; }
+  .fl-stgrid { display: grid; column-gap: 0.8cqw; row-gap: 0.3cqh; align-items: baseline; font-size: 2cqw; }
+  .fl-stmem { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+  .fl-stmu { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
+  .fl-stgrid .fl-sfav { font-size: 1.8cqw; }
 
   /* A narrow stage: a phone held upright, where the stage is about 390 by 219. A column of seven or nine
      44px buttons can't fit that, so the long menus go wide instead of tall, and the small print grows
@@ -550,14 +574,33 @@ function injectStyle() {
     /* the crew lobby: the FAVORITE column gives its room to the QR code, and the small buttons keep their words inside */
     .fl-crewleft { width: 43cqw; }
     .fl-crewbody > .fl-qr { --qr: 27cqw; }
-    .fl-standings { grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw; }
-    .fl-standings .fl-sfav, .fl-standings .fl-sth:nth-child(7) { display: none; }
+    .fl-standings.fl-v-standings { grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw; }
+    .fl-v-standings .fl-sfav, .fl-v-standings .fl-sthfav { display: none; }
+    .fl-standings.fl-v-arcade, .fl-standings.fl-v-horde { grid-template-columns: 3cqw minmax(0, 1fr) max-content minmax(0, 1fr) max-content; }
+    .fl-v-arcade .fl-sdate, .fl-v-horde .fl-sdate, .fl-v-arcade .fl-sth:nth-child(7), .fl-v-horde .fl-sth:nth-child(7) { display: none; }
+    .fl-standings.fl-v-stats { grid-template-columns: 1fr; }
+    .fl-crewtab { font-size: 1.7cqw !important; letter-spacing: 0.02em; }
     .fl-crew .fl-btn.fl-mini { font-size: 2.3cqw; min-height: 30px; }
     .fl-crew .fl-playbtn { min-height: 44px; }
     .fl-crew .fl-playbtn small { font-size: 2cqw; }
     .fl-crew .fl-playbtn .fl-pl { font-size: 3.6cqw; }
     .fl-crew .fl-crewpair .fl-btn { font-size: 1.9cqw; letter-spacing: 0.02em; }
   }
+
+  /* The crew lobby's views held upright. [twgdsx] lays the lobby out as one grid when the phone is upright
+     (.fl-up, its own block); these only size what this card added inside the table (the tabs, the high score
+     tables, the stats), and do nothing until that layout is on. */
+  #flow > .fl-up.fl-crew .fl-crewtabs { gap: 1.6cqw; margin-bottom: 0.4em; }
+  #flow > .fl-up.fl-crew .fl-crewtab { min-height: 40px; font-size: max(12px, 3.6cqw); }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sthfav { display: block; }
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-arcade, #flow > .fl-up.fl-crew .fl-standings.fl-v-horde { grid-template-columns: 5cqw minmax(0, 0.7fr) max-content minmax(0, 1fr) max-content; }
+  #flow > .fl-up.fl-crew .fl-v-arcade .fl-sdate, #flow > .fl-up.fl-crew .fl-v-horde .fl-sdate,
+  #flow > .fl-up.fl-crew .fl-v-arcade .fl-sth:nth-child(7), #flow > .fl-up.fl-crew .fl-v-horde .fl-sth:nth-child(7) { display: none; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-snote { font-size: max(12px, 3.5cqw); }
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-stats { grid-template-columns: 1fr; row-gap: 1.2em; }
+  #flow > .fl-up.fl-crew .fl-stsum { font-size: max(14px, 4.4cqw); }
+  #flow > .fl-up.fl-crew .fl-stgrid { font-size: max(13px, 3.9cqw); column-gap: 2.4cqw; }
+  #flow > .fl-up.fl-crew .fl-stgrid .fl-sfav, #flow > .fl-up.fl-crew .fl-stpicks .fl-sfav { font-size: max(12px, 3.6cqw); }
 
   /* The character select held upright (select.js, .fl-tall): the 16:9 box is a strip a quarter of the phone's
      height, where 18 cards were 60 px tall. So this one screen leaves the box: #flow takes the whole viewport
