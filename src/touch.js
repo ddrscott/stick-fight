@@ -255,8 +255,20 @@ function init() {
   root.addEventListener('touchmove', onMove, opts);
   root.addEventListener('touchend', onEnd, opts);
   root.addEventListener('touchcancel', onEnd, opts);
-  // the rest of the page: no scroll, no pinch, no rubber band
-  document.addEventListener('touchmove', (e) => { if (e.cancelable) e.preventDefault(); }, opts);
+  // The rest of the page: no scroll, no pinch, no rubber band. Cancelling every touchmove also kills the native
+  // scrolling of anything under the finger, so a box that's meant to scroll says so with data-scroll="y" (or
+  // "x") and keeps its own one-finger drags: the MOVE LIST and its tabs (src/flow/movelist.js), the SETTINGS
+  // panel (src/audio/ui.js), the home-screen how-to (src/homescreen.js). Only while it has somewhere to go: a
+  // box whose content fits is guarded like everything else, so a drag on it can't fall through to the page.
+  // The box sets its own touch-action (pan-y or pan-x) and overscroll-behavior: contain, which is what stops
+  // the scroll at its edges instead of handing it to the page.
+  const scrolls = (e) => {
+    if (e.touches.length !== 1) return false;
+    const box = e.target instanceof Element ? e.target.closest('[data-scroll]') : null;
+    if (!(box instanceof HTMLElement)) return false;
+    return box.dataset.scroll === 'x' ? box.scrollWidth > box.clientWidth + 1 : box.scrollHeight > box.clientHeight + 1;
+  };
+  document.addEventListener('touchmove', (e) => { if (e.cancelable && !scrolls(e)) e.preventDefault(); }, opts);
   document.addEventListener('gesturestart', (e) => e.preventDefault(), opts);   // iOS pinch
   document.addEventListener('dblclick', (e) => e.preventDefault(), opts);
   document.addEventListener('contextmenu', (e) => e.preventDefault());

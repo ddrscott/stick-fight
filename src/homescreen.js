@@ -53,7 +53,7 @@ function style() {
   /* the how-to */
   .sf-hs { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(7,2,15,0.9);
     padding: max(0.5rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left)); }
-  .sf-hs-box { width: min(34rem, 100%); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.7rem 0.9rem;
+  .sf-hs-box { width: min(34rem, 100%); max-height: 100%; overflow: auto; touch-action: pan-y; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.7rem 0.9rem;
     background: #0e041e; border: 2px solid var(--amber); color: #e8dcff; }
   .sf-hs-box h2 { margin: 0; font: 400 1.25rem/1 'Bungee', sans-serif; letter-spacing: 0.04em; color: var(--amber); }
   .sf-hs-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
@@ -86,7 +86,7 @@ export function openHomescreenHelp() {
   panel.className = 'sf-hs';
   panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Play full screen');
   panel.innerHTML = `
-    <div class="sf-hs-box">
+    <div class="sf-hs-box" data-scroll="y">
       <h2>PLAY FULL SCREEN</h2>
       <ol class="sf-hs-steps">
         <li><i>1</i><span>TAP <b>SHARE</b> ${SHARE} IN SAFARI'S BAR (IT CAN BE UNDER <b>&#8226;&#8226;&#8226;</b>)</span></li>

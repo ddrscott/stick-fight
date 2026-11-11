@@ -9,9 +9,11 @@
 // the shared basic attacks, the system techniques, and the happy accidents this browser has found (the rest ???,
 // src/flow/techniques.js). Highlighting a move plays it on the character's rig in the preview pane.
 //
-// Keys: up and down move the highlight, left and right jump a section, confirm replays the preview, back (Esc,
-// Backspace, B, Select), Start, F1 or Y close it. Touch and mouse: tap a row, tap a section tab, the list scrolls,
-// CLOSE closes. Inputs show as the HUD writes them (→ toward, ← away, ↓), with the buttons as numbers on a
+// Keys: up and down move the highlight and bring it into view, left and right jump a section, confirm replays the
+// preview, back (Esc, Backspace, B, Select), Start, F1 or Y close it. Touch and mouse: tap a row, tap a section
+// tab, CLOSE closes, and the list scrolls: a finger drag (natively, with momentum; the list and the tabs carry
+// data-scroll, which is what exempts them from touch.js cancelling every touchmove on the page), the wheel or
+// trackpad anywhere over the overlay, or the scrollbar. Scrolling never moves the highlight. Inputs show as the HUD writes them (→ toward, ← away, ↓), with the buttons as numbers on a
 // keyboard and as the pad's own face buttons once a pad is in use (controls.js's glyphs).
 //
 // It sits on <body>, fixed over the whole viewport rather than inside the 16:9 stage, so a phone held upright
@@ -88,9 +90,36 @@ export function openMoveList(o) {
   const close = el('button', 'ml-close', 'CLOSE'); close.type = 'button';
   close.addEventListener('click', (e) => { e.preventDefault(); shut(); });
   const tabs = el('div', 'ml-tabs');
+  tabs.dataset.scroll = 'x';   // touch.js leaves a drag here to the browser (upright, where the tabs overflow)
   head.append(title, close);
   const body = el('div', 'ml-body');
   const list = el('div', 'ml-list');
+  list.dataset.scroll = 'y';   // and here: the list's own native scrolling
+  // the wheel anywhere over the overlay (the preview, the header) scrolls the list; over the list it's the browser's
+  // `free`: the list was last moved by hand (a finger, the wheel, the scrollbar) rather than by the highlight.
+  // While it is, the lit tab follows what's on screen; the highlight stays where it was until a key or a tap.
+  let free = false, lit = 0;
+  root.addEventListener('wheel', (e) => {
+    if (e.ctrlKey) return;
+    free = true;
+    if (e.target instanceof Node && list.contains(e.target)) return;
+    list.scrollTop += e.deltaY * (e.deltaMode === 1 ? 32 : e.deltaMode === 2 ? list.clientHeight : 1);
+  }, { passive: true });
+  for (const t of ['touchmove', 'pointerdown']) list.addEventListener(t, () => { free = true; }, { passive: true });
+  list.addEventListener('scroll', () => {
+    if (!free) return;
+    // the section under a line a third of the way down the list; at the very bottom, the last one
+    const box = list.getBoundingClientRect(), y = box.top + box.height / 3;
+    let s = list.scrollTop >= list.scrollHeight - list.clientHeight - 1 ? secEls.length - 1 : 0;
+    if (!s) secEls.forEach((sec, i) => { if (sec.getBoundingClientRect().top <= y) s = i; });
+    if (s !== lit) light(s);
+  }, { passive: true });
+  function light(s) {
+    lit = s;
+    tabEls.forEach((t, i) => t.classList.toggle('ml-on', i === s));
+    // upright the tabs run off the side: keep the lit one on screen
+    if (tabs.scrollWidth > tabs.clientWidth + 1) tabEls[s].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
   const pane = el('div', 'ml-pane');
   const cv = document.createElement('canvas'); cv.className = 'ml-cv';
   const cap = el('div', 'ml-cap');
@@ -145,17 +174,21 @@ export function openMoveList(o) {
   function select(k, scroll = true) {
     if (!rows.length) return;
     k = Math.max(0, Math.min(rows.length - 1, k));
-    if (k === cur) return;
+    const same = k === cur;
     if (cur >= 0) rows[cur].el.classList.remove('ml-cur');
     cur = k;
     const { el: e, row, sec } = rows[k];
     e.classList.add('ml-cur');
-    tabEls.forEach((t, i) => t.classList.toggle('ml-on', i === sec));
+    free = false;
+    light(sec);
     if (scroll) {
       // a section's first row brings its header (and the strings' rule) into view with it
       const first = rows.findIndex((x) => x.sec === sec) === k;
       (first ? secEls[sec] : e).scrollIntoView({ block: first ? 'start' : 'nearest' });
     }
+    // the same row again (its section's tab, or up at the top row): the list may have been scrolled away from
+    // it by a finger or the wheel, so it's brought back above, and that's all
+    if (same) return;
     cap.textContent = '';
     cap.append(el('b', '', row.name), inputGlyphs(row.input));
     if (!row.seq || !row.seq.length) cap.appendChild(el('small', '', row.hidden ? 'NOT FOUND YET' : row.off ? 'NOT FOR THIS FIGHTER' : 'NO PREVIEW'));
@@ -211,8 +244,9 @@ export function openMoveList(o) {
     key(k) {
       if (k === 'up') select(cur - 1);
       else if (k === 'down') select(cur + 1);
-      else if (k === 'left') jump(Math.max(0, rows[cur].sec - 1));
-      else if (k === 'right') jump(Math.min(sections.length - 1, rows[cur].sec + 1));
+      // from the lit tab: the highlight's section, or the one scrolled to by hand
+      else if (k === 'left') jump(Math.max(0, lit - 1));
+      else if (k === 'right') jump(Math.min(sections.length - 1, lit + 1));
       else if (k === 'confirm') replay();
       else if (k === 'back' || k === 'escape' || k === 'select' || k === 'start' || k === 'moves' || k === 'pause') shut();
     },
@@ -239,7 +273,7 @@ function injectStyle() {
   .ml-kicker { font: 400 0.8em/1 'Bungee', 'Arial Black', sans-serif; color: var(--amber); letter-spacing: 0.06em; }
   .ml-name { margin: 0; font: 400 1.9em/1 'Bungee', 'Arial Black', sans-serif; color: color-mix(in srgb, var(--c) 45%, #fff); white-space: nowrap; }
   .ml-tag { font-size: 0.9em; letter-spacing: 0.12em; color: rgba(230,214,255,0.75); }
-  .ml-tabs { flex: none; display: flex; gap: 0.4em; flex-wrap: wrap; }
+  .ml-tabs { flex: none; display: flex; gap: 0.4em; flex-wrap: wrap; touch-action: pan-x; overscroll-behavior: contain; }
   .ml-tabbtn, .ml-close { appearance: none; margin: 0; cursor: pointer; border-radius: 0; background: rgba(14,4,30,0.62); font: 600 1em/1 'Teko', sans-serif; letter-spacing: 0.1em;
     padding: 0.35em 0.7em 0.15em; min-height: 40px; }
   .ml-tabbtn { border: 2px solid rgba(166,107,255,0.55); color: rgba(230,214,255,0.8); }
@@ -247,7 +281,7 @@ function injectStyle() {
   .ml-close { border: 2px solid var(--pink); color: color-mix(in srgb, var(--pink) 70%, #fff); box-shadow: 0 0 0.5em rgba(255,43,214,0.4); min-width: 6em; }
   .ml-close:focus, .ml-tabbtn:focus { outline: none; }
   .ml-body { flex: 1 1 auto; min-height: 0; display: flex; gap: 1em; }
-  .ml-list { flex: 1 1 auto; min-width: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 0.5em 30vh 0;
+  .ml-list { flex: 1 1 auto; min-width: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 0.5em 3em 0;
     scrollbar-width: thin; scrollbar-color: var(--violet) transparent; touch-action: pan-y; }
   .ml-pane { flex: 0 0 30%; max-width: 360px; display: flex; flex-direction: column; border: 2px solid var(--c); background: rgba(14,4,30,0.7);
     box-shadow: 0 0 0.8em color-mix(in srgb, var(--c) 40%, transparent), inset 0 0 1.2em color-mix(in srgb, var(--c) 15%, transparent); }
