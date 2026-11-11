@@ -142,5 +142,10 @@ export default {
       "After you block the uppercut, jab (1) or snap kick (3) back. The punches behind it are slow to arrive.",
       "If you block all four he's stuck for a long time. As soon as you can move, punish with the cross (2).",
     ] },
+    { string: 'RISE AND SHINE', tips: [
+      "Crouch-block the low jab, then stand up to block the kick. He's still recovering after it, and the lunge cross (→2) punishes.",
+      "Blocked, only the lunge cross (→2) reaches him. A plain jab or cross is too short.",
+      "From a step out, stand-block and the low jab misses: the kick never comes. A sweep (↓4), the overhead (→4) or →2 punishes the miss.",
+    ] },
   ],
 };
