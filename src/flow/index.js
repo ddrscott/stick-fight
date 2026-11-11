@@ -54,6 +54,7 @@ import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
 import { profile, setName as saveName, guestName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
 import { createCrew, createCrewRoom, cleanSlug, crewLink } from '../net/crew.js';
 import { qrSvg } from '../qr.js';
+import { onSquare } from '../square.js';
 import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
@@ -167,6 +168,8 @@ export function createFlow(ctx) {
   const ladder = () => run.ladder || LADDER;
   const history = [];
   const ui = createUI((k) => { if (ctx.click) ctx.click(k); });
+  // turning the phone: the crew lobby lists the whole crew upright and the top seven sideways (paintLobby)
+  onSquare(() => { if (state === 'crewLobby') paintLobby(); });
   // the pause button: the desktop corner row's (a click) and the touch layer's (src/touch.js sends 'sf:pause')
   ui.pauseBtn.addEventListener('click', () => pause());
   window.addEventListener('sf:pause', () => pause());
@@ -576,6 +579,7 @@ export function createFlow(ctx) {
     ui.show('fl-scores', (root) => {
       root.append(el('h1', 'fl-h2', 'HIGH SCORES'), el('div', 'fl-label', hs.mode === 'arcade' ? 'ARCADE' : 'HORDE'), el('div', 'fl-rule'));
       const tb = el('div', 'fl-table');
+      tb.dataset.scroll = 'y';
       rows.forEach((r, i) => {
         const cls = i === hs.highlight ? ' fl-new' : '';
         tb.append(el('span', 'fl-rank' + cls, `${i + 1}`), el('span', cls, r.name), el('span', 'fl-score' + cls, S.fmt(r.score)), el('span', 'fl-note' + cls, r.note));
@@ -597,6 +601,7 @@ export function createFlow(ctx) {
     ui.show('fl-controls', (root) => {
       root.append(el('h1', 'fl-h2', 'CONTROLS'));
       const row = el('div', 'fl-row fl-ctlrow');
+      row.dataset.scroll = 'y';
       const right = el('div', 'fl-ctlcol');
       right.append(controlsTable(MENUS, 'MENUS'), el('div', 'fl-small fl-ctlnote', 'ON A TOUCH SCREEN THE LEFT THUMB STEERS (FLICK IT TWICE THE SAME WAY TO DASH), THE BUTTONS STRIKE AND GUARD, AND MENUS ARE TAPPED. THE PAUSE MENU AND THE FIGHTER SELECT HAVE EVERY FIGHTER\'S FULL MOVE LIST (F1, OR Y ON A PAD); IN A FIGHT F1 SHOWS A QUICK STRIP.'),
         el('div', 'fl-small fl-ctlnote', 'DASH: TAP TOWARD HIM TWICE, AND ANY BUTTON IN IT IS A DASH ATTACK; TAP AWAY TWICE TO HOP BACK (NO GUARD UNTIL IT ENDS). OUT OF A CROUCH, LET GO OF DOWN AND PRESS A BUTTON FOR A RISING ATTACK. PARRY: TAP TOWARD HIM JUST BEFORE A HIT LANDS (DOWN-FORWARD FOR A LOW). KNOCKED DOWN: UP STANDS, AWAY ROLLS BACK ON YOUR SIDE, TOWARD HIM ROLLS UNDER HIM IF HE IS CLOSE, A BUTTON STRIKES FROM THE FLOOR. OVER HIM ON THE FLOOR: DOWN + 4 STOMPS; A LOW THAT TOUCHES HIM HITS ONCE. JUGGLED: A BUTTON AT THE RIGHT MOMENT LANDS YOU ON YOUR FEET. STAIRS: WALK PAST THE FOOT TO GO UP; AT THE TOP, DOWN + TOWARD THE STEPS TO GO DOWN.'));
@@ -834,6 +839,7 @@ export function createFlow(ctx) {
       if (mode !== 'horde') items.push(...rulesButtons('fl-amber', 'FROM THE NEXT FIGHT'));   // horde has no rounds and no clock
       // the right panel: the book of happy accidents, or the controls (keyboard and gamepad)
       const panel = el('div', 'fl-tech');
+      panel.dataset.scroll = 'y';   // held upright it's under the menu in what's left of the screen
       const view = button('', () => { pauseView = pauseView === 'tech' ? 'controls' : 'tech'; paint(); }, 'fl-viewbtn');
       const paint = () => {
         view.el.textContent = pauseView === 'tech' ? 'SHOW CONTROLS' : 'SHOW TECHNIQUES';
@@ -928,7 +934,7 @@ export function createFlow(ctx) {
       left.appendChild(el('div', 'fl-colhead', 'CREW ROOMS'));
       right.appendChild(el('div', 'fl-colhead', 'QUICK MATCH'));
       const mk = (col, label, sub, act, cls = '') => { const b = button(label, act, `fl-slim ${cls}`); b.el.appendChild(el('small', '', sub)); col.appendChild(b.el); return b; };
-      const crews = p.crews.slice(0, 3).map((c) => mk(left, c.name, 'BACK TO YOUR CREW', () => openCrew(c.slug), 'fl-amber'));
+      const crews = p.crews.slice(0, 3).map((c) => mk(left, c.name, 'BACK TO YOUR CREW', () => openCrew(c.slug), 'fl-amber fl-crewbtn'));
       const create = mk(left, 'CREATE CREW ROOM', 'A LINK YOUR FRIENDS KEEP', () => go('crewCreate'), crews.length ? '' : 'fl-amber');
       const joinCrew = mk(left, 'JOIN A CREW', 'BY LINK OR CODE', () => go('crewJoin'));
       const host = mk(right, 'HOST A GAME', 'A ONE-OFF ROOM CODE', () => { if (!getNet().available) { endMsg = 'ONLINE PLAY IS NOT READY YET'; retryTo = null; go('onlineEnd'); } else go('onlineHost'); }, 'fl-pink');
@@ -1112,8 +1118,9 @@ export function createFlow(ctx) {
     ui.show('fl-live', (root) => {
       root.append(el('h1', 'fl-h2', 'LIVE NOW'), el('div', 'fl-label', rows && rows.length ? 'QUICK MATCHES ON RIGHT NOW  ·  PICK ONE TO WATCH' : rows ? 'NOBODY IS FIGHTING RIGHT NOW' : liveFail ? "CAN'T REACH THE SERVER  ·  TRYING AGAIN" : 'LOOKING FOR MATCHES'));
       const list = el('div', 'fl-list fl-livelist');
+      list.dataset.scroll = 'y';
       const items = [];
-      for (const r of (rows || []).slice(0, 5)) {
+      for (const r of (rows || []).slice(0, root.classList.contains('fl-up') ? 30 : 5)) {   // held upright, every match, scrolling
         const b = button('', () => openWatch(r.code), 'fl-slim fl-liverow');
         const side = (i) => {
           const c = characterOr(r.chars[i]), s = el('span', `fl-lside fl-lside${i}`);
@@ -1778,6 +1785,7 @@ export function createFlow(ctx) {
       const body = el('div', 'fl-row fl-crewbody');
       const left = el('div', 'fl-crewleft'), right = el('div', 'fl-crewright');
       const table = el('div', 'fl-standings'), recent = el('div', 'fl-recent');
+      table.dataset.scroll = 'y';   // held upright the whole crew is listed, and the list scrolls (sideways: the top seven)
       left.append(table, recent);
       const status = el('div', 'fl-crewstatus');
       // (a press while still connecting counts: crew.js sends it once the room says welcome)
@@ -1819,7 +1827,7 @@ export function createFlow(ctx) {
     t.textContent = '';
     for (const h of ['', 'NAME', 'W', 'L', 'D', 'VS YOU', 'FAVORITE']) t.appendChild(el('span', `fl-sth${'WLDVS YOU'.includes(h) && h ? ' fl-snum' : ''}`, h));
     const list = members();
-    const shown = list.slice(0, 7);
+    const shown = list.slice(0, t.closest('.fl-up') ? 50 : 7);
     shown.forEach((m, i) => {
       const mine = m.id === you;
       const cls = mine ? ' fl-me' : '';

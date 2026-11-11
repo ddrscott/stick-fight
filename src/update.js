@@ -54,7 +54,9 @@ function paint() {
       display: flex; gap: 0.6em; align-items: center; padding: 6px 14px 4px; border: 2px solid #ffb02e; border-radius: 0; background: rgba(14,4,30,0.88);
       color: #fff0cf; font: 600 18px/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.12em; cursor: pointer; box-shadow: 0 0 12px rgba(255,176,46,0.5); }
       .up-pill span { color: #0a0414; background: #ffb02e; padding: 3px 8px 1px; }
-      .up-pill[hidden] { display: none; }`;
+      .up-pill[hidden] { display: none; }
+      /* held upright a menu fills the screen: the pill goes up to the top strip, left of the corner buttons, a thumb's size */
+      html.sq .up-pill { top: calc(env(safe-area-inset-top) + 6px); bottom: auto; left: max(8px, env(safe-area-inset-left)); right: auto; min-height: 44px; }`;
     document.head.appendChild(st); document.body.appendChild(pill);
   }
   pill.hidden = busy();

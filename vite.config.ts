@@ -40,7 +40,7 @@ export default defineConfig({
     // Worker. In development that Worker runs under `npm run dev:worker` (wrangler dev, :8787).
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8787',
+        target: process.env.SF_WORKER || 'http://127.0.0.1:8787',   // another worktree's Worker can hold 8787: SF_WORKER=http://127.0.0.1:<port>
         ws: true,
         rewrite: (p) => '/stick-fight' + p,
         // the session cookie is scoped to /stick-fight (the domain is shared); here the page is at /
