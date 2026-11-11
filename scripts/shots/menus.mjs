@@ -256,9 +256,10 @@ for (const size of SIZES) {
     if (p === page) await touchMode();
     if (DUMP) dump[`${size.name} ${label}`] = await p.evaluate(layout);
     report(label, await p.evaluate(audit, { upright: size.upright, textMin: TEXT_MIN, tapMin: TAP_MIN }));
-    if (!/charSelect|onlineSelect/.test(label)) report(label, await p.evaluate(reach));   // (the carousel and grid move by their own rules; test:select walks them)
     const file = OUT ? path.join(OUT, `${size.name}-${String(++n).padStart(2, '0')}-${label}.png`) : '';
     if (file) await p.screenshot({ path: file });
+    // after the picture: walking the focus around leaves buttons mid-fade
+    if (!/charSelect|onlineSelect/.test(label)) report(label, await p.evaluate(reach));   // (the carousel and grid move by their own rules; test:select walks them)
     return file;
   };
   /** the QR on screen, read back from a screenshot by a separate decoder (jsQR), at the size it's drawn */
