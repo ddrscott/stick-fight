@@ -129,6 +129,11 @@ export async function recordMatch(env: Env, req: Request | null, m: Match): Prom
         perfect && aWon ? 1 : 0, perfect && bWon ? 1 : 0, m.how === "time" ? 1 : 0, Date.now())
       .run();
   } catch (e) { console.error("stats: match rollup failed", e); }   // bookkeeping never breaks a match
+  if (winner < 0 || m.how === "time" || !m.move) return;
+  try {   // the finishing move, for the title's ticker (migrations/0005_finishers.sql)
+    await env.DB.prepare(`INSERT INTO stats_finishers (move, kos, updated_at) VALUES (?1, 1, ?2)
+      ON CONFLICT(move) DO UPDATE SET kos = kos + 1, updated_at = excluded.updated_at`).bind(m.move, Date.now()).run();
+  } catch (e) { console.error("stats: finisher rollup failed", e); }
 }
 
 /** A fighter chosen at a character select ({ e: 'pick', l: [mode, fighter] }). False if it isn't a pick we count. */
@@ -274,7 +279,16 @@ async function buildStats(env: Env) {
     else if (row.a === row.b) fighters[row.a].pvp.mirrors += row.games;                        // a mirror says nothing about the fighter
     else { add(fighters[row.a].pvp, row, row.a_wins, row.b_wins, row.a_perfects); add(fighters[row.b].pvp, row, row.b_wins, row.a_wins, row.b_perfects); }
   }
-  return { at: Date.now(), ttl: STATS_TTL_S, totals, fighters, matchups, time: playTime(day, ta.results as TimeRow[], td.results as TimeRow[]) };
+  return { at: Date.now(), ttl: STATS_TTL_S, totals, fighters, matchups, time: playTime(day, ta.results as TimeRow[], td.results as TimeRow[]), finishers: await topFinishers(env) };
+}
+
+/** The moves that finished the most matches, [move, kos], most first. Read on its own, so a database without
+ *  migrations/0005 yet still answers everything else (with no finishers). The page ignores a move it doesn't know. */
+async function topFinishers(env: Env): Promise<[string, number][]> {
+  try {
+    const r = await env.DB.prepare("SELECT move, kos FROM stats_finishers ORDER BY kos DESC LIMIT 12").all<{ move: string; kos: number }>();
+    return r.results.map((row) => [row.move, Number(row.kos) || 0]);
+  } catch { return []; }
 }
 
 /** Public and the same for everyone, so the edge keeps one copy per location for ten minutes (the Cache API). */
