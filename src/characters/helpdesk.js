@@ -99,13 +99,13 @@ const dance = { keys: [
 const perfect = { name: 'OFF AND ON AGAIN', note: 'Have you tried turning them off and on: he spins once with the body held out by the collar and lets go on the way round; on the glass it blinks off and back on; then a calm thumbs-up.', stamp: 'TICKET CLOSED', hand: 'lHand', hold: 'collar', fly: { spin: 3, arc: 30 }, slide: { blink: true }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
-  K({ ...F(-2, HIP - 6, LF, RF), torso: 4, bend: -2, head: -4, tw: -10, la: [96, 100], ra: [40, 110], spin: 0 }, 120, 'in'),
-  K({ ...F(-2, HIP - 4, LF, RF), torso: 0, head: -4, la: [94, 96], ra: [60, 90], spin: 140 }, 120, 'linear'),
-  K({ ...F(-2, HIP - 4, LF, RF), torso: -4, head: -4, la: [94, 94], ra: [70, 80], spin: 270 }, 100, 'linear', 'release'),
-  K({ ...F(-1, HIP - 3, LF, RF), torso: 2, head: -4, la: [90, 92], ra: [40, 100], spin: 360 }, 0, 'out'),
-  K({ ...F(-1, HIP - 3, LF, RF), torso: 2, head: -4, la: [90, 92], ra: [40, 100], spin: 0 }, 180, 'out', 'footstep'),
-  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -6, la: [30, 40], ra: [70, 170] }, 260, 'inOut'),
-  K({ ...F(0, HIP, LF, RF), torso: 4, head: -8, la: [26, 36], ra: [74, 174] }, 0, 'sine'),
+  K({ face: 0.15, ...F(-2, HIP - 6, LF, RF), torso: 4, bend: -2, head: -4, tw: -10, la: [96, 100], ra: [40, 110], spin: 0 }, 120, 'in'),
+  K({ face: 0.15, ...F(-2, HIP - 4, LF, RF), torso: 0, head: -4, la: [94, 96], ra: [60, 90], spin: 140 }, 120, 'linear'),
+  K({ face: 0.4, ...F(-2, HIP - 4, LF, RF), torso: -4, head: -4, la: [94, 94], ra: [70, 80], spin: 270 }, 100, 'linear', 'release'),
+  K({ face: 0.6, ...F(-1, HIP - 3, LF, RF), torso: 2, head: -4, la: [90, 92], ra: [40, 100], spin: 360 }, 0, 'out'),
+  K({ face: 0.6, ...F(-1, HIP - 3, LF, RF), torso: 2, head: -4, la: [90, 92], ra: [40, 100], spin: 0 }, 180, 'out', 'footstep'),
+  K({ face: 0.8, ...F(0, HIP - 1, LF, RF), torso: 4, head: -6, la: [30, 40], ra: [70, 170] }, 260, 'inOut'),
+  K({ face: 0.7, ...F(0, HIP, LF, RF), torso: 4, head: -8, la: [26, 36], ra: [74, 174] }, 0, 'sine'),
 ] };
 
 export default {

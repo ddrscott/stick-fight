@@ -117,13 +117,13 @@ const dance = { keys: [
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a pancake flip: the body on the spatula hand, a dip and a flip up at the camera (it turns over on the way); then the chef's kiss.
 const perfect = { name: 'PANCAKE FLIP', note: 'A pancake flip: the body on the spatula hand, a dip and a flip up at the camera (it turns over on the way); then the chef\'s kiss.', stamp: 'ORDER UP', hand: 'rHand', hold: 'carry', fly: { spin: 0, flip: 2, arc: 160 }, keys: [
   ...stoop('rHand'),
-  K({ ...F(2, HIP - 3, LF + 4, RF), torso: 6, bend: -2, head: -8, la: [40, 110], ra: [60, 92] }, 220, 'inOut'),
-  K({ ...F(0, HIP - 10, LF + 4, RF), torso: 14, bend: 2, head: -6, la: [40, 110], ra: [36, 70] }, 160, 'in'),
-  K({ ...F(4, HIP + 2, LF + 4, RF), torso: -10, bend: -4, head: -16, la: [50, 120], ra: [140, 170] }, 90, 'out', 'release'),
-  K({ ...F(4, HIP + 1, LF + 4, RF), torso: -6, head: -14, la: [50, 120], ra: [150, 186] }, 200, 'out'),
-  K({ ...F(4, HIP - 1, LF + 4, RF), torso: 4, head: -6, la: [108, 200], ra: [40, 120] }, 220, 'inOut'),
-  K({ ...F(4, HIP, LF + 4, RF), torso: 2, head: -10, la: [124, 124], ra: [40, 120] }, 200, 'out'),
-  K({ ...F(4, HIP, LF + 4, RF), torso: 2, head: -12, la: [128, 128], ra: [40, 120] }, 0, 'sine'),
+  K({ face: 0.3, ...F(2, HIP - 3, LF + 4, RF), torso: 6, bend: -2, head: -8, la: [40, 110], ra: [60, 92] }, 220, 'inOut'),
+  K({ face: 0.6, ...F(0, HIP - 10, LF + 4, RF), torso: 14, bend: 2, head: -6, la: [40, 110], ra: [36, 70] }, 160, 'in'),
+  K({ face: 0.95, ...F(4, HIP + 2, LF + 4, RF), torso: -10, bend: -4, head: -16, la: [50, 120], ra: [140, 170] }, 90, 'out', 'release'),
+  K({ face: 0.95, ...F(4, HIP + 1, LF + 4, RF), torso: -6, head: -14, la: [50, 120], ra: [150, 186] }, 200, 'out'),
+  K({ face: 0.8, ...F(4, HIP - 1, LF + 4, RF), torso: 4, head: -6, la: [108, 200], ra: [40, 120] }, 220, 'inOut'),
+  K({ face: 0.7, ...F(4, HIP, LF + 4, RF), torso: 2, head: -10, la: [124, 124], ra: [40, 120] }, 200, 'out'),
+  K({ face: 0.7, ...F(4, HIP, LF + 4, RF), torso: 2, head: -12, la: [128, 128], ra: [40, 120] }, 0, 'sine'),
 ] };
 
 export default {

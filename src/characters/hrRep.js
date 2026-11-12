@@ -120,13 +120,13 @@ const dance = { keys: [
 const perfect = { name: 'MANDATORY OFFBOARDING', note: 'Up by the collar, the presentation rise, and the Mandatory Training shove with both hands out long; then the clipboard scribble.', stamp: 'OFFBOARDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 30, wobble: 0.5 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
-  K({ ...F(0, HIP + 2, LF, RF), torso: -4, bend: -4, head: -10, la: [110, 116], ra: [70, 120] }, 220, 'inOut'),
-  K({ ...F(-4, HIP - 6, LF - 2, RF - 2), torso: 4, head: -4, la: [64, 60], ra: [60, 56] }, 140, 'in'),
-  K({ ...F(14, HIP - 6, LF + 22, RF - 2), torso: 24, bend: 4, head: -8, la: [92, 92], ra: [90, 90] }, 80, 'out', 'release'),
-  K({ ...F(16, HIP - 5, LF + 22, RF + 4, 0, 4), torso: 20, bend: 4, head: -8, la: [94, 94], ra: [92, 92] }, 200, 'linear', 'footstep'),
-  K({ ...F(14, HIP - 1, LF + 22, RF + 10), torso: 6, head: 4, la: [62, 118], ra: [70, 100] }, 220, 'inOut'),
-  K({ ...F(14, HIP - 1, LF + 22, RF + 10), torso: 6, head: 6, la: [62, 118], ra: [76, 112] }, 140, 'sine'),
-  K({ ...F(14, HIP, LF + 22, RF + 10), torso: 6, head: 6, la: [62, 118], ra: [68, 98] }, 0, 'sine'),
+  K({ face: 0.35, ...F(0, HIP + 2, LF, RF), torso: -4, bend: -4, head: -10, la: [110, 116], ra: [70, 120] }, 220, 'inOut'),
+  K({ face: 0.6, ...F(-4, HIP - 6, LF - 2, RF - 2), torso: 4, head: -4, la: [64, 60], ra: [60, 56] }, 140, 'in'),
+  K({ face: 0.95, ...F(14, HIP - 6, LF + 22, RF - 2), torso: 24, bend: 4, head: -8, la: [92, 92], ra: [90, 90] }, 80, 'out', 'release'),
+  K({ face: 0.9, ...F(16, HIP - 5, LF + 22, RF + 4, 0, 4), torso: 20, bend: 4, head: -8, la: [94, 94], ra: [92, 92] }, 200, 'linear', 'footstep'),
+  K({ face: 0.55, ...F(14, HIP - 1, LF + 22, RF + 10), torso: 6, head: 4, la: [62, 118], ra: [70, 100] }, 220, 'inOut'),
+  K({ face: 0.55, ...F(14, HIP - 1, LF + 22, RF + 10), torso: 6, head: 6, la: [62, 118], ra: [76, 112] }, 140, 'sine'),
+  K({ face: 0.55, ...F(14, HIP, LF + 22, RF + 10), torso: 6, head: 6, la: [62, 118], ra: [68, 98] }, 0, 'sine'),
 ] };
 
 export default {

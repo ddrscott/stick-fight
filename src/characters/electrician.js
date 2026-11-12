@@ -112,17 +112,17 @@ const dance = { keys: [
 const perfect = { name: 'LIVE CIRCUIT FLICK', note: 'Up by the collar while the tester hand gives it a few jolts (the body jitters), then a flick at the camera; the boogaloo wave after.', stamp: 'GROUNDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 60, wobble: 1.5 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
-  K({ ...F(2, HIP - 3, LF + 4, RF), torso: 4, head: -6, la: [110, 118], ra: [80, 86] }, 50, 'linear'),
-  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 4, head: -6, la: [98, 106], ra: [84, 90] }, 50, 'linear'),
-  K({ ...F(2, HIP - 3, LF + 4, RF), torso: 4, head: -6, la: [112, 120], ra: [80, 86] }, 50, 'linear'),
-  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 4, head: -6, la: [98, 106], ra: [84, 90] }, 50, 'linear'),
-  K({ ...F(2, HIP - 3, LF + 4, RF), torso: 4, head: -6, la: [110, 118], ra: [80, 86] }, 50, 'linear'),
-  K({ ...F(-4, HIP - 8, LF, RF - 4), torso: 10, head: -4, la: [40, 60], ra: [30, 110] }, 160, 'in'),
-  K({ ...F(6, HIP, LF + 8, RF - 4), torso: -8, bend: -4, head: -12, la: [134, 144], ra: [30, 120] }, 80, 'out', 'release'),
-  K({ ...F(8, HIP - 1, LF + 8, RF), torso: 0, head: -8, la: [120, 160], ra: [40, 120] }, 200, 'out', 'footstep'),
-  K({ ...F(8, HIP - 1, LF + 8, RF), torso: 2, head: -6, la: [90, 160], ra: [60, 30] }, 200, 'sine'),
-  K({ ...F(8, HIP - 1, LF + 8, RF), torso: 2, head: -6, la: [60, 30], ra: [90, 160] }, 200, 'sine'),
-  K({ ...F(8, HIP, LF + 8, RF), torso: 2, head: -8, la: [90, 164], ra: [60, 30] }, 0, 'sine'),
+  K({ face: 0.2, ...F(2, HIP - 3, LF + 4, RF), torso: 4, head: -6, la: [110, 118], ra: [80, 86] }, 50, 'linear'),
+  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 4, head: -6, la: [98, 106], ra: [84, 90] }, 50, 'linear'),
+  K({ face: 0.2, ...F(2, HIP - 3, LF + 4, RF), torso: 4, head: -6, la: [112, 120], ra: [80, 86] }, 50, 'linear'),
+  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 4, head: -6, la: [98, 106], ra: [84, 90] }, 50, 'linear'),
+  K({ face: 0.25, ...F(2, HIP - 3, LF + 4, RF), torso: 4, head: -6, la: [110, 118], ra: [80, 86] }, 50, 'linear'),
+  K({ face: 0.55, ...F(-4, HIP - 8, LF, RF - 4), torso: 10, head: -4, la: [40, 60], ra: [30, 110] }, 160, 'in'),
+  K({ face: 0.9, ...F(6, HIP, LF + 8, RF - 4), torso: -8, bend: -4, head: -12, la: [134, 144], ra: [30, 120] }, 80, 'out', 'release'),
+  K({ face: 0.85, ...F(8, HIP - 1, LF + 8, RF), torso: 0, head: -8, la: [120, 160], ra: [40, 120] }, 200, 'out', 'footstep'),
+  K({ face: 0.6, ...F(8, HIP - 1, LF + 8, RF), torso: 2, head: -6, la: [90, 160], ra: [60, 30] }, 200, 'sine'),
+  K({ face: 0.6, ...F(8, HIP - 1, LF + 8, RF), torso: 2, head: -6, la: [60, 30], ra: [90, 160] }, 200, 'sine'),
+  K({ face: 0.6, ...F(8, HIP, LF + 8, RF), torso: 2, head: -8, la: [90, 164], ra: [60, 30] }, 0, 'sine'),
 ] };
 
 export default {

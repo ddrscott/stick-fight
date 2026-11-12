@@ -97,13 +97,13 @@ const dance = { keys: [
 const perfect = { name: 'PRECISE UNDERHAND', note: 'A precise underhand toss: he lifts it, takes a measured half step back, sights the lens down a pencil, and lobs it underhand with bent knees; then the tidy fist pump.', stamp: 'AUDITED', hand: 'lHand', hold: 'collar', fly: { spin: 0, arc: 110 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
-  K({ ...F(-6, HIP - 2, LF - 4, RF - 8, 0, 4), torso: 0, bend: -2, head: -8, la: [96, 104], ra: [100, 160] }, 200, 'inOut', 'footstep'),
-  K({ ...F(-6, HIP - 2, LF - 4, RF - 8), torso: 0, bend: -2, head: -6, la: [96, 104], ra: [104, 164] }, 160, 'sine'),
-  K({ ...F(-8, HIP - 12, LF - 4, RF - 8), torso: 16, bend: 2, head: -4, la: [-36, -28], ra: [30, 110] }, 220, 'inOut'),
-  K({ ...F(-2, HIP - 4, LF - 4, RF - 8), torso: 2, bend: -2, head: -10, la: [70, 108], ra: [30, 116] }, 110, 'out', 'release'),
-  K({ ...F(-2, HIP - 2, LF - 4, RF - 8), torso: 0, head: -10, la: [96, 140], ra: [30, 118] }, 200, 'out'),
-  K({ ...F(-2, HIP - 1, LF - 4, RF - 8), torso: 4, head: -6, la: [40, 110], ra: [60, 162] }, 240, 'inOut'),
-  K({ ...F(-2, HIP, LF - 4, RF - 8), torso: 4, head: -8, la: [38, 110], ra: [100, 190] }, 0, 'sine'),
+  K({ face: 0.2, ...F(-6, HIP - 2, LF - 4, RF - 8, 0, 4), torso: 0, bend: -2, head: -8, la: [96, 104], ra: [100, 160] }, 200, 'inOut', 'footstep'),
+  K({ face: 0.55, ...F(-6, HIP - 2, LF - 4, RF - 8), torso: 0, bend: -2, head: -6, la: [96, 104], ra: [104, 164] }, 160, 'sine'),
+  K({ face: 0.7, ...F(-8, HIP - 12, LF - 4, RF - 8), torso: 16, bend: 2, head: -4, la: [-36, -28], ra: [30, 110] }, 220, 'inOut'),
+  K({ face: 0.9, ...F(-2, HIP - 4, LF - 4, RF - 8), torso: 2, bend: -2, head: -10, la: [70, 108], ra: [30, 116] }, 110, 'out', 'release'),
+  K({ face: 0.85, ...F(-2, HIP - 2, LF - 4, RF - 8), torso: 0, head: -10, la: [96, 140], ra: [30, 118] }, 200, 'out'),
+  K({ face: 0.6, ...F(-2, HIP - 1, LF - 4, RF - 8), torso: 4, head: -6, la: [40, 110], ra: [60, 162] }, 240, 'inOut'),
+  K({ face: 0.55, ...F(-2, HIP, LF - 4, RF - 8), torso: 4, head: -8, la: [38, 110], ra: [100, 190] }, 0, 'sine'),
 ] };
 
 export default {

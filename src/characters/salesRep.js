@@ -100,15 +100,15 @@ const dance = { keys: [
 const perfect = { name: 'CLOSE THE DEAL', note: 'The handshake: he takes it by the hand and pumps it three times, then closes the deal with the rising phone-hand uppercut that sends it at the camera; finger guns.', stamp: 'SOLD!', hand: 'rHand', hold: 'collar', fly: { spin: 1, arc: 160 }, keys: [
   ...stoop('rHand'),
   lift('collar', 'rHand', 200),
-  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),
-  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [104, 118] }, 100, 'sine'),
-  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),
-  K({ ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [104, 118] }, 100, 'sine'),
-  K({ ...F(-2, HIP - 14, LF + 4, RF - 4), torso: 24, bend: 4, head: -2, la: [50, 100], ra: [10, 20] }, 160, 'in'),
-  K({ ...F(6, HIP + 2, LF + 8, RF - 4, 0, 6), torso: -12, bend: -6, head: -16, la: [30, 100], ra: [166, 178] }, 90, 'out', 'release'),
-  K({ ...F(8, HIP, LF + 8, RF, 0, 0), torso: -4, head: -10, la: [30, 110], ra: [160, 186] }, 200, 'out', 'footstep'),
-  K({ ...F(8, HIP - 1, LF + 8, RF + 4), torso: 4, head: -6, la: [94, 92], ra: [92, 90] }, 220, 'out'),
-  K({ ...F(8, HIP, LF + 8, RF + 4), torso: 4, head: -8, la: [98, 96], ra: [96, 94] }, 0, 'sine'),
+  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),
+  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [104, 118] }, 100, 'sine'),
+  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),
+  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [104, 118] }, 100, 'sine'),
+  K({ face: 0.55, ...F(-2, HIP - 14, LF + 4, RF - 4), torso: 24, bend: 4, head: -2, la: [50, 100], ra: [10, 20] }, 160, 'in'),
+  K({ face: 0.9, ...F(6, HIP + 2, LF + 8, RF - 4, 0, 6), torso: -12, bend: -6, head: -16, la: [30, 100], ra: [166, 178] }, 90, 'out', 'release'),
+  K({ face: 0.85, ...F(8, HIP, LF + 8, RF, 0, 0), torso: -4, head: -10, la: [30, 110], ra: [160, 186] }, 200, 'out', 'footstep'),
+  K({ face: 0.85, ...F(8, HIP - 1, LF + 8, RF + 4), torso: 4, head: -6, la: [94, 92], ra: [92, 90] }, 220, 'out'),
+  K({ face: 0.85, ...F(8, HIP, LF + 8, RF + 4), torso: 4, head: -8, la: [98, 96], ra: [96, 94] }, 0, 'sine'),
 ] };
 
 export default {

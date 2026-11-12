@@ -1287,11 +1287,15 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       const u = Math.min(1, landEase.t / landEase.dur);
       landEase = { from: landEase.from * (1 - u), t: 0, dur: Math.max(1, Math.min(landEase.dur - landEase.t, toActive)) };
     }
+    const faceWas = move && keys.length ? turnNow().face : 0;   // the turn toward the camera on screen now (drawn only, below)
     move = m; airTrack = track;
     // Blend from wherever the body is now into the first keyframe.
     // A loop closes back onto its first keyframe, so append a copy as the terminal key.
     // Blend from the current pose carried forward by its velocity (momentum), not from guard.
     const start = clonePose(f.pose);
+    // the turn toward the camera (a perfect finisher's `face`, drawn only): the next move turns back from it
+    // instead of snapping to the side view (it's on the key, never on f.pose, so solve() and the joints never see it)
+    if (faceWas > 0.001) start.face = faceWas / (m.turn && m.turn.face ? m.turn.face : 1);
     if (vel) for (const c of ['torso', 'bend', 'head', 'tw']) start[c] += clamp(vel[c] * 0.05, -18, 18);
     if (vel) for (const c of ['la', 'ra']) start[c] = [start[c][0] + clamp(vel[c][0] * 0.05, -20, 20), start[c][1] + clamp(vel[c][1] * 0.05, -20, 20)];
     if (m.air) start.hipLock = lastHipLock = hipNow;   // the hip height the air move eases onto the arc from (update)
@@ -1696,9 +1700,120 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     return j;
   }
 
+  // ---- the turn toward the camera (drawn only) ---------------------------------------------
+  // A clip's keys may carry `face` (0 the side view, 1 square to the camera), blended between keys like the
+  // other fields, and a move def may carry `step` ({ grow, sink }: the thrower's step at the lens around its
+  // 'release' key) and `turn` ({ face, depth }: a character's multiplier on face, the perspective distance).
+  // None of it reaches f.pose or f.joints: draw() reads it from the key list and turns the joints it was handed
+  // into a reused map, so the sim, the hitboxes and the online hash never see it (README Perfect rounds).
+  const turnOut = { face: 0, step: 0 };
+  function turnNow() {
+    turnOut.face = 0; turnOut.step = 0;
+    if (!move || !keys.length || rag) return turnOut;
+    const last = keys.length - 1, i = Math.min(ki, last), k = keys[i], n = keys[Math.min(i + 1, last)];
+    const fa = k.p.face || 0, fb = n.p.face || 0;
+    if (fa || fb) {
+      const u = i < last && k.d > 0 ? EASE[k.ease](Math.min(1, kt / k.d)) : 1;
+      turnOut.face = (fa + (fb - fa) * u) * (move.turn && move.turn.face != null ? move.turn.face : 1);
+    }
+    if (move.step) {
+      // ms from the 'release' key: up to it over 180 ms, held 100 ms, eased back over the next 520
+      let el = kt, tr = -1, acc = 0;
+      for (let q = 0; q <= last; q++) { if (q < i) el += keys[q].d; if (tr < 0 && keys[q].ev === 'release') tr = acc; acc += keys[q].d; }
+      if (tr >= 0) {
+        const x = el - tr;
+        const a = x < -180 ? 0 : x < 0 ? 1 - (x / -180) : x < 100 ? 1 : x < 620 ? 1 - (x - 100) / 520 : 0;
+        turnOut.step = a * a * (3 - 2 * a);
+      }
+    }
+    return turnOut;
+  }
+  f.turnNow = turnNow;
+  const TURN_NAMES = ['head', 'neck', 'chest', 'hip', 'lShoulder', 'rShoulder', 'lElbow', 'rElbow', 'lHand', 'rHand', 'lKnee', 'rKnee', 'lFoot', 'rFoot', 'lHip', 'rHip'];
+  // which side each joint hangs off: -1 the far side (drawn behind), +1 the near side, 0 the spine; legs off the hips
+  const TURN_SIDE = { lShoulder: -1, lElbow: -1, lHand: -1, rShoulder: 1, rElbow: 1, rHand: 1, lKnee: -2, lFoot: -2, lHip: -2, rKnee: 2, rFoot: 2, rHip: 2 };
+  const TJ = {}, TK = {}, TD = {};   // turned joints, their perspective scale, their depth toward the camera (px)
+  for (const n of TURN_NAMES) { TJ[n] = { x: 0, y: 0 }; TK[n] = 1; TD[n] = 0; }
+  // f.turned: what the last draw did, for drawing things in the hand (src/fx/perfect.js): null in the side view,
+  // else { face, step, dx: {joint: px}, dy, k } relative to the joints draw() was handed
+  const TOUT = { face: 0, step: 0, dx: {}, dy: {}, k: TK };
+  f.turned = null;
+  function turnJoints(J, face, step) {
+    const s = f.scale, fc = f.facing, th = face * Math.PI / 2, c = Math.cos(th), sn = Math.sin(th);
+    const D = ((move && move.turn && move.turn.depth) || 230) * s;
+    const px = J.chest.x, py = J.chest.y;
+    const sw = R.torsoW * 0.8 * s, hw = R.hipW * 0.6 * s;
+    for (const n of TURN_NAMES) {
+      const src = n === 'lHip' || n === 'rHip' ? J.hip : J[n];
+      const side = TURN_SIDE[n] || 0, z = side === 0 ? 0 : side === -1 ? -sw : side === 1 ? sw : side === -2 ? -hw : hw;
+      const fx = (src.x - px) * fc, y = src.y - py;
+      const f2 = fx * c - z * sn, z2 = fx * sn + z * c;
+      const k = D / (D - Math.min(z2, D * 0.6));
+      TJ[n].x = px + f2 * fc * k; TJ[n].y = py + y * k + z2 * 0.12 * sn; TK[n] = k; TD[n] = z2;
+    }
+    // the step at the lens: a few percent bigger about the top of the head, and a little lower
+    if (step > 0) {
+      const g = 1 + ((move && move.step && move.step.grow) || 0.06) * step, sink = ((move && move.step && move.step.sink) || 8) * step * s;
+      const hx = TJ.head.x, hy = TJ.head.y - R.headR * s * TK.head;
+      for (const n of TURN_NAMES) { TJ[n].x = hx + (TJ[n].x - hx) * g; TJ[n].y = hy + (TJ[n].y - hy) * g + sink; TK[n] *= g; }
+    }
+    TOUT.face = face; TOUT.step = step;
+    for (const n of TURN_NAMES) if (J[n]) { TOUT.dx[n] = TJ[n].x - J[n].x; TOUT.dy[n] = TJ[n].y - J[n].y; }
+    f.turned = TOUT;
+    return TJ;
+  }
+  // the joints as draw() will turn them this frame (null in the side view): the camera frames these (main.js)
+  f.turnPoints = (J) => { const tn = turnNow(); return J && J.head && (tn.face > 0.001 || tn.step > 0.001) ? turnJoints(J, tn.face, tn.step) : null; };
+  // the four limbs in drawing order, farthest first (a tiny insertion sort over a reused list: no garbage)
+  const LIMB_ORDER = [0, 1, 2, 3], LIMB_DEPTH = [0, 0, 0, 0];
+  const LIMB_JOINTS = [['lShoulder', 'lElbow', 'lHand'], ['lHip', 'lKnee', 'lFoot'], ['rHip', 'rKnee', 'rFoot'], ['rShoulder', 'rElbow', 'rHand']];
+  function drawTurned(ctx, J, face, step) {
+    const T = turnJoints(J, face, step), s = f.scale, sn = Math.sin(face * Math.PI / 2);
+    ctx.save();
+    ctx.fillStyle = f.color; ctx.strokeStyle = f.color; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const w = R.limbW * s, tip = R.limbTip * s, pants = f.pants || null;
+    for (let i = 0; i < 4; i++) { const L = LIMB_JOINTS[i]; LIMB_DEPTH[i] = (TD[L[1]] + TD[L[2]]) / 2; LIMB_ORDER[i] = i; }
+    for (let i = 1; i < 4; i++) { const v = LIMB_ORDER[i]; let q = i - 1; while (q >= 0 && LIMB_DEPTH[LIMB_ORDER[q]] > LIMB_DEPTH[v]) { LIMB_ORDER[q + 1] = LIMB_ORDER[q]; q--; } LIMB_ORDER[q + 1] = v; }
+    const limbT = (i) => {
+      const L = LIMB_JOINTS[i], a = T[L[0]], b = T[L[1]], cc = T[L[2]], ka = TK[L[0]], kb = TK[L[1]], kc = TK[L[2]];
+      const leg = i === 1 || i === 2;
+      if (leg && pants) ctx.fillStyle = pants;
+      taper(ctx, a, b, w * ka, (w + tip) / 2 * kb);
+      taper(ctx, b, cc, (w + tip) / 2 * kb, tip * kc);
+      if (leg && pants) ctx.fillStyle = f.color;
+    };
+    // the drawn facing for things that point forward (a cap's brim, an apron's hem): eased toward the camera
+    const fcDraw = f.facing * Math.max(0.3, Math.cos(face * Math.PI / 2));
+    const saveF = f.facing; f.facing = fcDraw;
+    try {
+      drawCloth(ctx, T, 'back', true);
+      let li = 0;
+      while (li < 4 && LIMB_DEPTH[LIMB_ORDER[li]] < 0) limbT(LIMB_ORDER[li++]);
+      // the torso: wider square to the camera (the chest's breadth shows)
+      const wide = 1 + 0.45 * sn, kc = TK.chest;
+      const midW = (R.hipW + R.torsoW) / 2 * s * wide * kc;
+      taper(ctx, T.hip, T.chest, R.hipW * s * wide * TK.hip, midW);
+      taper(ctx, T.chest, T.neck, midW, R.torsoW * s * wide * TK.neck);
+      if (pants) {
+        ctx.fillStyle = pants;
+        const wx = T.hip.x + (T.chest.x - T.hip.x) * 0.22, wy = T.hip.y + (T.chest.y - T.hip.y) * 0.22;
+        taper(ctx, T.hip, { x: wx, y: wy }, R.hipW * s * wide * TK.hip, R.hipW * s * wide * TK.hip * 1.02);
+        ctx.fillStyle = f.color;
+      }
+      ctx.beginPath(); ctx.arc(T.head.x, T.head.y, R.headR * s * TK.head, 0, Math.PI * 2); ctx.fill();
+      if (accessory) { ctx.save(); try { accessory(ctx, T, { scale: s * TK.head, facing: fcDraw, face, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s * TK.head, pose: f.pose }); } catch (e) { /* a bad accessory never breaks the frame */ } ctx.restore(); }
+      drawCloth(ctx, T, 'front', true);
+      while (li < 4) limbT(LIMB_ORDER[li++]);
+    } finally { f.facing = saveF; }
+    ctx.restore();
+  }
+
   function draw(ctx) {
     const j = f.joints;
     if (!j.head) f.joints = solve(f.pose);
+    const tn = turnNow();
+    if (tn.face > 0.001 || tn.step > 0.001) { drawTurned(ctx, f.joints, tn.face, tn.step); return; }
+    f.turned = null;
     const J = f.joints, s = f.scale;
     ctx.save();
     ctx.fillStyle = f.color;
@@ -1743,14 +1858,14 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
   }
 
   // a character's cloth items on one layer: each draws its chain's points (src/fighter/cloth.js)
-  function drawCloth(ctx, J, layer) {
+  function drawCloth(ctx, J, layer, rest = false) {
     const items = f.charDef && f.charDef.cloth;
     if (!items) return;
     const s = f.scale;
     for (let i = 0; i < items.length; i++) {
       const it = clothItem(items[i]);
       if (it.layer !== layer || !it.draw) continue;
-      const P = (f.cloth && f.cloth[i]) || clothRest(it, J, f.facing, s);
+      const P = (!rest && f.cloth && f.cloth[i]) || clothRest(it, J, f.facing, s);   // turned (drawn only): the chain at rest on the turned joints
       if (!P) continue;
       ctx.save();
       try { it.draw(ctx, P, { scale: s, facing: f.facing, color: f.color, accent: f.accent || f.color, R, headR: R.headR * s, pose: f.pose, J }); } catch (e) { /* bad cloth never breaks the frame */ }
