@@ -390,6 +390,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     const ch = rig.charDef || characterOr(TEMP_ID);
     return {
       char: ch, maxHealth: 100, staminaMax: STAMINA.max * ch.stats.stamina, armorLeft: 0, hitN: 0, airJumpsUsed: 0, wallJumps: 0,
+      victory: null, taunt: null,   // fighter mastery's clips, when this player has them on (setCharacter)
       id: i, name: 'P' + (i + 1), rig, color: rig.color || (i === 0 ? '#f0f0f0' : '#E85D00'),
       x: rig.x, y: rig.y, vx: 0, vy: 0, grounded: true, facing: rig.facing || (i === 0 ? 1 : -1),
       state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,   // a new unit starts idle: built here, not a state change (enter())
@@ -450,11 +451,15 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   // first time it appears.
   // palette: { body, pants, accent } (src/career/palettes.js), a look bought with sticks: flat colors only, drawn and
   // never simulated (nothing in the state hash). P2's stays only where it doesn't clash with P1's (colorFor).
-  sim.setCharacter = (i, id, { color = null, palette = null } = {}) => {
+  // pose, taunt (fighter mastery, README Progression): this player has the character's victory pose or taunt unlocked and
+  // on. Both are sim state (the clips move the rig, which is hashed), so online both pages are told (src/main.js lookFor).
+  sim.setCharacter = (i, id, { color = null, palette = null, pose = false, taunt = false } = {}) => {
     const u = sim.units[i];
     if (!u) return null;
     const ch = characterOr(id);
     u.char = ch; u.rig.charDef = ch;
+    u.victory = pose && ch.victory ? ch.victory : null;
+    u.taunt = taunt && ch.taunt ? ch.taunt : null;
     const accent = (palette && palette.accent) || ch.accent;
     if (typeof u.rig.setBody === 'function' && u.rig.body !== ch.body) u.rig.setBody(ch.body, { accent });
     else if (u.rig) u.rig.accent = accent;
@@ -471,7 +476,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     }
     return ch;
   };
-  sim.setCharacters = (ids, colors = [], palettes = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null, palette: palettes[i] || null }));
+  sim.setCharacters = (ids, colors = [], palettes = [], kits = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null, palette: palettes[i] || null, pose: !!(kits[i] && kits[i].pose), taunt: !!(kits[i] && kits[i].taunt) }));
 
   // ---- rounds ----------------------------------------------------------------------
   function spawn(u, i) {
@@ -501,11 +506,16 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     syncRig(u); u.rig.play('idle'); rigUpd(u, 0); u.rig.events.length = 0;
   }
   sim.startRound = (n, { skipIntro = false } = {}) => {
+    const prev = sim.round < n ? sim.winner : -1;   // who won the round just ended (a new match starts with nobody)
     sim.round = n; sim.floor = 0; sim.floorBroken = false; refreshBounds(); sim.timer = sim.roundTime; sim.perfectT = -1; sim.perfectRel = -1; sim.perfectWait = 0; sim.roundClock = 0; sim.winner = -1; sim.koSlow = 0; sim.finisher = false; sim.callouts.length = 0;
     sim.result = PLAYING; downed.length = 0;
     sim.units.forEach(spawn);
     if (skipIntro) { sim.phase = 'fight'; sim.phaseTimer = 0; sim.banner = ''; }
     else { sim.phase = 'intro'; sim.phaseTimer = sim.introTime; sim.banner = `ROUND ${n}`; }
+    // the last round's winner taunts under the ROUND card (fighter mastery): nobody's live in the intro, so it's not an
+    // input and can't defend anything, and it's over (or cut, roundFlow) when FIGHT goes up
+    const w = prev >= 0 && !skipIntro && n > 1 ? sim.units[prev] : null;
+    if (w && w.taunt && !w.hidden) setState(w, 'taunt', w.taunt);
     onEvent({ type: 'round', round: n });
   };
   // Ragdolls: a KO'd horde goon keeps flying after its unit has been respawned. Snapshot of
@@ -1529,8 +1539,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         }
         break;
       }
-      case 'celebrate':   // the winner's dance (see the 'match' phase): stand and loop it
+      case 'celebrate':   // the winner's dance or victory pose (see the 'match' phase): stand and loop it (a pose holds)
         u.vx = 0;
+        break;
+      case 'taunt':   // the last round's winner, under the ROUND card (startRound): stand, play it once, then stand easy
+        u.vx = 0;
+        if (u.rig.current.done) setState(u, 'idle');
         break;
       case 'perfect':   // the perfect round finisher (perfectStep): the run to the body, then the throw clip
         perfectUnit(u, opp);
@@ -3199,7 +3213,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       case 'intro':
         sim.phaseTimer -= DT;
         if (sim.phaseTimer < 0.5 && sim.banner !== 'FIGHT') { sim.banner = 'FIGHT'; onEvent({ type: 'fight' }); }
-        if (sim.phaseTimer <= 0) { sim.phase = 'fight'; sim.banner = ''; }
+        if (sim.phaseTimer <= 0) {
+          sim.phase = 'fight'; sim.banner = '';
+          for (const u of sim.units) if (u.state === 'taunt') setState(u, 'idle');   // a taunt never runs into the fight
+        }
         break;
       case 'fight':
         sim.roundClock += DT;   // seconds fought this round (the demo AI paces itself by it)
@@ -3273,10 +3290,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const live = sim.phase === 'fight' || ((sim.phase === 'ko' || sim.phase === 'match') && u.id === sim.winner);
       // the match is won: the winner, standing free on the ground, breaks into the character's celebration
       // dance (registry `dance`, a looping clip) and holds it through the WINS card; nothing cancels it
-      if (sim.phase === 'match' && u.id === sim.winner && rules().dance && u.char && u.char.dance && u.grounded && !u.rag && /^(idle|walk|run|block|crouch)$/.test(u.state)) {
-        u.vx = 0; u.running = false; setState(u, 'celebrate', u.char.dance);
+      if (sim.phase === 'match' && u.id === sim.winner && rules().dance && u.char && (u.victory || u.char.dance) && u.grounded && !u.rag && /^(idle|walk|run|block|crouch)$/.test(u.state)) {
+        u.vx = 0; u.running = false; setState(u, 'celebrate', u.victory || u.char.dance);   // a mastery victory pose in place of the dance
       }
-      const inp = (live && u.controller && u.state !== 'celebrate' && u.state !== 'perfect' && !(sim.perfectT >= 0)) ? u.controller(u, opp, sim) : EMPTY_INPUT;
+      const inp = (live && u.controller && u.state !== 'celebrate' && u.state !== 'taunt' && u.state !== 'perfect' && !(sim.perfectT >= 0)) ? u.controller(u, opp, sim) : EMPTY_INPUT;
       const e = edges(u, inp);
       // botches (botch.js): a tangled body loses its presses until it's back; a mistimed press botches
       // (or, in a technique's window, comes out as a happy accident) instead of waiting in the buffer

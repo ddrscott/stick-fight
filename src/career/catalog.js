@@ -4,16 +4,17 @@
 //
 // An item is unlocked one of two ways, both fixed and shown up front, never random:
 //   price     sticks, bought with a confirm (store.js buy; the Worker checks the price, worker/career.ts)
-//   mastery   that fighter's mastery rank (fighter mastery, [t6vhcb], when it lands); an item with both is bought
-//             with sticks or unlocked early by the rank, whichever comes first
+//   mastery   that fighter's mastery rank (src/career/mastery.js); an item with both is bought with sticks or
+//             unlocked early by the rank, whichever comes first
 // The fighter's own look (MAIN) is always owned and isn't counted: it's in the list so the screen can equip it.
 //
-// Today the closet holds the palettes (src/career/palettes.js). Victory poses, taunts, name plates and crew banners
-// get a KINDS entry already; whoever adds them puts their items in EXTRAS (or builds them from their own file, the
-// way palettes are) and they show up on the screen, in the counts and in the tests with no other change. A priced
-// item that isn't a palette also needs the Worker's buy to know it (worker/career.ts, POST career/buy).
+// The closet holds the palettes (src/career/palettes.js) and fighter mastery's items (src/career/mastery.js: the
+// mastery-only palette, the victory pose and the taunt, in EXTRAS; and the rank that unlocks a sold palette early).
+// Name plates and crew banners get a KINDS entry already; whoever adds them puts their items in EXTRAS and they show
+// up on the screen, in the counts and in the tests with no other change. A priced item that isn't a palette also
+// needs the Worker's buy to know it (worker/career.ts, POST career/buy).
 //
-// Plain JavaScript; imports only palettes.js, so the Worker can use it too.
+// Plain JavaScript; imports only the other career files, so the Worker can use it too.
 //
 //   KINDS                          the shelves, in order: { kind, label }
 //   EXTRAS                         items beyond the palettes: { fighter, kind, id, name, price?, mastery? }
@@ -22,6 +23,7 @@
 //   stateOf(item, career, rank)    'main' | 'owned' | 'buy' | 'short' | 'rank'
 //   completion(career, fighters, { ranks, extras })   { have, total, per: { [fighter]: { have, total } } }
 import { palettesFor, itemKey } from './palettes.js';
+import { masteryItems, earlyRank, MASTERY_FIGHTERS } from './mastery.js';
 
 /** @typedef {{ kind: string, label: string }} Kind */
 /** @type {Kind[]} */
@@ -37,8 +39,8 @@ export const KINDS = [
  * @typedef {{ fighter: string, kind: string, id: string, name: string, key: string, price?: number, mastery?: number,
  *             main?: boolean, look?: { body: string, pants: string, accent: string } }} Item
  */
-/** items beyond the palettes (fighter mastery adds its poses, taunts and mastery-only palettes here) @type {Omit<Item, 'key'>[]} */
-export const EXTRAS = [];
+/** items beyond the sold palettes: fighter mastery's poses, taunts and mastery-only palettes @type {Omit<Item, 'key'>[]} */
+export const EXTRAS = MASTERY_FIGHTERS.flatMap((f) => masteryItems(f));
 
 const ORDER = Object.fromEntries(KINDS.map((k, i) => [k.kind, i]));
 
@@ -47,7 +49,10 @@ const ORDER = Object.fromEntries(KINDS.map((k, i) => [k.kind, i]));
 export function itemsFor(fighter, extras = EXTRAS) {
   /** @type {Item[]} */
   const out = [{ fighter, kind: 'palette', id: '', name: 'MAIN', key: '', main: true }];
-  for (const p of palettesFor(fighter)) out.push({ fighter, kind: 'palette', id: p.id, name: p.name, key: itemKey(fighter, p.id), price: p.price, look: { body: p.body, pants: p.pants, accent: p.accent } });
+  for (const p of palettesFor(fighter)) {
+    const rank = earlyRank(fighter, p.id);   // fighter mastery unlocks some sold palettes early
+    out.push({ fighter, kind: 'palette', id: p.id, name: p.name, key: itemKey(fighter, p.id), price: p.price, ...(rank ? { mastery: rank } : {}), look: { body: p.body, pants: p.pants, accent: p.accent } });
+  }
   const more = extras.filter((x) => x.fighter === fighter && x.kind in ORDER)
     .map((x) => ({ ...x, key: x.kind === 'palette' ? itemKey(fighter, x.id) : `${fighter}:${x.kind}:${x.id}` }));
   const rest = [...out.slice(1), ...more].sort((a, b) => ORDER[a.kind] - ORDER[b.kind]

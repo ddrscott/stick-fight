@@ -18,19 +18,21 @@
 import { el, button } from './ui.js';
 import { createFighter } from '../fighter/index.js';
 import { itemsFor, unlockText, stateOf, completion, KINDS, EXTRAS } from '../career/catalog.js';
-import { career, equipped, equip, buy } from '../career/store.js';
+import { career, equipped, equip, buy, mastery, kit, setKit } from '../career/store.js';
 
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
 const SILHOUETTE = '#2a2140';   // a locked item: the figure filled flat, no colors to give it away
 
-/** a fighter standing in its idle pose, drawn once into a canvas: flat colors, no glow. silhouette: one dark fill. */
-export function drawStanding(canvas, c, look = null, silhouette = false) {
+/** a fighter standing in its idle pose, drawn once into a canvas: flat colors, no glow. silhouette: one dark fill.
+ *  clip: a clip to show instead (a victory pose, held at its end; a taunt, caught partway through) */
+export function drawStanding(canvas, c, look = null, silhouette = false, clip = null, at = 2) {
   const rig = createFighter({ color: (look && look.body) || c.color, x: 0, y: 0, facing: 1, body: c.body });
   rig.pants = look ? look.pants : c.pants || null;
   rig.setBody(c.body, { accent: (look && look.accent) || c.accent });
   rig.speedLines = false;
   rig.charDef = c;
   for (let k = 0; k < 12; k++) rig.update(1 / 60);
+  if (clip) { rig.play(clip); for (let t = 0; t < at; t += 1 / 60) rig.update(1 / 60); }
   const ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
   ctx.setTransform(h / 170, 0, 0, h / 170, w / 2, h * 0.94);
@@ -46,7 +48,8 @@ export function drawStanding(canvas, c, look = null, silhouette = false) {
 /** @param {any} o */
 export function closetBody(o) {
   injectStyle();
-  const extras = o.extras || EXTRAS, ranks = o.ranks || {};
+  // each fighter's mastery rank (src/career/mastery.js), unless a test hands its own
+  const extras = o.extras || EXTRAS, ranks = o.ranks || Object.fromEntries(o.roster.map((r) => [r.id, mastery(r.id).rank]));
   const c = career();
   const ids = o.roster.map((r) => r.id);
   const done = completion(c, ids, { ranks, extras });
@@ -77,7 +80,7 @@ export function closetBody(o) {
 
   // the open fighter's shelf, one row per kind that has anything
   const list = itemsFor(ch.id, extras), rank = ranks[ch.id] || 0;
-  const wearing = equipped(ch.id);
+  const wearing = equipped(ch.id), on = kit(ch.id);
   const shelf = el('div', 'cl-shelf');
   const per = done.per[ch.id];
   const title = el('div', 'cl-stitle');
@@ -93,13 +96,16 @@ export function closetBody(o) {
     for (const it of row) {
       const st = stateOf(it, c, rank);
       const locked = st === 'buy' || st === 'short' || st === 'rank';
-      const using = it.kind === 'palette' && (it.main ? !wearing : !!wearing && wearing.id === it.id);
+      const using = it.kind === 'palette' ? (it.main ? !wearing : !!wearing && wearing.id === it.id)
+        : (it.kind === 'pose' && st === 'owned' && on.pose) || (it.kind === 'taunt' && st === 'owned' && on.taunt);
       const card = button('', () => press(it, st), `cl-card cl-${st}${using ? ' cl-using' : ''}`);
       card.el.dataset.item = it.key || `${ch.id}:main`;
       card.el.dataset.state = st;
       const cv = document.createElement('canvas'); cv.width = 120; cv.height = 180;
-      drawStanding(cv, ch, it.look || null, locked);
-      const tag = using ? 'IN USE' : st === 'main' ? 'ITS OWN LOOK' : st === 'owned' ? (it.kind === 'palette' ? 'OWNED · PUT ON' : 'OWNED') : unlockText(it, ch.name);
+      // a pose card shows the pose held, a taunt card a moment of it (the character's own clips, registry victory / taunt)
+      const clip = it.kind === 'pose' ? ch.victory : it.kind === 'taunt' ? ch.taunt : null;
+      drawStanding(cv, ch, it.look || null, locked, clip, it.kind === 'taunt' ? 0.45 : 2);
+      const tag = using ? 'IN USE' : st === 'main' ? 'ITS OWN LOOK' : st === 'owned' ? (it.kind === 'palette' || it.kind === 'pose' || it.kind === 'taunt' ? 'OWNED · PUT ON' : 'OWNED') : unlockText(it, ch.name);
       const txt = el('div', 'cl-text');
       txt.append(el('b', 'cl-name', locked ? 'LOCKED' : it.name), el('span', 'cl-how', tag));
       card.el.append(cv, txt);
@@ -116,6 +122,13 @@ export function closetBody(o) {
   async function press(it, st) {
     const fk = `i:${it.key || `${ch.id}:main`}`;
     if (st === 'main' || st === 'owned') {
+      if (it.kind === 'pose' || it.kind === 'taunt') {
+        // fighter mastery's pose and taunt: a press switches it on or off (off: the dance, or no taunt)
+        const now = !(it.kind === 'pose' ? on.pose : on.taunt);
+        setKit(ch.id, it.kind, now);
+        o.repaint(fk, now ? `${ch.name} WILL ${it.kind === 'pose' ? 'STRIKE' : 'DO'} ${it.name}` : `${it.name} PUT AWAY  ·  ${it.kind === 'pose' ? 'THE USUAL DANCE' : 'NO TAUNT'}`);
+        return;
+      }
       if (it.kind !== 'palette') { o.note(`${it.name}  ·  IN YOUR CLOSET`); return; }
       equip(ch.id, it.id);
       o.repaint(fk, `${ch.name} IS WEARING ${it.name}`);

@@ -13,8 +13,13 @@
 //   shiftCards(opts)       the SHIFTS screen's body: one card per shift (what it teaches, a coaching line, the ticks,
 //                          what it pays) with HOW TO PLAY and SWAP buttons; returns { el, items }
 //   shiftTicks(moved, compact)  the result screen's progress row (earningsPanel adds it)
+//   masteryBlock(m, compact)    fighter mastery on the result screen (earningsPanel adds it): BARISTA MASTERY 2, the
+//                          XP it paid (NEW HIRE apart), the bar to the next rank, and what a new rank unlocked
+//   masteryChip(fighter)   character select's line: MASTERY 2 with five pips, NEW HIRE BONUS while it pays
 import { el, button } from './ui.js';
-import { career, last, onCareer, nudgeDue, nudgeShown, todayShifts, swapToday } from '../career/store.js';
+import { career, last, onCareer, nudgeDue, nudgeShown, todayShifts, swapToday, mastery } from '../career/store.js';
+import { MAX_RANK, NEW_HIRE } from '../career/mastery.js';
+import { characterOr } from '../characters/index.js';
 import { SHIFT_PAY } from '../career/shifts.js';
 import { rootUrl } from '../root.js';
 import { titleFor, lineText } from '../career/rules.js';
@@ -76,6 +81,7 @@ export function earningsPanel(compact = false) {
     else if (cur.award.firstOnline) box.appendChild(el('div', 'cr-note', 'YOUR FIRST ONLINE MATCH TODAY PAYS EXTRA.'));
     if (cur.award.capped) box.appendChild(el('div', 'cr-note', 'ARCADE AND HORDE HAVE PAID ALL THEY CAN TODAY. ONLINE STILL PAYS.'));
     box.appendChild(shiftTicks(cur.award.moved, compact));   // the day's shifts, the ones this match moved lit
+    if (cur.award.mastery) box.appendChild(masteryBlock(cur.award.mastery, compact));   // the fighter played (README, Fighter mastery)
     const c = career();
     box.appendChild(reviewBar(c.xp));
     box.appendChild(el('div', 'cr-wallet', `${fmt(c.sticks)} STICKS${cur.pending ? '  ·  SAVING…' : ''}`));
@@ -114,6 +120,49 @@ export function nudgeBlock(onSave) {
 export function walletLine() {
   const c = career();
   return el('div', 'fl-small cr-walletline', `${fmt(c.sticks)} STICKS  ·  ${c.title}`);
+}
+
+// ---- fighter mastery (README, Progression, Fighter mastery) -------------------------------------------------
+const KIND_WORD = { palette: 'PALETTE', pose: 'VICTORY POSE', taunt: 'TAUNT' };
+/** n pips, the first `on` filled */
+function pips(on, n = MAX_RANK) {
+  const t = el('span', 'ms-pips');
+  for (let i = 0; i < n; i++) t.appendChild(el('i', i < on ? 'ms-on' : ''));
+  return t;
+}
+/** The result screen's mastery: what the match paid the fighter played, the bar, and any unlock as its own beat */
+export function masteryBlock(m, compact = false) {
+  injectStyle();
+  const name = characterOr(m.fighter).name, now = mastery(m.fighter);
+  const box = el('div', compact ? 'ms-res ms-rescompact' : 'ms-res');
+  box.dataset.fighter = m.fighter;
+  if (m.after > m.before) {
+    const up = el('div', 'ms-up');
+    up.append(el('span', '', `${name} MASTERY`), el('b', '', String(m.after)));
+    box.appendChild(up);
+    for (const u of m.unlocked || []) box.appendChild(el('div', 'ms-unlock', `UNLOCKED ${KIND_WORD[u.kind] || ''}: ${u.name}`));
+  }
+  const head = el('div', 'ms-head');
+  head.append(el('b', '', `${name} MASTERY ${now.rank}`), pips(now.rank),
+    el('span', 'ms-xp', `+${fmt(m.total)} XP${m.hire ? `  ·  ${NEW_HIRE.label} +${m.hire}` : ''}`));
+  box.appendChild(head);
+  if (!compact) {
+    const bar = el('div', 'cr-bar ms-bar'), fill = el('i');
+    fill.style.width = `${now.next ? Math.round((100 * now.into) / now.span) : 100}%`;
+    bar.appendChild(fill);
+    box.append(bar, el('div', 'ms-next', now.next ? `${fmt(now.into)} / ${fmt(now.span)} TO MASTERY ${now.rank + 1}` : 'MASTERED: EVERYTHING UNLOCKED'));
+  }
+  return box;
+}
+/** character select's line for a fighter: the rank in pips, NEW HIRE BONUS while the first matches still pay it */
+export function masteryChip(fighter) {
+  injectStyle();
+  const m = mastery(fighter);
+  const box = el('div', 'ms-chip');
+  box.dataset.rank = String(m.rank);
+  box.append(el('b', '', `MASTERY ${m.rank}`), pips(m.rank));
+  if (m.newHire) box.appendChild(el('span', 'ms-hire', `${NEW_HIRE.label} BONUS`));
+  return box;
 }
 
 // ---- daily shifts (README, Progression, Daily shifts) -------------------------------------------------------
@@ -221,6 +270,19 @@ function injectStyle() {
   .cr-row .cr-daily { color: #9dffc0; } .cr-row .cr-cap { color: rgba(214,190,255,0.7); }
   .cr-sum { font: 600 2.2cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #ffc46b; text-align: center; }
   .cr-note { font: 500 1.7cqw/1.1 'Teko', sans-serif; letter-spacing: 0.1em; color: #9dffc0; text-align: center; }
+  .ms-res { display: flex; flex-direction: column; gap: 0.4cqh; border-top: 2px solid rgba(255,255,255,0.12); padding-top: 0.6cqh; }
+  .ms-head { display: flex; align-items: center; gap: 1cqw; font: 600 1.9cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #e8e0ff; }
+  .ms-head .ms-xp { margin-left: auto; color: #9dffc0; }
+  .ms-next { font: 500 1.5cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #b8a8e0; }
+  .ms-up { display: flex; align-items: baseline; justify-content: center; gap: 1.2cqw; animation: cr-stamp 520ms cubic-bezier(.2,1.6,.4,1) both; }
+  .ms-up span { font: 600 2.2cqw/1 'Teko', sans-serif; letter-spacing: 0.14em; color: #ffe0a8; }
+  .ms-up b { font: 400 3.2cqw/1 'Bungee', sans-serif; color: #fff4d6; }
+  .ms-unlock { font: 600 1.8cqw/1.1 'Teko', sans-serif; letter-spacing: 0.1em; color: #ffd84f; text-align: center; }
+  .ms-pips { display: inline-flex; gap: 3px; }
+  .ms-pips i { display: block; width: max(7px, 0.9cqw); height: max(7px, 0.9cqw); border: 2px solid #ffb02e; }
+  .ms-pips i.ms-on { background: #ffb02e; }
+  .ms-chip { display: flex; align-items: center; gap: 0.8cqw; font: 600 1.7cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffe0a8; }
+  .ms-chip .ms-hire { color: #0b0616; background: #9dffc0; padding: 0.15em 0.4em; }
   .cr-review { display: flex; flex-direction: column; gap: 0.4cqh; }
   .cr-rhead { display: flex; justify-content: space-between; align-items: baseline; gap: 2cqw; }
   .cr-title { font: 400 2.2cqw/1 'Bungee', sans-serif; color: #fff4d6; }
@@ -275,6 +337,8 @@ function injectStyle() {
     .cr-lines { font-size: 3.4cqw; } .cr-lines .cr-num { font-size: 3cqw; } .cr-lines .cr-h { font-size: 2.6cqw; }
     .cr-promo span { font-size: 3.4cqw; } .cr-promo b { font-size: 5cqw; }
     .cr-row { font-size: 3.2cqw; } .cr-sum, .cr-wallet { font-size: 3.4cqw; } .cr-note { font-size: 2.9cqw; }
+    .ms-head, .ms-unlock { font-size: 3.2cqw; } .ms-next { font-size: 2.8cqw; } .ms-up span { font-size: 3.4cqw; } .ms-up b { font-size: 4.6cqw; }
+    .ms-chip { font-size: 3.2cqw; }
     .cr-title { font-size: 3.6cqw; } .cr-rlabel, .cr-next { font-size: 2.8cqw; }
     .cr-chip { font-size: 3.4cqw; } .cr-chip span { font-size: 3cqw; }
     .fl-pcareer { width: 80cqw; }

@@ -28,6 +28,7 @@ export const STUCK_STEPS = {
   dash: 240,       // a dash is under 30 steps of burst and braking
   vault: 600,      // the run to the rail gives up after 180 steps; the vault clip is about 1 s
   perfect: 1200,   // the perfect round: the run (PF_RUN), the clip and the body on the glass (PF_CUT 2.6 s, then PERFECT.after)
+  taunt: 240,      // a fighter mastery taunt plays under the ROUND card (INTRO_TIME 1.4 s, 168 steps) and is cut at FIGHT
   celebrate: 600,  // the WINS card (MATCH_HOLD 1.8 s), then the next match spawns him idle
   ko: 1800,        // the KO hold, a perfect round and the WINS card, then the next round spawns him
 };

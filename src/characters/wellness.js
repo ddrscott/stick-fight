@@ -130,8 +130,26 @@ const perfect = { name: 'SALUTE TO THE LENS', note: 'Lifted overhead and held th
   K({ face: 0.8, ...F(2, HIP - 2, LF + 6, RF), torso: 32, bend: 6, head: 8, la: [18, 100], ra: [12, 100] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Mountain pose: feet together, arms straight up, palms pressed overhead.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF + 2, RF - 2), torso: 2, head: 2, la: [90, 100], ra: [90, 100] }, 260, 'inOut'),
+  K({ ...F(0, HIP + 1, LF + 4, RF - 4), torso: -2, bend: -1, head: -10, la: [172, 182], ra: [174, 184] }, 320, 'out'),
+  K({ ...F(0, HIP + 1, LF + 4, RF - 4), torso: -2, bend: -1, head: -12, la: [172, 182], ra: [174, 184] }, 500, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Deep breath: the arms float up with a breath in, and sink with the breath out.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 0, head: -2, la: [60, 90], ra: [60, 90] }, 300, 'sine'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: -4, bend: -2, head: -14, la: [130, 150], ra: [130, 150] }, 320, 'sine'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 6, bend: 2, head: 8, la: [30, 40], ra: [30, 40] }, 320, 'sine'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 220, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'wellness',
   name: 'WELLNESS COACH',

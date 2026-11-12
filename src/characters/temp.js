@@ -52,8 +52,28 @@ const perfect = { name: 'TWO-HANDED HEAVE', note: 'A clumsy two-handed heave: he
   K({ face: 0.45, ...F(16, HIP, LF + 18, RF + 16), torso: 2, head: -12, la: [162, 188], ra: [14, 26] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Permanent position: a deep breath, then both fists high, the contract finally signed.
+const victory = { keys: [
+  K({ ...F(0, HIP - 5, LF, RF), torso: 10, bend: 3, head: 8, la: [30, 110], ra: [24, 104] }, 180, 'in'),
+  K({ ...F(0, HIP + 2, LF - 2, RF + 2), torso: -4, bend: -3, head: -14, la: [168, 178], ra: [160, 172] }, 240, 'out'),
+  K({ ...F(0, HIP + 1, LF - 2, RF + 2), torso: -3, bend: -2, head: -12, la: [166, 176], ra: [158, 170] }, 400, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Clock watcher: lifts the wrist, taps the watch twice, shrugs.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 10, la: [70, 150], ra: [50, 120] }, 200, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 12, la: [70, 150], ra: [58, 140] }, 130, 'in'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 12, la: [70, 150], ra: [50, 120] }, 130, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 12, la: [70, 150], ra: [58, 140] }, 130, 'in'),
+  K({ ...F(0, HIP - 3, LF, RF), torso: 0, head: -6, la: [40, 120], ra: [-40, 60] }, 260, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 200, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'temp',
   name: 'TEMP',

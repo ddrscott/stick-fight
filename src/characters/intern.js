@@ -121,8 +121,27 @@ const perfect = { name: 'ACCIDENTAL LOB', note: 'He gets it up, it slips, he jug
   K({ face: 0.6, ...F(6, HIP - 3, LF + 8, RF - 2), torso: 9, bend: 3, head: 10, la: [146, 236], ra: [140, 228] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Gold star: a hop, then a thumb jabbed proudly at the chest, chin up.
+const victory = { keys: [
+  K({ ...F(0, HIP - 6, LF, RF), torso: 12, bend: 4, head: 6, la: [20, 60], ra: [20, 60] }, 160, 'in'),
+  K({ ...F(0, HIP + 1, LF, RF), torso: -6, bend: -4, head: -14, la: [40, 168], ra: [150, 180], air: 6 }, 200, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: -5, bend: -3, head: -12, la: [40, 170], ra: [150, 180] }, 420, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Coffee order?: a hand cupped at the ear, a lean in, a hopeful nod.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: 6, la: [150, 250], ra: [12, 24] }, 200, 'out'),
+  K({ ...F(4, HIP - 2, LF + 4, RF), torso: 14, bend: 3, head: 10, la: [150, 250], ra: [12, 24] }, 260, 'inOut'),
+  K({ ...F(4, HIP - 2, LF + 4, RF), torso: 14, bend: 3, head: 18, la: [150, 250], ra: [12, 24] }, 140, 'in'),
+  K({ ...F(4, HIP - 2, LF + 4, RF), torso: 14, bend: 3, head: 6, la: [150, 250], ra: [12, 24] }, 140, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'intern',
   name: 'INTERN',

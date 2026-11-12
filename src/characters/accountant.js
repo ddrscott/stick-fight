@@ -106,8 +106,28 @@ const perfect = { name: 'PRECISE UNDERHAND', note: 'A precise underhand toss: he
   K({ face: 0.55, ...F(-2, HIP, LF - 4, RF - 8), torso: 4, head: -8, la: [38, 110], ra: [100, 190] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Balanced: a push of the glasses up the nose, then the arms fold, satisfied.
+const victory = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: 4, la: [44, 172], ra: [12, 24] }, 220, 'out'),
+  K({ ...F(0, HIP - 1, LF + 2, RF - 2), torso: -2, bend: -2, head: -6, la: [40, 150], ra: [60, 170] }, 260, 'inOut'),
+  K({ ...F(0, HIP - 1, LF + 2, RF - 2), torso: -2, bend: -2, head: -8, la: [40, 150], ra: [60, 170] }, 440, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Run the numbers: taps a calculator held in one palm, then a small nod.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: 14, la: [50, 110], ra: [44, 96] }, 200, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: 14, la: [50, 110], ra: [50, 112] }, 110, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: 14, la: [50, 110], ra: [44, 96] }, 110, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: 14, la: [50, 110], ra: [50, 112] }, 110, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -2, la: [50, 110], ra: [30, 60] }, 220, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'accountant',
   name: 'ACCOUNTANT',

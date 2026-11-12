@@ -93,8 +93,27 @@ const perfect = { name: 'GOLDEN PARACHUTE', note: 'The golden-parachute shove: h
   K({ face: 0.5, ...F(4, HIP, LF + 6, RF), torso: 0, head: -14, la: [118, 212], ra: [108, 202] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Boardroom: fingertips steepled under the chin, a slow smile.
+const victory = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: 2, la: [40, 110], ra: [40, 110] }, 220, 'inOut'),
+  K({ ...F(0, HIP, LF + 2, RF - 2), torso: -2, bend: -2, head: -2, la: [36, 150], ra: [40, 154] }, 280, 'out'),
+  K({ ...F(0, HIP, LF + 2, RF - 2), torso: -2, bend: -2, head: -4, la: [36, 150], ra: [40, 154] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Downsized: a bored glance and a backhand flick of the wrist. Next.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -10, la: [40, 120], ra: [12, 24] }, 240, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -10, la: [70, 150], ra: [12, 24] }, 140, 'in'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -10, la: [90, 60], ra: [12, 24] }, 120, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -12, la: [90, 62], ra: [12, 24] }, 260, 'sine'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'ceo',
   name: 'THE CEO',

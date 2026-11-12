@@ -501,3 +501,7 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
   .s-legal p, .s-legal li, .s-short li { font-size: 18px; }
   .s-short { padding: 14px 14px 4px; }
 }
+
+/* fighter mastery's table (site/templates.mjs masterySection): flat swatches, no glow */
+.s-mswatch { display: inline-flex; gap: 2px; margin-right: 8px; vertical-align: middle; }
+.s-mswatch i { display: block; width: 14px; height: 14px; border: 1px solid rgba(255, 255, 255, 0.7); }

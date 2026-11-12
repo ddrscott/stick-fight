@@ -99,8 +99,27 @@ const perfect = { name: 'MOP-HANDLE DRIVE', note: 'A mop-handle golf swing: he t
   K({ face: 0.85, ...F(6, HIP, LF + 6, RF - 6, 0, 6), torso: -10, bend: -6, head: -20, tw: 12, la: [162, 216], ra: [152, 208] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Leaning on the mop: a slouch onto an invisible mop handle, hands stacked, ankles crossed.
+const victory = { keys: [
+  K({ ...F(2, HIP - 2, LF + 2, RF), torso: 8, bend: 2, head: 4, la: [40, 80], ra: [40, 80] }, 220, 'inOut'),
+  K({ ...F(4, HIP - 4, LF + 10, RF - 2), torso: 16, bend: 4, head: -4, la: [58, 96], ra: [52, 112] }, 260, 'out'),
+  K({ ...F(4, HIP - 4, LF + 10, RF - 2), torso: 16, bend: 4, head: -6, la: [58, 96], ra: [52, 112] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Sweep it up: two wide sweeps along the floor at their feet.
+const taunt = { keys: [
+  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [70, 40], ra: [60, 30] }, 220, 'out'),
+  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [20, -20], ra: [10, -30] }, 200, 'inOut'),
+  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [70, 40], ra: [60, 30] }, 200, 'inOut'),
+  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [20, -20], ra: [10, -30] }, 200, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'janitor',
   name: 'JANITOR',
