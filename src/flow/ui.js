@@ -536,7 +536,7 @@ function injectStyle() {
   .fl-standings .fl-snum { text-align: right; font-variant-numeric: tabular-nums; }
   .fl-standings .fl-svs { color: var(--cyan); }
   .fl-standings .fl-sfav { color: color-mix(in srgb, var(--fc, var(--violet)) 55%, #fff); font-size: 2cqw; }
-  .fl-standings .fl-me { color: #ffc2f3; }
+  .fl-standings .fl-me, .fl-standings .fl-me > span { color: #ffc2f3; }   /* your row, name and (YOU) included, is pink */
   .fl-standings .fl-smore { grid-column: 1 / -1; font-size: 1.8cqw; color: rgba(214,190,255,0.7); text-align: center; }
   .fl-sname { display: flex; align-items: baseline; gap: 0.6cqw; min-width: 0; }
   .fl-standings .fl-sname > .fl-snm { min-width: 0; flex: 0 1 auto; }   /* the name takes the ellipsis… */

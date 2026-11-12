@@ -2040,8 +2040,10 @@ export function createFlow(ctx) {
       const nm = el('span', 'fl-sname' + cls);
       const dot = el('i', `fl-dot ${m.on ? ON[m.on][1] : ''}`);
       nm.append(dot, el('span', 'fl-snm', m.name));   // the name clips, never the chip after it
-      if (mine) nm.appendChild(el('span', 'fl-youtag', ' (YOU)'));   // (upright the row's color and YOU'RE <name> above say it, so the name gets the room)
-      if (m.on === 'ready' || m.on === 'match') nm.appendChild(el('b', `fl-chip ${ON[m.on][1]}`, ON[m.on][0]));
+      const chip = m.on === 'ready' || m.on === 'match';
+      // (YOU) goes when a chip shows, and always upright: the row's pink and YOU'RE <name> above say it, so the name gets the room
+      if (mine && !chip) nm.appendChild(el('span', 'fl-youtag', ' (YOU)'));
+      if (chip) nm.appendChild(el('b', `fl-chip ${ON[m.on][1]}`, ON[m.on][0]));
       t.appendChild(nm);
       t.append(el('span', 'fl-snum' + cls, String(m.w)), el('span', 'fl-snum' + cls, String(m.l)), el('span', 'fl-snum fl-sd' + cls, String(m.d)));
       const r = mine ? null : crewRecord(m.id);

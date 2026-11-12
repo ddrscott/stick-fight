@@ -143,15 +143,26 @@ try {
       check('upright: the list heads are just NAME, W and L', heads.join(',') === ',NAME,W,L', heads.join(','));
       const press = (P) => P.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-playbtn')).act());
       await press(A);
-      const chipsFit = () => C.evaluate(() => {
+      const chipsFit = (P = C) => P.evaluate(() => {
         const out = [];
         for (const ch of document.querySelectorAll('#flow .fl-standings .fl-chip')) {
           const cell = ch.closest('.fl-sname').getBoundingClientRect(), r = ch.getBoundingClientRect();
-          const nm = ch.parentElement.querySelector('.fl-snm');
-          out.push({ row: nm.textContent + ch.textContent, whole: nm.scrollWidth <= nm.clientWidth + 1, ok: r.width > 0 && r.right <= cell.right + 0.5 && r.left >= cell.left - 0.5 && ch.scrollWidth <= ch.clientWidth + 1, r: Math.round(r.right), cell: Math.round(cell.right) });
+          const nm = ch.parentElement.querySelector('.fl-snm'), you = ch.parentElement.querySelector('.fl-youtag');
+          out.push({ row: nm.textContent + ch.textContent, whole: nm.scrollWidth <= nm.clientWidth + 1, mine: ch.parentElement.classList.contains('fl-me'), color: getComputedStyle(nm).color, you: !!you && you.getBoundingClientRect().width > 0,
+            ok: r.width > 0 && r.right <= cell.right + 0.5 && r.left >= cell.left - 0.5 && ch.scrollWidth <= ch.clientWidth + 1, r: Math.round(r.right), cell: Math.round(cell.right) });
         }
         return out;
       });
+      const PINK = 'rgb(255, 194, 243)';
+      // the other side: A's own row on a desktop and sideways reads "ALREADY READY", whole and pink, with no (YOU) squeezing the name
+      for (const [w, h] of [[1280, 720], [844, 390]]) {
+        await A.setViewportSize({ width: w, height: h }); await sleep(300);
+        const got = await until(async () => { const c = (await chipsFit(A)).filter((x) => x.mine); return c.length ? c : null; }, 10000);
+        check(`${w}x${h}: your own row with READY reads ALREADY READY, name whole and pink, no (YOU)`, got && got.every((c) => c.ok && c.whole && !c.you && c.color === PINK && c.row === 'ALREADYREADY'), JSON.stringify(got));
+      }
+      await A.setViewportSize({ width: 1280, height: 720 });
+      const youTag = await C.evaluate(() => { const n = document.querySelector('#flow .fl-standings .fl-me .fl-snm'); return n && getComputedStyle(n).color; });
+      check('upright: your own row\'s name is pink', youTag === PINK, String(youTag));
       for (const [w, h] of [[390, 844], [375, 667]]) {
         await C.setViewportSize({ width: w, height: h });
         const got = await until(async () => { const c = await chipsFit(); return c.length ? c : null; }, 10000);
@@ -164,7 +175,7 @@ try {
       await press(C);
       await C.setViewportSize({ width: 375, height: 667 });
       const own = await until(async () => { const c = await chipsFit(); return c.length ? c : null; }, 10000);
-      check('upright 375x667: your own GUEST row and its READY chip both show whole', own && own.every((c) => c.ok) && own.some((c) => /^GUEST \d{3}READY$/.test(c.row) && c.whole), JSON.stringify(own));
+      check('upright 375x667: your own GUEST row and its READY chip both show whole, the name pink', own && own.every((c) => c.ok) && own.some((c) => /^GUEST \d{3}READY$/.test(c.row) && c.whole && c.mine && c.color === PINK), JSON.stringify(own));
       await C.setViewportSize(size);
       await press(C);   // back to just HERE
       await C.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')).act());
