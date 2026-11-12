@@ -89,9 +89,15 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
 .s-more { font: 600 21px/1 var(--label); letter-spacing: 0.1em; color: var(--cyan); text-decoration: none; }
 
 /* ---- homepage: the game in a frame ---- */
-/* The frame is as wide as the page allows (up to 1240px) but never taller than the screen under the header,
+/* The frame is as wide as the page allows (up to 1240px) but never taller than the screen under the header and the
+   title (280px: the 56px header, the padding, and a title whose tagline wraps to five lines; the title is as wide as
+   the frame, so a shorter frame wraps it more, and 200px ran the select's BACK and PICK off a 720px window),
    so the whole arena fits without scrolling. */
-.s-game { --fw: min(1240px, 100%, calc((100vh - 200px) * 16 / 9)); width: min(1240px, 100%); margin: 0 auto; padding: 18px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); }
+.s-game { --fw: min(1240px, 100%, calc((100vh - 280px) * 16 / 9)); width: min(1240px, 100%); margin: 0 auto; padding: 18px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); }
+/* svh is the height with the browser bars showing. On a phone vh is the height with them hidden, so a frame sized by it
+   ran its bottom (the select's BACK and PICK) under the bars. svh, not dvh, so the frame doesn't resize as the bars
+   slide away. The vh lines are for browsers without svh. */
+@supports (height: 100svh) { .s-game { --fw: min(1240px, 100%, calc((100svh - 280px) * 16 / 9)); } }
 .s-game-head { width: var(--fw); margin: 0 auto 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 22px; }
 .s-title { font-size: clamp(30px, 4vw, 48px); line-height: 1; color: #fff; text-shadow: 0 0 10px var(--pink), 0 0 30px var(--pink); margin: 0; }
 .s-game-tag { flex: 1 1 20em; margin: 0; font-size: 18px; color: var(--ink); }
@@ -429,6 +435,7 @@ kbd { font: 600 0.95em/1 var(--label); letter-spacing: 0.06em; color: #fff; bord
   .s-nav a { font-size: 18px; }
   .s-top-play { margin-left: 8px; }
   .s-game { --fw: min(1240px, 100%, calc((100vh - 66px) * 16 / 9)); padding-top: 8px; }
+  @supports (height: 100svh) { .s-game { --fw: min(1240px, 100%, calc((100svh - 66px) * 16 / 9)); } }
   .s-game-head { display: none; }
   .s-move { grid-template-columns: 170px 1fr; }
   .s-move-rig { height: 100%; }
