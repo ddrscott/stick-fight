@@ -11,10 +11,11 @@
 
 const N = 600;   // 10 s at 60 fps
 const PHASES = ['sim', 'draw', 'gl', 'hud'];
-const ring = { iv: new Float32Array(N), work: new Float32Array(N) };
+const ring = { iv: new Float32Array(N), work: new Float32Array(N), drew: new Uint8Array(N) };
 for (const p of PHASES) ring[p] = new Float32Array(N);
 let n = 0, head = 0, last = 0, t0 = 0, tMark = 0;
 const cur = { sim: 0, draw: 0, gl: 0, hud: 0 };
+let drew = 0;   // this frame drew a picture (tier 0 at its last resort draws every other frame: README, Performance, Chromebooks)
 const rb = { last: 0, lastDepth: 0, max: 0, maxDepth: 0, count: 0, at: -1e9 };
 // long frames: an interval over 25 ms (a missed vsync and then some), counted with their times over the last minute
 const longAt = new Float64Array(512); let longHead = 0;
@@ -36,13 +37,16 @@ export const perf = {
       }
     }
     last = now; t0 = tMark = performance.now();
-    cur.sim = cur.draw = cur.gl = cur.hud = 0;
+    cur.sim = cur.draw = cur.gl = cur.hud = 0; drew = 0;
   },
+  /** render() ran this frame */
+  drawn() { drew = 1; },
   mark(phase) { const t = performance.now(); cur[phase] += t - tMark; tMark = t; },
   end() {
     const t = performance.now();
     ring.work[head] = t - t0;
     for (const p of PHASES) ring[p][head] = cur[p];
+    ring.drew[head] = drew;
     head = (head + 1) % N; if (n < N) n++;
   },
   rollback(ms, depth) {
@@ -59,6 +63,9 @@ export const perf = {
     out.longPerMin = span > 1000 ? long * 60000 / Math.max(span, 1) : 0;
     for (const k of ['iv', 'work', ...PHASES]) out[k] = { p50: pct(ring[k], n, 0.5), p95: pct(ring[k], n, 0.95), p99: pct(ring[k], n, 0.99), max: n ? Math.max(...ring[k].subarray(0, n)) : 0 };
     out.fps = out.iv.p50 ? 1000 / (ring.iv.subarray(0, n).reduce((a, b) => a + b, 0) / n) : 0;
+    // pictures drawn a second: the same as fps unless frames were skipped
+    let d = 0; for (let i = 0; i < n; i++) d += ring.drew[i];
+    out.drawnFps = n ? out.fps * d / n : 0;
     return out;
   },
 };
@@ -80,14 +87,15 @@ export function perfOverlay(parent) {
     const { iv, sim, draw, gl, hud, work } = s;
     const r = s.rollback, ago = (performance.now() - r.at) / 1000;
     el.textContent =
-      `$ FRAME ${f(iv.p50)} p95${f(iv.p95)} p99${f(iv.p99)} ms  ${s.fps.toFixed(0)} fps\n`
+      `$ FRAME ${f(iv.p50)} p95${f(iv.p95)} p99${f(iv.p99)} ms  ${s.fps.toFixed(0)} fps${s.drawnFps < s.fps - 1 ? ` (${s.drawnFps.toFixed(0)} drawn)` : ''}\n`
       + `  work  ${f(work.p50)} p95${f(work.p95)}  long/min ${s.longPerMin.toFixed(0)}\n`
       + `  sim   ${f(sim.p50)} p95${f(sim.p95)}\n`
       + `  draw  ${f(draw.p50)} p95${f(draw.p95)}\n`
       + `  gl    ${f(gl.p50)} p95${f(gl.p95)}\n`
       + `  hud   ${f(hud.p50)} p95${f(hud.p95)}\n`
       + `  rollback last ${r.last.toFixed(1)}ms/${r.lastDepth}f${r.count ? ` ${ago.toFixed(0)}s ago` : ''}  worst ${r.max.toFixed(1)}ms/${r.maxDepth}f\n`
-      + `  tier ${s.info.tier}${s.info.adaptive ? ' auto' : ' pinned'}  dpr ${s.info.dpr} (hud ${s.info.hud}x)  canvas ${s.info.w}x${s.info.h}`;
+      + `  tier ${s.info.tier}${s.info.adaptive ? ' auto' : ' pinned'}${s.info.every > 1 ? ' every 2nd frame' : ''}  dpr ${s.info.dpr} (hud ${s.info.hud}x)  canvas ${s.info.w}x${s.info.h}\n`
+      + `  device ${s.info.device || '?'}`;
   }, 250);
   return el;
 }

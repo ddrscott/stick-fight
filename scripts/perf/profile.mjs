@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CPU profile of one scenario (README, Performance): the top functions by self time, from the production build.
-//   node scripts/perf/profile.mjs [scene query] [--throttle 4] [--secs 5]
+//   node scripts/perf/profile.mjs [scene query] [--throttle 4] [--secs 5] [--angle swiftshader] [--device cros]
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,8 +21,9 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
-const browser = await pw.chromium.launch({ args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-blink-features=AutomationControlled'] });
-const ctx = await browser.newContext({ viewport: { width: 915, height: 412 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true });
+const SW = opt('--angle', 'metal') === 'swiftshader';
+const browser = await pw.chromium.launch({ args: [SW ? '--use-angle=swiftshader' : '--use-angle=metal', ...(SW ? ['--enable-unsafe-swiftshader'] : ['--enable-gpu', '--ignore-gpu-blocklist']), '--disable-blink-features=AutomationControlled'] });
+const ctx = await browser.newContext(opt('--device') === 'cros' ? { viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1 } : { viewport: { width: 915, height: 412 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
 const cdp = await ctx.newCDPSession(page);
 await cdp.send('Emulation.setCPUThrottlingRate', { rate: +opt('--throttle', 4) });

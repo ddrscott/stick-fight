@@ -456,6 +456,21 @@ function farSpan(cam, clip) {
   const m = farToEmissive(cam);
   return { x0: (clip.x - m.dx) / m.s - 60, x1: (clip.x + clip.w - m.dx) / m.s + 60 };
 }
+// The lit windows of every tower drawn once into a bitmap at scale k (device px per far unit), for drawCityLights
+let cityBmp = null;
+function cityBitmap(k) {
+  if (cityBmp && cityBmp.k === k) return cityBmp;
+  if (!cityPaths) buildCityPaths();
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity;
+  for (const t of TOWERS) { x0 = Math.min(x0, t.x); x1 = Math.max(x1, t.x + t.w); y0 = Math.min(y0, t.top); }
+  x0 = Math.floor(x0) - 4; x1 = Math.ceil(x1) + 4; y0 = Math.floor(y0) - 4;
+  const y1 = H + 400, canvas = document.createElement('canvas');
+  canvas.width = Math.ceil((x1 - x0) * k); canvas.height = Math.ceil((y1 - y0) * k);
+  const g = canvas.getContext('2d');
+  g.scale(k, k); g.translate(-x0, -y0);
+  for (const cp of cityPaths) if (cp.path) { g.fillStyle = cp.fill; g.fill(cp.path); }
+  return (cityBmp = { k, canvas, x0, y0 });
+}
 // Each tower's lit windows as one Path2D per tower (built once): the hash and the occlusion test ran per window
 // every frame before; now a frame fills one path per tower that the opening can show.
 let cityPaths = null;
@@ -480,7 +495,18 @@ function drawCityLights(ctx, cam, clip) {
   ctx.save();
   clipRect(ctx, clip);
   ctx.translate(m.dx, m.dy); ctx.scale(m.s, m.s);
-  for (const cp of cityPaths) {
+  // At half-size layers (tiers 1 and 0) the lit windows come from one bitmap instead of a few thousand rects a frame:
+  // filling those paths was ~30 ms a frame of raster on a software canvas (README, Performance, Chromebooks). The
+  // far layer's mapping cancels the zoom, so the city is always drawn at the layer's own scale and one bitmap per
+  // scale is exact; it's placed on whole device pixels so the windows stay sharp. Full-size layers draw the paths.
+  const t = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+  const k = t ? Math.round(Math.abs(t.a) * 16) / 16 : 1;
+  const bm = t && k > 0 && k <= 0.5 && !t.b && !t.c && typeof document !== 'undefined' ? cityBitmap(k) : null;
+  if (bm) {
+    ctx.setTransform(Math.sign(t.a), 0, 0, Math.sign(t.d) || 1, Math.round(t.e + t.a * bm.x0), Math.round(t.f + t.d * bm.y0));
+    ctx.drawImage(bm.canvas, 0, 0);
+    ctx.setTransform(t);
+  } else for (const cp of cityPaths) {
     if (!cp.path || cp.x0 > sp.x1 || cp.x1 < sp.x0) continue;
     ctx.fillStyle = cp.fill;
     ctx.fill(cp.path);

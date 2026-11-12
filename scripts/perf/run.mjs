@@ -44,10 +44,15 @@ const SCENARIOS = {
 };
 const PICK = (opt('--scenes', Object.keys(SCENARIOS).join(','))).split(',');
 
+const CROS_UA = 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const DEVICES = {
   pixel7: { viewport: { width: 915, height: 412 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },
   pixel7up: { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },   // held upright: the square (README, Controls)
   desktop: { viewport: { width: 1440, height: 810 }, deviceScaleFactor: 2, isMobile: false, hasTouch: false },
+  // a school Chromebook (README, Performance, Chromebooks): the common 1366x768 panel at DPR 1, and a 1080p one at 1.25; a
+  // trackpad, so a fine pointer. The UA says CrOS so the capability check sees one (a real Celeron reports 2 or 4 cores).
+  cros: { viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1, isMobile: false, hasTouch: false, userAgent: CROS_UA },
+  croshd: { viewport: { width: 1536, height: 864 }, deviceScaleFactor: 1.25, isMobile: false, hasTouch: false, userAgent: CROS_UA },
 };
 
 const root = opt('--dist') ? path.resolve(opt('--dist')) : path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../dist');
@@ -78,6 +83,7 @@ const results = [];
 async function open(url, throttle, extra = {}) {
   const ctx = await browser.newContext({ ...DEVICES[DEVICE], ...extra });
   const page = await ctx.newPage();
+  if (opt('--init')) await page.addInitScript(opt('--init'));   // --init "<js>": runs before the page's own scripts
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   const cdp = await ctx.newCDPSession(page);
@@ -87,7 +93,7 @@ async function open(url, throttle, extra = {}) {
 
 const ms = (v) => +v.toFixed(2);
 function row(s) {
-  return { fps: ms(s.fps), p50: ms(s.iv.p50), p95: ms(s.iv.p95), p99: ms(s.iv.p99), longPerMin: Math.round(s.longPerMin), work50: ms(s.work.p50), work95: ms(s.work.p95),
+  return { fps: ms(s.fps), drawn: ms(s.drawnFps ?? s.fps), every: s.info.every || 1, p50: ms(s.iv.p50), p95: ms(s.iv.p95), p99: ms(s.iv.p99), longPerMin: Math.round(s.longPerMin), work50: ms(s.work.p50), work95: ms(s.work.p95),
     sim50: ms(s.sim.p50), sim95: ms(s.sim.p95), draw50: ms(s.draw.p50), draw95: ms(s.draw.p95), gl50: ms(s.gl.p50), gl95: ms(s.gl.p95), hud50: ms(s.hud.p50), tier: s.info.tier };
 }
 
@@ -99,11 +105,12 @@ if (!flag('--gpu') && !flag('--rollback') && !flag('--load')) {
       const { ctx, page, errors } = await open(base + '?' + q, throttle);
       await page.goto(base + '?' + q);
       await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
+      if (opt('--eval')) await page.evaluate(opt('--eval'));   // --eval "<js>": an experiment run once the game is up
       await page.waitForTimeout((S.warm || WARM) * 1000);
       await page.evaluate(() => window.__perf.reset());
       await page.waitForTimeout(SECS * 1000);
       const s = await page.evaluate(() => window.__perf.summary());
-      const r = { scenario: name, throttle, tier, device: DEVICE, ...row(s), errors: errors.length };
+      const r = { scenario: name, throttle, asked: tier, device: DEVICE, ...row(s), errors: errors.length };   // tier: where it was at the end (AUTO's settled tier)
       results.push(r);
       console.log(JSON.stringify(r));
       await ctx.close();
@@ -121,7 +128,14 @@ if (flag('--gpu')) {
     await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
     await page.waitForTimeout(WARM * 1000);
     const r = await page.evaluate((off) => {
-      for (const k of off) { if (k.startsWith('up:')) window.__game.fx.skip[k.slice(3)] = true; else window.__game.fx.options[k] = false; }   // --off lighting,bloom,up:figures...: what a pass or an upload costs
+      // --off lighting,bloom,up:figures,fn:arena.drawEmissive...: what a pass, an upload or a drawing function costs
+      // (fn: makes window.__game.<path> a no-op)
+      for (const k of off) {
+        if (k.startsWith('up:')) window.__game.fx.skip[k.slice(3)] = true;
+        else if (k.startsWith('fn:')) { const ks = k.slice(3).split('.'), last = ks.pop(); let o = window.__game; for (const x of ks) o = o[x]; o[last] = () => {}; }
+        else if (k.startsWith('win:')) window[k.slice(4)] = true;
+        else window.__game.fx.options[k] = false;
+      }
       const g = window.__gauntlet, gl = window.__game.fx.gl, px = new Uint8Array(4);
       const t = [], a = [];
       for (let i = 0; i < 240; i++) {
