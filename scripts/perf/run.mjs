@@ -44,10 +44,15 @@ const SCENARIOS = {
 };
 const PICK = (opt('--scenes', Object.keys(SCENARIOS).join(','))).split(',');
 
+const CROS_UA = 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const DEVICES = {
   pixel7: { viewport: { width: 915, height: 412 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },
   pixel7up: { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },   // held upright: the square (README, Controls)
   desktop: { viewport: { width: 1440, height: 810 }, deviceScaleFactor: 2, isMobile: false, hasTouch: false },
+  // a school Chromebook (README, Performance, Chromebooks): the common 1366x768 panel at DPR 1, and a 1080p one at 1.25; a
+  // trackpad, so a fine pointer. The UA says CrOS so the capability check sees one (a real Celeron reports 2 or 4 cores).
+  cros: { viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1, isMobile: false, hasTouch: false, userAgent: CROS_UA },
+  croshd: { viewport: { width: 1536, height: 864 }, deviceScaleFactor: 1.25, isMobile: false, hasTouch: false, userAgent: CROS_UA },
 };
 
 const root = opt('--dist') ? path.resolve(opt('--dist')) : path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../dist');

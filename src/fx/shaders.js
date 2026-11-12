@@ -576,3 +576,70 @@ void main() {
   gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
+
+// Tier 0 (README, Performance, Chromebooks): one pass straight to a half-size canvas, for a software GL or a
+// school Chromebook's GPU. No per-pixel lights, no bloom chain, no mask, no grade: the sky, the skyline, the room
+// lit flat (u_flat, worked out on the CPU from the ambient and the lights on screen), the neon faces with a short
+// glow from eight taps of the emissive layer, the bodies, the fighters in their own flat color with a dark edge, the
+// foreground and the hit flash. The glow and the flash stay off the fighters: fighters never glow.
+export const FLAT_FS = PRECISION + `
+varying vec2 v_uv;
+uniform vec2 u_res;
+uniform sampler2D u_bg, u_fig, u_emi, u_far, u_body, u_fg;
+uniform vec4 u_bgMap;
+uniform float u_farOn, u_farAmount, u_fgOn, u_fgOpacity, u_fgCut, u_glow, u_outline;
+uniform vec2 u_farOffset;
+uniform vec3 u_farHaze, u_skyTop, u_skyBot, u_flat, u_fgTint;
+uniform vec4 u_fog; uniform vec2 u_fogY;
+uniform vec3 u_flashCol; uniform float u_flashA; uniform vec2 u_flashPos; uniform float u_flashR;
+uniform float u_toe;
+void main() {
+  vec2 uv = v_uv;
+  vec2 px = vec2(uv.x * u_res.x, (1.0 - uv.y) * u_res.y);
+  vec4 bg = texture2D(u_bg, uv * u_bgMap.xy + u_bgMap.zw);
+  vec4 fig = texture2D(u_fig, uv);
+  vec4 emi = texture2D(u_emi, uv);
+  vec4 bod = texture2D(u_body, uv);
+  vec3 col = mix(u_skyTop, u_skyBot, px.y / u_res.y);
+  if (u_farOn > 0.5) {
+    vec4 far = texture2D(u_far, clamp(uv + u_farOffset, vec2(0.0), vec2(1.0)));
+    col = mix(col, mix(far.rgb * u_flat, u_farHaze, u_farAmount), far.a);
+  }
+  col = mix(col, bg.rgb * u_flat, bg.a);
+  float f = u_fog.a * (1.0 - smoothstep(u_fogY.x, u_fogY.y, px.y));
+  col = mix(col, u_fog.rgb, clamp(f, 0.0, 1.0));
+  // the neon: the face itself, then a short halo around it (eight taps, ~3 and ~7 px at 1280)
+  vec2 t = 1.0 / u_res;
+  vec3 halo = texture2D(u_emi, uv + vec2(t.x * 3.0, 0.0)).rgb + texture2D(u_emi, uv - vec2(t.x * 3.0, 0.0)).rgb
+    + texture2D(u_emi, uv + vec2(0.0, t.y * 3.0)).rgb + texture2D(u_emi, uv - vec2(0.0, t.y * 3.0)).rgb;
+  vec3 halo2 = texture2D(u_emi, uv + t * 5.0).rgb + texture2D(u_emi, uv - t * 5.0).rgb
+    + texture2D(u_emi, uv + vec2(t.x, -t.y) * 5.0).rgb + texture2D(u_emi, uv + vec2(-t.x, t.y) * 5.0).rgb;
+  float solid = smoothstep(0.35, 0.7, emi.a);
+  float ea = clamp(emi.a * mix(1.0, 1.6, solid), 0.0, 1.0);
+  col = col * (1.0 - ea) + emi.rgb * ea;
+  col += (halo * 0.14 + halo2 * 0.07) * u_glow * (1.0 - ea);
+  // a dark edge outside each fighter and body, so a fighter reads on any wall (four taps)
+  float d = max(max(texture2D(u_fig, uv + vec2(t.x * 2.5, 0.0)).a, texture2D(u_fig, uv - vec2(t.x * 2.5, 0.0)).a),
+                max(texture2D(u_fig, uv + vec2(0.0, t.y * 2.5)).a, texture2D(u_fig, uv - vec2(0.0, t.y * 2.5)).a));
+  col *= 1.0 - u_outline * d * (1.0 - fig.a);
+  col = mix(col, bod.rgb * min(vec3(1.3), u_flat * 1.1 + 0.25), bod.a);
+  col = mix(col, fig.rgb, fig.a);
+  if (u_flashA > 0.0001) {
+    float r = length((px - u_flashPos) / max(u_flashR, 1.0));
+    col += u_flashCol * u_flashA * exp(-r * r * 2.0) * (1.0 - fig.a);
+  }
+  if (u_fgOn > 0.5) {
+    vec4 g = texture2D(u_fg, uv);
+    col = mix(col, g.rgb * u_fgTint, clamp(g.a * u_fgOpacity * mix(1.0, u_fgCut, max(d, bod.a)), 0.0, 1.0));
+  }
+  float mx = max(col.r, max(col.g, col.b));
+  if (mx > 1.0) col /= mx;
+  // the grade's cheap part: a little contrast and saturation, and the toe that sinks unlit corners toward black
+  col = (col - 0.5) * 1.06 + 0.5;
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(vec3(lum), col, 1.15);
+  float l2 = dot(max(col, 0.0), vec3(0.2126, 0.7152, 0.0722));
+  col *= mix(1.0 - u_toe, 1.0, smoothstep(0.0, 0.36, l2) * (1.0 - fig.a) + fig.a);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+`;

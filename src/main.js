@@ -27,7 +27,9 @@ import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from 
 import { ACCIDENTS } from './combat/botch.js';
 import { perf, perfOverlay } from './perf.js';
 import { createBook } from './bookkeeping.js';   // match bookkeeping: one result per finished match (README, Analytics)
-import { track } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
+import { track, trackAll } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
+import { readDevice, startTier, perfLabels, boundBucket } from './device.js';   // the capability check: where AUTO starts, and the perf event's buckets
+import { gfxPick, onGfxPick, rememberedTier, rememberTier, setLiveTier } from './gfxPrefs.js';   // SETTINGS, GRAPHICS, and the tier this device settled on
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
@@ -43,6 +45,21 @@ glCanvas.width = W * dpr; glCanvas.height = H * dpr;
 hudCanvas.width = W * dpr; hudCanvas.height = H * dpr;
 
 const fx = createFX(glCanvas, { width: W, height: H, dpr, layerScaling: true });   // every layer is drawn through applyCamera (scale = layer.width / W)
+// Where the tier starts (README, Performance, Chromebooks). A fixed GRAPHICS choice pins it. AUTO starts where this
+// device settled last time, or, on a first visit, at the capability check's guess: software GL at 0, a Chromebook or
+// a small machine (4 cores or fewer, 4 GB or less) at 1, a phone at 2, the rest at 3. From there the adaptive tier
+// steps down on slow half-seconds and climbs after 5 good seconds, and the attract demo behind the title gives it
+// those seconds before the first fight. ?tier= and captures skip all of this (createFX pins them).
+const device = readDevice(fx.diagnostics().renderer);   // buckets only: the renderer string isn't kept
+const coarsePointer = matchMedia('(pointer: coarse)').matches;
+const guessTier = startTier(device, coarsePointer);
+function applyGfx(pick) {
+  if (fx.pinned !== null) return;
+  if (pick === 'auto') { const r = rememberedTier(); fx.startAt(r >= 0 ? r : guessTier); }
+  else fx.setTier(+pick);
+}
+applyGfx(gfxPick());
+onGfxPick((p) => { applyGfx(p); setLiveTier(fx.tier); });
 const arena = createArena('building');
 const groundY = arena.floors && arena.floors.length ? arena.floors[0].y : 480;
 const spawns = arena.spawns && arena.spawns.length >= 2 ? arena.spawns : [{ x: 480, y: groundY, facing: 1 }, { x: 800, y: groundY, facing: -1 }];
@@ -1436,6 +1453,7 @@ function render() {
   // under the live fighters; older FX without that layer get it on the figures layer
   if (!arena.bodiesInBackground && arena.drawBodies && !(fx.skip && fx.skip.bodies)) arena.drawBodies(ctxs.bodies || ctxs.figures);
   // the life layer runs on real time, and not at all while the sim stands still (paused, a menu over the fight)
+  life.cloth = !fx.lowCpu;   // tier 0: the cloth hangs at rest (README, Performance, Chromebooks)
   const lifeDt = sim.stepCount !== lifeStep ? Math.min(0.05, lastFrameMs / 1000) : 0; lifeStep = sim.stepCount;
   const figs = figureJoints(drawnNow, lifeDt);
   const order = [...sim.units].sort((p, q) => (p.state === 'attack') - (q.state === 'attack') || q.id - p.id);
@@ -1467,7 +1485,7 @@ function render() {
   }
   for (const s of blockSparks) drawBlockSpark(s, ctxs.emissive);
   // status effects go on the emissive layer, which the compositor hides over the fighters (owner req 5)
-  const statusLights = statusFX.draw(ctxs.emissive, sim, { dt: lastFrameMs / 1000, tier: fx.tier || 3, offset: drawOffsetNow });
+  const statusLights = statusFX.draw(ctxs.emissive, sim, { dt: lastFrameMs / 1000, tier: fx.tier ?? 3, offset: drawOffsetNow });
   if (arena.drawForeground) arena.drawForeground(ctxs.foreground || ctxs.figures);
   fx.lights = [...(arena.lights || []), ...lights.map(l => ({ x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity * (l.ttl / l.max) })), ...statusLights];
   perf.mark('draw');
@@ -1779,7 +1797,7 @@ input.onKey((code) => {
 });
 
 // ---- loop + gauntlet hook ---------------------------------------------------------------------------
-let lastFrameMs = 16;
+let lastFrameMs = 16, drawTick = 0, drawMs = 0;
 let last = performance.now();
 if (attractHome) flow.start({ room: online.roomFromUrl() });   // plain index.html: the arcade flow (?room=CODE joins that room)
 else setScene(params.get('scene'));
@@ -1823,7 +1841,13 @@ function frame(now) {
   const idle = embedHidden && !online.active && flow && flow.on && flow.demo;
   perf.begin(now);
   // (a spectator catching up runs the sim flat out and draws nothing until it's level)
-  if (!driven && !idle) { lastFrameMs = ms; advance(ms); perf.mark('sim'); if (!watch.catching) render(); }
+  // fx.drawEvery 2: tier 0 still can't hold, so the sim steps every refresh and the picture is drawn every other one
+  // (README, Performance, Chromebooks): the game keeps its speed instead of slowing down with the frame rate
+  if (!driven && !idle) {
+    lastFrameMs = ms; advance(ms); perf.mark('sim'); drawTick++; drawMs += ms;
+    // render()'s own clocks (the life layer, the HUD, the status effects) get the time since the last drawn frame
+    if (!watch.catching && (fx.drawEvery < 2 || drawTick % 2 === 0)) { lastFrameMs = Math.min(100, drawMs); drawMs = 0; render(); }
+  }
   perf.end();
   requestAnimationFrame(frame);
 }
@@ -1840,22 +1864,31 @@ window.__gauntlet.ready = true;
 const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height });
 perfInfo(); setInterval(perfInfo, 1000);
 // What real players get (README, Analytics, 'perf'): once a session, after 30 s on the page with the tier unchanged for
-// the last 15 s, the tier it settled on, the one it started on, touch or mouse, the frame time p95 (ms, as a label)
-// and the p50 as the number. A tab that's hidden or closed sooner sends what it had after 10 s.
+// the last 15 s, the tier it settled on, the one it started on, touch or mouse, the frame time p95 (ms, as a label),
+// the device's coarse buckets (src/device.js: os, GPU family, cores and memory; never the renderer string), what held
+// the frame back (main thread or GPU) and the GRAPHICS choice; the frame p50 as the number, and the main thread's work
+// and its split (sim, 2D draw, GL, HUD) as more numbers. A tab that's hidden or closed sooner sends what it had after 10 s.
+// The same tick remembers where AUTO settled (15 s unchanged), so this device's next visit starts there.
 {
   const t0 = performance.now(), startTier = fx.tier;
   let tierNow = fx.tier, tierSince = t0, sent = false;
+  const r1 = (v) => Math.round(v * 10) / 10;
   const send = () => {
     if (sent || performance.now() - t0 < 10000) return;
     sent = true;
     const s = perf.summary();
-    track('perf', [`t${fx.tier}`, `start t${startTier}`, matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse', `p95 ${Math.round(s.iv.p95)}`], Math.round(s.iv.p50 * 10) / 10);
+    trackAll([{ e: 'perf', l: perfLabels({ tier: fx.tier, start: startTier, coarse: coarsePointer, p95: s.iv.p95, dev: device, bound: boundBucket(s.iv.p50, s.work.p50), pick: fx.pinned !== null ? 'url' : gfxPick() }),
+      v: r1(s.iv.p50), d: [r1(s.work.p50), r1(s.sim.p50), r1(s.draw.p50), r1(s.gl.p50), r1(s.hud.p50), fx.drawEvery] }]);
   };
   const tick = setInterval(() => {
     const now = performance.now();
     if (fx.tier !== tierNow) { tierNow = fx.tier; tierSince = now; }
-    if (now - t0 > 30000 && now - tierSince > 15000 && !document.hidden) { send(); clearInterval(tick); }
+    setLiveTier(fx.tier);
+    const settled = now - tierSince > 15000 && !document.hidden;
+    if (settled && fx.adaptive && fx.pinned === null && gfxPick() === 'auto') rememberTier(fx.tier);
+    if (!sent && now - t0 > 30000 && settled) send();
   }, 1000);
+  setLiveTier(fx.tier);
   addEventListener('pagehide', send);
   document.addEventListener('visibilitychange', () => { if (document.hidden) send(); });
 }

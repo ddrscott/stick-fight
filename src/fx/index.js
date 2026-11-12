@@ -45,7 +45,7 @@
 //   Callers must not add camera.shakeX/Y into their own transforms when options.shake is on.
 
 import { getContext, program, texture, framebuffer, uploadCanvas, quadBuffer } from './gl.js';
-import { QUAD_VS, SCENE_FS, BRIGHT_FS, BLUR_FS, STAR_FS, COPY_FS, MASK_FS, PART_VS, PART_FS, FINAL_FS, MAX_LIGHTS } from './shaders.js';
+import { QUAD_VS, SCENE_FS, BRIGHT_FS, BLUR_FS, STAR_FS, COPY_FS, MASK_FS, PART_VS, PART_FS, FINAL_FS, FLAT_FS, MAX_LIGHTS } from './shaders.js';
 import { createParticles } from './particles.js';
 
 function makeLayer(w, h) {
@@ -94,11 +94,18 @@ function smoothstep(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - 
 // 0.8 of the canvas (64% of the pixels). Tier 1 also drops the haze and the widest glow, keeps 12 lights, lights
 // the scene at half size (a quarter of the pixels), the backdrop layers at half size and the fighters at 0.75
 // (sharper edges and outline than half size, for about 10% more GPU work than an all-half tier 1).
-const TIERS = {
+// Tier 0 is for a school Chromebook or a software GL (README, Performance, Chromebooks): one flat pass (FLAT_FS) drawn
+// straight to a canvas half the size each way (canvasScale), every layer at half size, no lights, no bloom, no
+// reflections. It also asks the caller to cut CPU work (lowCpu: src/main.js reads fx.lowCpu): fewer particles, no
+// cloth, the HUD at 1x. If even that can't hold, the caller draws every other frame (fx.drawEvery 2) while the sim
+// keeps time.
+const TIERS = /** @type {Record<number, any>} */ ({
+  0: { name: 'lowest', flat: true, lowCpu: true, shadows: false, stars: false, wideLight: false, haze: false, sceneScale: 0.5, layerScale: 0.5, figScale: 0.5, canvasScale: 0.5, maxLights: 0 },
   3: { name: 'full', shadows: true, stars: true, wideLight: true, haze: true, sceneScale: 1, layerScale: 1, figScale: 1, maxLights: 32 },
   2: { name: 'mid', shadows: false, stars: false, wideLight: true, haze: true, sceneScale: 0.8, layerScale: 1, figScale: 1, maxLights: 20 },
   1: { name: 'low', shadows: false, stars: false, wideLight: false, haze: false, sceneScale: 0.5, layerScale: 0.5, figScale: 0.75, maxLights: 12 },
-};
+});
+export const TIER_MIN = 0, TIER_MAX = 3;
 const PREC_BLOCK = /#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif/;
 
 function queryParams() { try { return new URLSearchParams(location.search); } catch (e) { return new URLSearchParams(''); } }
@@ -183,6 +190,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
         mask: program(gl, QUAD_VS, src(MASK_FS), 'mask'),
         part: program(gl, PART_VS, src(PART_FS), 'particles'),
         final: program(gl, QUAD_VS, src(FINAL_FS, noProtect ? '#define NO_PROTECT 1\n' : ''), 'final'),
+        flat: program(gl, QUAD_VS, src(FLAT_FS), 'flat'),
       };
       break;
     } catch (e) {
@@ -192,14 +200,22 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     }
   }
 
-  // Quality tier: full on desktop and in captures, mid on touch devices, adaptive unless pinned.
-  const pinned = params.has('tier') ? Math.max(1, Math.min(3, +params.get('tier') || 3)) : null;
-  let tier = pinned || (automated ? 3 : coarse ? 2 : 3);
-  const adapt = { on: !pinned && !automated, intervals: [], last: 0, windowStart: 0, good: 0, ceiling: 3, lastChange: 0, lastDown: -1e9 };
+  // Quality tier: full on desktop and in captures, mid on touch devices, adaptive unless pinned. The caller moves the
+  // start with fx.startAt() once it knows the device (src/device.js), or fixes it with fx.setTier() (SETTINGS, GRAPHICS).
+  const tierParam = params.has('tier') ? parseInt(params.get('tier'), 10) : NaN;
+  const pinned = Number.isFinite(tierParam) ? Math.max(TIER_MIN, Math.min(TIER_MAX, tierParam)) : null;
+  let tier = pinned ?? (automated ? 3 : coarse ? 2 : 3);
+  const adapt = { on: pinned === null && !automated, intervals: [], last: 0, windowStart: 0, good: 0, ceiling: 3, lastChange: 0, lastDown: -1e9 };
   const frameStats = { avg: 0, worst: 0, median: 0 };
-  let sceneScaleNow = 1, layerScaleNow = 1;
+  let sceneScaleNow = 1, layerScaleNow = 1, canvasScaleNow = 1, drawEvery = 1;
   function applyTier() {
     const T = TIERS[tier];
+    const cs = layerScaling ? (T.canvasScale || 1) : 1;
+    if (cs !== canvasScaleNow) {
+      // tier 0 draws to a smaller canvas and lets the browser scale it up (CSS sizes the element, not this)
+      glCanvas.width = Math.round(W * cs); glCanvas.height = Math.round(H * cs);
+      canvasScaleNow = cs;
+    }
     if (T.sceneScale !== sceneScaleNow) {
       gl.deleteFramebuffer(fb.scene.fb); gl.deleteTexture(fb.scene.tex);
       fb.scene = framebuffer(gl, Math.max(1, Math.round(W * T.sceneScale)), Math.max(1, Math.round(H * T.sceneScale)));
@@ -261,13 +277,23 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     if (diagEl) updateDiag();
     if (!adapt.on || iv.length < 5) return;
     if (skipWindow > 0) { skipWindow--; return; }
-    const slow = frameStats.avg > 18 && frameStats.median > 17.5, verySlow = frameStats.avg > 30 && frameStats.median > 28;
+    // at tier 0 drawing every other frame, the interval between drawn frames is two refreshes: judge it per refresh
+    const k = drawEvery, avg = frameStats.avg / k, med = frameStats.median / k;
+    const slow = avg > 18 && med > 17.5, verySlow = avg > 30 && med > 28;
     slowRun = slow ? slowRun + 1 : 0;
-    if (tier > 1 && (verySlow || slowRun >= 2)) {
+    if (tier === TIER_MIN && drawEvery === 1 && slowRun >= 2) {
+      // the last resort, at the lowest tier only: draw every other frame (the sim keeps time; README, Chromebooks)
+      drawEvery = 2; adapt.lastChange = now; adapt.good = 0; slowRun = 0; skipWindow = 1;
+    } else if (tier > TIER_MIN && (verySlow || slowRun >= 2)) {
       adapt.ceiling = Math.min(adapt.ceiling, tier - 1);   // this tier can't hold: never climb back to it
       tier--; adapt.lastChange = now; adapt.lastDown = now; adapt.good = 0; slowRun = 0; skipWindow = 1; tierPending = true;
-    } else if (!slow && frameStats.avg < 17.4) {
+    } else if (!slow && avg < 17.4) {
       ++adapt.good;
+      if (drawEvery > 1) {
+        // drawing every other frame with room to spare (under ~13 ms a refresh): back to every frame after 5 good seconds
+        if (adapt.good >= 10 && avg < 13) { drawEvery = 1; adapt.good = 0; skipWindow = 1; }
+        return;
+      }
       // a minute of good frames at the ceiling earns the failed tier above it one more try (a phone that was hot,
       // or a notification); a tier that fails its retry stays out for the session
       if (adapt.good >= 120 && tier === adapt.ceiling && tier < 3 && !retried.has(tier + 1)) { retried.add(tier + 1); adapt.ceiling = tier + 1; }
@@ -288,7 +314,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       `uniform vec ${d.limits.fragUniforms} | tex units ${d.limits.texUnits} | max tex ${d.limits.texSize}`,
       `tier ${tier} ${Q.name}${d.adaptive ? ' (adaptive)' : pinned ? ' (pinned by ?tier)' : ' (fixed: capture)'} | coarse ${d.coarse} | preserve ${d.preserveDrawingBuffer}`,
       `frame avg ${frameStats.avg.toFixed(1)}ms worst ${frameStats.worst.toFixed(1)}ms`,
-      `lights ${d.lights.used}/${Math.min(d.lights.cap, d.lights.tierCap)} (shader ${d.lights.cap}) | scene ${sceneScaleNow}x layers ${layerScaleNow}x`,
+      `lights ${d.lights.used}/${Math.min(d.lights.cap, d.lights.tierCap)} (shader ${d.lights.cap}) | scene ${sceneScaleNow}x layers ${layerScaleNow}x canvas ${canvasScaleNow}x${drawEvery > 1 ? ' | every 2nd frame' : ''}`,
       `bloom ${onoff(o.bloom)} stars ${onoff(o.stars && Q.stars)} shadows ${onoff(o.shadows && Q.shadows)} haze ${onoff(o.haze && Q.haze)} wide light ${onoff(Q.wideLight)}`,
       `reflect ${onoff(o.reflect)} fg ${onoff(o.foreground)} particles ${onoff(o.particles)} protect ${onoff(d.protectMask)}`,
     ];
@@ -327,7 +353,22 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     skip: {},              // { layerName: true } = unchanged since the last frame, do not re-upload
     bgSource: null,        // { canvas, version, map: [ax, ay, bx, by] }: the background from a world bitmap instead of fx.layers.background
     get tier() { return tier; },
-    setTier(t) { tier = Math.max(1, Math.min(3, t | 0)); adapt.on = false; applyTier(); },
+    /** a fixed tier (?tier= or SETTINGS, GRAPHICS): adaptation off */
+    setTier(t) { tier = Math.max(TIER_MIN, Math.min(TIER_MAX, t | 0)); adapt.on = false; drawEvery = 1; applyTier(); },
+    /** AUTO from a start tier (src/device.js's guess, or the tier this device settled on last time): adaptation on,
+     *  every tier open to climb to again. Ignored when ?tier= pins it or a capture fixes it. */
+    startAt(t) {
+      if (pinned !== null || automated) return;
+      tier = Math.max(TIER_MIN, Math.min(TIER_MAX, t | 0)); adapt.on = true; adapt.ceiling = TIER_MAX; adapt.good = 0;
+      retried.clear(); slowRun = 0; skipWindow = 1; drawEvery = 1; applyTier();
+    },
+    /** 1, or 2 when tier 0 still can't hold and the caller should draw every other frame */
+    get drawEvery() { return drawEvery; },
+    /** the tier asks the caller to cut CPU work too (tier 0) */
+    get lowCpu() { return !!TIERS[tier].lowCpu; },
+    /** what the caller's tier names mean, for the SETTINGS note */
+    get tierName() { return TIERS[tier].name; },
+    get pinned() { return pinned; },
     get adaptive() { return adapt.on; },
     set adaptive(v) { adapt.on = !!v; },
     diagnostics() {
@@ -371,7 +412,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
 
     hit(ev) {
       const s = Math.max(0.1, Math.min(2, ev.strength ?? 1));
-      if (fx.options.particles) particles.hit({ ...ev, maxDebris: fx.tune.maxDebris });
+      if (fx.options.particles) particles.hit({ ...ev, maxDebris: TIERS[tier].lowCpu ? Math.round(fx.tune.maxDebris / 3) : fx.tune.maxDebris });
       trauma = Math.min(1, trauma + 0.55 * s);
       const dx = typeof ev.dir === 'number' ? ev.dir : (ev.dir && ev.dir.x) || 1;
       const dy = typeof ev.dir === 'number' ? 0 : (ev.dir && ev.dir.y) || 0;
@@ -405,7 +446,10 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       time += dt;
       const z = lastCam.zoom || 1;
       const view = { x0: lastCam.x - W / 2 / z, x1: lastCam.x + W / 2 / z, y0: lastCam.y - H / 2 / z, y1: lastCam.y + H / 2 / z };
-      particles.setMotes(fx.options.motes && fx.options.particles ? 70 : 0);
+      // tier 0 (lowCpu): no drifting motes, half the rain, a third of the debris a hit throws
+      const lowCpu = !!TIERS[tier].lowCpu;
+      particles.setMotes(fx.options.motes && fx.options.particles && !lowCpu ? 70 : 0);
+      particles.rainScale = lowCpu ? 0.5 : 1;
       particles.update(dt, view);
       trauma = Math.max(0, trauma - dt * 2.2);
       flash.a *= Math.exp(-dt / 0.075);
@@ -519,7 +563,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
         gl.vertexAttribPointer(P.a.a_pos, 2, gl.FLOAT, false, 0, 0);
       };
       const bindTex = (unit, t, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(loc, unit); };
-      const target = (f) => { gl.bindFramebuffer(gl.FRAMEBUFFER, f ? f.fb : null); gl.viewport(0, 0, f ? f.w : W, f ? f.h : H); };
+      const target = (f) => { gl.bindFramebuffer(gl.FRAMEBUFFER, f ? f.fb : null); gl.viewport(0, 0, f ? f.w : glCanvas.width, f ? f.h : glCanvas.height); };
       const draw = () => gl.drawArrays(gl.TRIANGLES, 0, 6);
 
       gl.disable(gl.BLEND);
@@ -533,6 +577,8 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
         gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
         gl.bufferData(gl.ARRAY_BUFFER, built.verts, gl.DYNAMIC_DRAW);
       }
+
+      if (Q.flat && on) { renderFlat(built, cam, z, toScreen, bs, fgOn, farOn, bindQuad, bindTex, target, draw); return; }
 
       const wantBloom = on && (o.bloom || o.stars);
       if (wantBloom) {
@@ -794,6 +840,80 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       if (tierPending) { tierPending = false; applyTier(); }
     },
   };
+
+  // Tier 0: one flat pass to the (half-size) canvas, then the particles over it (README, Performance, Chromebooks).
+  // The room is lit by one color for the whole frame: most of the ambient, plus a little of the average color of the
+  // lights on screen, so a red-lit stage still reads red and a dark one stays dark, without a light loop per pixel.
+  const flatL = [0, 0, 0];
+  function renderFlat(built, cam, z, toScreen, bs, fgOn, farOn, bindQuad, bindTex, target, draw) {
+    const T = fx.tune, a = fx.ambient;
+    let r = 0, g = 0, b = 0, w = 0;
+    for (const L of fx.lights) {
+      const s = toScreen(L.x, L.y), rad = (L.radius || 200) * z;
+      if (s[0] < -rad || s[0] > W + rad || s[1] < -rad || s[1] > H + rad) continue;
+      const k = Math.min(1.5, (L.intensity ?? 1) * T.lightGain) * Math.min(1, rad / 300);
+      r += L.color[0] * k; g += L.color[1] * k; b += L.color[2] * k; w++;
+    }
+    const lift = w ? 0.14 / w : 0;   // a little of the average light color on screen
+    flatL[0] = Math.min(0.9, a[0] * 0.85 + r * lift); flatL[1] = Math.min(0.9, a[1] * 0.85 + g * lift); flatL[2] = Math.min(0.9, a[2] * 0.85 + b * lift);
+    const P = prog.flat;
+    gl.useProgram(P.p);
+    target(null);
+    bindQuad(P);
+    bindTex(0, bs ? tex.bgCache : tex.background, P.u.u_bg);
+    const bm = bs ? bs.map : bgMapIdentity;
+    gl.uniform4f(P.u.u_bgMap, bm[0], bm[1], bm[2], bm[3]);
+    bindTex(1, tex.figures, P.u.u_fig);
+    bindTex(2, tex.emissive, P.u.u_emi);
+    bindTex(3, tex.far, P.u.u_far);
+    bindTex(4, tex.bodies, P.u.u_body);
+    bindTex(5, tex.foreground, P.u.u_fg);
+    gl.uniform2f(P.u.u_res, W, H);
+    gl.uniform1f(P.u.u_farOn, farOn ? 1 : 0);
+    gl.uniform1f(P.u.u_farAmount, fx.far.amount);
+    const fbase = fx.far.base || { x: 0, y: 0 };
+    gl.uniform2f(P.u.u_farOffset, ((cam.x - W / 2) * fx.far.parallax - fbase.x) / W, -((cam.y - H / 2) * fx.far.parallax - fbase.y) / H);
+    gl.uniform3fv(P.u.u_farHaze, fx.far.haze);
+    gl.uniform3fv(P.u.u_skyTop, fx.sky.top);
+    gl.uniform3fv(P.u.u_skyBot, fx.sky.bottom);
+    gl.uniform3fv(P.u.u_flat, flatL);
+    gl.uniform4f(P.u.u_fog, fx.fog.color[0], fx.fog.color[1], fx.fog.color[2], fx.options.fog ? fx.fog.density : 0);
+    gl.uniform2f(P.u.u_fogY, toScreen(0, fx.fog.y0)[1], toScreen(0, fx.fog.y1)[1]);
+    gl.uniform1f(P.u.u_glow, fx.options.bloom ? 1 : 0);
+    gl.uniform1f(P.u.u_outline, fx.options.lighting ? T.outline : 0);
+    gl.uniform1f(P.u.u_fgOn, fgOn ? 1 : 0);
+    gl.uniform1f(P.u.u_fgOpacity, fx.foreground.opacity);
+    gl.uniform1f(P.u.u_fgCut, T.fgCut);
+    gl.uniform3fv(P.u.u_fgTint, fx.foreground.tint);
+    gl.uniform3fv(P.u.u_flashCol, flash.col);
+    gl.uniform1f(P.u.u_flashA, flash.a);
+    const fp = toScreen(flash.x, flash.y);
+    gl.uniform2f(P.u.u_flashPos, fp[0], fp[1]);
+    gl.uniform1f(P.u.u_flashR, flash.r * z);
+    gl.uniform1f(P.u.u_toe, fx.options.grade ? T.toe : 0);
+    draw();
+    if (built) {
+      const Pp = prog.part;
+      gl.useProgram(Pp.p);
+      gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+      const stride = built.floatsPerVert * 4;
+      gl.enableVertexAttribArray(Pp.a.a_pos); gl.vertexAttribPointer(Pp.a.a_pos, 2, gl.FLOAT, false, stride, 0);
+      gl.enableVertexAttribArray(Pp.a.a_uv); gl.vertexAttribPointer(Pp.a.a_uv, 2, gl.FLOAT, false, stride, 8);
+      gl.enableVertexAttribArray(Pp.a.a_col); gl.vertexAttribPointer(Pp.a.a_col, 4, gl.FLOAT, false, stride, 16);
+      gl.enableVertexAttribArray(Pp.a.a_shape); gl.vertexAttribPointer(Pp.a.a_shape, 1, gl.FLOAT, false, stride, 32);
+      gl.uniform2f(Pp.u.u_res, W, H);
+      bindTex(0, tex.figures, Pp.u.u_fig);
+      gl.uniform1f(Pp.u.u_figMask, 1.0);
+      gl.enable(gl.BLEND);
+      const [ls, lc] = built.ranges.lit, [es, ec] = built.ranges.emissive;
+      if (lc) { gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); gl.drawArrays(gl.TRIANGLES, ls, lc); }
+      if (ec) { gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ZERO, gl.ONE); gl.drawArrays(gl.TRIANGLES, es, ec); }
+      gl.disable(gl.BLEND);
+      gl.disableVertexAttribArray(Pp.a.a_uv); gl.disableVertexAttribArray(Pp.a.a_col); gl.disableVertexAttribArray(Pp.a.a_shape);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    if (tierPending) { tierPending = false; applyTier(); }
+  }
 
   particles.lightAt = (x, y, out) => fx.lightAt(x, y, out);
   if (diagEl) updateDiag();

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Tiers 3, 2 and 1 side by side on the same seeded frame (README, Performance): node scripts/perf/tiers.mjs <out.png> [query] [ms]
+// Tiers 3, 2, 1 and 0 side by side on the same seeded frame (README, Performance): node scripts/perf/tiers.mjs <out.png> [query] [ms]
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +14,7 @@ const srv = http.createServer((q, r) => { let p = path.join(root, decodeURICompo
 await new Promise(r => srv.listen(0, '127.0.0.1', r));
 const b = await pw.chromium.launch({ args: ['--use-angle=metal', '--enable-gpu'] });
 const files = [];
-for (const tier of [3, 2, 1]) {
+for (const tier of [3, 2, 1, 0]) {
   const ctx = await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   await page.addInitScript(() => { let a = 12345; Math.random = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; });
@@ -26,5 +26,7 @@ for (const tier of [3, 2, 1]) {
   await ctx.close();
 }
 await b.close(); srv.close();
-execFileSync('magick', [...files.flatMap((f, i) => ['(', f, '-resize', '853x480', '-gravity', 'north', '-background', '#07020f', '-splice', '0x34', '-fill', '#E85D00', '-font', 'Menlo', '-pointsize', '22', '-annotate', '+0+6', `// TIER_${3 - i}`, ')']), '+append', out]);
+const cell = (f, i) => ['(', f, '-resize', '853x480', '-gravity', 'north', '-background', '#07020f', '-splice', '0x34', '-fill', '#E85D00', '-font', 'Menlo', '-pointsize', '22', '-annotate', '+0+6', `// TIER_${3 - i}${['', '', '', ' (LOWEST)'][i]}`, ')'];
+// two rows of two: 3 and 2 on top, 1 and 0 under them
+execFileSync('magick', ['(', ...cell(files[0], 0), ...cell(files[1], 1), '+append', ')', '(', ...cell(files[2], 2), ...cell(files[3], 3), '+append', ')', '-append', out]);
 console.log(out);

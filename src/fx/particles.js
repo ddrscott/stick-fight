@@ -35,6 +35,7 @@ export function createParticles() {
     floors: null,         // optional [{x0,x1,y}] for bounce; ground is the fallback
     bounds: { x0: -200, x1: 1480, y0: -200, y1: 920 },
     lightAt: () => [1, 1, 1],
+    rainScale: 1,
     seed(n) { rnd = mulberry32(n); },
     get count() { return parts.length; },
     rnd: () => rnd(),
@@ -209,7 +210,7 @@ export function createParticles() {
         }
       }
       if (rainRate > 0) {
-        rainAccum += rainRate * dt;
+        rainAccum += rainRate * sys.rainScale * dt;   // rainScale: tier 0 rains half as hard (src/fx/index.js)
         while (rainAccum >= 1) {
           rainAccum -= 1;
           const R = rainRegion;

@@ -26,6 +26,7 @@ const DEG = Math.PI / 180;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 let on = true;
+let clothOn = true;   // tier 0 (src/main.js, fx.lowCpu): every chain hangs at rest instead of swinging
 let extras = true;   // the takes, signatures and habits (window.__game.life.extras = false keeps only eyeline, springs and fatigue: for A/B)
 try { if (new URLSearchParams(location.search).get('life') === '0') on = false; } catch { /* no location */ }
 
@@ -464,7 +465,7 @@ export function createLife() {
   // holds it, and the hit's fling lands as the freeze ends.
   function clothRun(u, s, J, sim, dt, sc, floor) {
     const items = u.rig && u.rig.charDef && u.rig.charDef.cloth;
-    if (!items || !items.length || !on) { if (u.rig) u.rig.cloth = null; return; }
+    if (!items || !items.length || !on || !clothOn) { if (u.rig) u.rig.cloth = null; return; }
     if (!s.cloth || s.cloth.length !== items.length) s.cloth = items.map(() => ({ st: {}, P: null }));
     const frozen = u.hitstop > 0 || sim.hitstopActive > 0;
     const kick = !frozen && s.clothKick ? s.clothKick : null;
@@ -486,5 +487,7 @@ export function createLife() {
     set on(v) { on = !!v; if (!on) st.clear(); },
     get extras() { return extras; },
     set extras(v) { extras = !!v; },
+    get cloth() { return clothOn; },
+    set cloth(v) { clothOn = !!v; },
   };
 }

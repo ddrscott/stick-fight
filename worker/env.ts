@@ -116,7 +116,7 @@ export function track(env: Env, req: Request | null, event: string, labels: stri
   if (!env.EVENTS) return;
   const cf = (req && (req as unknown as { cf?: { country?: string } }).cf) || {};
   try {
-    env.EVENTS.writeDataPoint({ indexes: [event.slice(0, 32)], blobs: [event.slice(0, 32), ...labels.slice(0, 8).map((l) => String(l).slice(0, 40)), String(cf.country || '')],
+    env.EVENTS.writeDataPoint({ indexes: [event.slice(0, 32)], blobs: [event.slice(0, 32), ...labels.slice(0, 10).map((l) => String(l).slice(0, 40)), String(cf.country || '')],
       doubles: [Number(value) || 0, ...more.slice(0, 15).map((n) => Number(n) || 0)] });
   } catch { /* analytics never breaks the game */ }
 }
