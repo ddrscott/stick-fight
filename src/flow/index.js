@@ -62,6 +62,7 @@ import { onSquare } from '../square.js';
 import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
 import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';   // the name filter (README, Privacy and terms)
 import { rootUrl } from '../root.js';
+import { createTicker } from '../ticker.js';   // the title's ticker of game-wide stats (README, Analytics, The title's ticker)
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
@@ -191,6 +192,7 @@ export function createFlow(ctx) {
   const ladder = () => run.ladder || LADDER;
   const history = [];
   const ui = createUI((k) => { if (ctx.click) ctx.click(k); });
+  const ticker = createTicker();
   // turning the phone: the crew lobby lists the whole crew upright and the top seven sideways (paintLobby)
   onSquare(() => { if (state === 'crewLobby') paintLobby(); });
   // the pause button: the desktop corner row's (a click) and the touch layer's (src/touch.js sends 'sf:pause')
@@ -250,6 +252,7 @@ export function createFlow(ctx) {
     const c = document.documentElement.classList;
     for (const k of [...c]) if (k.startsWith('fl-')) c.remove(k);
     c.toggle('flow-on', state !== 'off');
+    ticker.show(state === 'attract');
     if (state === 'off') return;
     // main.js marks the old flow-less demo 'attract', which hides the touch layer (index.html); a page opened on a
     // crew or room link starts that demo before the menus are on, and kept the mark, so it had no menu button

@@ -76,7 +76,7 @@ export function privacyPage() {
       <li>whether you're on a phone or a computer, and which website sent you here (just the site's name);</li>
       <li>the country you're in, which Cloudflare (the company that runs our servers) works out from your connection.</li>
     </ul>
-    <p>They <b>never</b> carry your name, email, player id or internet address. The game doesn't send them at all if your browser has <b>Do Not Track</b> or <b>Global Privacy Control</b> turned on. The notes are deleted after three months. We also keep running totals (how many times each fighter was picked, who wins which matchup). Those are just numbers with no player in them, so they stay. They're what the stats on the homepage show.</p>
+    <p>They <b>never</b> carry your name, email, player id or internet address. The game doesn't send them at all if your browser has <b>Do Not Track</b> or <b>Global Privacy Control</b> turned on. The notes are deleted after three months. We also keep running totals (how many times each fighter was picked, who wins which matchup, which moves finish matches). Those are just numbers with no player in them, so they stay. They're what the stats on the homepage and the game's title screen show.</p>
 
     <h3 class="s-h3">Page views (everyone)</h3>
     <p>The site uses a page counter called Plausible (at plausible.ljs.app). It counts visits to each page without cookies and without keeping your internet address.</p>
