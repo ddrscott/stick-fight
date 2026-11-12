@@ -121,13 +121,92 @@ try {
     check(`${label}: the crew sees them in the standings`, inList);
     const says = await until(() => C.evaluate((n) => document.body.innerText.includes(`YOU'RE ${n}`), p.name), 5000);
     check(`${label}: the lobby says what they're called`, says);
-    const fits = await C.evaluate(() => { const s = document.querySelector('.fl-crew .fl-label'), st = document.querySelector('.fl-crew').getBoundingClientRect(), r = s.getBoundingClientRect(); return r.left >= st.left - 1 && r.right <= st.right + 1 && s.scrollWidth <= s.clientWidth + 1; });
+    const fits = await C.evaluate(() => { const s = [...document.querySelectorAll('.fl-crew .fl-label, .fl-crew .fl-crewme')].find((n) => n.getBoundingClientRect().width), st = document.querySelector('.fl-crew').getBoundingClientRect(), r = s.getBoundingClientRect(); return r.left >= st.left - 1 && r.right <= st.right + 1 && s.scrollWidth <= s.clientWidth + 1; });
     check(`${label}: that line fits the stage`, fits);
+    if (label !== 'upright') {
+      // your own idle row before PLAY: "GUEST 123" shows whole and pink, and (YOU) takes any cut, so the digits that tell guests apart stay
+      const row = await until(() => C.evaluate(() => { const n = document.querySelector('#flow .fl-standings .fl-me .fl-snm'); return n && n.getBoundingClientRect().width ? { name: n.textContent, whole: n.scrollWidth <= n.clientWidth + 1, color: getComputedStyle(n).color, chip: !!n.parentElement.querySelector('.fl-chip') } : null; }), 10000);
+      check(`${label}: your own idle row shows your GUEST name whole and pink`, row && !row.chip && row.name === p.name && row.whole && row.color === 'rgb(255, 194, 243)', JSON.stringify(row));
+    }
     check(`${label}: crew page has no errors`, !C.errors.length, C.errors.join(' | ').slice(0, 200));
     check(`${label}: nothing in the crew link's network log failed (no 404s)`, !C.missing.length, C.missing.slice(0, 3).join(' | '));
     await sleep(500); await shot(C, `crew-${label}`);
+    if (label === 'upright') {
+      // held upright: who's here and PLAY, your name with a way to change it, the link behind INVITE, one way out
+      const up = await C.evaluate(() => {
+        const vis = (n) => !!n && n.getBoundingClientRect().width > 0;
+        const btns = [...document.querySelectorAll('#flow .fl-crew .fl-btn')].filter(vis).map((b) => b.textContent.trim());
+        const list = document.querySelector('#flow .fl-standings').getBoundingClientRect().height;
+        return { btns, list, h: innerHeight, qr: vis(document.querySelector('#flow .fl-qrtile')), link: vis(document.querySelector('#flow .fl-crew .fl-link')), me: (document.querySelector('#flow .fl-crewme') || {}).textContent || '' };
+      });
+      check('upright: no QR code or link until INVITE', !up.qr && !up.link, JSON.stringify(up));
+      check('upright: the only way out is MAIN MENU', up.btns.includes('MAIN MENU') && !up.btns.includes('ONLINE MENU'), up.btns.join(', '));
+      check('upright: the crew list gets at least half the screen', up.list >= up.h / 2, `${Math.round(up.list)} of ${up.h} px`);
+      check('upright: a handed-out name says SET YOUR NAME', /SET YOUR NAME/.test(up.me), up.me);
+      // the list is who's here and who's ready: rank, name, W, L, and a READY / PLAYING chip that always shows whole
+      const heads = await C.evaluate(() => [...document.querySelectorAll('#flow .fl-standings > .fl-sth')].filter((n) => n.getBoundingClientRect().width).map((n) => n.textContent));
+      check('upright: the list heads are just NAME, W and L', heads.join(',') === ',NAME,W,L', heads.join(','));
+      const press = (P) => P.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-playbtn')).act());
+      await press(A);
+      const chipsFit = (P = C) => P.evaluate(() => {
+        const out = [];
+        for (const ch of document.querySelectorAll('#flow .fl-standings .fl-chip')) {
+          const cell = ch.closest('.fl-sname').getBoundingClientRect(), r = ch.getBoundingClientRect();
+          const nm = ch.parentElement.querySelector('.fl-snm'), you = ch.parentElement.querySelector('.fl-youtag');
+          out.push({ row: nm.textContent + ch.textContent, whole: nm.scrollWidth <= nm.clientWidth + 1, mine: ch.parentElement.classList.contains('fl-me'), color: getComputedStyle(nm).color, you: !!you && you.getBoundingClientRect().width > 0,
+            ok: r.width > 0 && r.right <= cell.right + 0.5 && r.left >= cell.left - 0.5 && ch.scrollWidth <= ch.clientWidth + 1, r: Math.round(r.right), cell: Math.round(cell.right) });
+        }
+        return out;
+      });
+      const PINK = 'rgb(255, 194, 243)';
+      // the other side: A's own row on a desktop and sideways reads "ALREADY READY", whole and pink, with no (YOU) squeezing the name
+      for (const [w, h] of [[1280, 720], [844, 390]]) {
+        await A.setViewportSize({ width: w, height: h }); await sleep(300);
+        const got = await until(async () => { const c = (await chipsFit(A)).filter((x) => x.mine); return c.length ? c : null; }, 10000);
+        check(`${w}x${h}: your own row with READY reads ALREADY READY, name whole and pink, no (YOU)`, got && got.every((c) => c.ok && c.whole && !c.you && c.color === PINK && c.row === 'ALREADYREADY'), JSON.stringify(got));
+      }
+      await A.setViewportSize({ width: 1280, height: 720 });
+      const youTag = await C.evaluate(() => { const n = document.querySelector('#flow .fl-standings .fl-me .fl-snm'); return n && getComputedStyle(n).color; });
+      check('upright: your own row\'s name is pink', youTag === PINK, String(youTag));
+      for (const [w, h] of [[390, 844], [375, 667]]) {
+        await C.setViewportSize({ width: w, height: h });
+        const got = await until(async () => { const c = await chipsFit(); return c.length ? c : null; }, 10000);
+        check(`upright ${w}x${h}: a READY chip shows whole inside its row`, got && got.every((c) => c.ok), JSON.stringify(got));
+        if (w === 390) await shot(C, 'crew-upright-ready');
+      }
+      // your own row: "GUEST 123" and its READY chip, both whole
+      await press(A);   // (A backs out first, or C's PLAY would start a match with them)
+      await until(() => C.evaluate(() => !document.querySelector('#flow .fl-standings .fl-chip')), 10000);
+      await press(C);
+      await C.setViewportSize({ width: 375, height: 667 });
+      const own = await until(async () => { const c = await chipsFit(); return c.length ? c : null; }, 10000);
+      check('upright 375x667: your own GUEST row and its READY chip both show whole, the name pink', own && own.every((c) => c.ok) && own.some((c) => /^GUEST \d{3}READY$/.test(c.row) && c.whole && c.mine && c.color === PINK), JSON.stringify(own));
+      await C.setViewportSize(size);
+      await press(C);   // back to just HERE
+      await C.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')).act());
+      await sleep(300);
+      const inv = await C.evaluate(() => [...document.querySelectorAll('#flow .fl-crew .fl-btn')].filter((n) => n.getBoundingClientRect().width).map((b) => b.textContent.trim()));
+      check('upright: INVITE shows COPY LINK and DONE', inv.includes('COPY LINK') && inv.includes('DONE'), inv.join(', '));
+      await shot(C, 'crew-upright-invite');
+    }
     const qr = await until(() => qrText(C), 20000, 500);
     check(`${label}: the lobby's QR code carries the clean link`, qr === CLEAN, String(qr));
+    if (label === 'upright') {
+      // SET YOUR NAME: the name screen, then straight back to this crew's lobby under the new name
+      await C.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-crewme')).act());
+      check('upright: SET YOUR NAME opens the name screen', (await flow(C)) === 'nameEntry', await flow(C));
+      // the handed-out name isn't in the field (it shows greyed), so typing a name saves exactly that name
+      const fld = await C.evaluate(() => ({ value: [...(document.querySelector('#flow .fl-field') || { childNodes: [] }).childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(''), hint: (document.querySelector('#flow .fl-field .fl-hint') || {}).textContent || '' }));
+      check('upright: SET YOUR NAME starts the field empty, the guest name greyed behind it', fld.value === '' && /^GUEST \d+$/.test(fld.hint), JSON.stringify(fld));
+      await C.keyboard.type('UPRIGHT'); await C.keyboard.press('Enter');
+      const saved = await until(async () => { const v = await me(C); return v && !v.auto ? v : null; }, 5000);
+      check('upright: typing a name and OK saves exactly what was typed', saved && saved.name === 'UPRIGHT', JSON.stringify(saved && saved.name));
+      const back = await until(() => C.evaluate(() => window.__flow.state === 'crewLobby' && /YOU'RE UPRIGHT/.test((document.querySelector('#flow .fl-crewme') || {}).textContent || '')), 5000);
+      check('upright: OK goes back to the lobby, saying the new name', back, await flow(C));
+      check('upright: the address bar is crew/<slug> again', (await where(C)) === `${ROOT}crew/${crew.slug}`, await where(C));
+      const seen = await until(() => A.evaluate(() => document.body.innerText.includes('UPRIGHT')), 15000);
+      check('upright: the crew sees the new name', seen);
+    }
     if (label === 'desktop') {
       // picking a real name clears the mark, and the crew sees the new one
       await C.evaluate(() => { const f = window.__flow.debug; f.go('onlineMenu'); f.go('profile'); });
@@ -135,10 +214,10 @@ try {
       await C.evaluate(() => [...document.querySelectorAll('button')].find((b) => /CHANGE NAME/.test(b.textContent)).click());
       const title = await C.evaluate(() => document.querySelector('h1').textContent);
       check('CHANGE NAME on a handed-out name asks WHAT DO WE CALL YOU?', /WHAT DO WE CALL YOU/.test(title), title);
-      for (let i = 0; i < 12; i++) await C.keyboard.press('Backspace');
+      // no DELs first: a handed-out name starts the field empty, so this saves exactly ROOKIE
       await C.keyboard.type('ROOKIE'); await C.keyboard.press('Enter');
       const q = await until(async () => { const v = await me(C); return v && v.name === 'ROOKIE' ? v : null; }, 5000);
-      check('a picked name replaces it and clears auto', q && q.name === 'ROOKIE' && !q.auto, JSON.stringify(q && { name: q.name, auto: q.auto }));
+      check('a picked name replaces it and clears auto', q && q.name === 'ROOKIE' && !q.auto, JSON.stringify(q ? { name: q.name, auto: q.auto } : { me: await me(C), flow: await flow(C) }));
     }
   }
   // ---- the old ?crew= link, through the Worker's 301, any other query kept ----

@@ -121,15 +121,17 @@ function audit({ upright, textMin, tapMin }) {
       const scr = sc && root.contains(sc) ? R(sc.getBoundingClientRect()) : null;
       let a = R(r);
       if (scr) { a = cut(a, scr); if (area(a) <= 0) continue; }
-      // what a box with overflow hidden (a name cut with an ellipsis, a chip past it) doesn't show isn't there; but a
+      // what a box with overflow hidden (a name cut with an ellipsis) doesn't show isn't there; but a
       // box that cuts something off at its side, with no ellipsis to say so, has cut it off
       for (let e = n.parentElement; e && e !== root.parentElement; e = e.parentElement) {
         const o = getComputedStyle(e);
         if (o.overflowX === 'visible' && o.overflowY === 'visible') continue;
         const eb = R(e.getBoundingClientRect()), was = a;
         a = cut(a, eb);
-        const ellipsis = getComputedStyle(n).textOverflow === 'ellipsis' || o.textOverflow === 'ellipsis' || !!e.closest('.fl-ring, .fl-roll');   // (the carousel's side cards are shrunk and half off screen by design)
-        if (!ellipsis && area(a) > 0 && (was.l < eb.l - 1 || was.r > eb.r + 1)) out.push(`CUT OFF AT THE SIDE ${name(n)} ${fmt(was)} (in ${fmt(eb)})`);
+        // (a flex or grid box's ellipsis is for its own text only: a child it clips, like a READY chip after a name, is cut off)
+        const flexed = /flex|grid/.test(o.display);
+        const ellipsis = getComputedStyle(n).textOverflow === 'ellipsis' || (o.textOverflow === 'ellipsis' && !flexed) || !!e.closest('.fl-ring, .fl-roll');   // (the carousel's side cards are shrunk and half off screen by design)
+        if (!ellipsis && (area(a) > 0 || flexed) && (was.l < eb.l - 1 || was.r > eb.r + 1)) out.push(`CUT OFF AT THE SIDE ${name(n)} ${fmt(was)} (in ${fmt(eb)})`);
         // and one that cuts it at the top or bottom, unless it scrolls there
         const scrolls = /auto|scroll/.test(o.overflowY) || !!e.closest('.fl-ring, .fl-roll');
         if (!scrolls && area(a) > 0 && (was.t < eb.t - 1 || was.b > eb.b + 1)) out.push(`CUT OFF ${name(n)} ${fmt(was)} (in ${fmt(eb)})`);
@@ -303,7 +305,15 @@ for (const size of SIZES) {
       await until(() => page.evaluate(() => document.querySelectorAll('.fl-standings .fl-sname').length > 5));
       await withDecoder();
       await shot('crewLobby');
-      await readQR('crewLobby');
+      if (size.upright) {
+        // upright the link and its QR code wait behind INVITE (README, Crew rooms, The lobby held upright)
+        await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')); it && it.act(); });
+        await shot('crewLobby-invite');
+        await readQR('crewLobby-invite');
+        await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')); it && it.act(); });
+        await page.evaluate(() => window.__flow.debug.ui.setFocus(0));   // (DONE leaves the focus on INVITE; PLAY is next)
+        await sleep(200);
+      } else await readQR('crewLobby');
       await page.evaluate(() => window.__flow.debug.ui.activate());   // PLAY: waiting for a rival
       await shot('crewLobby-ready');
       // a member presses PLAY too: the crew pairs us, and the rival never connects, so the linking screen stays up

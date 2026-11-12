@@ -462,6 +462,7 @@ function injectStyle() {
     box-shadow: 0 0 1.2cqw color-mix(in srgb, var(--pink) 50%, transparent); font: 400 4cqw/5.6cqw 'Bungee', 'Arial Black', sans-serif; color: #fff;
     text-align: center; white-space: pre; overflow: hidden; letter-spacing: 0.04em; }
   .fl-field.fl-lower { font: 600 3.8cqw/5.8cqw 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.04em; }
+  .fl-hint { opacity: 0.35; }
   .fl-caret { display: inline-block; width: 0.5cqw; height: 4cqw; margin-left: 0.3cqw; vertical-align: -0.5cqw; background: var(--amber); box-shadow: 0 0 0.8cqw var(--amber); animation: fl-blink 1s steps(1) infinite; }
   .fl-temsg { min-height: 2.2cqw; max-width: 80cqw; }
   .fl-warn { color: #ffc2f3 !important; }
@@ -536,9 +537,12 @@ function injectStyle() {
   .fl-standings .fl-snum { text-align: right; font-variant-numeric: tabular-nums; }
   .fl-standings .fl-svs { color: var(--cyan); }
   .fl-standings .fl-sfav { color: color-mix(in srgb, var(--fc, var(--violet)) 55%, #fff); font-size: 2cqw; }
-  .fl-standings .fl-me { color: #ffc2f3; }
+  .fl-standings .fl-me, .fl-standings .fl-me > span { color: #ffc2f3; }   /* your row, name and (YOU) included, is pink */
   .fl-standings .fl-smore { grid-column: 1 / -1; font-size: 1.8cqw; color: rgba(214,190,255,0.7); text-align: center; }
-  .fl-sname { display: flex; align-items: baseline; gap: 0.6cqw; }
+  .fl-sname { display: flex; align-items: baseline; gap: 0.6cqw; min-width: 0; }
+  .fl-standings .fl-sname > .fl-snm { min-width: 0; flex: 0 1 auto; }   /* the name takes the ellipsis… */
+  .fl-sname > .fl-chip { flex: none; }        /* …so READY / PLAYING always shows whole */
+  .fl-standings .fl-sname > .fl-youtag { min-width: 0; flex: 0 10000 auto; }   /* (YOU) clips before the name does, so GUEST 284's digits stay */
   .fl-dot { display: inline-block; flex: none; width: 1cqw; height: 1cqw; border: 2px solid rgba(214,190,255,0.35); transform: translateY(-0.1cqw); }
   .fl-dot.fl-on-here { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 0.6cqw var(--cyan); }
   .fl-dot.fl-on-ready { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 0.6cqw var(--amber); }
@@ -554,6 +558,7 @@ function injectStyle() {
   .fl-crewpair { gap: 1cqw; }
   .fl-crewpair .fl-btn { flex: 1; min-width: 0; padding-left: 0; padding-right: 0; font-size: 1.9cqw; letter-spacing: 0.08em; }
   .fl-crewfail .fl-h3 { max-width: 70cqw; }
+  #flow .fl-uponly { display: none; }   /* the lobby's upright-only buttons (your name, INVITE); .fl-sideonly is the reverse */
   /* the lobby's views (paintLobby): the tabs over the table, then the standings, a crew high score table, or the stats */
   .fl-crewtabs { grid-column: 1 / -1; display: flex; gap: 0.6cqw; margin-bottom: 0.5cqh; }
   .fl-crewtab { flex: 1; min-width: 0; min-height: 0; padding: 0.5cqw 0 0.2cqw; font-size: 1.4cqw; letter-spacing: 0.06em; }
@@ -774,44 +779,60 @@ function injectStyle() {
   #flow > .fl-up.fl-host > .fl-row { width: 100%; }
   #flow > .fl-up.fl-host > .fl-spec { align-self: stretch; width: auto; min-height: 44px; padding: 0.3em 2cqw 0.1em; font-size: max(13px, 3.8cqw); line-height: 1.1; white-space: normal; letter-spacing: 0.06em; margin-top: 0; }
 
-  /* the crew lobby, upright: the name, then the status and PLAY under your thumb, everyone in the crew in a list
-     that scrolls, the last matches, the QR code beside the link and COPY LINK / SHARE, and the way out. The
-     stage layout's boxes (body, left, right) step aside (display: contents) so one grid places it all. */
-  #flow > .fl-up.fl-crew:not(.fl-crewfail) { display: grid; grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto auto;
-    grid-template-areas: "t t" "s s" "st st" "p p" "tb tb" "r r" "q l" "q c" "x x";
-    align-content: stretch; align-items: stretch; column-gap: 4cqw; row-gap: max(6px, 1.1cqh); }
+  /* the crew lobby, upright (README, Crew rooms, The lobby held upright): it's for whoever just opened the link, so
+     it's the crew's name, your name with EDIT, the status and PLAY under your thumb, then everyone in the crew in a
+     list that takes the rest and scrolls, and INVITE and MAIN MENU across the bottom. The link, its QR code, COPY
+     LINK and SHARE wait behind INVITE (.fl-sharing), which puts them where the list was. The stage layout's boxes
+     (body, left, right) step aside (display: contents) so one grid places it all. */
+  #flow > .fl-up.fl-crew:not(.fl-crewfail) { display: grid; grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "t" "me" "st" "p" "tb" "x";
+    align-content: stretch; align-items: stretch; row-gap: max(6px, 1.1cqh); }
+  #flow > .fl-up.fl-crew.fl-sharing:not(.fl-crewfail) { grid-template-rows: auto minmax(0, 1fr) auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "t" "." "q" "l" "c" "." "x"; }
   #flow > .fl-up.fl-crew .fl-crewbody, #flow > .fl-up.fl-crew .fl-crewleft, #flow > .fl-up.fl-crew .fl-crewright, #flow > .fl-up.fl-crew .fl-crewbtns { display: contents; }
+  #flow > .fl-up .fl-sideonly, #flow > .fl-up.fl-crew > .fl-label, #flow > .fl-up.fl-crew .fl-recent,
+  #flow > .fl-up.fl-crew:not(.fl-sharing) > .fl-link, #flow > .fl-up.fl-crew:not(.fl-sharing) .fl-qr, #flow > .fl-up.fl-crew:not(.fl-sharing) .fl-crewshare,
+  #flow > .fl-up.fl-crew.fl-sharing .fl-crewme, #flow > .fl-up.fl-crew.fl-sharing .fl-crewstatus, #flow > .fl-up.fl-crew.fl-sharing .fl-playbtn, #flow > .fl-up.fl-crew.fl-sharing .fl-standings { display: none; }
   #flow > .fl-up.fl-crew > .fl-h2 { grid-area: t; font-size: 7cqw; justify-self: center; text-align: center; }
-  #flow > .fl-up.fl-crew > .fl-label { grid-area: s; justify-self: center; text-align: center; font-size: max(12px, 3.6cqw); }
-  #flow > .fl-up.fl-crew > .fl-link { grid-area: l; align-self: end; text-align: left; font-size: max(12px, 3.4cqw); word-break: break-all; }
+  /* your name, and EDIT: one slim line, the name on the left */
+  #flow > .fl-up.fl-crew .fl-crewme { grid-area: me; display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 3cqw;
+    --c: var(--violet); min-height: 44px; padding: 0.3em 3cqw 0.1em; font-size: max(14px, 4.2cqw); letter-spacing: 0.06em; }
+  #flow > .fl-up.fl-crew .fl-mename { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #flow > .fl-up.fl-crew .fl-meedit { flex: none; font-weight: 600; color: var(--amber); }
+  #flow > .fl-up.fl-crew .fl-crewme.fl-focus .fl-meedit { color: var(--deep); }
+  #flow > .fl-up.fl-crew > .fl-link { grid-area: l; justify-self: center; text-align: center; font-size: max(12px, 3.6cqw); word-break: break-all; }
   #flow > .fl-up.fl-crew .fl-crewstatus { grid-area: st; min-height: 44px; font-size: max(13px, 4cqw); padding: 0.35em 2cqw 0.15em; }
   #flow > .fl-up.fl-crew .fl-playbtn { grid-area: p; min-height: max(60px, 8cqh); }
   #flow > .fl-up.fl-crew .fl-playbtn .fl-pl { font-size: 8cqw; }
   #flow > .fl-up.fl-crew .fl-playbtn small { font-size: max(12px, 3.6cqw); }
   #flow > .fl-up.fl-crew .fl-crewpair { grid-area: c; align-self: start; gap: 2.4cqw; }
   #flow > .fl-up.fl-crew .fl-crewpair + .fl-crewpair { grid-area: x; }
+  #flow > .fl-up.fl-crew .fl-invite { display: flex; flex-direction: row; gap: 2cqw; }
+  #flow > .fl-up.fl-crew .fl-invite .fl-icon { width: 1.05em; height: 1.05em; margin-top: -0.2em; flex: none; }
   #flow > .fl-up.fl-crew .fl-crewpair .fl-btn { min-height: 44px; font-size: max(14px, 4.2cqw); letter-spacing: 0.06em; }
-  #flow > .fl-up.fl-crew .fl-crewbody > .fl-qr { grid-area: q; --qr: clamp(140px, 40cqw, 200px); align-self: end; }
-  #flow > .fl-up.fl-crew .fl-recent { grid-area: r; min-height: 0; font-size: max(12px, 3.5cqw); gap: 0.25em; line-height: 1.15; }
+  #flow > .fl-up.fl-crew .fl-crewbody > .fl-qr { grid-area: q; --qr: clamp(150px, min(72cqw, calc(100cqh - 340px)), 300px); justify-self: center; }
+  #flow > .fl-up.fl-crew.fl-sharing .fl-invite .fl-icon { display: none; }   /* it says DONE now */
   #flow > .fl-up.fl-crew .fl-standings { grid-area: tb; align-content: start; grid-template-columns: 5cqw minmax(0, 1fr) 5cqw 5cqw 5cqw 12cqw 18cqw;
     grid-auto-rows: max-content;   /* the cells clip (ellipsis), so in a box shorter than the list auto rows would shrink to nothing */
     column-gap: 1.6cqw; row-gap: 0.5em; padding: 0 2.4cqw 2cqw; font-size: max(13px, 3.9cqw); }
   #flow > .fl-up.fl-crew .fl-standings .fl-sfav { display: block; }
   #flow > .fl-up.fl-crew .fl-standings .fl-sfav { font-size: max(12px, 3.5cqw); }
   /* the header stays put while the names scroll under it */
-  #flow > .fl-up.fl-crew .fl-standings .fl-sth { position: sticky; top: 0; z-index: 1; font: 600 max(12px, 3.4cqw)/1 'Teko', sans-serif; letter-spacing: 0.1em; padding: 2.2cqw 0 0.4em; background: #10061f; align-self: stretch; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sth { position: sticky; top: 0; z-index: 1; font: 600 max(12px, 3.4cqw)/1 'Teko', sans-serif; letter-spacing: 0.1em; padding: 2.2cqw 0 0.4em; background: #10061f; align-self: stretch;
+    box-shadow: 1.6cqw 0 0 #10061f, -1.6cqw 0 0 #10061f; }   /* (fills the column gaps, so the heads read as one strip) */
   #flow > .fl-up.fl-crew .fl-standings .fl-smore { font-size: max(12px, 3.5cqw); }
   #flow > .fl-up.fl-crew .fl-sname { gap: 1.6cqw; }
+  #flow > .fl-up.fl-crew .fl-youtag { display: none; }
   #flow > .fl-up.fl-crew .fl-dot { width: 2.6cqw; height: 2.6cqw; }
   #flow > .fl-up.fl-crew .fl-chip { font-size: 12px; padding: 0.2em 0.35em 0.05em; }
-  /* a short screen: the last matches go to two lines and the bookmark line goes, so the list keeps some rows */
-  @container (max-height: 720px) {
-    #flow > .fl-up.fl-crew > .fl-label { display: none; }
-    #flow > .fl-up.fl-crew .fl-recent > :nth-child(n+3) { display: none; }
-  }
+  /* Upright, the standings are who's here and who's ready: rank, the name with its chip, W and L.
+     D, VS YOU and FAVORITE (STATS has the history) give their room to the name. */
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-standings { grid-template-columns: 6cqw minmax(0, 1fr) 8cqw 8cqw; }
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-standings > .fl-sd, #flow > .fl-up.fl-crew .fl-standings.fl-v-standings > .fl-svs,
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-standings > .fl-sfav, #flow > .fl-up.fl-crew .fl-standings.fl-v-standings > .fl-sth.fl-sthfav { display: none; }
+  /* a short screen: PLAY gives the list a few more px */
   @container (max-height: 660px) {
-    #flow > .fl-up.fl-crew .fl-crewbody > .fl-qr { --qr: 140px; }
     #flow > .fl-up.fl-crew .fl-playbtn { min-height: 54px; }
   }
 

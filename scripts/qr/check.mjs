@@ -92,7 +92,8 @@ if (BASE) {
   // where everything on the screen is, in CSS px
   function measure() {
     const box = (n) => { const r = n.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, text: (n.textContent || '').trim().slice(0, 24), cls: String(n.className).split(' ').slice(0, 2).join('.') }; };
-    const st = document.getElementById('stage').getBoundingClientRect();
+    // held upright a menu leaves the 16:9 stage for the whole screen (.fl-up, README, Held upright), so that's its box
+    const st = document.querySelector('#flow > .fl-up') ? new DOMRect(0, 0, innerWidth, innerHeight) : document.getElementById('stage').getBoundingClientRect();
     const tile = document.querySelector('#flow .fl-qrtile'), label = document.querySelector('#flow .fl-qrlabel');
     const others = [...document.querySelectorAll('#flow .fl-screen :is(.fl-h1, .fl-h2, .fl-label, .fl-link, .fl-btn, .fl-standings, .fl-recent, .fl-crewstatus)')].filter((n) => n.getBoundingClientRect().width);
     const svg = tile && tile.querySelector('svg');
@@ -167,6 +168,14 @@ if (BASE) {
     // the crew lobby
     await page.goto(`${BASE}crew/${crew.slug}`);
     await page.waitForFunction(() => window.__flow && window.__flow.state === 'crewLobby' && document.fonts.status === 'loaded' && /ALICE/.test((document.querySelector('#flow .fl-standings') || {}).textContent || ''), null, { timeout: 30000 });
+    if (size.viewport.height > size.viewport.width) {
+      // upright the link and its code wait behind INVITE (README, Crew rooms, The lobby held upright)
+      await page.waitForFunction(() => !!document.querySelector('#flow > .fl-up.fl-crew'), null, { timeout: 10000 });
+      await sleep(300);
+      const hidden = await page.evaluate(() => { const t = document.querySelector('#flow .fl-qrtile'); return !t || !t.getBoundingClientRect().width; });
+      check(`[${size.name}] crew: no code on screen until INVITE`, hidden);
+      await page.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')).act());
+    }
     const png2 = await snap('crew-lobby');
     const m2 = await page.evaluate(measure);
     const got2 = await decode(png2);
