@@ -392,7 +392,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       char: ch, maxHealth: 100, staminaMax: STAMINA.max * ch.stats.stamina, armorLeft: 0, hitN: 0, airJumpsUsed: 0, wallJumps: 0,
       id: i, name: 'P' + (i + 1), rig, color: rig.color || (i === 0 ? '#f0f0f0' : '#E85D00'),
       x: rig.x, y: rig.y, vx: 0, vy: 0, grounded: true, facing: rig.facing || (i === 0 ? 1 : -1),
-      state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,
+      state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,   // a new unit starts idle: built here, not a state change (enter())
       hitstop: 0, flash: 0, stun: 0, downTimer: 0, buffer: null, bufferAge: 0,
       health: 100, hidden: false, controller: null, kind: 'none', home: 0, prevX: 0, prevBX: 0, apartSteps: 0,
       last: EMPTY_INPUT, tapDir: 0, tapAt: -999, tapN: 0, dashDir: 0, dashT: 0, lowStance: false, running: false, koDone: false, prevJoints: null,
@@ -477,6 +477,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   function spawn(u, i) {
     const s = arena.spawns && arena.spawns[Math.min(i, 1)] ? arena.spawns[Math.min(i, 1)] : { x: 480 + i * 320, y: lowestY(), facing: i === 0 ? 1 : -1 };
     u.x = s.x; u.y = s.y; u.facing = s.facing; u.vx = 0; u.vy = 0; u.grounded = true;
+    // a fresh unit for the round, every field set from scratch below: not a state change, so not through enter()
     u.state = 'idle'; u.move = null; u.phase = null; u.hitstop = 0; u.flash = 0; u.stun = 0; u.buffer = null;
     // a character's health is its stat out of 100 times the match's starting health (100, the ko scene's 24)
     u.maxHealth = (sim.horde && i >= 1) ? sim.horde.goonHealth : u.char.stats.health === 100 ? sim.startHealth : Math.round(sim.startHealth * u.char.stats.health / 100);
@@ -496,6 +497,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.combo = 0; u.comboBy = -1; u.airUsed = 0; u.landLag = 0; u.easeBand = false;
     u.floor = 0; u.stair = -1; u.falling = false; u.breakOK = false; u.fellLanded = false; u.vaultPhase = null; u.fallWell = -1; u.vaultWell = -1;
     u.airHits = 0; u.gScale = 1; u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.splatT = 0; u.crouchEnd = null; u.glide = null;
+    for (const k in FLAG_REST) u[k] = FLAG_REST[k];   // and every transient flag a state owns (STATE_OWNS), whatever he was doing when the round ended
     syncRig(u); u.rig.play('idle'); rigUpd(u, 0); u.rig.events.length = 0;
   }
   sim.startRound = (n, { skipIntro = false } = {}) => {
@@ -599,7 +601,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // a goon with no one to replace it leaves the floor (its ragdoll flies on): hidden, and not lying there either, since
   // the hero's run stops at the near end of a lying body (physics) and his run to the stairwell after FLOOR CLEAR
   // stood at an invisible one
-  function offFloor(g) { g.hidden = true; g.state = 'idle'; g.rag = false; g.vx = 0; g.vy = 0; }
+  function offFloor(g) { g.hidden = true; enter(g, 'idle'); g.rag = false; g.vx = 0; g.vy = 0; }
   function floorClear() {
     const H = sim.horde, p = sim.units[0];
     H.floorsCleared++;
@@ -645,7 +647,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     } else if ((T.t -= DT) <= 0) {
       const info = floorInfo(T.to);
       H.floor = T.to; sim.floor = T.to; refreshBounds();
-      p.floor = T.to; p.stair = -1; p.y = info.y; p.x = info.spawns[0].x; p.vx = 0; p.grounded = true; p.state = 'idle';
+      p.floor = T.to; p.stair = -1; p.y = info.y; p.x = info.spawns[0].x; p.vx = 0; p.grounded = true; enter(p, 'idle');
       if (typeof p.rig.reset === 'function') { syncRig(p); p.rig.reset(); }
       setState(p, 'idle'); syncRig(p); rigUpd(p, 0);
       onEvent({ type: 'land', x: p.x, y: p.y, dir: p.facing, strength: 0.4 });
@@ -736,7 +738,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // touchdown: the body is on the floor (a hit, a throw, a trip, a floor break, a stair tumble), and stays
   // there until its player picks a getup option or DOWN_MAX runs out
   function toDown(u) {
-    u.state = 'down'; u.downTimer = DOWN_MAX; u.touchStep = sim.stepCount; u.downPin = 0; floored(u);
+    enter(u, 'down'); u.downTimer = DOWN_MAX; u.touchStep = sim.stepCount; u.downPin = 0; floored(u);
     u.buffer = null; u.bufferKeys = null; u.queued = null;   // a press made in the air isn't a getup choice
     lieSide(u);
   }
@@ -850,14 +852,76 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.x = u.rig.x;
     if (u.x < b.x0 || u.x > b.x1) u.easeBand = true;   // a step that ends past the wall eases back in (physics), no snap
   }
+  // ---- states: one door (README, Fundamentals, States and the flags they own) ---------------------------------
+  // Every change of u.state goes through enter() (setState() is enter() plus the clip and the crouch). The only
+  // other writes are makeUnit() and spawn(), which build a unit from nothing, and the snapshot restore
+  // (src/combat/snapshot.js), which puts a saved state back as it was rather than changing it.
+  //
+  // STATE_OWNS says which transient flags each state owns. A flag lives in the states that list it; when a unit
+  // leaves a state for one that doesn't list the flag, enter() puts the flag back to its rest value (FLAG_REST).
+  // A flag set before the state changes (applyHit sets splatPending, then picks knockdown) carries into a state
+  // that owns it. One set in a state that doesn't own it isn't cleared here: the invariant checker
+  // (scripts/netsim/invariants.mjs) catches that.
+  // Flags set on entry and read only in their state (splatT, rollT, getupSteps) need no entry here. Left out on
+  // purpose, because something reads them after the state has changed:
+  //   downTimer    startWake's note reads it after startAttack (the log is rollback state)
+  //   splatSide    the hit that knocks a body off the wall reads it after the knockdown starts
+  //   shockT       ELECTRICIAN's CPU reads the rival's on the next step; tick() ends it at his next update
+  //   botchKind    a botch in the air sets it after the knockdown starts; tick() ends it at his next update
+  //   rootT        a status: it runs past the stun on purpose, and floored() ends it
+  //   crouch       setState()'s own rule (kept through blockstun), and an attack sets it from its frame data
+  // glide, followThrough and chase belong to the attack and the walk after it: a launcher's follow-through glides
+  // the attacker to where the body will land, and a launch cancelled with a direction (launchCancelAt) keeps
+  // riding in idle, walk or run until the glide runs out (physics). Any other state ends the ride.
+  const RIDE = ['glide', 'followThrough', 'chase'];
+  const STATE_OWNS = {
+    attack: ['move', 'phase', 'launchCancelAt', 'otgConfirm', 'lowStance', 'wakeUp', 'grabOK', ...RIDE],
+    idle: RIDE, walk: RIDE, run: RIDE,
+    grabbed: ['grabbedBy', 'grabTo', 'grabT', 'grabNoBreak'],
+    knockdown: ['splatPending', 'wallBounce', 'groundBounce', 'juggle', 'breakOK'],
+    splat: ['splatPending', 'wallBounce', 'groundBounce', 'breakOK'],   // a splat slides off into the knockdown it came from
+    ko: ['breakOK'],                                                    // a KO'd body can still go over a railing
+    hitstun: ['stun', 'breakOK'],   // a launcher's floor break is decided on the hit, before it's known whether he reels or falls
+    blockstun: ['stun'],
+    down: ['otgHit', 'downPin'],    // the knockdown's one ground hit, and the stomp's pin
+    roll: ['rollCross', 'rolled'], getup: ['rolled'],   // one roll per knockdown, read until the getup ends
+    vault: ['vaultPhase'], landing: ['landLag'], dash: ['dashDir'], perfect: ['pfStage'],
+  };
+  const FLAG_REST = {
+    move: null, phase: null, launchCancelAt: 0, otgConfirm: false, lowStance: false, wakeUp: 0, grabOK: false,
+    glide: null, followThrough: false, chase: false, grabbedBy: -1, grabTo: null, grabT: 0, grabNoBreak: false,
+    splatPending: false, wallBounce: false, groundBounce: false, juggle: false, breakOK: false, stun: 0,
+    otgHit: false, downPin: 0, rollCross: false, rolled: false, vaultPhase: null, landLag: 0, dashDir: 0, pfStage: null,
+  };
+  // from -> to -> the flags to clear, worked out the first time that change happens (plain arrays in a table the
+  // sim keeps; nothing is stored on units, so snapshots stay plain data)
+  const LEAVE = {}, NONE = [];
+  function leaving(from, to) {
+    const own = STATE_OWNS[from];
+    if (!own) return NONE;
+    const m = LEAVE[from] || (LEAVE[from] = {});
+    return m[to] || (m[to] = own.filter((k) => !(STATE_OWNS[to] || NONE).includes(k)));
+  }
+  function enter(u, to) {
+    if (u.state !== to) { const out = leaving(u.state, to); for (let i = 0; i < out.length; i++) u[out[i]] = FLAG_REST[out[i]]; }
+    u.state = to;
+  }
+  // every flag the unit's state doesn't own back at rest: for a unit that a hit put in one state and a second hit on the
+  // same step then wrote attacker's flags on (a trade: resolveHits)
+  function restFlags(u) {
+    const own = STATE_OWNS[u.state] || NONE;
+    for (const k in FLAG_REST) if (!own.includes(k) && u[k] !== undefined) u[k] = FLAG_REST[k];
+  }
+  sim.STATE_OWNS = STATE_OWNS; sim.FLAG_REST = FLAG_REST;   // for the invariant checker
+  sim.enter = (u, to) => enter(u, to);   // for a test scene that poses a body (src/main.js): through the door like the sim
   function setState(u, state, anim = state) {
     if (state === 'idle' && anim === 'idle' && u.faint > 0) anim = ANIM.faint;   // out on his feet
     if (u.state === state && (state === 'walk' || state === 'run' || state === 'idle' || state === 'block' || state === 'crouch')) {
       if (anim && u.rig.current.move !== anim && (state === 'idle' || state === 'crouch')) safePlay(u.rig, anim);
       return;
     }
-    u.state = state;
-    if (state !== 'attack') { u.phase = null; u.move = null; }
+    enter(u, state);
+    if (state !== 'attack') { u.phase = null; u.move = null; }   // (enter() already did this leaving an attack; kept for any other way in)
     if (state !== 'crouch' && state !== 'blockstun') u.crouch = false;
     if (anim) safePlay(u.rig, anim);
   }
@@ -986,7 +1050,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const fd0 = FRAME_DATA[move];
     if (u.grounded && opp && !fd0.wake) { const ox = bodyX(opp); if (Math.abs(ox - u.x) > 4) u.facing = ox > u.x ? 1 : -1; }   // a wake-up strike already faces him (startWake)
     u.wakeUp = fd0.wake ? 1 : 0;
-    u.state = 'attack'; u.move = move; u.phase = 'startup'; u.hitConfirmed = false; u.attackId++; u.launchCancelAt = 0; u.otgConfirm = false;
+    enter(u, 'attack'); u.move = move; u.phase = 'startup'; u.hitConfirmed = false; u.attackId++; u.launchCancelAt = 0; u.otgConfirm = false;
     u.attackStart = sim.stepCount; u.crouch = !!fd0.tc; u.activeAt = -1; u.recoverAt = -1;
     // a plain crouching attack thrown with down held (the low jab, the low kick, the sweep, or a character's own ↓ + button
     // in their place; never a special on another motion, an ender or a slide): letting go of down in it is rising (risingNow)
@@ -1316,12 +1380,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // tangled in the air: the body goes to the point simulation with the jump's momentum and a twist,
       // and lands in a heap (the knockdown and getup flow)
       u.techLock = sim.stepCount + 600;   // his own tangle: no air recovery out of it
-      u.botchKind = 'air'; u.state = 'knockdown'; u.phase = null; u.move = null; u.juggle = false; u.landJoints = null; u.otgHit = false; u.rolled = false; u.breakOK = false;
+      u.botchKind = 'air'; enter(u, 'knockdown'); u.phase = null; u.move = null; u.juggle = false; u.landJoints = null; u.otgHit = false; u.rolled = false; u.breakOK = false;
       u.launchedBy = -1;
       if (!startRag(u, u.vx * 0.8, Math.min(u.vy, 120) - 60, { wall: 'stop', spin: (f.cur.side || 1) * (260 + 60 * sev) })) safePlay(u.rig, 'knockdown');
     } else if (kind === 'flail') {
       // both arms at once: a weak, ugly double swing, a real strike that can still land
-      u.state = 'idle'; u.move = null; u.phase = null;
+      enter(u, 'idle'); u.move = null; u.phase = null;
       startAttack(u, 'flail', { botch: { sev, alt } });
       u.seq = null;
     } else {
@@ -1339,7 +1403,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function endBotch(u) {
     if (u.botchKind === 'trip') {
       const fw = u.botchFwd > 0, sev = u.botchSev || 1;
-      u.state = 'knockdown'; u.juggle = false; u.landJoints = null; u.otgHit = false; u.rolled = false; u.breakOK = false; u.launchedBy = -1;
+      enter(u, 'knockdown'); u.juggle = false; u.landJoints = null; u.otgHit = false; u.rolled = false; u.breakOK = false; u.launchedBy = -1;
       u.techLock = sim.stepCount + 600;   // a trip: no air recovery out of it
       syncRig(u);
       if (!startRag(u, u.facing * (fw ? 110 + 30 * sev : -(90 + 30 * sev)), -140, { wall: 'stop', spin: fw ? -(320 + 60 * sev) : 300 + 60 * sev })) { safePlay(u.rig, 'knockdown'); u.vy = -150; u.grounded = false; }
@@ -1355,7 +1419,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // (a fresh strike from wherever the body is, with its own clip and frame data), with a callout.
   function happyAccident(u, acc) {
     takeShift(u);
-    u.state = 'idle'; u.move = null; u.phase = null;
+    enter(u, 'idle'); u.move = null; u.phase = null;
     u.buffer = null; u.bufferKeys = null; u.bufferName = ''; u.queued = null; u.glide = null; u.launchCancelAt = 0;
     startAttack(u, acc.move);
     u.seq = null;
@@ -1495,7 +1559,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         // stuck to the wall, open for one more hit; then it slides off into the fall
         if (!u.rag) { u.vx = 0; u.vy = 0; }
         if (--u.splatT <= 0) {
-          u.state = 'knockdown'; u.juggle = false;
+          enter(u, 'knockdown'); u.juggle = false;
           if (!u.rag) { u.vy = 40; u.vx = -u.splatSide * 60; safePlay(u.rig, 'knockdown'); }
         }
         break;
@@ -1587,8 +1651,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       case 'blockstun':
         u.vx *= 0.88;
         if (--u.stun <= 0) {
-          if (u.crouch && e.down) { u.state = 'crouch'; safePlay(u.rig, e.block ? ANIM.crouchBlock : ANIM.crouch); tryAttack(u); break; }
-          u.state = 'block'; u.crouch = false; if (!e.block) setState(u, 'idle'); else if (tryAttack(u)) break;
+          if (u.crouch && e.down) { enter(u, 'crouch'); safePlay(u.rig, e.block ? ANIM.crouchBlock : ANIM.crouch); tryAttack(u); break; }
+          enter(u, 'block'); u.crouch = false; if (!e.block) setState(u, 'idle'); else if (tryAttack(u)) break;
         }
         break;
       case 'knockdown':
@@ -1777,7 +1841,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function startVault(u, sw) {
     const mid = (sw.x0 + sw.x1) / 2;
     u.vaultWell = wellsNow().indexOf(sw);
-    u.state = 'vault'; u.vaultPhase = 'approach'; u.vaultAt = sim.stepCount; u.move = null; u.phase = null; u.crouch = false; u.buffer = null; u.glide = null;
+    enter(u, 'vault'); u.vaultPhase = 'approach'; u.vaultAt = sim.stepCount; u.move = null; u.phase = null; u.crouch = false; u.buffer = null; u.glide = null;
     u.vaultX = HAS_VAULT ? (u.x < mid ? sw.x0 - 24 : sw.x1 + 24) : (u.x < mid ? sw.x0 + 14 : sw.x1 - 14);
     u.facing = Math.sign(mid - u.x) || u.facing;
     safePlay(u.rig, 'run');
@@ -1872,7 +1936,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const late = u.phase === 'recovery' || u.rig.current.done;
     const dive = FRAME_DATA[u.move] && FRAME_DATA[u.move].dive;
     // as long as the rig's airLand takes to lower the hip (160ms, 220 after a dive kick)
-    u.phase = null; u.move = null; u.state = 'landing'; u.landLag = dive ? 26 : late ? 20 : 14;
+    u.phase = null; u.move = null; enter(u, 'landing'); u.landLag = dive ? 26 : late ? 20 : 14;
     safePlay(u.rig, ANIM.airLand || 'idle');
     note({ type: 'airLand', att: u.id, hit: false, lag: u.landLag });
     onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.4 });
@@ -1899,7 +1963,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     syncRig(u);
     if (typeof u.rig.commitShift === 'function') { const x0 = u.rig.x; u.rig.commitShift(); u.x += u.rig.x - x0; }
     if (typeof u.rig.rebase === 'function') { u.rig.rebase(hip); u.x = hip; }
-    u.state = 'roll'; u.phase = null; u.move = null; u.rolled = true; u.vx = 0;
+    enter(u, 'roll'); u.phase = null; u.move = null; u.rolled = true; u.vx = 0;
     u.rollFrom = u.x; u.rollTo = to; u.rollDir = dx; u.rollCross = cross; u.rollT = 0; u.rollPlan = u.x;
     u.rollN = cross ? ROLL.crossSteps : ROLL.steps;
     const clip = dx === u.facing ? 'rollFwd' : 'rollBack', md = MOVE_DATA_ && MOVE_DATA_[clip];
@@ -1946,7 +2010,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
   // back on the floor in the knockdown rest pose, the hip where it was (a wake-up strike stuffed)
   function restDown(u, hip) {
-    u.state = 'down'; u.phase = null; u.move = null; u.wakeUp = 0; u.vx = 0; u.downTimer = DOWN_MAX; u.touchStep = sim.stepCount;
+    enter(u, 'down'); u.phase = null; u.move = null; u.wakeUp = 0; u.vx = 0; u.downTimer = DOWN_MAX; u.touchStep = sim.stepCount;
     u.rig.play('knockdown'); u.rig.update(1.5); u.rig.events.length = 0;
     u.x = hip - REST_HX * u.facing * (u.rig.scale || 1); syncRig(u); rigUpd(u, 0);
   }
@@ -1975,7 +2039,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.x = Math.max(b.x0, Math.min(b.x1, hipX)); u.y = Math.min(floorY - 2, hipY + 50 * sc);
     u.grounded = false; u.vy = Math.min(0, vy * 0.3) - 160; u.vx = Math.max(-200, Math.min(200, vx * 0.4));
     if (opp) u.facing = Math.sign(bodyX(opp) - u.x) || u.facing;
-    u.state = 'jump'; u.phase = null; u.move = null; u.jumpAt = sim.stepCount; u.jumpVx = u.vx; u.airUsed = 0; u.airWhiffEarly = false;
+    enter(u, 'jump'); u.phase = null; u.move = null; u.jumpAt = sim.stepCount; u.jumpVx = u.vx; u.airUsed = 0; u.airWhiffEarly = false;
     u.juggle = false; u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.gScale = 1; u.airHits = 0; u.launchedBy = -1;
     u.buffer = null; u.bufferKeys = null; u.queued = null; u.seq = null;
     syncRig(u); safePlay(u.rig, 'airTech'); rigUpd(u, 0);
@@ -1990,7 +2054,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const vw = wellsNow()[u.vaultWell];
     u.floor = to; u.stair = vw && vw.flight != null && stairsNow()[vw.flight] ? vw.flight : -1;
     const fy = groundY(u, hipX);
-    u.vaultPhase = null; u.state = 'jump'; u.grounded = false; u.easeBand = true;
+    u.vaultPhase = null; enter(u, 'jump'); u.grounded = false; u.easeBand = true;
     u.y = Math.min(fy - 4, feet); u.vy = 240; u.vx = u.facing * 60; u.jumpVx = u.vx; u.jumpAt = sim.stepCount; u.airUsed = 0; u.airWhiffEarly = false;
     if (typeof u.rig.reset === 'function') u.rig.reset();
     u.x = hipX; syncRig(u); fallArc(u);
@@ -2070,15 +2134,15 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (wasAir && u.grounded && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air) airLanding(u);
     if (wasAir && u.grounded && u.state === 'vault' && u.vaultPhase === 'drop') { u.vaultPhase = null; u.vx = 0; setState(u, 'idle'); onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.6 }); }
     if (wasAir && u.grounded && u.state === 'jump' && u.rig.current.move === 'airTech') {   // out of an air recovery: a short absorb
-      u.state = 'landing'; u.landLag = 8; u.vx *= 0.3; safePlay(u.rig, ANIM.airLand || 'idle');
+      enter(u, 'landing'); u.landLag = 8; u.vx *= 0.3; safePlay(u.rig, ANIM.airLand || 'idle');
       onEvent({ type: 'land', x: u.x, y: u.y, dir: u.facing, strength: 0.4 });
-    } else if (wasAir && u.grounded && u.state === 'jump') { u.state = 'landing'; if (u.rig.current.done) { setState(u, 'idle'); tryAttack(u); } }
+    } else if (wasAir && u.grounded && u.state === 'jump') { enter(u, 'landing'); if (u.rig.current.done) { setState(u, 'idle'); tryAttack(u); } }
   }
   function wallHit(u) {
     const side = u.x < (bounds.x0 + bounds.x1) / 2 ? -1 : 1;
     if (u.state === 'knockdown' && !u.grounded && u.splatPending) {
       // wall splat: stuck to the wall for 0.4s, open for one more hit
-      u.splatPending = false; u.wallBounce = false; u.state = 'splat'; u.splatT = SPLAT_STEPS; u.splatSide = side; u.splatHit = false;
+      u.splatPending = false; u.wallBounce = false; enter(u, 'splat'); u.splatT = SPLAT_STEPS; u.splatSide = side; u.splatHit = false;
       u.vx = 0; u.vy = 0; u.facing = -side; u.y = Math.min(u.y, floorUnder(u) - 30);
       if (typeof u.rig.wallSplat === 'function') { try { u.rig.wallSplat({ side, dir: side }); } catch (e) { warnOnce('wallSplat', 'rig.wallSplat threw: ' + e.message); safePlay(u.rig, 'hitHeavy'); } }
       else safePlay(u.rig, 'hitHeavy');
@@ -2152,7 +2216,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       else if (ev.type === 'wall' && u.rag && (u.state === 'knockdown' || u.state === 'ko')) {
         const side = ev.side || (u.x < (bounds.x0 + bounds.x1) / 2 ? -1 : 1);
         if (u.splatPending && u.state === 'knockdown') {
-          u.splatPending = false; u.state = 'splat'; u.splatT = SPLAT_STEPS; u.splatSide = side; u.splatHit = false;
+          u.splatPending = false; enter(u, 'splat'); u.splatT = SPLAT_STEPS; u.splatSide = side; u.splatHit = false;
           callout('WALL SPLAT', u.comboBy, 'trick');
           onEvent({ type: 'wallImpact', x: u.x + side * 10, y: u.ragFloor - 80, side, strength: 1, unit: u });
         } else if (u.wallBounce) {
@@ -2199,6 +2263,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         const ma = hero.move, mb = g.move;
         applyHit(hero, g, a.pt, { move: ma, trade: true });
         applyHit(g, hero, b.pt, { move: mb, trade: true });
+        // the second hit is g's, landed after the first already put g in a reaction: a launch's follow-through (the glide,
+        // the chase, launchCancelAt) is an attacker's and g isn't attacking any more, so it would glide him while he reels
+        restFlags(hero); restFlags(g);
         hero.tradeLimb = FRAME_DATA[ma].limb; g.tradeLimb = FRAME_DATA[mb].limb;
         hero.tradeUntil = g.tradeUntil = sim.stepCount + Math.max(hero.hitstop, g.hitstop) + 16;
         callout('TRADE', -1, 'trade');
@@ -2263,7 +2330,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const hs = f60(CLASH.hitstop), stun = f60(CLASH.stun);
     for (const [u, away, move] of [[a, -dir, ma], [b, dir, mb]]) {
       u.tradeLimb = FRAME_DATA[move].limb; u.tradeUntil = sim.stepCount + hs + 10;
-      u.state = 'blockstun'; u.stun = stun; u.phase = null; u.move = null; u.crouch = false; u.clashUntil = sim.stepCount + hs + stun;
+      enter(u, 'blockstun'); u.stun = stun; u.phase = null; u.move = null; u.crouch = false; u.clashUntil = sim.stepCount + hs + stun;
       u.buffer = null; u.bufferKeys = null; u.bufferName = ''; u.seq = null; u.queued = null; u.glide = null; u.followThrough = false; u.chase = false; u.armorLeft = 0;
       u.vx = away * CLASH.push; u.hitstop = hs;
       safePlay(u.rig, ANIM.throwTech);   // the push-off, from the pose at contact once the freeze lets go
@@ -2276,7 +2343,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // frames, open), and the heavy one carries on to land the ordinary way: a plain hit, not a counter.
   function batAside(win, lose, m) {
     const move = lose.move;
-    lose.state = 'hitstun'; lose.stun = f60(CLASH.batStun); lose.phase = null; lose.move = null; lose.crouch = false; lose.comboBy = -1;
+    enter(lose, 'hitstun'); lose.stun = f60(CLASH.batStun); lose.phase = null; lose.move = null; lose.crouch = false; lose.comboBy = -1;
     lose.buffer = null; lose.bufferKeys = null; lose.bufferName = ''; lose.seq = null; lose.queued = null; lose.glide = null; lose.vx = 0; lose.followThrough = false; lose.chase = false;
     safePlay(lose.rig, HAS_HITSTUN ? 'hitStun' : 'hitLight'); syncRig(lose); rigUpd(lose, 0.008); lose.rig.events.length = 0;
     note({ type: 'clash', broke: true, a: win.move, b: move, att: win.id, def: lose.id });
@@ -2364,7 +2431,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     def.grabNoBreak = !!gfd.noBreak;
     const pre = def.buffer === 'throw' && def.bufferAge < 8 && !(def.faint > 0) && !def.grabNoBreak;   // pressed just before the grab
     const hold = gfd.hold ? f60(gfd.hold) : BREAK_STEPS;
-    def.state = 'grabbed'; def.grabbedBy = att.id; def.grabT = hold; def.phase = null; def.move = null; def.crouch = false;
+    enter(def, 'grabbed'); def.grabbedBy = att.id; def.grabT = hold; def.phase = null; def.move = null; def.crouch = false;
     def.vx = 0; att.vx = 0; att.glide = null;
     att.hitstop = hold + 2; def.hitstop = 0;
     safePlay(def.rig, 'hitStun' in (MOVE_DATA_ || {}) ? 'hitStun' : 'hitLight');
@@ -2375,7 +2442,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // the throw counter caught him: his grab is dropped, and the stance becomes its reversal, a grab of its own on him
   function counterThrow(att, def, C) {
     const caught = att.move;
-    att.state = 'idle'; att.move = null; att.phase = null; att.buffer = null; att.bufferKeys = null; att.seq = null; att.queued = null; att.glide = null; att.vx = 0;
+    enter(att, 'idle'); att.move = null; att.phase = null; att.buffer = null; att.bufferKeys = null; att.seq = null; att.queued = null; att.glide = null; att.vx = 0;
     callout(C.callout || 'COUNTER', def.id, 'counter');
     note({ type: 'throwCounter', att: def.id, def: att.id, move: caught });
     onEvent({ type: 'block', x: (att.x + def.x) / 2, y: def.y - 90, dir: Math.sign(att.x - def.x) || def.facing, strength: 1, move: caught, parry: true, attacker: att, defender: def });
@@ -2398,8 +2465,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const att = sim.units[def.grabbedBy];
     def.grabTo = null;
     const dir = awayDir(att, def);
-    def.state = 'blockstun'; def.stun = f60(14); def.vx = dir * 300; def.hitstop = 0; def.grabbedBy = -1;
-    att.state = 'blockstun'; att.stun = f60(14); att.vx = -dir * 300; att.hitstop = 0; att.move = null; att.phase = null;
+    enter(def, 'blockstun'); def.stun = f60(14); def.vx = dir * 300; def.hitstop = 0; def.grabbedBy = -1;
+    enter(att, 'blockstun'); att.stun = f60(14); att.vx = -dir * 300; att.hitstop = 0; att.move = null; att.phase = null;
     safePlay(def.rig, ANIM.throwTech); safePlay(att.rig, ANIM.throwTech);
     callout('BREAK', def.id, 'break');
     onEvent({ type: 'block', x: (att.x + def.x) / 2, y: def.y - 90, dir, strength: 0.8, move: 'throw', attacker: att, defender: def });
@@ -2407,7 +2474,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
   function landThrow(def) {
     const att = sim.units[def.grabbedBy];
-    def.grabbedBy = -1; def.state = 'idle'; def.grabTo = null;
+    def.grabbedBy = -1; enter(def, 'idle'); def.grabTo = null;
     // the thrower was hit out of it mid-grab (horde: a second goon): the victim just drops
     if (!att || att.state !== 'attack' || !FRAME_DATA[att.move]) return;
     att.hitstop = 0;
@@ -2444,7 +2511,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
   function parry(att, def, pt, dfd) {
     const P = dfd.parry, dir = awayDir(def, att), caught = att.move;
-    att.state = 'hitstun'; att.stun = f60(P.stun || 40); att.phase = null; att.move = null; att.buffer = null; att.bufferKeys = null; att.seq = null; att.queued = null;
+    enter(att, 'hitstun'); att.stun = f60(P.stun || 40); att.phase = null; att.move = null; att.buffer = null; att.bufferKeys = null; att.seq = null; att.queued = null;
     att.glide = null; att.vx = 0; att.comboBy = -1; att.crouch = false; att.followThrough = false;
     safePlay(att.rig, HAS_HITSTUN ? 'hitStun' : 'hitLight'); syncRig(att); rigUpd(att, 0.008); att.rig.events.length = 0;
     att.hitstop = def.hitstop = f60(8); def.flash = 2;
@@ -2461,7 +2528,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function uParry(att, def, pt, move) {
     const dir = awayDir(def, att);
     def.parryAt = -999;   // one strike per tap
-    att.state = 'hitstun'; att.stun = f60(PARRY.stun); att.phase = null; att.move = null; att.buffer = null; att.bufferKeys = null; att.seq = null; att.queued = null;
+    enter(att, 'hitstun'); att.stun = f60(PARRY.stun); att.phase = null; att.move = null; att.buffer = null; att.bufferKeys = null; att.seq = null; att.queued = null;
     att.glide = null; att.vx = att.grounded ? 0 : -dir * 120; att.comboBy = -1; att.crouch = false; att.followThrough = false; att.wakeUp = 0;
     if (att.rig.current.move !== 'airborne') { safePlay(att.rig, HAS_HITSTUN ? 'hitStun' : 'hitLight'); syncRig(att); rigUpd(att, 0.008); att.rig.events.length = 0; }
     att.hitstop = def.hitstop = f60(8); def.flash = 2; def.vx = 0;
@@ -2548,13 +2615,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const ko = def.health - dmg <= 0;
       def.health = Math.max(0, def.health - dmg);
       def.airHits++; def.gScale = 1 + JUGGLE_G * def.airHits; def.flash = FLASH_STEPS;
-      if (!splat) def.state = 'knockdown';
+      if (!splat) enter(def, 'knockdown');
       def.grounded = false; def.landJoints = null;
       if (splat) {
         // off the wall: a crumple away from it, no second splat (the rig holds the splat its 0.4s,
         // so with the point simulation the push lands when the splat lets go)
         def.splatHit = true; def.splatPending = false; def.juggle = false;
-        def.state = 'knockdown';
+        enter(def, 'knockdown');
         if (def.rag) startRag(def, -def.splatSide * 160, -260, { spin: 200 });   // launch() ends the splat and pushes now
         else { def.vx = -def.splatSide * 140; def.vy = -240; }
       } else if (fd.groundBounce) {
@@ -2600,7 +2667,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const hp = { x: pt.x - dir * 10, y: pt.y };   // burst sits on the striking limb, not the victim
     if (blocking) {
       // the blocker holds ground; the attacker is bounced off (visible ~40px hop back)
-      def.state = 'blockstun'; def.phase = null; def.move = null; def.stun = f60(fd.blockstun); def.blockedAt = sim.stepCount;
+      enter(def, 'blockstun'); def.phase = null; def.move = null; def.stun = f60(fd.blockstun); def.blockedAt = sim.stepCount;
       def.vx = dir * 260;                 // ~20px of give
       att.vx = fd.rush && fd !== FRAME_DATA[move] ? 0 : -dir * (fd.blockPush != null ? fd.blockPush : 520);   // a multi-hit's earlier hits don't bounce him off: the rest still meet the guard; blockPush (THE LAWYER's Cross-Examination) bounces him less, so a throw still reaches
       att.hitstop = def.hitstop = f60(3);   // a short freeze so the block reads
@@ -2649,7 +2716,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     else { att.vx = 0; att.followThrough = false; }   // the seat sets contact spacing; no slide in
     if (ko) koBody(att, def, fd, dir, fd.throw ? 'throw' : 'plain');
     else if (fd.knockdown || !def.grounded) {
-      def.state = 'knockdown'; def.landJoints = null; def.otgHit = false; def.rolled = false; safePlay(def.rig, 'knockdown');
+      enter(def, 'knockdown'); def.landJoints = null; def.otgHit = false; def.rolled = false; safePlay(def.rig, 'knockdown');
       def.juggle = !!fd.juggle;
       def.launchedBy = att.id; def.launchStep = sim.stepCount;
       const towardWell = !sim.floorBroken && (def.floor || 0) === 0 && !onStair(def) && rules().floorBreak && wellsNow().some(sw => sw.toFloor != null &&
@@ -2694,7 +2761,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const stun = fd.hitstun * rules().hitstunFrom(att) * (counter ? COUNTER_STUN : 1) * comboScale(COMBO_STUN, def.combo);
       const wasAttacking = trade || counter;
       const wasCrouching = !!def.wasLow;   // a croucher reels low: the reaction is layered over the crouch
-      def.state = 'hitstun'; def.stun = f60(stun);
+      enter(def, 'hitstun'); def.stun = f60(stun);
       // the procedural layer: hit during his own strike (a trade or a counter), the reaction is
       // added over the strike so it bends instead of snapping to a canned pose; otherwise the
       // keyframed reaction, which the rig blends in from the current pose and velocity
@@ -2760,7 +2827,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   const pfSkipper = (u) => (u.kind === 'human' || u.kind === 'net') && (sim.perfectSkip !== 'winner' || u.id === sim.winner);
   function startPerfect(w, l) {
     sim.perfectT = 0; sim.perfectRel = -1; sim.koSlow = 0; sim.banner = 'PERFECT';
-    w.state = 'perfect'; w.move = null; w.phase = null; w.crouch = false; w.glide = null; w.followThrough = false; w.chase = false;
+    enter(w, 'perfect'); w.move = null; w.phase = null; w.crouch = false; w.glide = null; w.followThrough = false; w.chase = false;
     w.buffer = null; w.bufferKeys = null; w.queued = null; w.running = false; w.vx = 0;
     w.pfStage = 'run'; w.pfLastX = null;
     // the body's on another level (a floor break, the stairs): no run, the throw plays where he stands and
@@ -2851,12 +2918,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   const NO_HIT = { kb: { x: 0, y: 0 } };   // a KO with no hit behind it (the sweep, the flow's test hook)
   function koBody(att, def, fd, dir, how) {
     // the knockdown clip lands sprawled; the ko clip ends as a flat bar
-    def.state = 'ko'; def.koDone = false; def.landJoints = null; safePlay(def.rig, 'knockdown');
+    enter(def, 'ko'); def.koDone = false; def.landJoints = null; safePlay(def.rig, 'knockdown');
     def.splatPending = false; def.wallBounce = false; def.groundBounce = false;
     def.vx = dir * Math.max(fd.kb.x, 380); def.vy = -Math.max(Math.abs(fd.kb.y), 300);
     syncRig(def);
     if (!startRag(def, def.vx * 0.8 - (def.rag ? def.vx * 0 : 0), def.vy * 0.9, { wall: 'stop', spin: 420 })) def.grounded = false;
-    att.vx = dir * (fd.kb.x + 100); att.followThrough = true; att.chase = true;
+    // ride the launch, like any knockdown (applyHit); not for an attacker a trade or the sweep finds in some other state
+    if (att.state === 'attack') { att.vx = dir * (fd.kb.x + 100); att.followThrough = true; att.chase = true; }
     // The FINISH call sits on the hit, where it always has (it's logged between the hit's own entries, and the log is
     // part of the rollback state). It only asks the rules whether this KO ends the round; resolveKOs decides that.
     if ((fd.ender || fd.splat) && rules().endsRound(def)) callout('FINISH', att.id, 'finish');
@@ -2892,8 +2960,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     def.grabbedBy = -1; def.grabTo = null;
     syncRig(def); rigUpd(def, 0.05);
     launchRagdoll(def, dir * Math.max(fd.kb.x, 380), -Math.max(Math.abs(fd.kb.y), 300));
-    att.vx = dir * 60; att.followThrough = false; att.chase = false; att.glide = null;
-    att.launchCancelAt = sim.stepCount + att.hitstop + 8;   // straight on to the next goon
+    att.followThrough = false; att.chase = false; att.glide = null;
+    // straight on to the next goon; a hero the same trade knocked down keeps his own fall
+    if (att.state === 'attack') { att.vx = dir * 60; att.launchCancelAt = sim.stepCount + att.hitstop + 8; }
     sim.horde.count++; sim.card = { text: `${sim.horde.count} DOWN`, t: 0.9 };
     note({ type: 'goonDown', att: att.id, def: def.id, count: sim.horde.count, how });
     onEvent({ type: 'goonDown', count: sim.horde.count, how, attacker: att, defender: def });   // the flow scores this (run.goons)
@@ -3232,8 +3301,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
       if (e.attack && live) {
         // a throw pressed a few steps into a jab/cross/kick startup replaces it (1 then 3 a frame late)
-        if (e.attack === 'throw' && u.state === 'attack' && u.phase === 'startup' && sim.stepCount - u.attackStart <= 4) { u.state = 'idle'; u.move = null; }
-        if (e.feint && u.state === 'attack') { u.state = 'idle'; u.move = null; u.glide = null; u.vx = 0; }   // the feint's follow-up starts now
+        if (e.attack === 'throw' && u.state === 'attack' && u.phase === 'startup' && sim.stepCount - u.attackStart <= 4) { enter(u, 'idle'); u.move = null; }
+        if (e.feint && u.state === 'attack') { enter(u, 'idle'); u.move = null; u.glide = null; u.vx = 0; }   // the feint's follow-up starts now
         // a string press while the previous string press still waits for its window: queue it
         // behind that one instead of replacing it (a fast hand gets the whole string)
         let queued = false;
@@ -3290,6 +3359,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     for (const u of sim.units) syncRig(u);
     hordeStep();
     roundFlow();
+    if (sim.afterTick) sim.afterTick();   // dev and tests only (src/combat/invariants.js, ?invariants); null otherwise
   }
 
   sim.step = (ms) => {
@@ -3301,6 +3371,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   };
   sim.tick = tick;
   sim.eventFilter = null;
+  sim.afterTick = null;   // called after every step when set: the invariant checker (src/main.js ?invariants). Not sim state
   // online rollback: the whole state that feeds the next tick (src/combat/snapshot.js)
   sim.saveState = (into) => saveSim(sim, arena, into);
   sim.loadState = (s) => loadSim(sim, arena, s);

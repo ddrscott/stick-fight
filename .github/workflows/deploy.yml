@@ -1,7 +1,7 @@
 name: Deploy
 
 # A push to main goes to https://neonstickfight.com (and the old address, askscottpierce.com/stick-fight):
-# typecheck, D1 migrations, then the build and the Worker. README: "Hosting".
+# typecheck, the sim's invariants (netsim:invariants), D1 migrations, then the build and the Worker. README: "Hosting".
 #
 # Needs, on the repo:
 #   variable  CLOUDFLARE_ACCOUNT_ID
@@ -37,6 +37,9 @@ jobs:
 
       # Only checks that need no dev server or real content; the rest stay a local run.
       - run: npm run typecheck
+      # The sim's per-step invariants over 648,000 CPU-vs-CPU steps, every character, versus and horde (README, Run).
+      # About 25 s on a laptop; a violation stops the deploy and prints the seed, step, unit and last log entries.
+      - run: npm run netsim:invariants
 
       - name: Say so if the token isn't set
         run: |
