@@ -21,10 +21,12 @@
 //      in D1's fighter_xp; a rank reached puts its unlock in owned; a guest's mastery merges (larger, capped) with its
 //      unlocks; a pose or taunt switches on and off only once unlocked; a mastery-only palette can't be bought or
 //      equipped before its rank
+//  11. PTO (src/career/rules.js PTO): days away, set in D1's pto column, bank double-XP matches; a reported match spends
+//      one and pays its match XP twice, D1 keeps what's left; a guest's PTO merges as the larger bank, never the sum
 // Each run uses fresh emails, so it can run again (AUTH_LIMIT allows 20 sign-in calls a minute per IP: wait a minute
 // between runs). D1 is read with `wrangler d1 execute --local`. Exit code 1 on any failure.
 import { execFileSync } from 'node:child_process';
-import { blankCareer, OFFLINE_CAP, MERGE_MAX, PAY, DAILY, utcDay } from '../../src/career/rules.js';
+import { blankCareer, OFFLINE_CAP, MERGE_MAX, PAY, DAILY, PTO, utcDay } from '../../src/career/rules.js';
 import { payMatch, shiftsFor, advanceShifts, SHIFT_PAY } from '../../src/career/shifts.js';
 import { payWithMastery, NEW_HIRE, MASTERY_MERGE_MAX, unlocksFor, rankFor } from '../../src/career/mastery.js';
 import { masteryPalette, palettesFor } from '../../src/career/palettes.js';
@@ -261,6 +263,26 @@ await sleep(61000);
   check('mastery: ...or put on before its rank', eq.body && eq.body.error === 'not-owned');
   const db = JSON.parse(d1(`SELECT owned FROM accounts WHERE email = '${Mx.email}'`)[0].owned);
   check('mastery: D1 owned holds the poses and taunts by key', db.includes('barista:pose:victory') && db.includes('barista:taunt:taunt'), JSON.stringify(db));
+}
+
+// 11. PTO, on the account that's been signed in since section 2 (no new sign-in: AUTH_LIMIT)
+{
+  const ago = (n) => utcDay(Date.now() - n * 86400000);
+  const pto = () => JSON.parse(d1(`SELECT pto FROM accounts WHERE email = '${A.email}'`)[0].pto);
+  check('pto: a paid match marked the day played in D1', pto().day === today, JSON.stringify(pto()));
+  d1(`UPDATE accounts SET pto = '{"day":"${ago(4)}","bank":0}', offline_day = '${ago(4)}' WHERE email = '${A.email}'`);   // last played 4 days ago (and off the offline cap section 4 reached today)
+  const before = (await call('career', 'GET', null, A.cookie)).body.career;
+  check('pto: the account hands the page its PTO state', before && before.pto && before.pto.day === ago(4), JSON.stringify(before && before.pto));
+  const m = match({ won: true, parries: 1 });
+  const want = payout(m, before, today);
+  const r = await call('career/match', 'POST', { m }, A.cookie);
+  const a = r.body && r.body.award, l = a && a.lines.find((x) => x.id === 'pto');
+  check('pto: 3 days away, the next match pays double XP (PTO ×2), sticks as usual', l && l.label === PTO.label && l.xp === a.match.xp && a.xp === want.xp && a.sticks === want.sticks && a.ptoLeft === 2, JSON.stringify(a && a.lines));
+  check('pto: D1 keeps today and the 2 left', pto().day === today && pto().bank === 2, JSON.stringify(pto()));
+  const g = await call('career/merge', 'POST', { career: { pto: { day: ago(30), bank: 99 } } }, A.cookie);
+  check(`pto: a guest's merges as the larger bank, capped at ${PTO.cap}, the later day`, g.body.career.pto.bank === PTO.cap && g.body.career.pto.day === today, JSON.stringify(g.body.career.pto));
+  const g2 = await call('career/merge', 'POST', { career: { pto: { day: ago(30), bank: 99 } } }, A.cookie);
+  check('pto: merged twice, nothing added', g2.body.career.pto.bank === PTO.cap, JSON.stringify(g2.body.career.pto));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

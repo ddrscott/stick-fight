@@ -85,7 +85,7 @@ export function privacyPage() {
     <ul>
       <li><b>Your email address</b>, so we can send you a 6-digit sign-in code. We don't use it for anything else.</li>
       <li>Your random player id, your nickname, the crews you've been in (up to 20), and the size you picked for the touch controls.</li>
-      <li>Your game progress: your XP and job title, your sticks, the colors you've bought and picked for each fighter, the dates you last got the first-win and first-online-match bonuses (so they come once a day), how far you are on today's three shifts and which one you swapped, and your mastery with each fighter (how much XP you've earned and how many matches you've played with them, and the colors, victory pose and taunt it unlocked). Sticks are only earned by playing. They can't be bought with money.</li>
+      <li>Your game progress: your XP and job title, your sticks, the colors you've bought and picked for each fighter, the dates you last got the first-win and first-online-match bonuses (so they come once a day), how far you are on today's three shifts and which one you swapped, and your mastery with each fighter (how much XP you've earned and how many matches you've played with them, and the colors, victory pose and taunt it unlocked), and the last day you played and how many double-XP matches you have banked for coming back (PTO). Sticks are only earned by playing. They can't be bought with money.</li>
       <li>When you first saved it and when you last signed in.</li>
       <li>While you're signing in: the code, stored scrambled (a hash) so not even we can read it. It expires in 10 minutes.</li>
       <li>One cookie, <code>sf_session</code>, which keeps you signed in for 30 days. Its server copy is scrambled too.</li>
@@ -127,7 +127,7 @@ export function privacyPage() {
     <ul>
       <li>your profile: the random player id, your nickname, and your recent crews;</li>
       <li>your arcade and horde high scores, and the last fighter you picked;</li>
-      <li>your XP, job title and sticks, the colors you've bought and picked, the dates of your last daily bonuses, today's shift progress, and your mastery with each fighter (if you save your profile, the server keeps the same numbers);</li>
+      <li>your XP, job title and sticks, the colors you've bought and picked, the dates of your last daily bonuses, today's shift progress, your mastery with each fighter, and your PTO (the last day you played and the double-XP matches banked) (if you save your profile, the server keeps the same numbers);</li>
       <li>your settings: sound, music, round time, rounds per match, botches on or off, touch-control size, the graphics setting (and the graphics level the game settled on, so the next visit starts there), and whether spectators may watch your rooms;</li>
       <li>the happy accidents you've found, your record against each online rival (by a random id), and whether you've seen the "add to home screen" tip;</li>
       <li>your answer to the age question, if you said under 13;</li>

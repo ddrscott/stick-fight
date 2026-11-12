@@ -21,6 +21,8 @@
 //   todayShifts()          the day's three shifts with this player's progress (src/career/shifts.js):
 //                          { day, swapUsed, list: [{ ...shift, slot, prog, done }] }
 //   swapToday(slot)        swap one unfinished shift, once a day: { ok } | { error: 'used' | 'done' | 'unreachable' ... }
+//   pto()                  { bank, back }: the double-XP matches banked for coming back (rules.js PTO), and whether
+//                          this player is back after time away (hasn't played today)
 //   mastery(fighter)       fighter mastery (src/career/mastery.js): { xp, n, rank, into, span, next, newHire }
 //   kit(fighter)           { pose, taunt }: whether the fighter plays its unlocked victory pose and taunt
 //   setKit(fighter, kind, on)   switch an unlocked pose or taunt on or off (the closet)
@@ -28,7 +30,7 @@
 //                          pose and taunt (src/main.js lookFor reads it; online it rides where the palette always did)
 //
 // Every storage call is wrapped: blocked storage just means the career lives for this page.
-import { blankCareer, titleFor, utcDay, NUDGE, PAID_MODES, ONLINE_MODES } from './rules.js';
+import { blankCareer, titleFor, utcDay, NUDGE, PAID_MODES, ONLINE_MODES, cleanPto, ptoFor } from './rules.js';
 import { shiftsFor, cleanShifts, swapShift } from './shifts.js';
 import { payWithMastery, applyWithMastery, cleanMastery, masteryOf, rankFor, NEW_HIRE, kitOn, kitKey, kitItemKey } from './mastery.js';
 import { palette, itemKey } from './palettes.js';
@@ -53,6 +55,7 @@ function read() {
   c.equip = c.equip && typeof c.equip === 'object' && !Array.isArray(c.equip) ? c.equip : {};
   c.shifts = cleanShifts(c.shifts);
   c.mastery = cleanMastery(c.mastery);
+  c.pto = cleanPto(c.pto);
   return { career: c, email: typeof s.email === 'string' ? s.email : '', nudge: s.nudge && typeof s.nudge === 'object' ? s.nudge : { xp: -1, title: -1 } };
 }
 function write(s) {
@@ -205,6 +208,9 @@ export function equip(fighter, id) {
   changed();
   return true;
 }
+
+/** PTO: the double-XP matches banked as of today, and whether this is a return (README, Progression, PTO) */
+export function pto() { return ptoFor(read().career, utcDay()); }
 
 /** fighter mastery for one fighter: the XP, the matches, the rank and the bar to the next, and whether NEW HIRE still pays */
 export function mastery(fighter) {
