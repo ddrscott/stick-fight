@@ -137,6 +137,7 @@ export function createOnline(game) {
   const myTitle = () => { try { return typeof game.title === 'function' ? String(game.title() || '').slice(0, 12) : ''; } catch { return ''; } };
   // a look: the palette id, then fighter mastery's '+p' / '+t' / '+pt' (pose, taunt; src/career/store.js look)
   const cleanPal = (v) => (typeof v === 'string' && /^[A-Za-z0-9]{0,32}(\+p?t?)?$/.test(v) ? v : '');
+  let lastStart = /** @type {any} */ (null);   // the host's last start message, sent again if the guest's socket dropped around it
   let matchSeed = 0;   // this match's seed: with the match number it names the match in the result both pages report
   const now = () => performance.now();
   // spectators (watchfeed.js): the host tells the room about each match and, while anyone watches, its confirmed
@@ -193,11 +194,33 @@ export function createOnline(game) {
       } else onSession(msg);
     });
     l.on('packet', (buf) => { heardAt = now(); if (lockstep) lockstep.onPacket(buf); else if (drain) drain.onPacket(buf); });
+    // a room socket (ours or theirs) dropped and came back (link.js): what the dead socket may have swallowed goes again
+    l.on('rejoined', ({ who, ms }) => {
+      track('online_rejoin', [who, crewMode ? 'crew' : 'quick', l.mode, lockstep ? 'match' : state], ms);
+      resend();
+    });
     l.on('closed', (reason, code) => {
       if (lockstep || between()) finish(reason === 'closed' ? 'peer-left' : 'lost', `ws:${reason}:${code || 0}`);
       else if (state !== 'idle') setState('error', reason);
       link = null;
     });
+  }
+
+  /** after a dropped socket came back: the messages that matter if lost. Duplicates are harmless (a start
+   *  already played, a pick or post as it stands, the end of a match by its frame and hash) */
+  function resend() {
+    if (!link) return;
+    heardAt = now();
+    endSent = '';   // checkEnd says it again
+    if (lockstep) { if (role === 'host' && lastStart && lastStart.n === n) link.sendControl(lastStart); return; }
+    if (!between()) return;
+    if (role === 'host') {
+      if (state === 'select') link.sendControl({ t: 'go', n });
+      if (state === 'post' && last) link.sendControl({ t: 'result', n, tally, hash: last.hash, f: last.frame });
+      sendCd();
+    }
+    if (state === 'post') sendPost(); else sendPick();
+    changed();
   }
 
   function maybeStart() {
@@ -208,7 +231,7 @@ export function createOnline(game) {
     const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;   // the host's rules for both
     const rules = hostRules();
     const pals = [myPal(localChar), remotePal];
-    link.sendControl({ t: 'start', seed, chars, pals, botch, rules, n: 1, tally });
+    link.sendControl(lastStart = { t: 'start', seed, chars, pals, botch, rules, n: 1, tally });
     begin(seed, chars, botch, 1, rules, pals);
   }
 
@@ -375,7 +398,7 @@ export function createOnline(game) {
     const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;
     const m = n + 1, rules = hostRules();
     const pals = [myPal(localChar), remotePal];
-    link.sendControl({ t: 'start', seed, chars, pals, botch, rules, n: m, tally });
+    link.sendControl(lastStart = { t: 'start', seed, chars, pals, botch, rules, n: m, tally });
     begin(seed, chars, botch, m, rules, pals);
   }
   function startTimer() {
@@ -613,7 +636,7 @@ function createReadout(net, stage) {
     render() {
       const s = net.stats();
       if (!mode || !ping) return;
-      mode.textContent = s.mode === 'p2p' ? 'P2P' : s.mode === 'relay' ? 'RELAY' : '...';
+      mode.textContent = net.link && net.link.reconnecting ? 'RECONNECTING' : s.mode === 'p2p' ? 'P2P' : s.mode === 'relay' ? 'RELAY' : '...';
       el.classList.toggle('nf-relay', s.mode === 'relay');
       // the round trip, how many frames the last correction re-ran, and the input delay
       ping.textContent = `${Math.round(s.rtt || 0)} MS · RB ${s.lastDepth || 0} · DELAY ${s.delay || 0}`;

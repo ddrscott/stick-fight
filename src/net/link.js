@@ -7,20 +7,31 @@
 // if no path opens within RTC_TIMEOUT_MS the room's WebSocket relay takes over as before.
 // ?ice=relay in the page URL allows TURN candidates only (a test switch for the TURN path).
 //
+// A dropped room socket isn't the end: once the room has welcomed this page, a socket that dies without
+// the room closing it (close code 1006 and the like: the network lost it, which happens mid-match on home
+// connections) is reopened for up to RECONNECT_MS with the same seat token, and the room hands the seat back
+// (worker/index.ts). Meanwhile the DataChannel stays up, so a p2p match doesn't even notice; control messages
+// wait in an outbox and go out once the socket is back; and both sides get 'rejoined', so the session can
+// resend what the dead socket may have swallowed. Only when that fails does 'closed' fire.
+//
 //   const link = createLink({ code, role, forceRelay })
-//   link.on('status' | 'peer' | 'control' | 'packet' | 'closed' | 'watching', fn)
+//   link.on('status' | 'peer' | 'control' | 'packet' | 'closed' | 'watching' | 'rejoined', fn)
+//                           'rejoined' ({ who: 'self' | 'rival', ms }): a dropped room socket came back
 //   link.sendControl(obj)   reliable JSON through the room
 //   link.sendPacket(buf)    the DataChannel when it's open, else the room
 //   link.sendRoom(data)     to the room itself, not the other player: the host's spectator feed
 //                           (src/net/watchfeed.js); 'watching' comes back with who's watching
 //   link.mode               'connecting' | 'p2p' | 'relay'
 //   link.candidate          once p2p: the local ICE candidate type in use, 'host' | 'srflx' | 'relay'
+//   link.reconnecting       the room socket dropped and is being reopened
 //   link.close()
 
 import { rootUrl } from '../root.js';
 
 const ICE_SERVERS = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 export const RTC_TIMEOUT_MS = 5000;
+export const RECONNECT_MS = 10000;   // how long a dropped room socket keeps trying to come back
+const OUTBOX_MAX = 256;              // control messages held while it's down
 const ICE_FETCH_MS = 2500;
 
 /** The ICE servers to use: the Worker's (with TURN when it has a key), else public STUN. */
@@ -63,8 +74,11 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   const emit = (ev, ...a) => { for (const f of handlers[ev] || []) f(...a); };
   const url = apiUrl(`rooms/${encodeURIComponent(code)}/ws`, true);
   url.searchParams.set('role', role);
-  const ws = new WebSocket(url);
-  ws.binaryType = 'arraybuffer';
+  // this page's seat in the room: a reconnect with the same token takes the seat back (worker/index.ts)
+  url.searchParams.set('seat', Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) => b.toString(36).padStart(2, '0')).join(''));
+  /** @type {WebSocket} */ let ws;
+  let welcomed = false, downSince = 0, dropCode = 0, tries = 0, retryTimer = 0;
+  /** @type {string[]} */ let outbox = [];
   /** @type {RTCPeerConnection | null} */ let pc = null;
   /** @type {RTCDataChannel | null} */ let dc = null;
   let peerPresent = false, closed = false, rtcTimer = 0, rtcGaveUp = forceRelay;
@@ -82,8 +96,12 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     /** set once the transport is settled (p2p open, or the relay chosen) */
     ready: false,
     error: '',
+    reconnecting: false,
     on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); return link; },
-    sendControl(obj) { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); },
+    sendControl(obj) {
+      if (ws.readyState === WebSocket.OPEN && !downSince) ws.send(JSON.stringify(obj));
+      else if (downSince && outbox.length < OUTBOX_MAX) outbox.push(JSON.stringify(obj));
+    },
     /** @param {ArrayBuffer} buf */
     sendPacket(buf) {
       if (dc && dc.readyState === 'open') { try { dc.send(buf); return; } catch { /* fall through to the relay */ } }
@@ -95,11 +113,15 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     close() {
       if (closed) return;
       closed = true;
-      try { link.sendControl({ t: 'bye' }); } catch { /* gone */ }
+      clearTimeout(retryTimer);
+      try { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'bye' })); } catch { /* gone */ }
       teardownRtc();
       try { ws.close(1000, 'bye'); } catch { /* gone */ }
     },
     get peerPresent() { return peerPresent; },
+    /** tests: lose the room socket the way a network does. The page sees a 1006; the room is told nothing
+     *  (the socket is left open and ignored, as a half-dead connection would be) */
+    dropForTest() { if (!closed && ws) { const s = ws; s.onmessage = s.onclose = s.onerror = null; ws = /** @type {any} */ ({ readyState: 3, send() {}, close() {} }); onClose({ code: 1006 }); setTimeout(() => { try { s.close(); } catch { /* */ } }, 60000); } },
   };
 
   function setMode(m) {
@@ -181,15 +203,66 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     } catch (e) { console.warn('[net] rtc failed', e); giveUpRtc(); }
   }
 
-  ws.onmessage = (e) => {
+  function connect() {
+    const s = new WebSocket(url);
+    s.binaryType = 'arraybuffer';
+    ws = s;
+    s.onmessage = (e) => { if (s === ws) onMessage(e); };
+    s.onclose = (e) => { if (s === ws) onClose(e); };
+    // before the first welcome a failed socket means the room can't be reached; after it, reconnecting handles it
+    s.onerror = () => { if (s === ws && !welcomed && !link.error) link.error = 'unreachable'; };
+  }
+  /** the end of the link: the socket is gone for good */
+  function finalClose(reason, code) {
+    if (closed) return;
+    closed = true;
+    clearTimeout(retryTimer);
+    link.reconnecting = false; downSince = 0; outbox = [];
+    teardownRtc();
+    emit('closed', reason, code);
+  }
+  /** the room socket dropped (or a try to reopen it failed): try again soon, until RECONNECT_MS is up */
+  function reconnect(code) {
+    if (!downSince) {
+      downSince = performance.now(); dropCode = code; tries = 0;
+      link.reconnecting = true;
+      console.warn(`[net] room socket dropped (${code}); reconnecting`);
+      emit('status', link);
+    }
+    if (performance.now() - downSince > RECONNECT_MS) { finalClose('lost', dropCode); return; }
+    clearTimeout(retryTimer);
+    retryTimer = window.setTimeout(() => { if (!closed) connect(); }, Math.min(2000, 150 * 2 ** tries++));
+  }
+  function onClose(e) {
+    if (closed) return;
+    // the room's own refusals and closes (4000 refused, 4001 replaced, 4008 flood) are final; so is a link
+    // the room never welcomed. Anything else after a welcome is the network: reopen it
+    if (welcomed && !link.error && !(e.code >= 4000 && e.code < 5000)) { reconnect(e.code); return; }
+    finalClose(link.error || (e.code === 1000 ? 'closed' : 'lost'), downSince ? dropCode : e.code);
+  }
+
+  function onMessage(e) {
     if (e.data instanceof ArrayBuffer) { emit('packet', e.data); return; }
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.t === 'sys') {
-      if (msg.ev === 'error') { link.error = msg.reason; emit('closed', msg.reason); return; }
+      if (msg.ev === 'error') { link.error = msg.reason; finalClose(msg.reason); return; }
       if (msg.ev === 'watching') { emit('watching', msg); return; }   // spectators: how many, and what the room needs
       if (msg.ev === 'career') { emit('career', msg); return; }   // the room's award for this player's online match (worker/career.ts)
-      if (msg.ev === 'welcome') emit('open');   // the room is there: the host's spectator switch goes out first
+      if (msg.ev === 'welcome') {
+        welcomed = true;
+        if (downSince) {   // back: what waited goes out, and the session hears it
+          const ms = Math.round(performance.now() - downSince);
+          downSince = 0; link.reconnecting = false; tries = 0;
+          const held = outbox; outbox = [];
+          for (const m of held) ws.send(m);
+          console.info(`[net] room socket back after ${ms} ms`);
+          emit('status', link);
+          if (peerPresent && msg.peer) emit('rejoined', { who: 'self', ms });
+        }
+        emit('open');   // the room is there: the host's spectator switch goes out first
+      }
+      if (msg.ev === 'peer' && msg.back && msg.present && peerPresent) { emit('rejoined', { who: 'rival', ms: 0 }); return; }   // the other player's socket came back
       if (msg.ev === 'welcome' || msg.ev === 'peer') {
         const present = msg.ev === 'welcome' ? !!msg.peer : !!msg.present;
         if (present === peerPresent) return;
@@ -212,11 +285,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     if (msg.t === 'relay') { giveUpRtc(); return; }   // the other side can't or won't do WebRTC
     if (msg.t === 'bye') { peerPresent = false; emit('peer', false); return; }
     emit('control', msg);
-  };
-  ws.onclose = (e) => {
-    teardownRtc();
-    if (!closed) { closed = true; emit('closed', link.error || (e.code === 1000 ? 'closed' : 'lost'), e.code); }
-  };
-  ws.onerror = () => { if (!link.error) link.error = 'unreachable'; };
+  }
+  connect();
   return link;
 }

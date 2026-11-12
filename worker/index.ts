@@ -385,6 +385,9 @@ async function app(req: Request, env: Env, ctx: ExecutionContext): Promise<Respo
 }
 
 type Role = "host" | "guest";
+/** what a player's socket carries (it outlives hibernation): its seat token (src/net/link.js), who's signed in, and
+ *  whether a newer socket took its seat */
+type Att = { seat?: string; email?: string; replaced?: boolean };
 const other = (r: Role): Role => (r === "host" ? "guest" : "host");
 
 /** The matches anyone may watch right now (api/live). One object, named "live". Rooms put their match in
@@ -577,9 +580,14 @@ export class Room extends DurableObject<Env> {
     const live = (await this.expires()) > Date.now() || this.players().length > 0;
     const mine = this.ctx.getWebSockets(role);
     const peer = this.ctx.getWebSockets(other(role));
+    // the seat token (src/net/link.js): a page whose socket dropped comes back with the same one and takes its own
+    // seat again, even mid-match. A dropped socket often isn't closed here for many minutes (the network lost it,
+    // nobody said goodbye), so the room would otherwise call the seat taken.
+    const seat = (url.searchParams.get("seat") || "").slice(0, 32);
+    const back = !!seat && mine.some((w) => (w.deserializeAttachment() as Att | null)?.seat === seat);
     // a second host is the same player in a new tab, and takes the seat, but only while the room is
     // waiting: once both seats are taken the code may be public (the LIVE list), and nobody takes one
-    const reason = !live ? "no-room" : mine.length && (role === "guest" || peer.length) ? "full" : "";
+    const reason = !live ? "no-room" : !back && mine.length && (role === "guest" || peer.length) ? "full" : "";
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     // refused sockets are accepted too, so the page can read why (a failed handshake has no
@@ -590,12 +598,20 @@ export class Room extends DurableObject<Env> {
       server.close(4000, reason);
       return new Response(null, { status: 101, webSocket: client });
     }
-    for (const w of mine) w.close(4001, "replaced");   // the host reconnecting from a new tab
+    // the host reconnecting from a new tab, or either player back on a fresh socket: the old one goes, marked so
+    // its close doesn't tell the other player anyone left
+    for (const w of mine) {
+      try { w.serializeAttachment({ ...((w.deserializeAttachment() as Att | null) || {}), replaced: true }); } catch { /* gone */ }
+      try { w.close(4001, "replaced"); } catch { /* gone */ }
+    }
     // who's playing, when signed in (the session cookie came with the upgrade): the room awards their career
     // from an agreed result (worker/career.ts awardOnline). Kept on the socket, so it outlives hibernation.
-    try { const email = await currentEmail(req, this.env); if (email) server.serializeAttachment({ email }); } catch { /* no award, the match still plays */ }
+    const att: Att = { seat };
+    try { const email = await currentEmail(req, this.env); if (email) att.email = email; } catch { /* no award, the match still plays */ }
+    server.serializeAttachment(att);
     server.send(JSON.stringify({ t: "sys", ev: "welcome", role, peer: peer.length > 0 }));
-    for (const w of peer) w.send(JSON.stringify({ t: "sys", ev: "peer", present: true }));
+    // back: the same player on a new socket. The other page keeps its match and resends what may have been lost
+    for (const w of peer) w.send(JSON.stringify({ t: "sys", ev: "peer", present: true, ...(back ? { back: true } : {}) }));
     const fl = await this.getFlags();
     if (!fl.code) { const c = url.pathname.split("/").at(-2) || ""; if (CODE_RE.test(c)) { fl.code = c; await this.ctx.storage.put("code", c); } }   // a room claimed by an older build
     const n = this.spectators().length;
@@ -692,7 +708,8 @@ export class Room extends DurableObject<Env> {
   private async award(mode: "quick" | "crew", wins: [number, number], tech: [unknown, unknown], chars: [string, string]) {
     for (const side of [0, 1] as const) {
       for (const ws of this.ctx.getWebSockets(side === 0 ? "host" : "guest")) {
-        const att = ws.deserializeAttachment() as { email?: string } | null;
+        const att = ws.deserializeAttachment() as Att | null;
+        if (att?.replaced) continue;
         if (!att || !att.email) continue;
         const r = await awardOnline(this.env, att.email, mode, side, wins, tech[side], chars[side]);   // chars: each side's fighter, for the shifts
         if (r) { try { ws.send(JSON.stringify({ t: "sys", ev: "career", ...r })); } catch { /* gone: the page asks api/career next time */ } }
@@ -715,6 +732,7 @@ export class Room extends DurableObject<Env> {
   }
 
   private async left(ws: WebSocket) {
+    if ((ws.deserializeAttachment() as Att | null)?.replaced) return;   // its player is already back on a new socket
     const role = this.ctx.getTags(ws)[0];
     if (role === "spectator") { await this.getFlags(); this.desk.count(ws); return; }
     if (role !== "host" && role !== "guest") return;
