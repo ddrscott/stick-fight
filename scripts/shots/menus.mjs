@@ -303,7 +303,15 @@ for (const size of SIZES) {
       await until(() => page.evaluate(() => document.querySelectorAll('.fl-standings .fl-sname').length > 5));
       await withDecoder();
       await shot('crewLobby');
-      await readQR('crewLobby');
+      if (size.upright) {
+        // upright the link and its QR code wait behind INVITE (README, Crew rooms, The lobby held upright)
+        await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')); it && it.act(); });
+        await shot('crewLobby-invite');
+        await readQR('crewLobby-invite');
+        await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')); it && it.act(); });
+        await page.evaluate(() => window.__flow.debug.ui.setFocus(0));   // (DONE leaves the focus on INVITE; PLAY is next)
+        await sleep(200);
+      } else await readQR('crewLobby');
       await page.evaluate(() => window.__flow.debug.ui.activate());   // PLAY: waiting for a rival
       await shot('crewLobby-ready');
       // a member presses PLAY too: the crew pairs us, and the rival never connects, so the linking screen stays up

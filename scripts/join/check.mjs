@@ -121,13 +121,43 @@ try {
     check(`${label}: the crew sees them in the standings`, inList);
     const says = await until(() => C.evaluate((n) => document.body.innerText.includes(`YOU'RE ${n}`), p.name), 5000);
     check(`${label}: the lobby says what they're called`, says);
-    const fits = await C.evaluate(() => { const s = document.querySelector('.fl-crew .fl-label'), st = document.querySelector('.fl-crew').getBoundingClientRect(), r = s.getBoundingClientRect(); return r.left >= st.left - 1 && r.right <= st.right + 1 && s.scrollWidth <= s.clientWidth + 1; });
+    const fits = await C.evaluate(() => { const s = [...document.querySelectorAll('.fl-crew .fl-label, .fl-crew .fl-crewme')].find((n) => n.getBoundingClientRect().width), st = document.querySelector('.fl-crew').getBoundingClientRect(), r = s.getBoundingClientRect(); return r.left >= st.left - 1 && r.right <= st.right + 1 && s.scrollWidth <= s.clientWidth + 1; });
     check(`${label}: that line fits the stage`, fits);
     check(`${label}: crew page has no errors`, !C.errors.length, C.errors.join(' | ').slice(0, 200));
     check(`${label}: nothing in the crew link's network log failed (no 404s)`, !C.missing.length, C.missing.slice(0, 3).join(' | '));
     await sleep(500); await shot(C, `crew-${label}`);
+    if (label === 'upright') {
+      // held upright: who's here and PLAY, your name with a way to change it, the link behind INVITE, one way out
+      const up = await C.evaluate(() => {
+        const vis = (n) => !!n && n.getBoundingClientRect().width > 0;
+        const btns = [...document.querySelectorAll('#flow .fl-crew .fl-btn')].filter(vis).map((b) => b.textContent.trim());
+        const list = document.querySelector('#flow .fl-standings').getBoundingClientRect().height;
+        return { btns, list, h: innerHeight, qr: vis(document.querySelector('#flow .fl-qrtile')), link: vis(document.querySelector('#flow .fl-crew .fl-link')), me: (document.querySelector('#flow .fl-crewme') || {}).textContent || '' };
+      });
+      check('upright: no QR code or link until INVITE', !up.qr && !up.link, JSON.stringify(up));
+      check('upright: the only way out is MAIN MENU', up.btns.includes('MAIN MENU') && !up.btns.includes('ONLINE MENU'), up.btns.join(', '));
+      check('upright: the crew list gets at least half the screen', up.list >= up.h / 2, `${Math.round(up.list)} of ${up.h} px`);
+      check('upright: a handed-out name says SET YOUR NAME', /SET YOUR NAME/.test(up.me), up.me);
+      await C.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')).act());
+      await sleep(300);
+      const inv = await C.evaluate(() => [...document.querySelectorAll('#flow .fl-crew .fl-btn')].filter((n) => n.getBoundingClientRect().width).map((b) => b.textContent.trim()));
+      check('upright: INVITE shows COPY LINK and DONE', inv.includes('COPY LINK') && inv.includes('DONE'), inv.join(', '));
+      await shot(C, 'crew-upright-invite');
+    }
     const qr = await until(() => qrText(C), 20000, 500);
     check(`${label}: the lobby's QR code carries the clean link`, qr === CLEAN, String(qr));
+    if (label === 'upright') {
+      // SET YOUR NAME: the name screen, then straight back to this crew's lobby under the new name
+      await C.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-crewme')).act());
+      check('upright: SET YOUR NAME opens the name screen', (await flow(C)) === 'nameEntry', await flow(C));
+      for (let i = 0; i < 12; i++) await C.keyboard.press('Backspace');
+      await C.keyboard.type('UPRIGHT'); await C.keyboard.press('Enter');
+      const back = await until(() => C.evaluate(() => window.__flow.state === 'crewLobby' && /YOU'RE UPRIGHT/.test((document.querySelector('#flow .fl-crewme') || {}).textContent || '')), 5000);
+      check('upright: OK goes back to the lobby, saying the new name', back, await flow(C));
+      check('upright: the address bar is crew/<slug> again', (await where(C)) === `${ROOT}crew/${crew.slug}`, await where(C));
+      const seen = await until(() => A.evaluate(() => document.body.innerText.includes('UPRIGHT')), 15000);
+      check('upright: the crew sees the new name', seen);
+    }
     if (label === 'desktop') {
       // picking a real name clears the mark, and the crew sees the new one
       await C.evaluate(() => { const f = window.__flow.debug; f.go('onlineMenu'); f.go('profile'); });

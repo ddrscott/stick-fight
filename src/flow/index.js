@@ -101,7 +101,7 @@ const TRANSITIONS = {
   signInCode: ['profile', 'signInEmail', 'modeSelect', 'nameEntry', 'onlineMenu', 'onlineJoin', 'crewLobby'],
   crewCreate: ['crewLobby', 'onlineMenu', 'modeSelect'],
   crewJoin: ['crewLobby', 'onlineMenu', 'modeSelect'],
-  crewLobby: ['crewLinking', 'onlineMenu', 'modeSelect'],
+  crewLobby: ['crewLinking', 'onlineMenu', 'modeSelect', 'nameEntry'],
   crewLinking: ['onlineSelect', 'onlineFighting', 'crewLobby', 'onlineEnd', 'modeSelect'],
 };
 // the screens that take typing (src/flow/index.js textScreen): letters type, Backspace deletes, Enter submits
@@ -311,7 +311,7 @@ export function createFlow(ctx) {
       case 'signInCode': ensureDemo(); return screenSignInCode();
       case 'crewCreate': ensureDemo(); return screenCrewCreate();
       case 'crewJoin': ensureDemo(); return screenCrewJoin();
-      case 'crewLobby': mode = null; ensureDemo(); crewEnter(); return screenCrewLobby();
+      case 'crewLobby': mode = null; ensureDemo(); crewEnter(); crewSharing = false; return screenCrewLobby();
       case 'crewLinking': ensureDemo(); return screenCrewLinking();
       case 'watchList': mode = null; ensureDemo(); return screenWatchList();
       case 'watching': mode = 'watch'; if (!watchOn()) ensureDemo(); return screenWatching();
@@ -1960,23 +1960,56 @@ export function createFlow(ctx) {
       const items = [play, copy];
       const btns = el('div', 'fl-list fl-crewbtns');
       btns.append(status, play.el);
-      const pair = el('div', 'fl-row fl-crewpair'); pair.appendChild(copy.el);
+      const pair = el('div', 'fl-row fl-crewpair fl-crewshare'); pair.appendChild(copy.el);
       if (typeof navigator.share === 'function') {
         const share = button('SHARE', () => { navigator.share({ title: 'Neon Stick Fight', text: `Our crew room: ${title.textContent}`, url: link }).catch(() => {}); }, 'fl-mini');
         pair.appendChild(share.el); items.push(share);
       }
-      const leave = button('ONLINE MENU', () => go('onlineMenu'), 'fl-violet fl-mini');
+      const leave = button('ONLINE MENU', () => go('onlineMenu'), 'fl-violet fl-mini fl-sideonly');
       const main = button('MAIN MENU', () => go('modeSelect'), 'fl-violet fl-mini');
-      const pair2 = el('div', 'fl-row fl-crewpair'); pair2.append(leave.el, main.el);
+      // Held upright (README, Crew rooms, The lobby held upright) the lobby is for whoever just opened the link:
+      // who's here and PLAY. The link and its QR code wait behind INVITE, so sharing is something you choose to do,
+      // and the only way out is MAIN MENU (the online menu is one step from there).
+      const invite = button('', () => crewShare(!crewSharing), 'fl-mini fl-uponly fl-invite');
+      invite.el.append(shareIcon(), el('span', 'fl-invlabel', 'INVITE'));
+      const pair2 = el('div', 'fl-row fl-crewpair'); pair2.append(invite.el, leave.el, main.el);
       btns.append(pair, pair2);
-      items.push(leave, main, ...tabBtns);
+      // your name, and the way to change it, where a first-timer can see it (a name handed out by the link is marked auto)
+      const you = button('', () => askName(() => go('crewLobby'), () => go('crewLobby')), 'fl-mini fl-uponly fl-crewme');
+      you.el.append(el('span', 'fl-mename', `YOU'RE ${me.name || '???'}`), el('b', 'fl-meedit', me.auto ? 'SET YOUR NAME' : 'EDIT'));
+      root.insertBefore(you.el, linkEl);
+      items.splice(1, 0, you);
+      items.push(invite, leave, main, ...tabBtns);
       right.appendChild(btns);
       body.append(left, right, qrBox(link).el);   // the crew's link again, for a camera
       root.appendChild(body);
-      lob = { title, table, tabs, recent, status, play, noteUntil: crewNote ? performance.now() + 5000 : 0 };
-      return { items, focus: 0, back: () => go('onlineMenu'), legend: [MOVE, SELECT, ['back', 'ONLINE MENU']] };
+      lob = { root, title, table, tabs, recent, status, play, invite, noteUntil: crewNote ? performance.now() + 5000 : 0 };
+      root.classList.toggle('fl-sharing', crewSharing);
+      return { items, focus: 0, back: () => { if (crewSharing && root.classList.contains('fl-up')) crewShare(false); else go('modeSelect'); }, legend: [MOVE, SELECT, ['back', 'MAIN MENU']] };
     });
+    crewShare(crewSharing);
     paintLobby();
+  }
+  /** upright: INVITE swaps the crew list for the link, its QR code, COPY LINK and SHARE; DONE swaps it back */
+  let crewSharing = false;
+  function crewShare(on) {
+    crewSharing = on;
+    if (!lob) return;
+    lob.root.classList.toggle('fl-sharing', on);
+    const label = lob.invite.el.querySelector('.fl-invlabel');
+    if (label) label.textContent = on ? 'DONE' : 'INVITE';
+    ui.refresh();
+  }
+  /** the share mark (a box with an arrow out of it), drawn in the button's color */
+  function shareIcon() {
+    const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'fl-icon');
+    for (const d of ['M12 15V3', 'M7 8l5-5 5 5', 'M5 12v8h14v-8']) {
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d); path.setAttribute('fill', 'none'); path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '2.4'); path.setAttribute('stroke-linecap', 'square');
+      svg.appendChild(path);
+    }
+    return svg;
   }
   const ON = { lobby: ['HERE', 'fl-on-here'], ready: ['READY', 'fl-on-ready'], match: ['PLAYING', 'fl-on-match'] };
   function paintLobby() {
