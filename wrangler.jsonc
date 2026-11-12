@@ -56,9 +56,16 @@
     { "binding": "DB", "database_name": "stick-fight-auth", "database_id": "8a0ea2d9-9d74-466f-a6ff-5a0446d35653", "migrations_dir": "migrations" }
   ],
   // Sign-in codes go out from hey@neonstickfight.com (Email Sending on the zone since 2026-11-12; replies land in webmail.neonstickfight.com)
+  // and the support desk's auto-replies from SUPPORT_FROM (worker/support.ts)
   "send_email": [{ "name": "EMAIL" }],
+  // The support desk (README, Privacy and terms, Support desk). Email Routing sends support@neonstickfight.com
+  // to this Worker's email() handler. AI: the content check and the scrubbed summary (the model is MODEL in
+  // worker/support.ts). WEBMAIL: every support message goes on to Scott's private inbox (the webmail
+  // Worker's Inbound entrypoint). The GitHub token is the secret GITHUB_TOKEN.
+  "ai": { "binding": "AI" },
+  "services": [{ "binding": "WEBMAIL", "service": "webmail", "entrypoint": "Inbound" }],
   // OLD_PATH: "serve" | "redirect", what askscottpierce.com/stick-fight does (see the top of this file)
-  "vars": { "EMAIL_FROM": "hey@neonstickfight.com", "OLD_PATH": "serve" },
+  "vars": { "EMAIL_FROM": "hey@neonstickfight.com", "SUPPORT_FROM": "support@neonstickfight.com", "OLD_PATH": "serve" },
   // Abuse limits per client IP (worker/index.ts clientKey), counted per Cloudflare location.
   // Free on every plan; the period can only be 10 or 60 seconds. namespace_id must be unique on
   // the account (other projects use 1001-1003).

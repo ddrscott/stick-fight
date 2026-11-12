@@ -92,6 +92,15 @@ export function privacyPage() {
       <li>To stop people guessing codes, we count sign-in tries per email and per internet address. Those counters are cleared out after about a day.</li>
     </ul>
 
+    <h3 class="s-h3">Emails to support</h3>
+    <p>If you write to <b>support@neonstickfight.com</b>, your whole email stays private in our own mailbox, where only Scott reads it.</p>
+    <ul>
+      <li>If you have a saved profile and write from that email address, we open a ticket on the game's public to-do list on GitHub. The ticket holds only a <b>short summary written by a computer</b> (Cloudflare's AI) that leaves out your name, your email, your school, your age, where you live and anything else about you. If the computer isn't sure it got everything out, nothing goes on GitHub and a person reads it instead.</li>
+      <li>Pictures and files you attach stay in the private mailbox. They never go on GitHub.</li>
+      <li>We keep a note of which ticket is yours (the ticket number and your random player id, not your email), so your replies land on the same ticket. Deleting your profile deletes that note. The summaries on GitHub stay, because nothing in them is about you.</li>
+      <li>Please don't put your real name or other personal details in an email to us. We don't need them to help.</li>
+    </ul>
+
     <h3 class="s-h3">Crews</h3>
     <p>A crew is a room with a link you share with friends. The crew keeps its name and, for each member: their nickname, a scrambled member id (not their player id), when they first and last showed up, wins, losses, draws, rounds, favorite fighter and last pick, how they've done against each other member, and the last 300 matches (who played who, with which fighters, and the score). Everyone who has the link and opens it can see all of that.</p>
     <p><b>Crew high scores.</b> Each crew has its own arcade and horde tables, the top 10 of each. A finished run is sent to the crews on your device's recent list, and a crew keeps it only if you're a member. A row shows the three initials you entered, your job title then (like INTERN), the score, the fighter, how far the run got and the date. The server remembers which member sent each row, so it can limit how often you post and mark your own rows in your lobby, but the table never shows other people who sent it.</p>
@@ -127,8 +136,9 @@ export function privacyPage() {
     </ul>`),
 
       q('others', 'Who else is involved?', `    <ul>
-      <li><b>Cloudflare</b> runs our servers, stores the profiles and crews, sends the sign-in emails, keeps the game counts and runs the relay for online matches.</li>
+      <li><b>Cloudflare</b> runs our servers, stores the profiles and crews, sends the sign-in emails, writes the summaries of support emails (Workers AI), keeps the game counts and runs the relay for online matches.</li>
       <li><b>Plausible</b> counts page views, as above.</li>
+      <li><b>GitHub</b> hosts the game's public to-do list, where support tickets go as summaries with nothing about you in them.</li>
       <li>If Cloudflare's relay can't be reached, the game asks a public Cloudflare or Google server to help two devices find each other. That server sees your internet address for a moment.</li>
       <li>The fonts and everything else the pages need come from our own site.</li>
     </ul>
@@ -143,6 +153,7 @@ export function privacyPage() {
         <tr><th scope="row">Sign-in code</th><td>10 minutes, or until it's used</td></tr>
         <tr><th scope="row">Signed-in cookie</th><td>30 days, or until you sign out</td></tr>
         <tr><th scope="row">Sign-in try counters</th><td>About a day</td></tr>
+        <tr><th scope="row">Emails to support</th><td>In our private mailbox until we delete them; the note of which ticket is yours, until you delete your profile</td></tr>
         <tr><th scope="row">A crew and everything in it</th><td>Deleted after 90 days with nobody opening it or playing in it</td></tr>
         <tr><th scope="row">A quick room</th><td>While it's open, then gone within 30 minutes</td></tr>
         <tr><th scope="row">What's on your device</th><td>Until you clear it</td></tr>
@@ -151,7 +162,7 @@ export function privacyPage() {
 
       q('delete', 'How do I delete my stuff?', `    <ul>
       <li><b>On your device:</b> clear the site data for neonstickfight.com (and askscottpierce.com, if you played there before the move) in your browser's settings. That removes your profile, high scores and settings from that device. Signing out also wipes the profile from that device.</li>
-      <li><b>A saved profile:</b> sign in, go to <b>VERSUS ONLINE</b>, then <b>PROFILE</b>, and press <b>DELETE MY PROFILE</b> twice. That deletes your email, your saved profile, every sign-in (on all your devices), any sign-in code waiting for you, and the sign-in try counters for your email, right away. The device you did it on starts fresh, like after signing out. If you sign in with the same email later, you get a brand-new profile.</li>
+      <li><b>A saved profile:</b> sign in, go to <b>VERSUS ONLINE</b>, then <b>PROFILE</b>, and press <b>DELETE MY PROFILE</b> twice. That deletes your email, your saved profile, every sign-in (on all your devices), any sign-in code waiting for you, the sign-in try counters for your email, and the note of which support tickets are yours, right away. The device you did it on starts fresh, like after signing out. If you sign in with the same email later, you get a brand-new profile.</li>
       <li><b>Your crews:</b> the same button takes you out of every crew your profile knows about: your nickname, your wins and losses, your favorite fighter, your time played, and the matches you played there. High scores you put on a crew's table stay, but only as the three initials you typed, with nothing linking them to you. A crew your profile doesn't know about (one you only opened on another device that wasn't signed in), email us the crew link and your nickname and we'll take your name off. A crew nobody opens for 90 days deletes itself.</li>
       <li><b>Can't sign in any more?</b> Email ${mail('Delete my profile')} from the email address you saved, and we'll delete it for you.</li>
       <li><b>Game counts:</b> they have nothing that ties them to you, so there's nothing of yours in them to find.</li>
