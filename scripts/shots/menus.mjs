@@ -121,15 +121,17 @@ function audit({ upright, textMin, tapMin }) {
       const scr = sc && root.contains(sc) ? R(sc.getBoundingClientRect()) : null;
       let a = R(r);
       if (scr) { a = cut(a, scr); if (area(a) <= 0) continue; }
-      // what a box with overflow hidden (a name cut with an ellipsis, a chip past it) doesn't show isn't there; but a
+      // what a box with overflow hidden (a name cut with an ellipsis) doesn't show isn't there; but a
       // box that cuts something off at its side, with no ellipsis to say so, has cut it off
       for (let e = n.parentElement; e && e !== root.parentElement; e = e.parentElement) {
         const o = getComputedStyle(e);
         if (o.overflowX === 'visible' && o.overflowY === 'visible') continue;
         const eb = R(e.getBoundingClientRect()), was = a;
         a = cut(a, eb);
-        const ellipsis = getComputedStyle(n).textOverflow === 'ellipsis' || o.textOverflow === 'ellipsis' || !!e.closest('.fl-ring, .fl-roll');   // (the carousel's side cards are shrunk and half off screen by design)
-        if (!ellipsis && area(a) > 0 && (was.l < eb.l - 1 || was.r > eb.r + 1)) out.push(`CUT OFF AT THE SIDE ${name(n)} ${fmt(was)} (in ${fmt(eb)})`);
+        // (a flex or grid box's ellipsis is for its own text only: a child it clips, like a READY chip after a name, is cut off)
+        const flexed = /flex|grid/.test(o.display);
+        const ellipsis = getComputedStyle(n).textOverflow === 'ellipsis' || (o.textOverflow === 'ellipsis' && !flexed) || !!e.closest('.fl-ring, .fl-roll');   // (the carousel's side cards are shrunk and half off screen by design)
+        if (!ellipsis && (area(a) > 0 || flexed) && (was.l < eb.l - 1 || was.r > eb.r + 1)) out.push(`CUT OFF AT THE SIDE ${name(n)} ${fmt(was)} (in ${fmt(eb)})`);
         // and one that cuts it at the top or bottom, unless it scrolls there
         const scrolls = /auto|scroll/.test(o.overflowY) || !!e.closest('.fl-ring, .fl-roll');
         if (!scrolls && area(a) > 0 && (was.t < eb.t - 1 || was.b > eb.b + 1)) out.push(`CUT OFF ${name(n)} ${fmt(was)} (in ${fmt(eb)})`);

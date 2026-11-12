@@ -538,7 +538,9 @@ function injectStyle() {
   .fl-standings .fl-sfav { color: color-mix(in srgb, var(--fc, var(--violet)) 55%, #fff); font-size: 2cqw; }
   .fl-standings .fl-me { color: #ffc2f3; }
   .fl-standings .fl-smore { grid-column: 1 / -1; font-size: 1.8cqw; color: rgba(214,190,255,0.7); text-align: center; }
-  .fl-sname { display: flex; align-items: baseline; gap: 0.6cqw; }
+  .fl-sname { display: flex; align-items: baseline; gap: 0.6cqw; min-width: 0; }
+  .fl-standings .fl-sname > .fl-snm { min-width: 0; flex: 0 1 auto; }   /* the name takes the ellipsis… */
+  .fl-sname > .fl-chip, .fl-sname > .fl-youtag { flex: none; }        /* …so READY / PLAYING always shows whole */
   .fl-dot { display: inline-block; flex: none; width: 1cqw; height: 1cqw; border: 2px solid rgba(214,190,255,0.35); transform: translateY(-0.1cqw); }
   .fl-dot.fl-on-here { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 0.6cqw var(--cyan); }
   .fl-dot.fl-on-ready { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 0.6cqw var(--amber); }
@@ -815,12 +817,18 @@ function injectStyle() {
   #flow > .fl-up.fl-crew .fl-standings .fl-sfav { display: block; }
   #flow > .fl-up.fl-crew .fl-standings .fl-sfav { font-size: max(12px, 3.5cqw); }
   /* the header stays put while the names scroll under it */
-  #flow > .fl-up.fl-crew .fl-standings .fl-sth { position: sticky; top: 0; z-index: 1; font: 600 max(12px, 3.4cqw)/1 'Teko', sans-serif; letter-spacing: 0.1em; padding: 2.2cqw 0 0.4em; background: #10061f; align-self: stretch; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-sth { position: sticky; top: 0; z-index: 1; font: 600 max(12px, 3.4cqw)/1 'Teko', sans-serif; letter-spacing: 0.1em; padding: 2.2cqw 0 0.4em; background: #10061f; align-self: stretch;
+    box-shadow: 1.6cqw 0 0 #10061f, -1.6cqw 0 0 #10061f; }   /* (fills the column gaps, so the heads read as one strip) */
   #flow > .fl-up.fl-crew .fl-standings .fl-smore { font-size: max(12px, 3.5cqw); }
   #flow > .fl-up.fl-crew .fl-sname { gap: 1.6cqw; }
   #flow > .fl-up.fl-crew .fl-youtag { display: none; }
   #flow > .fl-up.fl-crew .fl-dot { width: 2.6cqw; height: 2.6cqw; }
   #flow > .fl-up.fl-crew .fl-chip { font-size: 12px; padding: 0.2em 0.35em 0.05em; }
+  /* Upright, the standings are who's here and who's ready: rank, the name with its chip, W and L.
+     D, VS YOU and FAVORITE (STATS has the history) give their room to the name. */
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-standings { grid-template-columns: 6cqw minmax(0, 1fr) 8cqw 8cqw; }
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-standings > .fl-sd, #flow > .fl-up.fl-crew .fl-standings.fl-v-standings > .fl-svs,
+  #flow > .fl-up.fl-crew .fl-standings.fl-v-standings > .fl-sfav, #flow > .fl-up.fl-crew .fl-standings.fl-v-standings > .fl-sth.fl-sthfav { display: none; }
   /* a short screen: PLAY gives the list a few more px */
   @container (max-height: 660px) {
     #flow > .fl-up.fl-crew .fl-playbtn { min-height: 54px; }

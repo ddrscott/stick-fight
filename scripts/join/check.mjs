@@ -138,6 +138,35 @@ try {
       check('upright: the only way out is MAIN MENU', up.btns.includes('MAIN MENU') && !up.btns.includes('ONLINE MENU'), up.btns.join(', '));
       check('upright: the crew list gets at least half the screen', up.list >= up.h / 2, `${Math.round(up.list)} of ${up.h} px`);
       check('upright: a handed-out name says SET YOUR NAME', /SET YOUR NAME/.test(up.me), up.me);
+      // the list is who's here and who's ready: rank, name, W, L, and a READY / PLAYING chip that always shows whole
+      const heads = await C.evaluate(() => [...document.querySelectorAll('#flow .fl-standings > .fl-sth')].filter((n) => n.getBoundingClientRect().width).map((n) => n.textContent));
+      check('upright: the list heads are just NAME, W and L', heads.join(',') === ',NAME,W,L', heads.join(','));
+      const press = (P) => P.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-playbtn')).act());
+      await press(A);
+      const chipsFit = () => C.evaluate(() => {
+        const out = [];
+        for (const ch of document.querySelectorAll('#flow .fl-standings .fl-chip')) {
+          const cell = ch.closest('.fl-sname').getBoundingClientRect(), r = ch.getBoundingClientRect();
+          const nm = ch.parentElement.querySelector('.fl-snm');
+          out.push({ row: nm.textContent + ch.textContent, whole: nm.scrollWidth <= nm.clientWidth + 1, ok: r.width > 0 && r.right <= cell.right + 0.5 && r.left >= cell.left - 0.5 && ch.scrollWidth <= ch.clientWidth + 1, r: Math.round(r.right), cell: Math.round(cell.right) });
+        }
+        return out;
+      });
+      for (const [w, h] of [[390, 844], [375, 667]]) {
+        await C.setViewportSize({ width: w, height: h });
+        const got = await until(async () => { const c = await chipsFit(); return c.length ? c : null; }, 10000);
+        check(`upright ${w}x${h}: a READY chip shows whole inside its row`, got && got.every((c) => c.ok), JSON.stringify(got));
+        if (w === 390) await shot(C, 'crew-upright-ready');
+      }
+      // your own row: "GUEST 123" and its READY chip, both whole
+      await press(A);   // (A backs out first, or C's PLAY would start a match with them)
+      await until(() => C.evaluate(() => !document.querySelector('#flow .fl-standings .fl-chip')), 10000);
+      await press(C);
+      await C.setViewportSize({ width: 375, height: 667 });
+      const own = await until(async () => { const c = await chipsFit(); return c.length ? c : null; }, 10000);
+      check('upright 375x667: your own GUEST row and its READY chip both show whole', own && own.every((c) => c.ok) && own.some((c) => /^GUEST \d{3}READY$/.test(c.row) && c.whole), JSON.stringify(own));
+      await C.setViewportSize(size);
+      await press(C);   // back to just HERE
       await C.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')).act());
       await sleep(300);
       const inv = await C.evaluate(() => [...document.querySelectorAll('#flow .fl-crew .fl-btn')].filter((n) => n.getBoundingClientRect().width).map((b) => b.textContent.trim()));

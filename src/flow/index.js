@@ -2030,7 +2030,8 @@ export function createFlow(ctx) {
   }
   /** the standings: everyone who has opened the link, the most wins first */
   function paintStandings(t, s, c, you, list) {
-    for (const h of ['', 'NAME', 'W', 'L', 'D', 'VS YOU', 'FAVORITE']) t.appendChild(el('span', `fl-sth${'WLDVS YOU'.includes(h) && h ? ' fl-snum' : ''}${h === 'FAVORITE' ? ' fl-sthfav' : ''}`, h));
+    // (upright shows only rank, name with its READY/PLAYING chip, W and L: the D, VS YOU and FAVORITE cells carry fl-sd, fl-svs and fl-sfav so the layout can drop them)
+    for (const h of ['', 'NAME', 'W', 'L', 'D', 'VS YOU', 'FAVORITE']) t.appendChild(el('span', `fl-sth${'WLDVS YOU'.includes(h) && h ? ' fl-snum' : ''}${h === 'D' ? ' fl-sd' : ''}${h === 'VS YOU' ? ' fl-svs' : ''}${h === 'FAVORITE' ? ' fl-sthfav' : ''}`, h));
     const shown = list.slice(0, t.closest('.fl-up') ? 50 : 7);
     shown.forEach((m, i) => {
       const mine = m.id === you;
@@ -2038,11 +2039,11 @@ export function createFlow(ctx) {
       t.appendChild(el('span', 'fl-srank' + cls, String(i + 1)));
       const nm = el('span', 'fl-sname' + cls);
       const dot = el('i', `fl-dot ${m.on ? ON[m.on][1] : ''}`);
-      nm.append(dot, document.createTextNode(m.name));
+      nm.append(dot, el('span', 'fl-snm', m.name));   // the name clips, never the chip after it
       if (mine) nm.appendChild(el('span', 'fl-youtag', ' (YOU)'));   // (upright the row's color and YOU'RE <name> above say it, so the name gets the room)
       if (m.on === 'ready' || m.on === 'match') nm.appendChild(el('b', `fl-chip ${ON[m.on][1]}`, ON[m.on][0]));
       t.appendChild(nm);
-      t.append(el('span', 'fl-snum' + cls, String(m.w)), el('span', 'fl-snum' + cls, String(m.l)), el('span', 'fl-snum' + cls, String(m.d)));
+      t.append(el('span', 'fl-snum' + cls, String(m.w)), el('span', 'fl-snum' + cls, String(m.l)), el('span', 'fl-snum fl-sd' + cls, String(m.d)));
       const r = mine ? null : crewRecord(m.id);
       t.appendChild(el('span', 'fl-snum fl-svs' + cls, mine ? '·' : r && r.w + r.l + r.d ? `${r.w}–${r.l}` : '–'));
       const fav = m.fav || m.last;
