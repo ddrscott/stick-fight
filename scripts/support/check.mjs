@@ -1,5 +1,6 @@
 // npm run test:support: the support desk (worker/support.ts; README, Privacy and terms, Support desk).
 //   node scripts/support/check.mjs            the model is a scripted stand-in (deterministic)
+//   node scripts/support/check.mjs --show     and print what reached GitHub, the auto-reply and every webmail note
 //   node scripts/support/check.mjs --real-ai  the content check and scrub go to the real Workers AI model
 //                                             (needs `wrangler login`; a few cents of neurons)
 //
@@ -224,6 +225,13 @@ try {
   check([...M.issues.values()].every((i) => !i.labels.includes('agent') && !i.assignees), 'no issue has the agent label or an assignee');
   const webTotal = M.webmail.length;
   check(webTotal === delivered, `every message reached webmail (${webTotal} of ${delivered})`);
+  if (process.argv.includes('--show')) {
+    console.log('\n// WHAT_REACHED_GITHUB');
+    for (const i of M.issues.values()) console.log(`#${i.number} [${i.labels}] ${i.title}\n  ${(/~~~text\n([\s\S]*?)\n~~~/.exec(i.body) || [, ''])[1]}`);
+    for (const c of M.comments) console.log(`#${c.issue} comment: ${(/~~~text\n([\s\S]*?)\n~~~/.exec(c.body) || [, ''])[1]}`);
+    console.log('\n// THE_AUTO_REPLY'); console.log(M.sent.find((m) => m.subject.startsWith('[NSF-'))?.subject); console.log(M.sent.find((m) => m.subject.startsWith('[NSF-'))?.text);
+    console.log('\n// HELD_IN_WEBMAIL'); for (const w of M.webmail) console.log(' ', (/^X-NSF-Support: (.*)$/m.exec(w.raw) || [, ''])[1]);
+  }
 } catch (e) {
   fail++; console.log('  FAIL ', e.stack);
 } finally {
