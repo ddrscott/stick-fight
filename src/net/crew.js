@@ -17,7 +17,7 @@ import { apiUrl } from './link.js';
 import { linkUrl } from '../links.js';
 
 const RETRY_MS = [1000, 2000, 4000, 8000];
-const FATAL = new Set(['no-crew', 'crew-full', 'bad-hello', 'full']);
+const FATAL = new Set(['no-crew', 'crew-full', 'bad-hello', 'full', 'deleted']);   // deleted: this profile was deleted (worker/crew.ts forget)
 
 export function createCrew() {
   /** @type {Record<string, Function[]>} */

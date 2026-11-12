@@ -32,6 +32,8 @@
     "test:crew": "node scripts/crew/check.mjs && node scripts/crew/lobby.mjs",
     "test:names": "node scripts/names/check.mjs",
     "test:admin": "node scripts/admin/check.mjs",
+    "test:delete": "node scripts/delete/check.mjs",
+    "test:delete:ui": "node scripts/delete/ui.mjs",
     "test:age": "node scripts/age/check.mjs",
     "test:device": "node scripts/perf/device.mjs"
   },

@@ -59,7 +59,7 @@ export function privacyPage() {
       'The name other players see is a nickname you pick. <b>Use a nickname, not your real name.</b>',
       'If you save your profile, we keep your email so we can send you sign-in codes. Nobody else sees it. No newsletter, ever.',
       'Under 13? We don\'t ask for your email at all. Your profile stays on your device.',
-      `No ads. We don't sell anything about you. Want something deleted? Email ${mail('Delete my data')}.`,
+      `No ads. We don't sell anything about you. Saved a profile? <b>DELETE MY PROFILE</b> on the PROFILE screen deletes it. Anything else, email ${mail('Delete my data')}.`,
     ],
     other: `The other half of this is the <a href="${root}terms/">house rules</a>: trash talk is fine, bullying isn't.`,
     body: [
@@ -137,7 +137,7 @@ export function privacyPage() {
       <tbody>
         <tr><th scope="row">Game counts (no names)</th><td>3 months</td></tr>
         <tr><th scope="row">Running totals (just numbers)</th><td>For good</td></tr>
-        <tr><th scope="row">Saved profile and email</th><td>Until you ask us to delete it</td></tr>
+        <tr><th scope="row">Saved profile and email</th><td>Until you delete it (DELETE MY PROFILE) or ask us to</td></tr>
         <tr><th scope="row">Sign-in code</th><td>10 minutes, or until it's used</td></tr>
         <tr><th scope="row">Signed-in cookie</th><td>30 days, or until you sign out</td></tr>
         <tr><th scope="row">Sign-in try counters</th><td>About a day</td></tr>
@@ -149,8 +149,9 @@ export function privacyPage() {
 
       q('delete', 'How do I delete my stuff?', `    <ul>
       <li><b>On your device:</b> clear the site data for neonstickfight.com (and askscottpierce.com, if you played there before the move) in your browser's settings. That removes your profile, high scores and settings from that device. Signing out also wipes the profile from that device.</li>
-      <li><b>A saved profile:</b> there's no delete button yet. Email ${mail('Delete my profile')} from the email address you saved, and we'll delete the account, its codes and its sign-ins.</li>
-      <li><b>Your name in a crew:</b> email us the crew link and your nickname, and we'll take your name off. A crew nobody opens for 90 days deletes itself.</li>
+      <li><b>A saved profile:</b> sign in, go to <b>VERSUS ONLINE</b>, then <b>PROFILE</b>, and press <b>DELETE MY PROFILE</b> twice. That deletes your email, your saved profile, every sign-in (on all your devices), any sign-in code waiting for you, and the sign-in try counters for your email, right away. The device you did it on starts fresh, like after signing out. If you sign in with the same email later, you get a brand-new profile.</li>
+      <li><b>Your crews:</b> the same button takes you out of every crew your profile knows about: your nickname, your wins and losses, your favorite fighter, your time played, and the matches you played there. High scores you put on a crew's table stay, but only as the three initials you typed, with nothing linking them to you. A crew your profile doesn't know about (one you only opened on another device that wasn't signed in), email us the crew link and your nickname and we'll take your name off. A crew nobody opens for 90 days deletes itself.</li>
+      <li><b>Can't sign in any more?</b> Email ${mail('Delete my profile')} from the email address you saved, and we'll delete it for you.</li>
       <li><b>Game counts:</b> they have nothing that ties them to you, so there's nothing of yours in them to find.</li>
     </ul>`),
 

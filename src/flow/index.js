@@ -53,7 +53,7 @@ import { techniques, botchEnabled, setBotchEnabled } from './techniques.js';
 import { roundTime, bestOf, cycleRoundTime, cycleBestOf, timeLabel } from './rules.js';
 import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './netApi.js';
 import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
-import { profile, setName as saveName, guestName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut } from '../net/profile.js';
+import { profile, setName as saveName, guestName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut, deleteProfile } from '../net/profile.js';
 import { createCrew, createCrewRoom, cleanSlug, crewLink } from '../net/crew.js';
 import * as CS from '../net/crewScores.js';   // crew high scores: which runs post where (README, Crew rooms, High scores)
 import { linkFromUrl, setLinkInBar } from '../links.js';
@@ -1663,10 +1663,10 @@ export function createFlow(ctx) {
   }
 
   // the profile: the name, and SAVE MY PROFILE (an email keeps it on any device) or SIGN OUT
-  let profileMsg = '', signOutArmed = false;
+  let profileMsg = '', signOutArmed = false, deleteArmed = false, deleting = false;
   function screenProfile() {
     const p = profile();
-    signOutArmed = false;
+    signOutArmed = false; deleteArmed = false;
     ui.show('fl-profile', (root) => {
       root.append(el('h1', 'fl-h2', 'PROFILE'), el('div', 'fl-label', 'YOUR NAME ONLINE'), el('div', 'fl-h1 fl-pname fl-read', p.name || '???'));
       root.appendChild(el('div', 'fl-label fl-pemail', p.email ? `SAVED TO ${p.email}` : 'KEPT ON THIS DEVICE ONLY'));
@@ -1683,6 +1683,28 @@ export function createFlow(ctx) {
         : button('SAVE MY PROFILE', () => go('ageCheck'), 'fl-amber');
       const back = button('BACK', () => go('onlineMenu'), 'fl-violet');
       const items = btnRow(root, [name, acct, back, mainMenuBtn()], '17cqw');
+      // DELETE MY PROFILE (README, Privacy and terms, Deleting a profile): press again to confirm, like SIGN OUT.
+      // The account, its sessions and its crew records go; high score initials stay; this device starts fresh.
+      if (p.email) {
+        const del = button('DELETE MY PROFILE', () => {
+          if (deleting) return;
+          if (!deleteArmed) {
+            deleteArmed = true;
+            del.el.textContent = 'DELETE FOR GOOD? PRESS AGAIN';
+            note.textContent = 'YOUR SAVED PROFILE, ITS SIGN-IN AND YOUR CREW RECORDS GO FOR GOOD. HIGH SCORE INITIALS STAY. THIS CAN\'T BE UNDONE';
+            return;
+          }
+          deleting = true; del.el.textContent = 'DELETING...';
+          deleteProfile().then((r) => {
+            deleting = false;
+            if (r.error) { deleteArmed = false; del.el.textContent = 'DELETE MY PROFILE'; note.textContent = r.error === 'busy' ? 'SERVER BUSY: TRY AGAIN SHORTLY' : r.error === 'signed-out' ? 'SIGNED OUT ALREADY: SIGN IN AGAIN TO DELETE IT' : "CAN'T REACH THE SERVER: NOTHING WAS DELETED"; return; }
+            profileMsg = 'PROFILE DELETED: THIS DEVICE STARTS FRESH';
+            if (state === 'profile') askName(() => go('profile'), () => go('onlineMenu'));
+          });
+        }, 'fl-red fl-quiet');
+        items.push(...btnRow(root, [del], '30cqw'));
+      }
+      const note = root.appendChild(el('div', 'fl-small fl-delnote', ''));
       root.appendChild(legalLinks(p.email ? 'WHAT WE KEEP:' : ''));
       return { items, focus: p.email ? 0 : 1, back: () => go('onlineMenu') };
     });
@@ -1823,7 +1845,7 @@ export function createFlow(ctx) {
       paintBetween();
     });
     c.on('error', (reason) => {
-      const msg = { 'no-crew': 'NO CREW AT THAT LINK', 'crew-full': 'THIS CREW IS FULL (50 MEMBERS)', full: 'THIS CREW ROOM IS FULL RIGHT NOW', 'bad-hello': 'SET A NAME FIRST', 'blocked-name': "THAT NAME ISN'T ALLOWED HERE: PICK ANOTHER UNDER ONLINE MENU, PROFILE", busy: 'SERVER BUSY: TRYING AGAIN', flood: 'TOO MUCH TRAFFIC: RECONNECTING' }[reason] || 'SOMETHING WENT WRONG';
+      const msg = { 'no-crew': 'NO CREW AT THAT LINK', 'crew-full': 'THIS CREW IS FULL (50 MEMBERS)', full: 'THIS CREW ROOM IS FULL RIGHT NOW', 'bad-hello': 'SET A NAME FIRST', deleted: 'THIS PROFILE WAS DELETED', 'blocked-name': "THAT NAME ISN'T ALLOWED HERE: PICK ANOTHER UNDER ONLINE MENU, PROFILE", busy: 'SERVER BUSY: TRYING AGAIN', flood: 'TOO MUCH TRAFFIC: RECONNECTING' }[reason] || 'SOMETHING WENT WRONG';
       if (!c.active) { crewFail = msg; if (state === 'crewLobby') screenCrewLobby(); }
       else { crewNote = msg; if (lob) lob.noteUntil = performance.now() + 4000; if (state === 'crewLobby') paintLobby(); }
     });
