@@ -1,5 +1,6 @@
 // The game. Wires fighter (A), fx (B), arena (D) and the combat sim (C), routes combat
 // events to effects and camera, draws the HUD, and exposes window.__gauntlet.
+import './softcanvas.js';   // first: on a software GL every 2D canvas rasters on the CPU (README, Performance, Chromebooks)
 import './fullscreen.js';   // first, so its F11 handler sits ahead of every other key listener (F11, and the desktop corner button)
 import { camera } from './camera.js';
 import { createFighter, MOVES, MOVE_DATA, RIG_KIT } from './fighter/index.js';

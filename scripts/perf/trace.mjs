@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Timeline trace of one scenario: main-thread events by total self-ish duration (README, Performance).
-//   node scripts/perf/trace.mjs [scene query] [--throttle 4] [--secs 4] [--out trace.json]
+//   node scripts/perf/trace.mjs [scene query] [--throttle 4] [--secs 4] [--out trace.json] [--angle swiftshader] [--device cros] [--all]
+//   --all: every thread (the GPU process's too), by thread then event
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,8 +21,9 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
-const browser = await pw.chromium.launch({ args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-blink-features=AutomationControlled'] });
-const ctx = await browser.newContext({ viewport: { width: 915, height: 412 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true });
+const SW = opt('--angle', 'metal') === 'swiftshader';
+const browser = await pw.chromium.launch({ args: [SW ? '--use-angle=swiftshader' : '--use-angle=metal', ...(SW ? ['--enable-unsafe-swiftshader'] : ['--enable-gpu', '--ignore-gpu-blocklist']), '--disable-blink-features=AutomationControlled'] });
+const ctx = await browser.newContext(opt('--device') === 'cros' ? { viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1 } : { viewport: { width: 915, height: 412 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
 const cdp = await ctx.newCDPSession(page);
 await cdp.send('Emulation.setCPUThrottlingRate', { rate: +opt('--throttle', 4) });
@@ -43,4 +45,24 @@ for (const e of events) {
   tot.set(e.name, (tot.get(e.name) || 0) + (e.dur || 0));
 }
 for (const [k, v] of [...tot].sort((a, b) => b[1] - a[1]).slice(0, 30)) console.log(`${(v / 1000).toFixed(0).padStart(7)} ms  ${k}`);
+if (argv.includes('--all')) {
+  // top-level slices only (no double counting of nested ones): per thread, the events that take the most time
+  const names = new Map(events.filter(e => e.name === 'thread_name').map(e => [`${e.pid}:${e.tid}`, e.args.name]));
+  const per = new Map(), ends = new Map();
+  for (const e of events.filter(e => e.ph === 'X').sort((a, b) => a.ts - b.ts)) {
+    const key = `${e.pid}:${e.tid}`;
+    // the GPU thread's work sits under one RunTask per task: count everything there, top-level elsewhere
+    const gpu = names.get(key) === 'CrGpuMain';
+    if (!gpu && (ends.get(key) || 0) > e.ts) continue;
+    if (gpu && e.name === 'RunTask') continue;
+    ends.set(key, e.ts + (e.dur || 0));
+    const m = per.get(key) || new Map(); per.set(key, m); m.set(e.name, (m.get(e.name) || 0) + (e.dur || 0));
+  }
+  for (const [key, m] of per) {
+    const total = [...m.values()].reduce((a, b) => a + b, 0);
+    if (total < 200000) continue;
+    console.log(`\n${names.get(key) || key}: ${(total / 1000).toFixed(0)} ms`);
+    for (const [k, v] of [...m].sort((a, b) => b[1] - a[1]).slice(0, 20)) console.log(`${(v / 1000).toFixed(0).padStart(7)} ms  ${k}`);
+  }
+}
 await browser.close(); server.close();

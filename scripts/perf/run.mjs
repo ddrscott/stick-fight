@@ -83,6 +83,7 @@ const results = [];
 async function open(url, throttle, extra = {}) {
   const ctx = await browser.newContext({ ...DEVICES[DEVICE], ...extra });
   const page = await ctx.newPage();
+  if (opt('--init')) await page.addInitScript(opt('--init'));   // --init "<js>": runs before the page's own scripts
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   const cdp = await ctx.newCDPSession(page);
@@ -104,6 +105,7 @@ if (!flag('--gpu') && !flag('--rollback') && !flag('--load')) {
       const { ctx, page, errors } = await open(base + '?' + q, throttle);
       await page.goto(base + '?' + q);
       await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
+      if (opt('--eval')) await page.evaluate(opt('--eval'));   // --eval "<js>": an experiment run once the game is up
       await page.waitForTimeout((S.warm || WARM) * 1000);
       await page.evaluate(() => window.__perf.reset());
       await page.waitForTimeout(SECS * 1000);
@@ -126,7 +128,14 @@ if (flag('--gpu')) {
     await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
     await page.waitForTimeout(WARM * 1000);
     const r = await page.evaluate((off) => {
-      for (const k of off) { if (k.startsWith('up:')) window.__game.fx.skip[k.slice(3)] = true; else window.__game.fx.options[k] = false; }   // --off lighting,bloom,up:figures...: what a pass or an upload costs
+      // --off lighting,bloom,up:figures,fn:arena.drawEmissive...: what a pass, an upload or a drawing function costs
+      // (fn: makes window.__game.<path> a no-op)
+      for (const k of off) {
+        if (k.startsWith('up:')) window.__game.fx.skip[k.slice(3)] = true;
+        else if (k.startsWith('fn:')) { const ks = k.slice(3).split('.'), last = ks.pop(); let o = window.__game; for (const x of ks) o = o[x]; o[last] = () => {}; }
+        else if (k.startsWith('win:')) window[k.slice(4)] = true;
+        else window.__game.fx.options[k] = false;
+      }
       const g = window.__gauntlet, gl = window.__game.fx.gl, px = new Uint8Array(4);
       const t = [], a = [];
       for (let i = 0; i < 240; i++) {
