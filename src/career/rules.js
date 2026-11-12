@@ -17,6 +17,9 @@
 //   applyAward(career, award, day)      the career after it (a new object)
 //   blankCareer()                       a new player's
 //
+// Daily shifts (src/career/shifts.js) sit on top: shifts.js payMatch is payout plus any shift the match finished, and
+// its award carries the new shift state, which applyAward stores as career.shifts.
+//
 // Plain JavaScript, no imports, so the Worker (worker/career.ts) uses this file as it is.
 
 /** The ladder, lowest first. xp: the total it takes to reach the title. The first promotion comes in the first
@@ -75,15 +78,15 @@ export const utcDay = (/** @type {number} */ t = Date.now()) => new Date(t).toIS
 
 /**
  * @typedef {{ xp: number, sticks: number, winDay: string, onlineDay: string, offDay: string, offXp: number, offSticks: number,
- *   owned: string[], equip: Record<string, string> }} Career
+ *   owned: string[], equip: Record<string, string>, shifts: { day: string, swap: number, prog: number[], done: boolean[] } }} Career
  * @typedef {{ id: string, label: string, n: number, xp: number, sticks: number }} Line
  * @typedef {{ lines: Line[], xp: number, sticks: number, firstWin: boolean, firstOnline: boolean, capped: boolean,
- *   offline: boolean, match: { xp: number, sticks: number } }} Award
+ *   offline: boolean, match: { xp: number, sticks: number }, shifts?: Career['shifts'], moved?: boolean[] }} Award
  */
 
 /** a new player's career @returns {Career} */
 export function blankCareer() {
-  return { xp: 0, sticks: 0, winDay: '', onlineDay: '', offDay: '', offXp: 0, offSticks: 0, owned: [], equip: {} };
+  return { xp: 0, sticks: 0, winDay: '', onlineDay: '', offDay: '', offXp: 0, offSticks: 0, owned: [], equip: {}, shifts: { day: '', swap: -1, prog: [0, 0, 0], done: [false, false, false] } };
 }
 
 /** the rung for this much XP, and how far along the bar to the next one */
@@ -149,6 +152,7 @@ export function applyAward(career, award, day = utcDay()) {
   c.sticks = n0(c.sticks) + n0(award.sticks);
   if (award.firstWin) c.winDay = day;
   if (award.firstOnline) c.onlineDay = day;
+  if (award.shifts) c.shifts = award.shifts;   // daily shifts (src/career/shifts.js payMatch)
   if (award.offline && award.match) {
     if (c.offDay !== day) { c.offDay = day; c.offXp = 0; c.offSticks = 0; }
     c.offXp = n0(c.offXp) + n0(award.match.xp); c.offSticks = n0(c.offSticks) + n0(award.match.sticks);

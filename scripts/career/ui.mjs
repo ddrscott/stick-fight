@@ -41,7 +41,8 @@ try {
       if (sessionStorage.getItem('seeded')) return;
       sessionStorage.setItem('seeded', '1');
       localStorage.setItem('stick-fight-last-pick', 'temp');
-      localStorage.setItem('stick-fight-career', JSON.stringify({ career: { xp: 95, sticks: 300 } }));
+      // today's shifts already done, so no shift pays on top of what this test counts (scripts/career/shifts-ui.mjs covers them)
+      localStorage.setItem('stick-fight-career', JSON.stringify({ career: { xp: 95, sticks: 300, shifts: { day: new Date().toISOString().slice(0, 10), swap: -1, prog: [9, 9, 9], done: [true, true, true] } } }));
       localStorage.setItem('stick-fight-player', JSON.stringify({ id: Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, '0')).join(''), name: 'ALICE', email: '', crews: [] }));
     });
     const p = await ctx.newPage();

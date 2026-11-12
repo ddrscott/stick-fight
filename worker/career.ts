@@ -7,6 +7,10 @@
 //   POST /api/career/merge   { career }               -> { career }          a guest's local progress, at sign-in
 //   POST /api/career/buy     { fighter, id }          -> { career } | { error: 'short' | 'owned' | 'unknown' }
 //   PUT  /api/career/equip   { fighter, id }          -> { career } | { error }   id '' is the fighter's own look
+//   POST /api/career/shifts/swap { slot }              -> { career } | { error: 'used' | 'done' | 'bad' }   one a day
+//
+// Daily shifts (src/career/shifts.js, migrations/0008_shifts.sql) ride every award: payMatch is payout plus any
+// shift the match finished, worked out from the same match the award reads.
 //
 // Who awards what:
 //   online (quick, crew)  the room, from the result both pages agree on (worker/stats.ts roomResult): awardOnline.
@@ -18,15 +22,16 @@
 // and the union of owned palettes.
 import { type Env, json, allowed, BUSY } from "./env";
 import { currentEmail } from "./auth";
-import { payout, applyAward, blankCareer, utcDay, MERGE_MAX, OFFLINE_MODES, ONLINE_MODES, titleFor } from "../src/career/rules.js";
+import { applyAward, blankCareer, utcDay, MERGE_MAX, OFFLINE_MODES, ONLINE_MODES, titleFor } from "../src/career/rules.js";
 import { palette, itemKey, isItem } from "../src/career/palettes.js";
+import { payMatch, cleanShifts, swapShift, mergeShifts, SHIFT_FIGHTERS } from "../src/career/shifts.js";
 
 export type Career = ReturnType<typeof blankCareer>;
 type Row = {
   career_xp: number; sticks: number; win_day: string; online_day: string; offline_day: string;
-  offline_xp: number; offline_sticks: number; owned: string; equip: string;
+  offline_xp: number; offline_sticks: number; owned: string; equip: string; shifts: string;
 };
-const COLS = "career_xp, sticks, win_day, online_day, offline_day, offline_xp, offline_sticks, owned, equip";
+const COLS = "career_xp, sticks, win_day, online_day, offline_day, offline_xp, offline_sticks, owned, equip, shifts";
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OWNED = 200;
 
@@ -51,18 +56,21 @@ function toCareer(r: Row): Career {
   return {
     xp: int(r.career_xp), sticks: int(r.sticks), winDay: day(r.win_day), onlineDay: day(r.online_day),
     offDay: day(r.offline_day), offXp: int(r.offline_xp), offSticks: int(r.offline_sticks), owned, equip: cleanEquip(parseJson(r.equip, {}), owned),
+    shifts: cleanShifts(parseJson(r.shifts, {})),
   };
 }
 /** what the page gets: the career plus its title, worked out here so every page shows the same one */
 export const view = (c: Career) => ({ ...c, title: titleFor(c.xp).title });
 
-// the owned column as it was read, so a write can check nobody changed it (it's compared as stored text)
+// the owned and shifts columns as they were read, so a write can check nobody changed them (compared as stored text)
 const ownedText = new WeakMap<Career, string>();
+const shiftsText = new WeakMap<Career, string>();
 async function load(env: Env, email: string): Promise<Career | null> {
   const r = await env.DB.prepare(`SELECT ${COLS} FROM accounts WHERE email = ?`).bind(email).first<Row>();
   if (!r) return null;
   const c = toCareer(r);
   ownedText.set(c, r.owned);
+  shiftsText.set(c, r.shifts);
   return c;
 }
 
@@ -70,9 +78,9 @@ async function load(env: Env, email: string): Promise<Career | null> {
  *  devices). False when someone did: read again and redo. */
 async function save(env: Env, email: string, was: Career, c: Career): Promise<boolean> {
   const res = await env.DB.prepare(`UPDATE accounts SET career_xp = ?, sticks = ?, win_day = ?, online_day = ?, offline_day = ?, offline_xp = ?, offline_sticks = ?,
-      owned = ?, equip = ? WHERE email = ? AND career_xp = ? AND sticks = ? AND owned = ?`)
-    .bind(c.xp, c.sticks, c.winDay, c.onlineDay, c.offDay, c.offXp, c.offSticks, JSON.stringify(c.owned), JSON.stringify(c.equip),
-      email, was.xp, was.sticks, ownedText.get(was) ?? JSON.stringify(was.owned)).run();
+      owned = ?, equip = ?, shifts = ? WHERE email = ? AND career_xp = ? AND sticks = ? AND owned = ? AND shifts = ?`)
+    .bind(c.xp, c.sticks, c.winDay, c.onlineDay, c.offDay, c.offXp, c.offSticks, JSON.stringify(c.owned), JSON.stringify(c.equip), JSON.stringify(c.shifts),
+      email, was.xp, was.sticks, ownedText.get(was) ?? JSON.stringify(was.owned), shiftsText.get(was) ?? JSON.stringify(was.shifts)).run();
   return res.meta.changes === 1;
 }
 /** read, change, write, retried when another write got in first. null: no account. */
@@ -97,6 +105,8 @@ export function cleanMatch(raw: unknown, modes: readonly string[]) {
     mode, won: m.won === true, cut: m.cut === true, fought: int(m.fought, 3600),
     parries: int(m.parries, 99), punishes: int(m.punishes, 99), enders: int(m.enders, 99), accidents: int(m.accidents, 99),
     perfects: int(m.perfects, 9), floors: int(m.floors, 999),
+    // for the daily shifts: the fighter played (one a shift can name, else none), rounds won, the arcade stage
+    fighter: typeof m.fighter === "string" && Object.hasOwn(SHIFT_FIGHTERS, m.fighter) ? m.fighter : "", rounds: int(m.rounds, 9), stage: int(m.stage, 9),
   };
 }
 
@@ -105,18 +115,19 @@ export async function awardMatch(env: Env, email: string, m: NonNullable<ReturnT
   try {
     const today = utcDay();
     const r = await update(env, email, (c) => {
-      const award = payout(m, c, today);
+      const award = payMatch(m, c, today);   // payout plus any daily shift it finished
       return { next: award.lines.length ? applyAward(c, award, today) : null, out: award };
     });
     return r ? { award: r.out, career: view(r.career) } : null;
   } catch (e) { console.error("career: award failed", e); return null; }
 }
 
-/** An online match both pages agreed on (worker/stats.ts roomResult): this side's award. side 0 is the host. */
-export async function awardOnline(env: Env, email: string, mode: string, side: 0 | 1, wins: [number, number], tech: unknown) {
+/** An online match both pages agreed on (worker/stats.ts roomResult): this side's award. side 0 is the host.
+ *  fighter: this side's, from the agreed result (a shift that names a fighter reads it). */
+export async function awardOnline(env: Env, email: string, mode: string, side: 0 | 1, wins: [number, number], tech: unknown, fighter = "") {
   const t = Array.isArray(tech) ? tech : [];
   const won = wins[side] > wins[1 - side];
-  const m = cleanMatch({ mode, won, cut: false, fought: 0, parries: t[0], punishes: t[1], enders: t[2], accidents: t[3], perfects: t[4] }, ONLINE_MODES);
+  const m = cleanMatch({ mode, won, cut: false, fought: 0, parries: t[0], punishes: t[1], enders: t[2], accidents: t[3], perfects: t[4], fighter, rounds: wins[side] }, ONLINE_MODES);
   return m ? awardMatch(env, email, m) : null;
 }
 
@@ -130,6 +141,7 @@ function merge(c: Career, raw: unknown): Career {
     xp: Math.max(c.xp, int(g.xp, MERGE_MAX.xp)), sticks: Math.max(c.sticks, int(g.sticks, MERGE_MAX.sticks)),
     winDay: later(c.winDay, day(g.winDay)), onlineDay: later(c.onlineDay, day(g.onlineDay)),
     offDay: later(c.offDay, gOff), offXp: c.offXp, offSticks: c.offSticks, owned, equip: {},
+    shifts: mergeShifts(c.shifts, g.shifts),   // today's shifts: the larger progress, done on either side is done
   };
   if (gOff && gOff === out.offDay) {
     if (c.offDay === gOff) { out.offXp = Math.max(c.offXp, int(g.offXp)); out.offSticks = Math.max(c.offSticks, int(g.offSticks)); }
@@ -169,6 +181,15 @@ async function route(req: Request, env: Env, path: string): Promise<Response> {
     if (!r) return json({ error: "signed-out" });
     return r.out === "ok" ? json({ career: view(r.career) }) : json({ error: r.out, career: view(r.career) });
   }
+  if (path === "POST career/shifts/swap") {
+    const slot = Number(body.slot);
+    const r = await update<string>(env, email, (c) => {
+      const s = swapShift(c.shifts, slot);
+      return s.error ? { next: null, out: s.error } : { next: { ...c, shifts: s.state! }, out: "ok" };
+    });
+    if (!r) return json({ error: "signed-out" });
+    return r.out === "ok" ? json({ career: view(r.career) }) : json({ error: r.out, career: view(r.career) });
+  }
   if (path === "PUT career/equip") {
     const fighter = String(body.fighter || ""), id = String(body.id || "");
     if (id && !palette(fighter, id)) return json({ error: "unknown" }, 400);
@@ -188,7 +209,7 @@ async function route(req: Request, env: Env, path: string): Promise<Response> {
 export async function handleCareer(req: Request, env: Env, parts: string[]): Promise<Response | null> {
   if (parts[0] !== "career") return null;
   const path = `${req.method} ${parts.join("/")}`;
-  if (!["GET career", "POST career/match", "POST career/merge", "POST career/buy", "PUT career/equip"].includes(path)) return json({ error: "not found" }, 404);
+  if (!["GET career", "POST career/match", "POST career/merge", "POST career/buy", "PUT career/equip", "POST career/shifts/swap"].includes(path)) return json({ error: "not found" }, 404);
   // a body that changes something must be JSON: a cross-site form can't send that without a preflight
   if (req.method !== "GET" && !(req.headers.get("content-type") || "").includes("application/json")) return json({ error: "expected JSON" }, 415);
   if (!(await allowed(env.CAREER_LIMIT, req))) return json({ error: "busy", message: BUSY }, 429, { "retry-after": "60" });

@@ -110,12 +110,15 @@ export function createBook(sim, opts = {}) {
     return { move, hits: [...hits], combo: [...combo], perfects: [...perfects], tech: [[...tech[0], perfects[0]], [...tech[1], perfects[1]]] };
   }
 
-  /** What the career reads from match o: the local player's technique and the outcome. No hits, no presses. */
+  /** What the career reads from match o: the local player's technique and the outcome, and for the shifts their fighter,
+   *  rounds won and the arcade stage. No hits, no presses. */
   function summary(o, quit) {
     const me = o.local === 0 ? 0 : 1, t = tech[me];
     const won = o.mode !== 'horde' && (sim.wins[me] | 0) > (sim.wins[1 - me] | 0);
     return { mode: o.mode, won: !quit && won, cut: !!quit, fought: Math.round(fought()), parries: t[0], punishes: t[1], enders: t[2], accidents: t[3],
-      perfects: perfects[me], floors: o.mode === 'horde' ? (sim.horde && sim.horde.floorsCleared) || 0 : 0 };
+      perfects: perfects[me], floors: o.mode === 'horde' ? (sim.horde && sim.horde.floorsCleared) || 0 : 0,
+      // for the daily shifts (src/career/shifts.js): who they played, the rounds they took, the arcade stage
+      fighter: (sim.units[me] && sim.units[me].char && sim.units[me].char.id) || '', rounds: o.mode === 'horde' ? 0 : sim.wins[me] | 0, stage: o.mode === 'arcade' ? o.stage | 0 : 0 };
   }
   function closed(o, quit) {
     if (!opts.onClose) return;

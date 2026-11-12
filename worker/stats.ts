@@ -159,7 +159,7 @@ export function recordPick(env: Env, req: Request, ctx: ExecutionContext, labels
 // x.tech[side]); dnt: the page asked not to be tracked, so the result counts for careers but goes on no books
 type Report = { key: string; core: string; match: Match; at: number; tech: unknown; dnt: boolean };
 /** both pages agreed: the room awards each signed-in side its career (worker/career.ts awardOnline) */
-export type Agreed = (mode: "quick" | "crew", wins: [number, number], tech: [unknown, unknown]) => Promise<void>;
+export type Agreed = (mode: "quick" | "crew", wins: [number, number], tech: [unknown, unknown], chars: [string, string]) => Promise<void>;
 
 function onlineReport(m: Record<string, unknown>, side: 0 | 1): Report | null {
   const mode = m.mode === "crew" ? "crew" : m.mode === "quick" ? "quick" : null;
@@ -197,7 +197,7 @@ export async function roomResult(storage: DurableObjectStorage, env: Env, role: 
   const host = role === "host" ? mine : theirs, guest = role === "host" ? theirs : mine;
   // a page with Do Not Track still reports, so the other player's career counts the match, but it goes on no books
   if (!mine.dnt && !theirs.dnt) await recordMatch(env, null, host.match);
-  if (agreed) { try { await agreed(host.match.mode as "quick" | "crew", host.match.wins, [host.tech, guest.tech]); } catch (e) { console.error("career: online award failed", e); } }
+  if (agreed) { try { await agreed(host.match.mode as "quick" | "crew", host.match.wins, [host.tech, guest.tech], [host.match.p1, host.match.p2]); } catch (e) { console.error("career: online award failed", e); } }
   return "recorded";
 }
 
