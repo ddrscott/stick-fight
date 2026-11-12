@@ -123,6 +123,11 @@ try {
     check(`${label}: the lobby says what they're called`, says);
     const fits = await C.evaluate(() => { const s = [...document.querySelectorAll('.fl-crew .fl-label, .fl-crew .fl-crewme')].find((n) => n.getBoundingClientRect().width), st = document.querySelector('.fl-crew').getBoundingClientRect(), r = s.getBoundingClientRect(); return r.left >= st.left - 1 && r.right <= st.right + 1 && s.scrollWidth <= s.clientWidth + 1; });
     check(`${label}: that line fits the stage`, fits);
+    if (label !== 'upright') {
+      // your own idle row before PLAY: "GUEST 123" shows whole and pink, and (YOU) takes any cut, so the digits that tell guests apart stay
+      const row = await until(() => C.evaluate(() => { const n = document.querySelector('#flow .fl-standings .fl-me .fl-snm'); return n && n.getBoundingClientRect().width ? { name: n.textContent, whole: n.scrollWidth <= n.clientWidth + 1, color: getComputedStyle(n).color, chip: !!n.parentElement.querySelector('.fl-chip') } : null; }), 10000);
+      check(`${label}: your own idle row shows your GUEST name whole and pink`, row && !row.chip && row.name === p.name && row.whole && row.color === 'rgb(255, 194, 243)', JSON.stringify(row));
+    }
     check(`${label}: crew page has no errors`, !C.errors.length, C.errors.join(' | ').slice(0, 200));
     check(`${label}: nothing in the crew link's network log failed (no 404s)`, !C.missing.length, C.missing.slice(0, 3).join(' | '));
     await sleep(500); await shot(C, `crew-${label}`);

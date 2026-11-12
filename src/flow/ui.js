@@ -540,7 +540,8 @@ function injectStyle() {
   .fl-standings .fl-smore { grid-column: 1 / -1; font-size: 1.8cqw; color: rgba(214,190,255,0.7); text-align: center; }
   .fl-sname { display: flex; align-items: baseline; gap: 0.6cqw; min-width: 0; }
   .fl-standings .fl-sname > .fl-snm { min-width: 0; flex: 0 1 auto; }   /* the name takes the ellipsis… */
-  .fl-sname > .fl-chip, .fl-sname > .fl-youtag { flex: none; }        /* …so READY / PLAYING always shows whole */
+  .fl-sname > .fl-chip { flex: none; }        /* …so READY / PLAYING always shows whole */
+  .fl-standings .fl-sname > .fl-youtag { min-width: 0; flex: 0 10000 auto; }   /* (YOU) clips before the name does, so GUEST 284's digits stay */
   .fl-dot { display: inline-block; flex: none; width: 1cqw; height: 1cqw; border: 2px solid rgba(214,190,255,0.35); transform: translateY(-0.1cqw); }
   .fl-dot.fl-on-here { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 0.6cqw var(--cyan); }
   .fl-dot.fl-on-ready { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 0.6cqw var(--amber); }
