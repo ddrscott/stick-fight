@@ -917,7 +917,7 @@ function installHordeKo(o = {}) {
   };
   T.koEvents = 0;
   T.onEvent = (ev) => {
-    if (ev.type === 'hit' && ev.ko && ev.attacker && ev.attacker.id === 0 && ev.defender && ev.defender.id >= 1) T.koEvents++;
+    if (ev.type === 'goonDown') T.koEvents++;   // the sim's rules put a goon down: what the flow counts as run.goons
     // the run's end (controllers aren't asked for input once the fight is over, so the event says it)
     if (ev.type === 'match' && !T.done && HKO_PHASES[T.phase]) {
       const me = sim.units[0];

@@ -12,7 +12,7 @@
 // a snapshot: what the controllers keep (the scene sets them; online they read the netcode's
 // inputs) and everything outside the sim (particles, lights, camera, sound).
 
-const SIM_SCALARS = ['phase', 'phaseTimer', 'stepCount', 'round', 'timer', 'winner', 'banner', 'bannerT', 'difficulty', 'botchOn',
+const SIM_SCALARS = ['phase', 'result', 'phaseTimer', 'stepCount', 'round', 'timer', 'winner', 'banner', 'bannerT', 'difficulty', 'botchOn',
   'accumulator', 'hitstopActive', 'koSlow', 'finisher', 'startHealth', 'introTime', 'seed', 'floor', 'floorBroken', 'combo', 'hordeCfg',
   'roundTime', 'winsNeeded', 'roundClock', 'perfectT', 'perfectRel', 'perfectWait', 'perfectOn', 'perfectSkip'];
 

@@ -390,9 +390,11 @@ export function createFlow(ctx) {
     }
     if (mode !== 'arcade' && mode !== 'horde') return false;
     trackDamage();
-    if (state === 'fighting' && sim.phase === 'ko') go('roundEnd');
-    else if (state === 'roundEnd' && (sim.phase === 'intro' || sim.phase === 'fight')) go('fighting');
-    if ((state === 'fighting' || state === 'roundEnd') && sim.phase === 'match') go('result');
+    // what the round came to is the sim's to say (sim.result, README, Fundamentals, How a KO resolves): the flow reads it
+    const r = sim.result;
+    if (state === 'fighting' && r.over) go('roundEnd');
+    else if (state === 'roundEnd' && !r.over) go('fighting');
+    if ((state === 'fighting' || state === 'roundEnd') && r.final) go('result');
     return false;
   }
   function trackDamage() {
@@ -410,7 +412,8 @@ export function createFlow(ctx) {
       const combo = (ev.defender && ev.defender.combo) || 0;
       if (combo >= 2) add(P.comboHit * (combo - 1));
       if (ev.counter) add(P.counter);
-      if (sim.horde && ev.ko && ev.defender && ev.defender.id >= 1) { add(P.goonDown); run.goons++; }
+    } else if (ev.type === 'goonDown') {   // horde: the sim's rules put a goon down (whatever hit did it), once
+      add(P.goonDown); run.goons++;
     } else if (ev.type === 'callout') {
       if (ev.kind === 'ender' && ev.by === 0) add(P.ender);
       else if (ev.kind === 'finish' && ev.by === 0) add(P.finish, 'FINISH');
@@ -424,7 +427,7 @@ export function createFlow(ctx) {
     }
   }
   function roundBonus() {
-    if (mode !== 'arcade' || sim.winner !== 0) return;
+    if (mode !== 'arcade' || sim.result.winner !== 0) return;
     // the time bonus counts the share of the clock left, on the old 60-second scale, so a 99s round pays what a
     // 60s one did and a 30s one no more; no time limit, no time bonus
     const secs = sim.roundTime > 0 ? Math.floor(sim.timer * 60 / sim.roundTime) : 0, perfect = sim.units[0].health >= sim.startHealth;
@@ -432,6 +435,9 @@ export function createFlow(ctx) {
     add(pts, perfect ? 'PERFECT' : 'ROUND');
   }
   function decide() {
+    const r = sim.result;
+    // horde: the sim only ends a run with the hero down (its rules: no clock, a goon's KO never ends it)
+    if (mode === 'horde' && r.reason !== 'heroDown') console.warn(`[flow] a horde run ended without the hero down (${r.reason}): scored as game over`);
     if (mode === 'horde') {
       entry = { mode: 'horde', score: run.score, note: `${run.floors} FLOOR${run.floors === 1 ? '' : 'S'}`, char: sel.player, reach: run.floors };
       track('horde_end', [sel.player], run.floors);
@@ -2212,9 +2218,11 @@ export function createFlow(ctx) {
   /** a real KO for `winner` this step (the sim's own KO, round and match path runs from here) */
   function debugKO(winner) {
     if (sim.phase !== 'fight') return false;
+    // in horde, debugKO(1) is a goon putting the hero down (the run ends) and debugKO(0) the hero putting a goon down
     const loser = sim.units[1 - winner];
-    loser.health = 0; loser.state = 'ko'; loser.koDone = true;
-    sim.phase = 'ko'; sim.phaseTimer = 0.35; sim.winner = winner; sim.banner = 'KO';
+    if (!sim.forceKO(loser, sim.units[winner])) return false;
+    loser.koDone = true;
+    if (sim.phase === 'ko') sim.phaseTimer = 0.35;
     return true;
   }
 

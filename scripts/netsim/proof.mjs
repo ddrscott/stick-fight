@@ -10,6 +10,8 @@
 // 2. Resync: at random steps the reference's state is encoded as text (src/net/state.js), decoded by a second
 //    sim that has played something else entirely (its own characters, demo and reach table), and loaded there;
 //    both then run 240 steps on the same inputs and must hash the same on every step.
+// --hashes FILE writes every reference step's hash (without sim.result, which main doesn't have) for a diff against
+// another checkout: copy this script and client.mjs there and run it the same way (README, Fundamentals, How a KO resolves).
 
 import { installDom } from './env.mjs';
 installDom();
@@ -58,6 +60,7 @@ function makeSim() {
 }
 const argv = process.argv.slice(2), arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? +argv[i + 1] : d; };
 const STEPS = arg('steps', 9000), BOUTS = arg('bouts', 4);
+const HASHES = argv.includes('--hashes') ? argv[argv.indexOf('--hashes') + 1] : null, dumped = [];
 const PAIRS = [['temp', 'temp'], ['helpdesk', 'janitor'], ['courier', 'security'], ['windowWasher', 'intern'], ['manager', 'barista'], ['ceo', 'wellness'], ['chef', 'electrician'], ['receptionist', 'lawyer']];
 const INTERESTING = (sim) => sim.units.some((u) => u.hitstop > 0 || u.state === 'grabbed' || u.rag || u.state === 'ko' || u.falling || u.state === 'vault' || u.stair >= 0 || u.state === 'celebrate' || u.state === 'dash') || sim.phase !== 'fight';
 
@@ -74,7 +77,7 @@ for (let b = 0; b <= BOUTS; b++) {
   const hashes = [];
   ref.tickNo = 0;
   const texts = [];
-  for (let t = 0; t < STEPS; t++) { ref.tickNo = t; ref.tick(); hashes.push(deepHash(ref)); if (process.env.DBG) texts.push(encodeState(ref, ref.saveState())); }
+  for (let t = 0; t < STEPS; t++) { ref.tickNo = t; ref.tick(); hashes.push(deepHash(ref)); if (HASHES) dumped.push(`${b}:${t} ${deepHash(ref, ['result'])}`); if (process.env.DBG) texts.push(encodeState(ref, ref.saveState())); }
   // the replay with rollbacks
   const rep = makeSim();
   rep.setCharacters(pair);
@@ -134,4 +137,5 @@ for (let b = 0; b <= BOUTS; b++) {
 }
 console.log(`\nrollback: ${rbCount} rollbacks (${rbDash} saved inside a dash), ${rbChecks} restored steps checked, ${rbBad} differed from the reference`);
 console.log(`resync: ${syncCount} states sent as text (avg ${(sumBytes / Math.max(1, syncCount) / 1024).toFixed(1)} KB, max ${(maxBytes / 1024).toFixed(1)} KB), ${syncChecks} steps after loading checked, ${syncBad} differed`);
+if (HASHES) { (await import('node:fs')).writeFileSync(HASHES, dumped.join('\n') + '\n'); console.log(`${dumped.length} reference step hashes -> ${HASHES}`); }
 process.exit(rbBad || syncBad ? 1 : 0);

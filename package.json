@@ -22,6 +22,7 @@
     "test:ios": "node scripts/ios/check.mjs",
     "test:movelist": "node scripts/movelist/check.mjs",
     "test:horde": "node scripts/horde/check.mjs",
+    "test:ko": "node scripts/ko/guard.mjs",
     "test:select": "node scripts/select/check.mjs",
     "test:square": "node scripts/shots/portrait.mjs --check --only 390x844,412x915,375x667,395x700,412x640 --out gauntlet/tmp/portrait && node scripts/shots/square-fit.mjs",
     "test:unfurl": "node scripts/og/check.mjs",
