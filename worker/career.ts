@@ -14,6 +14,9 @@
 // played, and applyWithMastery adds it to `fighter_xp` (migrations/0006_career.sql left the column for it) and puts
 // whatever a new rank unlocked in `owned`.
 //
+// PTO (src/career/rules.js PTO, migrations/0009_pto.sql) is part of payout: time away banks double-XP matches,
+// counted in when the next match pays, kept in the `pto` column.
+//
 // Daily shifts (src/career/shifts.js, migrations/0008_shifts.sql) ride every award: payMatch is payout plus any
 // shift the match finished, worked out from the same match the award reads.
 //
@@ -27,7 +30,7 @@
 // and the union of owned palettes.
 import { type Env, json, allowed, BUSY } from "./env";
 import { currentEmail } from "./auth";
-import { blankCareer, utcDay, MERGE_MAX, OFFLINE_MODES, ONLINE_MODES, titleFor } from "../src/career/rules.js";
+import { blankCareer, utcDay, MERGE_MAX, OFFLINE_MODES, ONLINE_MODES, titleFor, cleanPto, settlePto } from "../src/career/rules.js";
 import { palette, itemKey } from "../src/career/palettes.js";
 import { cleanShifts, swapShift, mergeShifts } from "../src/career/shifts.js";
 import { payWithMastery, applyWithMastery, isOwnable, cleanMastery, mergeMastery, grantAll, kitKey, kitItemKey, MASTERY_FIGHTERS } from "../src/career/mastery.js";
@@ -35,9 +38,9 @@ import { payWithMastery, applyWithMastery, isOwnable, cleanMastery, mergeMastery
 export type Career = ReturnType<typeof blankCareer>;
 type Row = {
   career_xp: number; sticks: number; win_day: string; online_day: string; offline_day: string;
-  offline_xp: number; offline_sticks: number; owned: string; equip: string; shifts: string; fighter_xp: string;
+  offline_xp: number; offline_sticks: number; owned: string; equip: string; shifts: string; fighter_xp: string; pto: string;
 };
-const COLS = "career_xp, sticks, win_day, online_day, offline_day, offline_xp, offline_sticks, owned, equip, shifts, fighter_xp";
+const COLS = "career_xp, sticks, win_day, online_day, offline_day, offline_xp, offline_sticks, owned, equip, shifts, fighter_xp, pto";
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OWNED = 200;
 
@@ -64,7 +67,7 @@ function toCareer(r: Row): Career {
   const owned = cleanOwned(parseJson(r.owned, []));
   return {
     xp: int(r.career_xp), sticks: int(r.sticks), winDay: day(r.win_day), onlineDay: day(r.online_day),
-    offDay: day(r.offline_day), offXp: int(r.offline_xp), offSticks: int(r.offline_sticks), owned, equip: cleanEquip(parseJson(r.equip, {}), owned),
+    offDay: day(r.offline_day), offXp: int(r.offline_xp), offSticks: int(r.offline_sticks), owned, equip: cleanEquip(parseJson(r.equip, {}), owned), pto: cleanPto(parseJson(r.pto, {})),
     shifts: cleanShifts(parseJson(r.shifts, {})), mastery: cleanMastery(parseJson(r.fighter_xp, {})),
   };
 }
@@ -89,8 +92,8 @@ async function load(env: Env, email: string): Promise<Career | null> {
  *  devices). False when someone did: read again and redo. */
 async function save(env: Env, email: string, was: Career, c: Career): Promise<boolean> {
   const res = await env.DB.prepare(`UPDATE accounts SET career_xp = ?, sticks = ?, win_day = ?, online_day = ?, offline_day = ?, offline_xp = ?, offline_sticks = ?,
-      owned = ?, equip = ?, shifts = ?, fighter_xp = ? WHERE email = ? AND career_xp = ? AND sticks = ? AND owned = ? AND shifts = ? AND fighter_xp = ?`)
-    .bind(c.xp, c.sticks, c.winDay, c.onlineDay, c.offDay, c.offXp, c.offSticks, JSON.stringify(c.owned), JSON.stringify(c.equip), JSON.stringify(c.shifts), JSON.stringify(c.mastery),
+      owned = ?, equip = ?, shifts = ?, fighter_xp = ?, pto = ? WHERE email = ? AND career_xp = ? AND sticks = ? AND owned = ? AND shifts = ? AND fighter_xp = ?`)
+    .bind(c.xp, c.sticks, c.winDay, c.onlineDay, c.offDay, c.offXp, c.offSticks, JSON.stringify(c.owned), JSON.stringify(c.equip), JSON.stringify(c.shifts), JSON.stringify(c.mastery), JSON.stringify(cleanPto(c.pto)),
       email, was.xp, was.sticks, ownedText.get(was) ?? JSON.stringify(was.owned), shiftsText.get(was) ?? JSON.stringify(was.shifts),
       masteryText.get(was) ?? JSON.stringify(was.mastery)).run();
   return res.meta.changes === 1;
@@ -148,15 +151,22 @@ export async function awardOnline(env: Env, email: string, mode: string, side: 0
 function merge(c: Career, raw: unknown): Career {
   return grantAll(mergeCareer(c, raw)) as Career;
 }
+const later = (a: string, b: string) => (b > a ? b : a);
+/** PTO at sign-in: each side's bank with its time away counted in, the larger of the two (never the sum), and the
+ *  later day played, so signing in twice or on two devices banks nothing extra. */
+function mergePto(a: unknown, b: unknown) {
+  const today = utcDay(), x = settlePto(a, today), y = settlePto(b, today);
+  return { day: later(x.day, y.day), bank: Math.max(x.bank, y.bank) };
+}
 function mergeCareer(c: Career, raw: unknown): Career {
   const g = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const owned = cleanOwned([...c.owned, ...cleanOwned(g.owned)]);
-  const later = (a: string, b: string) => (b > a ? b : a);
   const gOff = day(g.offDay);
   const out: Career = {
     xp: Math.max(c.xp, int(g.xp, MERGE_MAX.xp)), sticks: Math.max(c.sticks, int(g.sticks, MERGE_MAX.sticks)),
     winDay: later(c.winDay, day(g.winDay)), onlineDay: later(c.onlineDay, day(g.onlineDay)),
     offDay: later(c.offDay, gOff), offXp: c.offXp, offSticks: c.offSticks, owned, equip: {},
+    pto: mergePto(c.pto, g.pto),   // the larger bank with the time away counted in on both sides, the later day
     shifts: mergeShifts(c.shifts, g.shifts),   // today's shifts: the larger progress, done on either side is done
     mastery: mergeMastery(c.mastery, g.mastery),  // each fighter's larger XP and matches, the guest's capped (MASTERY_MERGE_MAX)
   };

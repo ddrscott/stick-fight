@@ -16,6 +16,8 @@
 //   payout(match, career, day)          { lines, xp, sticks, firstWin, firstOnline, capped }: what a match pays
 //   applyAward(career, award, day)      the career after it (a new object)
 //   blankCareer()                       a new player's
+//   ptoFor(career, day)                 { bank, back }: the double-XP matches banked now, and whether today is a return
+//   settlePto(pto, day)                 the PTO state with the time away counted in (merging two copies uses it)
 //
 // Fighter mastery (src/career/mastery.js) sits on top of that: payWithMastery and applyWithMastery add the XP the
 // fighter played earned (the match's own XP here, plus NEW HIRE) and whatever a new rank unlocked.
@@ -76,21 +78,58 @@ export const NUDGE = { sticks: 200, againXp: 400 };
  *  short of VP, so a hand-edited localStorage can't hand an account the top of the ladder. */
 export const MERGE_MAX = { xp: 9000, sticks: 8000 };
 
+/** PTO (README, Progression, PTO): coming back pays instead of time away costing. Each whole UTC day without a paid
+ *  match banks `perDay` double-XP matches, up to `cap` banked. Each finished match spends one and pays its match XP
+ *  again (sticks aren't doubled). Nothing is ever taken away: there's no streak to lose. */
+export const PTO = { perDay: 1, cap: 5, label: 'PTO ×2' };
+
 /** today's key: the UTC date */
 export const utcDay = (/** @type {number} */ t = Date.now()) => new Date(t).toISOString().slice(0, 10);
 
 /**
  * @typedef {{ xp: number, sticks: number, winDay: string, onlineDay: string, offDay: string, offXp: number, offSticks: number,
- *   owned: string[], equip: Record<string, string>, shifts: { day: string, swap: number, prog: number[], done: boolean[] },
+ *   owned: string[], equip: Record<string, string>, pto: { day: string, bank: number }, shifts: { day: string, swap: number, prog: number[], done: boolean[] },
  *   mastery: Record<string, { xp: number, n: number }> }} Career
  * @typedef {{ id: string, label: string, n: number, xp: number, sticks: number }} Line
  * @typedef {{ lines: Line[], xp: number, sticks: number, firstWin: boolean, firstOnline: boolean, capped: boolean,
- *   offline: boolean, match: { xp: number, sticks: number }, shifts?: Career['shifts'], moved?: boolean[] }} Award
+ *   offline: boolean, match: { xp: number, sticks: number }, pto?: { day: string, bank: number }, ptoLeft?: number, shifts?: Career['shifts'], moved?: boolean[] }} Award
  */
 
 /** a new player's career @returns {Career} */
 export function blankCareer() {
-  return { xp: 0, sticks: 0, winDay: '', onlineDay: '', offDay: '', offXp: 0, offSticks: 0, owned: [], equip: {}, shifts: { day: '', swap: -1, prog: [0, 0, 0], done: [false, false, false] }, mastery: {} };
+  return { xp: 0, sticks: 0, winDay: '', onlineDay: '', offDay: '', offXp: 0, offSticks: 0, owned: [], equip: {}, pto: { day: '', bank: 0 }, shifts: { day: '', swap: -1, prog: [0, 0, 0], done: [false, false, false] }, mastery: {} };
+}
+
+const DAY_MS = 86400000;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** whole days from a to b (UTC dates); 0 when either isn't a date */
+const daysBetween = (/** @type {string} */ a, /** @type {string} */ b) => (DAY_RE.test(a) && DAY_RE.test(b) ? Math.round((Date.parse(b) - Date.parse(a)) / DAY_MS) : 0);
+
+/** A PTO state, cleaned: day is the last day played (or '' for a player who never has), bank a whole number to the cap.
+ *  @param {unknown} raw @returns {{ day: string, bank: number }} */
+export function cleanPto(raw) {
+  const r = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
+  const day = typeof r.day === 'string' && DAY_RE.test(r.day) ? r.day : '';
+  return { day, bank: Math.max(0, Math.min(PTO.cap, Math.floor(Number(r.bank) || 0))) };
+}
+
+/** The PTO state with the time away up to `day` counted into the bank. Its day moves up to yesterday at most (so
+ *  counting again adds nothing); a day already played stays. A player who never played banks nothing.
+ *  @param {unknown} raw @param {string} [day] */
+export function settlePto(raw, day = utcDay()) {
+  const p = cleanPto(raw);
+  if (!p.day) return p;
+  const away = daysBetween(p.day, day) - 1;   // whole days between the last one played and today
+  if (away <= 0) return p;
+  const yesterday = utcDay(Date.parse(day) - DAY_MS);
+  return { day: yesterday, bank: Math.min(PTO.cap, p.bank + away * PTO.perDay) };
+}
+
+/** What the menu says: the double-XP matches banked as of today, and back: this player has been away (hasn't
+ *  played today yet). @param {Career | null | undefined} career @param {string} [day] */
+export function ptoFor(career, day = utcDay()) {
+  const p = settlePto(career && career.pto, day);
+  return { bank: p.bank, back: p.bank > 0 && p.day !== day };
 }
 
 /** the rung for this much XP, and how far along the bar to the next one */
@@ -140,6 +179,16 @@ export function payout(m, career, day = utcDay()) {
     }
   }
   out.match = { xp, sticks };   // what counts toward the offline cap
+  // PTO: a finished match with match XP spends one banked match and pays that XP again (outside the cap, like the
+  // daily bonuses: at most PTO.cap matches). Any paid match counts as played, so the time away is counted in first.
+  const pto = settlePto(c.pto, day);
+  if (!m.cut && xp > 0 && pto.bank > 0) {
+    out.lines.push({ id: 'pto', label: PTO.label, n: 1, xp, sticks: 0 });
+    pto.bank -= 1;
+    xp *= 2;
+  }
+  out.pto = { day, bank: pto.bank };
+  out.ptoLeft = pto.bank;
   if (!m.cut && m.won && m.mode !== 'horde' && c.winDay !== day) { out.firstWin = true; out.lines.push({ id: 'firstWin', label: DAILY.firstWin.label, n: 1, xp: DAILY.firstWin.xp, sticks: DAILY.firstWin.sticks }); xp += DAILY.firstWin.xp; sticks += DAILY.firstWin.sticks; }
   if (!m.cut && online && c.onlineDay !== day) { out.firstOnline = true; out.lines.push({ id: 'firstOnline', label: DAILY.firstOnline.label, n: 1, xp: DAILY.firstOnline.xp, sticks: DAILY.firstOnline.sticks }); xp += DAILY.firstOnline.xp; sticks += DAILY.firstOnline.sticks; }
   out.xp = xp; out.sticks = sticks;
@@ -156,6 +205,7 @@ export function applyAward(career, award, day = utcDay()) {
   c.sticks = n0(c.sticks) + n0(award.sticks);
   if (award.firstWin) c.winDay = day;
   if (award.firstOnline) c.onlineDay = day;
+  if (award.pto) c.pto = cleanPto(award.pto);   // PTO: today played, what's left in the bank
   if (award.shifts) c.shifts = award.shifts;   // daily shifts (src/career/shifts.js payMatch)
   if (award.offline && award.match) {
     if (c.offDay !== day) { c.offDay = day; c.offXp = 0; c.offSticks = 0; }

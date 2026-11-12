@@ -9,15 +9,18 @@
 //   createCounter(root)    the sticks and title chip for the menus: .show(on)
 //   nudgeBlock(onSave)     the save prompt for a guest with something to lose: { el, button } or null
 //   withTitle(name, title) 'SP · MANAGER'
-//   shiftsBlock()          today's three shifts with their ticks, for the main menu (src/career/shifts.js)
+//   shiftsBlock()          today's three shifts with their ticks, for the main menu (src/career/shifts.js), under
+//                          the PTO line when some is banked
 //   shiftCards(opts)       the SHIFTS screen's body: one card per shift (what it teaches, a coaching line, the ticks,
 //                          what it pays) with HOW TO PLAY and SWAP buttons; returns { el, items }
 //   shiftTicks(moved, compact)  the result screen's progress row (earningsPanel adds it)
 //   masteryBlock(m, compact)    fighter mastery on the result screen (earningsPanel adds it): BARISTA MASTERY 2, the
 //                          XP it paid (NEW HIRE apart), the bar to the next rank, and what a new rank unlocked
+//   ptoText(bank, back)    the menu's PTO line: WELCOME BACK: YOUR NEXT 3 MATCHES PAY DOUBLE XP ('' with none banked)
+//   ptoBlock()             that line as a block for the main menu (src/career/rules.js PTO); repaints with the career
 //   masteryChip(fighter)   character select's line: MASTERY 2 with five pips, NEW HIRE BONUS while it pays
 import { el, button } from './ui.js';
-import { career, last, onCareer, nudgeDue, nudgeShown, todayShifts, swapToday, mastery } from '../career/store.js';
+import { career, last, onCareer, nudgeDue, nudgeShown, todayShifts, swapToday, mastery, pto } from '../career/store.js';
 import { MAX_RANK, NEW_HIRE } from '../career/mastery.js';
 import { characterOr } from '../characters/index.js';
 import { SHIFT_PAY } from '../career/shifts.js';
@@ -63,7 +66,7 @@ export function earningsPanel(compact = false) {
     if (compact) {
       const row = el('div', 'cr-row');
       for (const l of cur.award.lines) {
-        const daily = l.id === 'firstWin' || l.id === 'firstOnline' || l.id === 'shift', cap = l.id === 'cap';
+        const daily = l.id === 'firstWin' || l.id === 'firstOnline' || l.id === 'shift' || l.id === 'pto', cap = l.id === 'cap';
         row.appendChild(el('span', daily ? 'cr-daily' : cap ? 'cr-cap' : '', `${lineText(l)} ${signed(l.sticks)}`));
       }
       box.append(row, el('div', 'cr-sum', `EARNED ${signed(cur.award.sticks)} STICKS  ·  ${signed(cur.award.xp)} XP`));
@@ -71,7 +74,7 @@ export function earningsPanel(compact = false) {
       const grid = el('div', 'cr-lines');
       grid.append(el('span', 'cr-h', 'EARNED'), el('span', 'cr-h cr-num', 'XP'), el('span', 'cr-h cr-num', 'STICKS'));
       for (const l of cur.award.lines) {
-        const daily = l.id === 'firstWin' || l.id === 'firstOnline' || l.id === 'shift', cap = l.id === 'cap';
+        const daily = l.id === 'firstWin' || l.id === 'firstOnline' || l.id === 'shift' || l.id === 'pto', cap = l.id === 'cap';
         grid.append(el('span', daily ? 'cr-daily' : cap ? 'cr-cap' : '', lineText(l)), el('span', 'cr-num', signed(l.xp)), el('span', 'cr-num cr-st', signed(l.sticks)));
       }
       grid.append(el('span', 'cr-tot', 'TOTAL'), el('span', 'cr-num cr-tot', signed(cur.award.xp)), el('span', 'cr-num cr-st cr-tot', signed(cur.award.sticks)));
@@ -79,6 +82,7 @@ export function earningsPanel(compact = false) {
     }
     if (cur.award.firstWin) box.appendChild(el('div', 'cr-note', "YOUR FIRST WIN TODAY PAYS EXTRA. IT'S BACK TOMORROW."));
     else if (cur.award.firstOnline) box.appendChild(el('div', 'cr-note', 'YOUR FIRST ONLINE MATCH TODAY PAYS EXTRA.'));
+    if (cur.award.lines.some((l) => l.id === 'pto')) box.appendChild(el('div', 'cr-note', ptoPaid(cur.award.ptoLeft)));
     if (cur.award.capped) box.appendChild(el('div', 'cr-note', 'ARCADE AND HORDE HAVE PAID ALL THEY CAN TODAY. ONLINE STILL PAYS.'));
     box.appendChild(shiftTicks(cur.award.moved, compact));   // the day's shifts, the ones this match moved lit
     if (cur.award.mastery) box.appendChild(masteryBlock(cur.award.mastery, compact));   // the fighter played (README, Fighter mastery)
@@ -165,6 +169,35 @@ export function masteryChip(fighter) {
   return box;
 }
 
+// ---- PTO (README, Progression, PTO) ----------------------------------------------------------------------------
+// Always framed as something you have, never as something you lost: no streak, no count of days missed.
+const matches = (n) => (n === 1 ? 'YOUR NEXT MATCH PAYS' : `YOUR NEXT ${n} MATCHES PAY`);
+/** the menu's line: '' when nothing is banked */
+export function ptoText(bank, back) {
+  if (!(bank > 0)) return '';
+  return `${back ? 'WELCOME BACK' : 'PTO'}: ${matches(bank)} DOUBLE XP`;
+}
+/** the result screen's sentence under a match PTO doubled */
+function ptoPaid(left) {
+  const n = Math.max(0, Math.floor(Number(left) || 0));
+  return n > 0 ? `PTO: THIS MATCH PAID DOUBLE XP FOR COMING BACK. ${n === 1 ? 'ONE MORE DOES' : `${n} MORE DO`} TOO.` : 'PTO: THIS MATCH PAID DOUBLE XP FOR COMING BACK.';
+}
+/** The main menu's PTO line, or an empty block that fills in if some is banked later (a sign-in, a new day). */
+export function ptoBlock() {
+  injectStyle();
+  const box = el('div', 'pto-menu');
+  const paint = () => {
+    const p = pto(), t = ptoText(p.bank, p.back);
+    box.textContent = '';
+    box.classList.toggle('pto-on', !!t);
+    if (!t) return;
+    box.append(el('b', 'pto-x', '×2'), el('span', 'pto-text', t));
+  };
+  paint();
+  const off = onCareer(() => { if (!box.isConnected) { off(); return; } paint(); });
+  return box;
+}
+
 // ---- daily shifts (README, Progression, Daily shifts) -------------------------------------------------------
 /** n boxes, the first p filled (a target past 5 reads as numbers instead) */
 function ticks(p, n) {
@@ -192,9 +225,11 @@ export function shiftTicks(moved, compact = false) {
 /** The main menu's panel: today's three, their ticks and what each pays. Repaints when progress changes. */
 export function shiftsBlock() {
   injectStyle();
-  const box = el('div', 'sh-menu');
+  const box = el('div', 'sh-menu'), away = ptoBlock();   // PTO first: WELCOME BACK: YOUR NEXT 3 MATCHES PAY DOUBLE XP
   const paint = () => {
+    const btns = [...box.children].filter((c) => c.classList.contains('fl-btn'));   // the menu's SHIFTS button stays
     box.textContent = '';
+    box.appendChild(away);
     const { list } = todayShifts();
     box.appendChild(el('div', 'sh-head', "TODAY'S SHIFTS"));
     for (const sh of list) {
@@ -203,6 +238,7 @@ export function shiftsBlock() {
       box.appendChild(r);
     }
     box.appendChild(el('div', 'sh-foot', 'NEW ONES EVERY DAY AT MIDNIGHT UTC. THE SAME FOR EVERYONE.'));
+    box.append(...btns);
   };
   paint();
   const off = onCareer(() => { if (!box.isConnected) { off(); return; } paint(); });
@@ -296,6 +332,11 @@ function injectStyle() {
   .cr-nudge .cr-nsub { font-size: 1.8cqw; font-weight: 500; color: rgba(230,214,255,0.86); }
   .cr-walletline { color: #ffc46b; }
   .fl-pcareer { width: 46cqw; display: flex; flex-direction: column; gap: 0.6cqh; }
+  /* PTO: plain text, square corners, the mint the bonuses use, a full outline */
+  .pto-menu { display: none; align-items: center; gap: 1cqw; padding: 0.6cqh 1cqw; border: 2px solid #9dffc0; background: rgba(10,4,20,0.82); }
+  .pto-menu.pto-on { display: flex; }
+  .pto-x { font: 400 2cqw/1 'Bungee', sans-serif; color: #0b0616; background: #9dffc0; padding: 0.2em 0.35em 0.1em; }
+  .pto-text { font: 600 2cqw/1.05 'Teko', sans-serif; letter-spacing: 0.08em; color: #9dffc0; }
   /* daily shifts: plain text, square corners, the career's amber */
   .sh-ticks { display: inline-flex; gap: 0.35cqw; align-items: center; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 1.6cqw; color: #ffc46b; }
   .sh-ticks i { display: block; width: max(7px, 1cqw); height: max(7px, 1cqw); border: 2px solid rgba(255,176,46,0.75); }
@@ -343,6 +384,7 @@ function injectStyle() {
     .cr-chip { font-size: 3.4cqw; } .cr-chip span { font-size: 3cqw; }
     .fl-pcareer { width: 80cqw; }
     .sh-modeswrap { flex-direction: column; gap: 1.6cqh; } .sh-menu { width: 86cqw; } .sh-head, .sh-reshead { font-size: 2.8cqw; } .sh-row, .sh-resrow { font-size: 3.2cqw; } .sh-row .sh-pay { font-size: 3cqw; }
+    .pto-x, .pto-text { font-size: 3.2cqw; }
     .sh-foot { font-size: 2.4cqw; } .sh-ticks { font-size: 2.8cqw; } .sh-ticks i { width: max(8px, 1.8cqw); height: max(8px, 1.8cqw); }
     .sh-cards { flex-direction: column; width: 90cqw; } .sh-ctitle { font-size: 3.4cqw; } .sh-mech, .sh-cpay { font-size: 3cqw; } .sh-coach { font-size: 3cqw; }
     .sh-cbtns { flex-direction: row; } .sh-cbtns .fl-btn { flex: 1; font-size: 3.4cqw; }
