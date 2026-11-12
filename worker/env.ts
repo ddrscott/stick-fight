@@ -25,6 +25,13 @@ export interface Env {
   DEV_HOOKS?: string;        // "1" only in .dev.vars: test routes (expire a crew room now)
   OLD_PATH?: string;         // askscottpierce.com/stick-fight: "serve" the game there too, or "redirect" it here (worker/index.ts)
   ADMIN_TOKEN?: string;      // a secret: the admin route (worker/admin.ts) answers 404 without it
+  // the support desk (worker/support.ts, README Privacy and terms, Support desk)
+  AI?: Ai;                   // Workers AI: the content check and the scrubbed summary
+  WEBMAIL?: { deliver(raw: ArrayBuffer, rcpt: string, from: string): Promise<{ ok: true; mailbox: string } | { ok: false; error: string }> };   // Scott's private inbox (the webmail Worker's Inbound entrypoint)
+  GITHUB_TOKEN?: string;     // a secret: fine-grained PAT, Issues read and write on ddrscott/stick-fight only; without it no ticket is made
+  SUPPORT_FROM?: string;     // the auto-replies' From address
+  SUPPORT_MOCK?: string;     // test only, with DEV_HOOKS=1: the base URL standing in for GitHub and the model (scripts/support/check.mjs)
+  SUPPORT_REAL_AI?: string;  // test only: "1" uses the real AI binding even with SUPPORT_MOCK set
 }
 
 /** One match in the LIVE list (GET api/live): a quick room with a match on that anyone may watch. */

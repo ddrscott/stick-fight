@@ -17,7 +17,8 @@
 // the email, and its limits counters (send-email, guess-email, guess-email-day) go, and the cookie is
 // cleared. First the player is taken out of every crew the account (or this device, `crews`) lists
 // (Crew.forget: their member row, record, picks, time and matches; their high score rows stay as
-// initials with nobody behind them). `crews` is how many crews had them. The page then starts fresh,
+// initials with nobody behind them). Their support ticket rows go too (support_tickets, worker/support.ts).
+// `crews` is how many crews had them. The page then starts fresh,
 // as after SIGN OUT. Signing in with the same email again makes a new account.
 //
 // The code is 6 digits, lasts 10 minutes and takes 5 tries; the email also carries a link to the
@@ -127,7 +128,7 @@ function mergePrefs(have: Prefs, sent: Prefs): Prefs {
  * Count one event against `key` in a fixed window and say whether it's within `max`. One atomic
  * statement, so parallel requests can't all read the same count.
  */
-async function spend(env: Env, key: string, max: number, windowMs: number): Promise<boolean> {
+export async function spend(env: Env, key: string, max: number, windowMs: number): Promise<boolean> {
   const now = Date.now();
   const row = await env.DB.prepare(
     `INSERT INTO limits (key, window_start, count) VALUES (?1, ?2, 1)
@@ -319,6 +320,11 @@ async function deleteMe(req: Request, env: Env): Promise<Response> {
     env.DB.prepare("DELETE FROM sessions WHERE email = ?").bind(email),
     env.DB.prepare("DELETE FROM login_codes WHERE email = ?").bind(email),
     env.DB.prepare("DELETE FROM limits WHERE key IN (?, ?, ?)").bind(`send-email:${email}`, `guess-email:${email}`, `guess-email-day:${email}`),
+    // the support desk's ticket rows and counters (worker/support.ts); the public issues stay, they hold no personal data
+    ...(acct ? [
+      env.DB.prepare("DELETE FROM support_tickets WHERE player_id = ?").bind(acct.player_id),
+      env.DB.prepare("DELETE FROM limits WHERE key IN (?, ?, ?)").bind(`support-new:${acct.player_id}`, `support-reply:${acct.player_id}`, `support-note:${acct.player_id}`),
+    ] : []),
   ]);
   return json({ ok: true, crews }, 200, { "set-cookie": sessionCookie(req, "", 0) });
 }

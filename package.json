@@ -34,6 +34,7 @@
     "test:admin": "node scripts/admin/check.mjs",
     "test:delete": "node scripts/delete/check.mjs",
     "test:delete:ui": "node scripts/delete/ui.mjs",
+    "test:support": "node scripts/support/check.mjs",
     "test:age": "node scripts/age/check.mjs",
     "test:device": "node scripts/perf/device.mjs"
   },

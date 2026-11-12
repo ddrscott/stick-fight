@@ -1,0 +1,7 @@
+// The webmail stand-in for npm run test:support (webmail-stub.js). MOCK is the test's mock server.
+{
+  "name": "webmail",
+  "main": "webmail-stub.js",
+  "compatibility_date": "2026-11-01",
+  "vars": { "MOCK": "http://127.0.0.1:8863" }
+}

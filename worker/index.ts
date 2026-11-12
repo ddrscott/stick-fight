@@ -24,6 +24,7 @@
 //   GET and POST /api/admin/crews/<slug>   rename or close a crew, behind ADMIN_TOKEN (worker/admin.ts)
 //   POST /api/auth/start, auth/verify, auth/logout; GET and PUT /api/me
 //                                            profiles and email sign-in, worker/auth.ts
+//   email() for support@neonstickfight.com    the support desk: GitHub issues from players, worker/support.ts
 //
 // /ice hands out Cloudflare TURN credentials (Realtime TURN, the key in the TURN_KEY_ID and
 // TURN_KEY_API_TOKEN secrets) so two phones behind carrier NAT can still go peer to peer through
@@ -63,6 +64,7 @@ import { blockedName } from "../src/namefilter.js";
 import { Crew, SLUG_RE } from "./crew";
 import { handleAuth } from "./auth";
 import { handleAdmin } from "./admin";
+import { supportEmail } from "./support";
 import { cleanLink, linkPage, ogImage, oldLink, playPage } from "./og";
 import { offlineMatch, recordMatch, recordPick, recordPlay, roomLive, roomResult, roomSettle, statsResponse } from "./stats";
 import { isFighter } from "./roster";
@@ -216,6 +218,10 @@ export default {
       return oldPath(req, env, ctx);
     }
     return app(req, env, ctx);
+  },
+  // mail to support@neonstickfight.com (an Email Routing rule; the catch-all goes to webmail): worker/support.ts
+  async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+    await supportEmail(message, env);
   },
 } satisfies ExportedHandler<Env>;
 
