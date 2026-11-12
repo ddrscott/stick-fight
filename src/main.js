@@ -848,6 +848,20 @@ const PHASES = {
 const params = new URLSearchParams(location.search);
 const urlSeed = params.has('seed') ? (+params.get('seed') >>> 0) : null;
 const seedOf = (opts, dflt) => (opts && opts.seed != null ? +opts.seed >>> 0 : urlSeed != null ? urlSeed : dflt);
+// ?invariants (dev and tests, README Run, netsim:invariants): the sim's per-step invariants (src/combat/invariants.js)
+// after every step, in any scene. The first violation goes to the console and window.__invariant, and checking stops.
+// Without the flag the module is never loaded, and the sim's only cost is one null check a step (sim.afterTick).
+if (params.has('invariants')) import('./combat/invariants.js').then(({ createInvariants }) => {
+  const check = createInvariants(sim);
+  sim.afterTick = () => {
+    const bad = check();
+    if (!bad) return;
+    sim.afterTick = null;
+    window.__invariant = { ...bad, step: sim.stepCount, phase: sim.phase, log: sim.log.slice(-8) };
+    console.error(`[invariants] ${bad.rule}: unit ${bad.unit} in ${bad.state} at step ${sim.stepCount}: ${bad.detail}`, window.__invariant);
+  };
+  console.info('[invariants] checking after every step');
+});
 
 // ---- mirror ------------------------------------------------------------------------------
 // A debug view only: ?mirror=1 draws any scene mirrored left-right. It never turns on by itself;
@@ -912,9 +926,9 @@ function installHordeKo(o = {}) {
     if (ph.char) { char0 = target.char.id; sim.setCharacter(target.id, ph.char); }
     // the goon steps in front of the hero, the rest wait out of reach
     const side = me.x < (sim.bounds.x0 + sim.bounds.x1) / 2 ? 1 : -1;
-    const put = (u, x) => { u.x = x; u.vx = 0; u.state = 'idle'; u.facing = me.x > x ? 1 : -1; u.rig.x = x; u.rig.facing = u.facing; u.floor = me.floor; u.stair = me.stair; u.y = me.y; u.rig.y = me.y; u.grounded = true; u.rig.update(0); sim.rigUpd(u, 0); };
+    const put = (u, x) => { u.x = x; u.vx = 0; sim.enter(u, 'idle'); u.facing = me.x > x ? 1 : -1; u.rig.x = x; u.rig.facing = u.facing; u.floor = me.floor; u.stair = me.stair; u.y = me.y; u.rig.y = me.y; u.grounded = true; u.rig.update(0); sim.rigUpd(u, 0); };
     put(target, me.x + side * ph.gap);
-    me.facing = side; me.rig.facing = side; me.state = 'idle'; me.vx = 0; me.rig.update(0); sim.rigUpd(me, 0);
+    me.facing = side; me.rig.facing = side; sim.enter(me, 'idle'); me.vx = 0; me.rig.update(0); sim.rigUpd(me, 0);
     for (const u of live()) if (u !== target) put(u, Math.max(sim.bounds.x0 + 40, Math.min(sim.bounds.x1 - 40, me.x - side * 600)));
     target.health = ph.hp; target.stamina = target.staminaMax || 100; me.stamina = me.staminaMax || 100;
     if (ph.heroKO) me.health = 1; else me.health = me.maxHealth || 100;

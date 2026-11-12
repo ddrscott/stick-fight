@@ -9,6 +9,8 @@
 // the round's state (phase, timer, winner, banner, KO slow-mo, finisher, wins, the callouts in order). A change of
 // order inside one step shows up, so a KO resolved on a different step, or a callout moved, is a difference.
 // --root serves another checkout (say main, `git worktree add /tmp/main main`) with this same script.
+// --omit stun leaves a body field out of the frame digest (README, Fundamentals, States and the flags they own: the
+// state table puts `stun` back to 0 when a unit leaves hitstun, which changes the digest without changing the fight).
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -66,7 +68,7 @@ const names = opt('--scenes', '') ? opt('--scenes').split(',') : all.filter((n) 
 const out = { root, scenes: names, phases: {} };
 for (const name of names) for (let k = 0; k < 80; k++) {
   if (k === 0) await fresh();   // a page of its own per scene: the reach table the sim learns from hits carries from one scene to the next
-  const r = await pg.evaluate(({ name, k }) => {
+  const r = await pg.evaluate(({ name, k, omit }) => {
     const g = window.__game, sim = g.sim;
     try { window.__gauntlet.setScene(name, { only: k }); } catch (e) { return null; }
     const ph = sim.phaseName; if (!ph && k > 0) return null;
@@ -80,7 +82,7 @@ for (const name of names) for (let k = 0; k < 80; k++) {
       was = sim.phase;
       let h = 0x811c9dc5;
       const mix = (s) => { for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } };
-      for (const u of sim.units) { mix(`${u.x},${u.y},${u.vx},${u.vy},${u.state},${u.move},${u.phase},${u.health},${u.stamina},${u.hitstop},${u.stun},${u.hidden}`); const j = u.rig.joints; for (const n in j) mix(`${j[n].x},${j[n].y}`); }
+      for (const u of sim.units) { mix(`${u.x},${u.y},${u.vx},${u.vy},${u.state},${u.move},${u.phase},${u.health},${u.stamina},${u.hitstop},${omit.includes('stun') ? '' : u.stun},${u.hidden}`); const j = u.rig.joints; for (const n in j) mix(`${j[n].x},${j[n].y}`); }
       mix(`${sim.phase},${sim.phaseTimer},${sim.timer},${sim.winner},${sim.banner},${sim.koSlow},${sim.finisher},${sim.wins},${sim.round},${sim.perfectT}`);
       for (const c of sim.callouts) mix(`${c.text},${c.by},${c.kind},${c.t}`);
       frames.push(h.toString(16));
@@ -88,7 +90,7 @@ for (const name of names) for (let k = 0; k < 80; k++) {
     }
     let d = 0x811c9dc5; for (const s of frames) for (let i = 0; i < s.length; i++) { d ^= s.charCodeAt(i); d = Math.imul(d, 0x01000193) >>> 0; }
     return { phase: ph || '(whole scene)', health: sim.units.map((u) => Math.round(u.health * 1000) / 1000).join('/'), digest: d.toString(16), frames, log, kos };
-  }, { name, k });
+  }, { name, k, omit: opt('--omit', '').split(',') });
   if (!r) break;
   out.phases[`${name}#${k}`] = r;
   process.stderr.write(`${name}#${k} ${r.phase} hp ${r.health} log ${r.log.length}${r.kos.length ? ' ' + r.kos.join(' ') : ''}\n`);

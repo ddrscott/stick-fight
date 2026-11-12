@@ -497,6 +497,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.combo = 0; u.comboBy = -1; u.airUsed = 0; u.landLag = 0; u.easeBand = false;
     u.floor = 0; u.stair = -1; u.falling = false; u.breakOK = false; u.fellLanded = false; u.vaultPhase = null; u.fallWell = -1; u.vaultWell = -1;
     u.airHits = 0; u.gScale = 1; u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.splatT = 0; u.crouchEnd = null; u.glide = null;
+    for (const k in FLAG_REST) u[k] = FLAG_REST[k];   // and every transient flag a state owns (STATE_OWNS), whatever he was doing when the round ended
     syncRig(u); u.rig.play('idle'); rigUpd(u, 0); u.rig.events.length = 0;
   }
   sim.startRound = (n, { skipIntro = false } = {}) => {
@@ -905,7 +906,14 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (u.state !== to) { const out = leaving(u.state, to); for (let i = 0; i < out.length; i++) u[out[i]] = FLAG_REST[out[i]]; }
     u.state = to;
   }
+  // every flag the unit's state doesn't own back at rest: for a unit that a hit put in one state and a second hit on the
+  // same step then wrote attacker's flags on (a trade: resolveHits)
+  function restFlags(u) {
+    const own = STATE_OWNS[u.state] || NONE;
+    for (const k in FLAG_REST) if (!own.includes(k) && u[k] !== undefined) u[k] = FLAG_REST[k];
+  }
   sim.STATE_OWNS = STATE_OWNS; sim.FLAG_REST = FLAG_REST;   // for the invariant checker
+  sim.enter = (u, to) => enter(u, to);   // for a test scene that poses a body (src/main.js): through the door like the sim
   function setState(u, state, anim = state) {
     if (state === 'idle' && anim === 'idle' && u.faint > 0) anim = ANIM.faint;   // out on his feet
     if (u.state === state && (state === 'walk' || state === 'run' || state === 'idle' || state === 'block' || state === 'crouch')) {
@@ -2255,6 +2263,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         const ma = hero.move, mb = g.move;
         applyHit(hero, g, a.pt, { move: ma, trade: true });
         applyHit(g, hero, b.pt, { move: mb, trade: true });
+        // the second hit is g's, landed after the first already put g in a reaction: a launch's follow-through (the glide,
+        // the chase, launchCancelAt) is an attacker's and g isn't attacking any more, so it would glide him while he reels
+        restFlags(hero); restFlags(g);
         hero.tradeLimb = FRAME_DATA[ma].limb; g.tradeLimb = FRAME_DATA[mb].limb;
         hero.tradeUntil = g.tradeUntil = sim.stepCount + Math.max(hero.hitstop, g.hitstop) + 16;
         callout('TRADE', -1, 'trade');
@@ -2912,7 +2923,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     def.vx = dir * Math.max(fd.kb.x, 380); def.vy = -Math.max(Math.abs(fd.kb.y), 300);
     syncRig(def);
     if (!startRag(def, def.vx * 0.8 - (def.rag ? def.vx * 0 : 0), def.vy * 0.9, { wall: 'stop', spin: 420 })) def.grounded = false;
-    att.vx = dir * (fd.kb.x + 100); att.followThrough = true; att.chase = true;
+    // ride the launch, like any knockdown (applyHit); not for an attacker a trade or the sweep finds in some other state
+    if (att.state === 'attack') { att.vx = dir * (fd.kb.x + 100); att.followThrough = true; att.chase = true; }
     // The FINISH call sits on the hit, where it always has (it's logged between the hit's own entries, and the log is
     // part of the rollback state). It only asks the rules whether this KO ends the round; resolveKOs decides that.
     if ((fd.ender || fd.splat) && rules().endsRound(def)) callout('FINISH', att.id, 'finish');
@@ -2948,8 +2960,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     def.grabbedBy = -1; def.grabTo = null;
     syncRig(def); rigUpd(def, 0.05);
     launchRagdoll(def, dir * Math.max(fd.kb.x, 380), -Math.max(Math.abs(fd.kb.y), 300));
-    att.vx = dir * 60; att.followThrough = false; att.chase = false; att.glide = null;
-    att.launchCancelAt = sim.stepCount + att.hitstop + 8;   // straight on to the next goon
+    att.followThrough = false; att.chase = false; att.glide = null;
+    // straight on to the next goon; a hero the same trade knocked down keeps his own fall
+    if (att.state === 'attack') { att.vx = dir * 60; att.launchCancelAt = sim.stepCount + att.hitstop + 8; }
     sim.horde.count++; sim.card = { text: `${sim.horde.count} DOWN`, t: 0.9 };
     note({ type: 'goonDown', att: att.id, def: def.id, count: sim.horde.count, how });
     onEvent({ type: 'goonDown', count: sim.horde.count, how, attacker: att, defender: def });   // the flow scores this (run.goons)
@@ -3346,6 +3359,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     for (const u of sim.units) syncRig(u);
     hordeStep();
     roundFlow();
+    if (sim.afterTick) sim.afterTick();   // dev and tests only (src/combat/invariants.js, ?invariants); null otherwise
   }
 
   sim.step = (ms) => {
@@ -3357,6 +3371,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   };
   sim.tick = tick;
   sim.eventFilter = null;
+  sim.afterTick = null;   // called after every step when set: the invariant checker (src/main.js ?invariants). Not sim state
   // online rollback: the whole state that feeds the next tick (src/combat/snapshot.js)
   sim.saveState = (into) => saveSim(sim, arena, into);
   sim.loadState = (s) => loadSim(sim, arena, s);
