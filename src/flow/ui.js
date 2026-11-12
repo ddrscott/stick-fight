@@ -462,6 +462,7 @@ function injectStyle() {
     box-shadow: 0 0 1.2cqw color-mix(in srgb, var(--pink) 50%, transparent); font: 400 4cqw/5.6cqw 'Bungee', 'Arial Black', sans-serif; color: #fff;
     text-align: center; white-space: pre; overflow: hidden; letter-spacing: 0.04em; }
   .fl-field.fl-lower { font: 600 3.8cqw/5.8cqw 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.04em; }
+  .fl-hint { opacity: 0.35; }
   .fl-caret { display: inline-block; width: 0.5cqw; height: 4cqw; margin-left: 0.3cqw; vertical-align: -0.5cqw; background: var(--amber); box-shadow: 0 0 0.8cqw var(--amber); animation: fl-blink 1s steps(1) infinite; }
   .fl-temsg { min-height: 2.2cqw; max-width: 80cqw; }
   .fl-warn { color: #ffc2f3 !important; }

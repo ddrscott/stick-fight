@@ -195,8 +195,12 @@ try {
       // SET YOUR NAME: the name screen, then straight back to this crew's lobby under the new name
       await C.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-crewme')).act());
       check('upright: SET YOUR NAME opens the name screen', (await flow(C)) === 'nameEntry', await flow(C));
-      for (let i = 0; i < 12; i++) await C.keyboard.press('Backspace');
+      // the handed-out name isn't in the field (it shows greyed), so typing a name saves exactly that name
+      const fld = await C.evaluate(() => ({ value: [...(document.querySelector('#flow .fl-field') || { childNodes: [] }).childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(''), hint: (document.querySelector('#flow .fl-field .fl-hint') || {}).textContent || '' }));
+      check('upright: SET YOUR NAME starts the field empty, the guest name greyed behind it', fld.value === '' && /^GUEST \d+$/.test(fld.hint), JSON.stringify(fld));
       await C.keyboard.type('UPRIGHT'); await C.keyboard.press('Enter');
+      const saved = await until(async () => { const v = await me(C); return v && !v.auto ? v : null; }, 5000);
+      check('upright: typing a name and OK saves exactly what was typed', saved && saved.name === 'UPRIGHT', JSON.stringify(saved && saved.name));
       const back = await until(() => C.evaluate(() => window.__flow.state === 'crewLobby' && /YOU'RE UPRIGHT/.test((document.querySelector('#flow .fl-crewme') || {}).textContent || '')), 5000);
       check('upright: OK goes back to the lobby, saying the new name', back, await flow(C));
       check('upright: the address bar is crew/<slug> again', (await where(C)) === `${ROOT}crew/${crew.slug}`, await where(C));
@@ -210,10 +214,10 @@ try {
       await C.evaluate(() => [...document.querySelectorAll('button')].find((b) => /CHANGE NAME/.test(b.textContent)).click());
       const title = await C.evaluate(() => document.querySelector('h1').textContent);
       check('CHANGE NAME on a handed-out name asks WHAT DO WE CALL YOU?', /WHAT DO WE CALL YOU/.test(title), title);
-      for (let i = 0; i < 12; i++) await C.keyboard.press('Backspace');
+      // no DELs first: a handed-out name starts the field empty, so this saves exactly ROOKIE
       await C.keyboard.type('ROOKIE'); await C.keyboard.press('Enter');
       const q = await until(async () => { const v = await me(C); return v && v.name === 'ROOKIE' ? v : null; }, 5000);
-      check('a picked name replaces it and clears auto', q && q.name === 'ROOKIE' && !q.auto, JSON.stringify(q && { name: q.name, auto: q.auto }));
+      check('a picked name replaces it and clears auto', q && q.name === 'ROOKIE' && !q.auto, JSON.stringify(q ? { name: q.name, auto: q.auto } : { me: await me(C), flow: await flow(C) }));
     }
   }
   // ---- the old ?crew= link, through the Worker's 301, any other query kept ----

@@ -1561,7 +1561,7 @@ export function createFlow(ctx) {
   }
   let te = null;
   function textScreen(cls, o) {
-    te = { value: o.value || '', max: o.max, lower: !!o.lower, accept: o.accept, valid: o.valid, submit: o.submit, paste: o.paste || null, busy: false, fieldEl: null, msgEl: null, okBtn: null };
+    te = { value: o.value || '', hint: o.hint || '', max: o.max, lower: !!o.lower, accept: o.accept, valid: o.valid, submit: o.submit, paste: o.paste || null, busy: false, fieldEl: null, msgEl: null, okBtn: null };
     const me = te;
     ui.show(`fl-text ${cls}`, (root) => {
       root.append(el('h1', 'fl-h2', o.title));
@@ -1590,6 +1590,7 @@ export function createFlow(ctx) {
     if (!te || !te.fieldEl) return;
     te.fieldEl.textContent = te.value;
     te.fieldEl.appendChild(el('i', 'fl-caret', ''));
+    if (!te.value && te.hint) te.fieldEl.appendChild(el('span', 'fl-hint', te.hint));   // greyed, never part of the value
     ui.refresh();
   }
   function teType(ch) {
@@ -1630,7 +1631,9 @@ export function createFlow(ctx) {
       title: p.name && !p.auto ? 'CHANGE YOUR NAME' : 'WHAT DO WE CALL YOU?',
       label: 'YOUR NAME ONLINE  ·  3 TO 12 LETTERS OR NUMBERS',
       msg: 'USE A NICKNAME, NOT YOUR REAL NAME. OTHER PLAYERS SEE IT, AND NOTHING ELSE ABOUT YOU',
-      value: p.name, max: 12,
+      // a handed-out GUEST name starts the field empty (shown greyed behind the caret), so typing a name
+      // gives exactly that name; BACK keeps the guest name. A picked name starts filled, to edit.
+      value: p.auto ? '' : p.name, hint: p.auto ? p.name : '', max: 12,
       keys: (ch) => /[A-Z0-9]/.test(ch), extraKeys: [' '],
       accept: (ch, v) => /^[A-Z0-9]$/.test(ch) || (ch === ' ' && v.length > 0 && !v.endsWith(' ')),
       valid: (v) => !!cleanName(v),
