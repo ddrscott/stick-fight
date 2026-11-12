@@ -16,6 +16,12 @@
 // comes back carries on, so nothing is sent twice. High scores don't go through here at all: a quit run never
 // reaches the initials screen, so it never lands on a board.
 //
+// The career (README, Progression; src/career/store.js) hears every match that closes, finished or cut short, through
+// opts.onClose: a summary of the local player's technique (parries, punishes, enders, happy accidents, perfect
+// rounds), whether they won and how long they fought. Raw hits and presses aren't in it: they never pay. It goes
+// whatever Do Not Track says, since it's the player's own progress, not analytics; it never leaves the page for a
+// guest, and for a signed-in player goes only to their own account.
+//
 // It reads the sim and never writes it. Events re-fired by a rollback are already filtered by the netcode
 // (README, Rollback, Effects); a stray one can leave the hit counts a hit off, which is why the online
 // agreement doesn't include them.
@@ -44,7 +50,8 @@ const KEEP = 'stick-fight-book-';
 const KEEP_MS = 24 * 3600 * 1000;
 function localStore() { try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; } }
 
-/** Make the books for one sim. opts (tests): send (default trackAll), store (default localStorage), page (this page's token). */
+/** Make the books for one sim. opts (tests): send (default trackAll), store (default localStorage), page (this page's token);
+ *  onClose(summary) hears every match that closes (the career). */
 export function createBook(sim, opts = {}) {
   const send = opts.send || trackAll;
   const store = opts.store !== undefined ? opts.store : analyticsOn ? localStore() : null;   // nothing kept when nothing would be sent
@@ -54,11 +61,13 @@ export function createBook(sim, opts = {}) {
   let on = null;
   let fightAt = -1;   // the step the first FIGHT showed on, or -1 before it
   let hits = [0, 0], combo = [0, 0], perfects = [0, 0], lastHit = ['', ''], koMove = '';
+  // technique, per side, for the career: [parries, punishes (counter hits), enders, happy accidents]
+  let tech = [[0, 0, 0, 0], [0, 0, 0, 0]];
   /** @type {Map<string, { used: number, landed: number }>} */ const moves = new Map();
   /** @type {(string|null)[]} */ let swing = [null, null];   // the unique move each side has in the air, until it lands once
   const sideOf = (u) => (u.id === 0 ? 0 : 1);   // horde: every goon is side 1
 
-  function reset() { hits = [0, 0]; combo = [0, 0]; perfects = [0, 0]; lastHit = ['', '']; koMove = ''; moves.clear(); swing = [null, null]; fightAt = -1; }
+  function reset() { hits = [0, 0]; combo = [0, 0]; perfects = [0, 0]; lastHit = ['', '']; koMove = ''; tech = [[0, 0, 0, 0], [0, 0, 0, 0]]; moves.clear(); swing = [null, null]; fightAt = -1; }
   /** a match starts: mode 'arcade' | 'horde' | 'quick' | 'crew', the CPU's level, the stage, and which side is this player.
    *  One still open is cut short first (cut). */
   function begin(meta) { cut(); on = { mode: meta.mode, level: meta.level || 0, stage: meta.stage || 0, local: meta.local || 0 }; reset(); if (sim.phase && sim.phase !== 'intro') fightAt = sim.stepCount; }   // a scene that skips its intro is already fighting
@@ -69,6 +78,14 @@ export function createBook(sim, opts = {}) {
   function event(ev) {
     if (!on) return;
     if (ev.type === 'fight') { if (fightAt < 0) fightAt = sim.stepCount; return; }
+    // technique (the career): a parry, an ender or a happy accident called out, a counter hit landed
+    if (ev.type === 'block' && ev.parry && ev.defender && ev.attacker && sideOf(ev.defender) !== sideOf(ev.attacker)) { tech[sideOf(ev.defender)][0]++; return; }
+    if (ev.type === 'callout' && typeof ev.by === 'number' && ev.by >= 0) {
+      const s = ev.by === 0 ? 0 : 1;
+      if (ev.kind === 'ender') tech[s][2]++;
+      else if (ev.kind === 'accident') tech[s][3]++;
+      return;
+    }
     if (ev.type === 'attack' && ev.unit && ev.unit.id <= 1) {
       const u = ev.unit, fd = FRAME_DATA[ev.move];
       swing[u.id] = null;
@@ -80,6 +97,7 @@ export function createBook(sim, opts = {}) {
       const a = ev.attacker, d = ev.defender, s = sideOf(a);
       if (sideOf(d) === s) return;
       hits[s]++; combo[s] = Math.max(combo[s], d.combo || 0); lastHit[s] = ev.move || '';
+      if (ev.counter) tech[s][1]++;
       if (a.id <= 1 && swing[a.id] === ev.move) { const m = moves.get(ev.move); if (m) m.landed++; swing[a.id] = null; }   // a multi-hit lands once
       if (ev.ko && !sim.horde) { koMove = ev.move || ''; if (a.health >= (a.maxHealth || 100)) perfects[s]++; }
     }
@@ -89,7 +107,19 @@ export function createBook(sim, opts = {}) {
   function detail() {
     const w = sim.wins[0] > sim.wins[1] ? 0 : sim.wins[1] > sim.wins[0] ? 1 : -1;
     const move = howEnded(sim) === 'time' ? '' : koMove || (w >= 0 ? lastHit[w] : '');
-    return { move, hits: [...hits], combo: [...combo], perfects: [...perfects] };
+    return { move, hits: [...hits], combo: [...combo], perfects: [...perfects], tech: [[...tech[0], perfects[0]], [...tech[1], perfects[1]]] };
+  }
+
+  /** What the career reads from match o: the local player's technique and the outcome. No hits, no presses. */
+  function summary(o, quit) {
+    const me = o.local === 0 ? 0 : 1, t = tech[me];
+    const won = o.mode !== 'horde' && (sim.wins[me] | 0) > (sim.wins[1 - me] | 0);
+    return { mode: o.mode, won: !quit && won, cut: !!quit, fought: Math.round(fought()), parries: t[0], punishes: t[1], enders: t[2], accidents: t[3],
+      perfects: perfects[me], floors: o.mode === 'horde' ? (sim.horde && sim.horde.floorsCleared) || 0 : 0 };
+  }
+  function closed(o, quit) {
+    if (!opts.onClose) return;
+    try { opts.onClose(summary(o, quit)); } catch (e) { console.error('career:', e); }
   }
 
   /** What goes out for match o: the `match` event (arcade and horde; online results go through the room) and the
@@ -117,6 +147,7 @@ export function createBook(sim, opts = {}) {
     if (!on) return;
     const o = on; on = null; unkeep();
     send(events(o, false));
+    closed(o, false);
   }
 
   /** The match is cut short (a restart, the menu, the demo, the tab closing: main.js setScene and pagehide): send it as
@@ -127,6 +158,7 @@ export function createBook(sim, opts = {}) {
     const o = on; on = null; unkeep();
     if (fought() < MIN_FIGHT_SECS) return;
     send(events(o, true));
+    closed(o, true);
   }
 
   /** The tab is hidden (mobile Safari may kill it there without a pagehide): keep the match as it stands in
@@ -139,7 +171,7 @@ export function createBook(sim, opts = {}) {
   /** visible again: the match carries on, so the kept copy goes */
   function show() { unkeep(); }
 
-  return { begin, cut, cancel: cut, event, detail, end, hide, show, fought, get active() { return !!on; } };
+  return { begin, cut, cancel: cut, event, detail, summary: () => (on ? summary(on, false) : null), end, hide, show, fought, get active() { return !!on; } };
 }
 
 /** On page load: send what a page killed while hidden left behind (book.hide), once, and only for a page that's gone

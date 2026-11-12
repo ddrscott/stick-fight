@@ -6,7 +6,7 @@
 //   const net = createOnline({ sim, input, startMatch, endMatch })
 //   await net.host()            -> { code, url }   a new room; resolves once the room is open
 //   await net.join(code)        -> { code }        resolves when connected to the room
-//   net.on('status' | 'connected' | 'peer-left' | 'start' | 'end' | 'desync' | 'resync', fn)
+//   net.on('status' | 'connected' | 'peer-left' | 'start' | 'end' | 'desync' | 'resync' | 'career', fn)
 //   net.leave()                 hang up and end the match (endMatch is called)
 //   net.roomFromUrl()           the room this page was opened for (room/CODE, or an old ?room=CODE), or ''
 //   net.openLobby(mode?)        the built-in panel: 'menu' | 'host' | 'join' (+ code)
@@ -102,7 +102,10 @@ const freshTally = () => ({ host: 0, guest: 0, draw: 0, rounds: [0, 0] });
 
 /**
  * @param {{ sim: any, input: any, startMatch: (o: { seed: number, localIndex: number, lockstep: any, chars?: string[], botch?: boolean, rules?: { roundTime: number, winsNeeded: number } }) => void,
- *           endMatch: (reason: string) => void, stage?: HTMLElement | null, botchSetting?: () => boolean, rulesSetting?: () => { roundTime: number, winsNeeded: number } }} game
+ *           endMatch: (reason: string) => void, stage?: HTMLElement | null, botchSetting?: () => boolean, rulesSetting?: () => { roundTime: number, winsNeeded: number },
+ *           palette?: (fighter: string) => string, title?: () => string, matchDetail?: () => any }} game
+ *   palette: the palette this side fights in for a fighter ('' its own look; src/career/store.js), sent with each pick so
+ *   the other side draws it; title: this side's job title, shown next to its name on the other side (README, Progression)
  */
 export function createOnline(game) {
   /** @type {Record<string, Function[]>} */
@@ -128,6 +131,11 @@ export function createOnline(game) {
   // (pickFirst: the host's 'go' at match 0 instead of a start; a ?scene= lobby starts at once), and its all-time record is the
   // crew's, kept on the server, so this browser's per-rival record stays out of it
   let myName = '', rivalName = '', pickFirst = false, crewMode = false;
+  // palettes (src/career/palettes.js): each side's for its own pick, '' for the fighter's own look; the rival's title
+  let remotePal = '', rivalTitle = '';
+  const myPal = (id) => { try { return typeof game.palette === 'function' ? String(game.palette(id) || '').slice(0, 32) : ''; } catch { return ''; } };
+  const myTitle = () => { try { return typeof game.title === 'function' ? String(game.title() || '').slice(0, 12) : ''; } catch { return ''; } };
+  const cleanPal = (v) => (typeof v === 'string' && /^[A-Za-z0-9]{0,32}$/.test(v) ? v : '');
   let matchSeed = 0;   // this match's seed: with the match number it names the match in the result both pages report
   const now = () => performance.now();
   // spectators (watchfeed.js): the host tells the room about each match and, while anyone watches, its confirmed
@@ -146,6 +154,7 @@ export function createOnline(game) {
     link = l;
     feed.open(typeof l.sendRoom === 'function' ? (d) => l.sendRoom(d) : null, { on: role === 'host' && !crewMode });
     l.on('open', () => feed.hello());
+    l.on('career', (m) => emit('career', m));   // the room's career award (src/career/store.js fromRoom)
     l.on('watching', (m) => { const was = feed.count; feed.onWatching(m || {}); if (feed.count !== was) { emit('watching', feed.count); readout.render(); } });
     l.on('peer', (present) => {
       if (present) { localReady = false; remoteReady = false; setState('linking'); return; }
@@ -154,7 +163,7 @@ export function createOnline(game) {
     });
     l.on('status', () => {
       lobby.render();
-      if (l.ready && !localReady && !lockstep && !between()) { localReady = true; l.sendControl({ t: 'ready', v: NET_VERSION, char: localChar, pid, name: myName }); maybeStart(); }
+      if (l.ready && !localReady && !lockstep && !between()) { localReady = true; l.sendControl({ t: 'ready', v: NET_VERSION, char: localChar, pal: myPal(localChar), pid, name: myName, title: myTitle() }); maybeStart(); }
     });
     l.on('control', (msg) => {
       heardAt = now();
@@ -171,13 +180,15 @@ export function createOnline(game) {
         remoteChar = typeof msg.char === 'string' ? msg.char : 'temp';
         rivalPid = typeof msg.pid === 'string' ? msg.pid.slice(0, 16) : '';
         rivalName = typeof msg.name === 'string' ? msg.name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim().slice(0, 12) : '';
+        rivalTitle = typeof msg.title === 'string' ? msg.title.toUpperCase().replace(/[^A-Z -]/g, '').slice(0, 12) : '';
+        remotePal = cleanPal(msg.pal);
         remoteReady = true; maybeStart();
       } else if (msg.t === 'start' && role === 'guest') {
         const m = (msg.n | 0) || 1;
         if (m <= n) return;   // a start we already played
         if (lockstep) lockstep = null;   // still finishing the match before (a stall): the host has it confirmed, its tally counts
         if (msg.tally) adoptTally(msg.tally);
-        begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar], msg.botch !== false, m, cleanRules(msg.rules));
+        begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar], msg.botch !== false, m, cleanRules(msg.rules), Array.isArray(msg.pals) ? msg.pals.map(cleanPal) : null);
       } else onSession(msg);
     });
     l.on('packet', (buf) => { heardAt = now(); if (lockstep) lockstep.onPacket(buf); else if (drain) drain.onPacket(buf); });
@@ -195,13 +206,14 @@ export function createOnline(game) {
     const chars = [localChar, remoteChar];   // the host is P1
     const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;   // the host's rules for both
     const rules = hostRules();
-    link.sendControl({ t: 'start', seed, chars, botch, rules, n: 1, tally });
-    begin(seed, chars, botch, 1, rules);
+    const pals = [myPal(localChar), remotePal];
+    link.sendControl({ t: 'start', seed, chars, pals, botch, rules, n: 1, tally });
+    begin(seed, chars, botch, 1, rules, pals);
   }
 
   // the host's round time and round wins (src/flow/rules.js); a guest takes only values it knows
   function hostRules() { return cleanRules(typeof game.rulesSetting === 'function' ? game.rulesSetting() : null); }
-  function begin(seed, chars = ['temp', 'temp'], botch = true, m = 1, rules = cleanRules(null)) {
+  function begin(seed, chars = ['temp', 'temp'], botch = true, m = 1, rules = cleanRules(null), pals = null) {
     const localIndex = role === 'host' ? 0 : 1;
     n = m; matchSeed = seed >>> 0; drain = null; stopTimer();
     endSent = ''; rivalEnd = null; endWait = 0;
@@ -215,13 +227,15 @@ export function createOnline(game) {
       onDesync: (d) => { emit('desync', d); readout.render(); },
       onResync: (r) => { emit('resync', r); readout.render(); },
     });
-    if (localIndex === 0) feed.begin({ n: m, seed, chars, botch, rules, names: [myName, rivalName], tally: { host: tally.host, guest: tally.guest, draw: tally.draw } }, lockstep);
+    // each side's palette: this page's own pick (what it chose wins, whatever the start says), the rival's as sent
+    const pal = [0, 1].map((i) => (i === localIndex ? myPal(chars[i] || '') : (pals && pals[i]) || (i !== localIndex ? remotePal : '')));
+    if (localIndex === 0) feed.begin({ n: m, seed, chars, pals: pal, botch, rules, names: [myName, rivalName], tally: { host: tally.host, guest: tally.guest, draw: tally.draw } }, lockstep);
     lobby.close();
     setState('playing');
     try { game.input.swallowHeld(); } catch { /* old input */ }
     document.documentElement.classList.add('online');
     emit('connected', { mode: link.mode, role, code });
-    game.startMatch({ seed, localIndex, lockstep, chars, botch, rules });
+    game.startMatch({ seed, localIndex, lockstep, chars, pals: pal, botch, rules });
     if (localIndex === 0) track('online_match', [chars[0] || '', chars[1] || '', crewMode ? 'crew' : 'quick'], m);   // the host counts it once
     // the live count (api/now): the host tells its room a match is on, with the two fighters and nothing else; the
     // room takes it off when the result comes in or a player leaves (worker/index.ts Lobby). Both pages say it, with
@@ -270,8 +284,10 @@ export function createOnline(game) {
       secs: ls ? Math.round(Math.max(0, ls.matchAt | 0) / 120) : 0 };   // the match's length (the sim steps at 120 Hz), for the crew's play time
     // the books (README, Analytics): each page tells the room the result, and the room counts it only when the two
     // agree (so a player whose browser asks not to be tracked keeps the match off the books for both). Everything outside x comes from the final state both sims hold; x is this page's own count of the effects
-    if (link && ls && analyticsOn) link.sendControl({ t: 'sys', ev: 'result', n, seed: matchSeed, mode: crewMode ? 'crew' : 'quick', chars: last.chars, wins, f: Math.max(0, ls.matchAt | 0), how: howEnded(sim),
-      x: typeof game.matchDetail === 'function' ? game.matchDetail() : {} });
+    // Do Not Track: the report still goes, flagged dnt, so a signed-in rival's career counts the match (worker/career.ts),
+    // but the room puts it on no books
+    if (link && ls) link.sendControl({ t: 'sys', ev: 'result', n, seed: matchSeed, mode: crewMode ? 'crew' : 'quick', chars: last.chars, wins, f: Math.max(0, ls.matchAt | 0), how: howEnded(sim),
+      x: typeof game.matchDetail === 'function' ? game.matchDetail() : {}, ...(analyticsOn ? {} : { dnt: 1 }) });
     document.documentElement.classList.remove('online');
     readout.show(false);
     mine.want = null; mine.focus = 'rematch';
@@ -304,7 +320,7 @@ export function createOnline(game) {
   function cancelCd() { if (!cd) return; cd = null; sendCd(); }
   function sendCd() { if (role === 'host' && link) link.sendControl({ t: 'cd', n, kind: cd ? cd.kind : null, ms: cd ? Math.max(0, Math.round(cd.until - now())) : 0 }); }
   function sendPost(poke = false) { if (link) link.sendControl({ t: 'post', n, want: mine.want, focus: mine.focus, poke }); }
-  function sendPick() { if (link) link.sendControl({ t: 'pick', n, id: mine.id, ready: mine.ready }); }
+  function sendPick() { if (link) link.sendControl({ t: 'pick', n, id: mine.id, pal: myPal(mine.id), ready: mine.ready }); }
   /** the session messages from the other side (start and ready are handled above) */
   function onSession(msg) {
     if (msg.t === 'alive' || (msg.n | 0) !== n) return;   // another match's (late), or a heartbeat
@@ -319,7 +335,7 @@ export function createOnline(game) {
     } else if (msg.t === 'pick') {
       rival.id = typeof msg.id === 'string' ? msg.id.slice(0, 32) : rival.id;
       rival.ready = !!msg.ready; rival.at = now();
-      remoteChar = rival.id;
+      remoteChar = rival.id; remotePal = cleanPal(msg.pal);
       if (role === 'host') hostPicks();
     } else if (msg.t === 'result' && role === 'guest') {
       pendingResult = msg;
@@ -357,8 +373,9 @@ export function createOnline(game) {
     const chars = [localChar, remoteChar];
     const botch = typeof game.botchSetting === 'function' ? !!game.botchSetting() : true;
     const m = n + 1, rules = hostRules();
-    link.sendControl({ t: 'start', seed, chars, botch, rules, n: m, tally });
-    begin(seed, chars, botch, m, rules);
+    const pals = [myPal(localChar), remotePal];
+    link.sendControl({ t: 'start', seed, chars, pals, botch, rules, n: m, tally });
+    begin(seed, chars, botch, m, rules, pals);
   }
   function startTimer() {
     stopTimer();
@@ -387,7 +404,7 @@ export function createOnline(game) {
       mine: { ...mine }, rival: { ...rival, silentMs: now() - rival.at },
       cd: cd ? { kind: cd.kind, left: Math.max(0, cd.until - now()) } : null,
       autoOff, canStart: canStart(), allTime: crewMode ? null : rivalRecord(rivalPid),
-      name: myName, rivalName, crew: crewMode,
+      name: myName, rivalName, rivalTitle, crew: crewMode,
     };
   }
 

@@ -68,7 +68,7 @@ export function createWatchFeed({ now, version }) {
     /** the socket opened: an off switch goes first, before any match */
     hello() { if (send && on && !allowed) { try { send(JSON.stringify({ t: 'watch', ev: 'allow', on: false })); } catch { /* closing */ } } },
     close() { send = null; on = false; setup = null; log = null; ls = null; count = 0; wanted = false; },
-    /** a match starts: s is { n, seed, chars, botch, rules, names, tally }, netcode the rollback session */
+    /** a match starts: s is { n, seed, chars, pals, botch, rules, names, tally } (pals: each side's palette, README Progression), netcode the rollback session */
     begin(s, netcode) {
       if (!on) return;
       setup = { ...s, v: version, round: 1, wins: [0, 0] };

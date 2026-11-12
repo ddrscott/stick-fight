@@ -448,17 +448,21 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   // its rig takes the body, the unit its stats, moves and strings, and its color unless one is given.
   // Call it between matches (a scene does, before resetMatch); a character's reach is measured the
   // first time it appears.
-  sim.setCharacter = (i, id, { color = null } = {}) => {
+  // palette: { body, pants, accent } (src/career/palettes.js), a look bought with sticks: flat colors only, drawn and
+  // never simulated (nothing in the state hash). P2's stays only where it doesn't clash with P1's (colorFor).
+  sim.setCharacter = (i, id, { color = null, palette = null } = {}) => {
     const u = sim.units[i];
     if (!u) return null;
     const ch = characterOr(id);
     u.char = ch; u.rig.charDef = ch;
-    if (typeof u.rig.setBody === 'function' && u.rig.body !== ch.body) u.rig.setBody(ch.body, { accent: ch.accent });
-    else if (u.rig) u.rig.accent = ch.accent;
+    const accent = (palette && palette.accent) || ch.accent;
+    if (typeof u.rig.setBody === 'function' && u.rig.body !== ch.body) u.rig.setBody(ch.body, { accent });
+    else if (u.rig) u.rig.accent = accent;
     u.staminaMax = STAMINA.max * ch.stats.stamina;
     const other = sim.units[1 - i];
-    u.color = color || colorFor(ch, i, other && other.char); u.rig.color = u.color;
-    u.rig.pants = pantsFor(ch, i, other && other.char, other && other.rig ? other.rig.pants : null);
+    const theirs = i === 1 && other && other.char ? other.color : null;   // what P1 is wearing (its palette, if any)
+    u.color = color || colorFor(ch, i, other && other.char, { mine: palette ? palette.body : null, theirs }); u.rig.color = u.color;
+    u.rig.pants = palette && u.color === palette.body ? palette.pants : pantsFor(ch, i, other && other.char, other && other.rig ? other.rig.pants : null);
     if (!calibrated.has(ch.id)) {
       calibrated.add(ch.id);
       calibrate(u.rig, ch);
@@ -467,7 +471,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     }
     return ch;
   };
-  sim.setCharacters = (ids, colors = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null }));
+  sim.setCharacters = (ids, colors = [], palettes = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null, palette: palettes[i] || null }));
 
   // ---- rounds ----------------------------------------------------------------------
   function spawn(u, i) {

@@ -27,6 +27,8 @@ import { botchEnabled, discover, techniques } from './flow/techniques.js';
 import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
 import { ACCIDENTS } from './combat/botch.js';
 import { perf, perfOverlay } from './perf.js';
+import { reportMatch as careerReport, fromRoom as careerFromRoom, equipped, career, syncCareer } from './career/store.js';   // XP, sticks and palettes (README, Progression)
+import { palette } from './career/palettes.js';
 import { createBook, sendLeftovers } from './bookkeeping.js';   // match bookkeeping: one result per finished match (README, Analytics)
 import { track, trackAll } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
 import { readDevice, startTier, perfLabels, boundBucket } from './device.js';   // the capability check: where AUTO starts, and the perf event's buckets
@@ -260,21 +262,25 @@ function onEvent(ev) {
 // extra horde goons need their own rigs
 const makeRig = (color) => { const g = sim.units[0]; return createFighter({ color, x: g.x, y: g.y, facing: -1 }); };
 const sim = createCombat({ fighters, arena, input, onEvent, makeRig, moves: MOVES || [], moveData: MOVE_DATA || null });
-const book = createBook(sim);
+// the career (README, Progression): every match that closes pays the local player (src/career/store.js)
+const book = createBook(sim, { onClose: (m) => careerReport(m) });
 // the tab closing sends the match in progress (once: a page back from the bfcache carries on off the books); a hidden
 // tab keeps it for the next load in case it's killed there (mobile Safari), and one that comes back takes it back
 addEventListener('pagehide', () => book.cut());
 document.addEventListener('visibilitychange', () => { if (document.hidden) book.hide(); else book.show(); });
 sendLeftovers();
+syncCareer();   // signed in: the account's career (a guest's progress merges in the first time); signed out: nothing to fetch
 gameAudio.attach(sim);   // audio
 // online: net.host()/join(code)/openLobby(); a match runs as the 'online' scene, stepped by online.advance
 // endMatch goes to the flow (its VERSUS ONLINE end screen) when the flow is running, and only
 // falls back to the demo for a ?scene= page; online.js's own "rival left" panel is closed in favor of it
-const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), matchDetail: () => book.detail(), botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()) }),
+const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), matchDetail: () => book.detail(),
+  palette: (id) => { const p = equipped(id); return p ? p.id : ''; }, title: () => career().title, botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()) }),
   endMatch: (reason) => { if (flow && flow.on) { flow.netEnded(reason); setTimeout(() => online.closeLobby(), 0); } else setScene('attract'); } });
 // bookkeeping online: count this match's effects from its start; the result itself goes through the room (online.js matchOver)
 online.on('start', (m) => book.begin({ mode: m.crew ? 'crew' : 'quick', local: m.localIndex }));
 online.on('match-over', () => book.end());
+online.on('career', (m) => careerFromRoom(m));   // the room's award, from the result both pages agreed on
 // spectators: watch.open(code) plays a room's match on this page's sim, as the same 'online' scene (its controllers
 // read the inputs the room hands over); watch.advance steps it. When it stops, the flow's watch view says why
 const watch = createWatch({ sim, startMatch: (o) => setScene('online', o),
@@ -1198,6 +1204,11 @@ function pickChars(name, opts) {
   }
   return [urlChars[0] || TEMP_ID, urlChars[1] || TEMP_ID];
 }
+// palettes (src/career/palettes.js): online each side's as the start message says; the flow's own fights pass opts.pals
+function palsFor(chars, opts) {
+  const ids = opts && Array.isArray(opts.pals) ? opts.pals : [];
+  return chars.map((c, i) => (ids[i] ? palette(c, ids[i]) : null));
+}
 // the scenes the flow starts for a player's own fight: they run on the player's round time and best-of
 const PICKED_RULES = new Set(['arcade', 'horde', 'dummy']);
 function setScene(name, opts) {
@@ -1205,7 +1216,8 @@ function setScene(name, opts) {
   sceneName = name;
   hordeKoTest.onEvent = null;   // horde-ko-test stops following when the scene changes (its own scene sets it again)
   book.cut();   // a match cut short (a restart, the menu, the demo) is reported as it stands, once (src/bookkeeping.js); whoever starts the next one begins it
-  sim.setCharacters(pickChars(name, opts));
+  const chars = pickChars(name, opts);
+  sim.setCharacters(chars, [], palsFor(chars, opts));
   syncMirror();
   attract = name === 'attract'; attractKO = false; idleMs = 0; lastPhase = '';
   document.documentElement.classList.toggle('attract', attract && !(flow && flow.on));   // index.html hides the touch controls (the flow has its own classes)

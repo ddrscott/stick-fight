@@ -139,7 +139,7 @@ async function spend(env: Env, key: string, max: number, windowMs: number): Prom
   return !!row && row.count <= max;
 }
 
-async function currentEmail(req: Request, env: Env): Promise<string | null> {
+export async function currentEmail(req: Request, env: Env): Promise<string | null> {
   const token = cookieValue(req, COOKIE);
   if (!token) return null;
   const row = await env.DB.prepare("SELECT email FROM sessions WHERE token_hash = ? AND expires_at > ?")

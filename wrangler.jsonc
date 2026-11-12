@@ -74,7 +74,9 @@
     // GET /api/stats per IP (the answer is cached at the edge, so this only guards the limiter itself)
     { "name": "STATS_LIMIT", "namespace_id": "7106", "simple": { "limit": 60, "period": 60 } },
     // share images drawn per IP (api/og/..., worker/og.ts); one served from the edge cache doesn't count
-    { "name": "OG_LIMIT", "namespace_id": "7107", "simple": { "limit": 20, "period": 60 } }
+    { "name": "OG_LIMIT", "namespace_id": "7107", "simple": { "limit": 20, "period": 60 } },
+    // career calls per IP (api/career: a finished offline match, a purchase, the guest merge; worker/career.ts)
+    { "name": "CAREER_LIMIT", "namespace_id": "7108", "simple": { "limit": 40, "period": 60 } }
   ],
   // Game analytics (Workers Analytics Engine): cookieless events, no player ids; query with the
   // SQL API (README, Analytics). The dataset is created on the first write.
