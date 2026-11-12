@@ -2038,7 +2038,8 @@ export function createFlow(ctx) {
       t.appendChild(el('span', 'fl-srank' + cls, String(i + 1)));
       const nm = el('span', 'fl-sname' + cls);
       const dot = el('i', `fl-dot ${m.on ? ON[m.on][1] : ''}`);
-      nm.append(dot, document.createTextNode(m.name + (mine ? ' (YOU)' : '')));
+      nm.append(dot, document.createTextNode(m.name));
+      if (mine) nm.appendChild(el('span', 'fl-youtag', ' (YOU)'));   // (upright the row's color and YOU'RE <name> above say it, so the name gets the room)
       if (m.on === 'ready' || m.on === 'match') nm.appendChild(el('b', `fl-chip ${ON[m.on][1]}`, ON[m.on][0]));
       t.appendChild(nm);
       t.append(el('span', 'fl-snum' + cls, String(m.w)), el('span', 'fl-snum' + cls, String(m.l)), el('span', 'fl-snum' + cls, String(m.d)));

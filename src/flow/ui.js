@@ -818,6 +818,7 @@ function injectStyle() {
   #flow > .fl-up.fl-crew .fl-standings .fl-sth { position: sticky; top: 0; z-index: 1; font: 600 max(12px, 3.4cqw)/1 'Teko', sans-serif; letter-spacing: 0.1em; padding: 2.2cqw 0 0.4em; background: #10061f; align-self: stretch; }
   #flow > .fl-up.fl-crew .fl-standings .fl-smore { font-size: max(12px, 3.5cqw); }
   #flow > .fl-up.fl-crew .fl-sname { gap: 1.6cqw; }
+  #flow > .fl-up.fl-crew .fl-youtag { display: none; }
   #flow > .fl-up.fl-crew .fl-dot { width: 2.6cqw; height: 2.6cqw; }
   #flow > .fl-up.fl-crew .fl-chip { font-size: 12px; padding: 0.2em 0.35em 0.05em; }
   /* a short screen: PLAY gives the list a few more px */
