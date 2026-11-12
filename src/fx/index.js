@@ -253,7 +253,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
   // minute at the ceiling. The window after a
   // change is skipped (resizing the canvases takes a frame or two).
   // A tier change resizes canvases (which clears them), so it is applied after the frame is composited.
-  let tierPending = false, slowRun = 0, skipWindow = 1;
+  let tierPending = false, slowRun = 0, veryRun = 0, skipWindow = 1;
   const retried = new Set();
   const ivSorted = [];
   function frameTick() {
@@ -281,9 +281,14 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     const k = drawEvery, avg = frameStats.avg / k, med = frameStats.median / k;
     const slow = avg > 18 && med > 17.5, verySlow = avg > 30 && med > 28;
     slowRun = slow ? slowRun + 1 : 0;
-    if (tier === TIER_MIN && drawEvery === 1 && slowRun >= 2) {
-      // the last resort, at the lowest tier only: draw every other frame (the sim keeps time; README, Chromebooks)
-      drawEvery = 2; adapt.lastChange = now; adapt.good = 0; slowRun = 0; skipWindow = 1;
+    // the last resort, at the lowest tier only, under ~20 fps for a second: draw every other frame. The sim already keeps
+    // time down to 10 fps (up to 60 steps a frame, a frame counted as at most 100 ms), so above 20 fps skipping pictures
+    // only loses pictures (horde at 6x on SwiftShader: 31-35 drawn every frame, 28 every other); below it a step every
+    // refresh keeps the input prompt and the game from sliding toward the 10 fps slowdown (README, Chromebooks).
+    const crawl = avg > 50 && med > 45;
+    veryRun = crawl ? veryRun + 1 : 0;
+    if (tier === TIER_MIN && drawEvery === 1 && veryRun >= 2) {
+      drawEvery = 2; adapt.lastChange = now; adapt.good = 0; slowRun = 0; veryRun = 0; skipWindow = 1;
     } else if (tier > TIER_MIN && (verySlow || slowRun >= 2)) {
       adapt.ceiling = Math.min(adapt.ceiling, tier - 1);   // this tier can't hold: never climb back to it
       tier--; adapt.lastChange = now; adapt.lastDown = now; adapt.good = 0; slowRun = 0; skipWindow = 1; tierPending = true;
@@ -360,7 +365,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     startAt(t) {
       if (pinned !== null || automated) return;
       tier = Math.max(TIER_MIN, Math.min(TIER_MAX, t | 0)); adapt.on = true; adapt.ceiling = TIER_MAX; adapt.good = 0;
-      retried.clear(); slowRun = 0; skipWindow = 1; drawEvery = 1; applyTier();
+      retried.clear(); slowRun = 0; veryRun = 0; skipWindow = 1; drawEvery = 1; applyTier();
     },
     /** 1, or 2 when tier 0 still can't hold and the caller should draw every other frame */
     get drawEvery() { return drawEvery; },

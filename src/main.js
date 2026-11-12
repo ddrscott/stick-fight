@@ -1407,6 +1407,7 @@ const drawnOff = new Map(), NO_OFF = { x: 0, y: 0 };   // this frame's draw-smoo
 const drawOffsetNow = (u) => drawnOff.get(u) || NO_OFF;
 
 function render() {
+  perf.drawn();
   syncMirror();   // the guest's view flips on when his match starts and off when it ends, however it ends
   // this frame's drawing first (the turnaround, snap fade and air catch-up), so the camera can make sure it's all in frame
   const drawnNow = new Map();
@@ -1862,7 +1863,8 @@ try {
 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 window.__gauntlet.ready = true;
 // what the profiler reports alongside the times: the tier, the DPR and the size the GL canvas draws at
-const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height });
+const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, every: fx.drawEvery, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height,
+  device: `${device.os} ${device.gpu} cores ${device.cores} mem ${device.mem} start ${guessTier}` });
 perfInfo(); setInterval(perfInfo, 1000);
 // What real players get (README, Analytics, 'perf'): once a session, after 30 s on the page with the tier unchanged for
 // the last 15 s, the tier it settled on, the one it started on, touch or mouse, the frame time p95 (ms, as a label),
