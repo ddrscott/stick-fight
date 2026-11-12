@@ -6,6 +6,12 @@
 //                 starts the wait over
 //   3. trips      a CPU hero against weak goons, 12 seeds up to 12 floors: every trip to the next floor starts its wave
 //                 (the old build left him upstairs on 4 of them, until TIME)
+//   4. KOs        ?scene=horde-ko-test: a goon put down by a plain hit, a juggle, a counter on its wake-up strike, a
+//                 hit through armor and a throw. Each keeps the run going and counts exactly once, the fifth clears
+//                 the floor, and then a goon KOing the hero still ends the run (the old build ended it on a juggle,
+//                 wake or armor KO of a goon)
+//   5. flow       the same run inside the arcade flow (index.html, HORDE): run.goons goes up by one a goon and the
+//                 flow reaches GAME OVER only after the hero goes down
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -75,8 +81,46 @@ const results = await pg.evaluate(() => {
     if (res === 'TIME' || res.startsWith('STUCK')) bad.push(`seed ${seed} ${res} after ${sim.horde.floorsCleared} floors`);
   }
   ok('trips: every trip to the next floor starts its wave, no TIME', !bad.length && longest <= 9, `${floors} floors over 12 runs (seed:floors or KO) ${runs.join(' ')}, longest trip ${longest.toFixed(1)} s${bad.length ? '; ' + bad.join('; ') : ''}`);
+
+  // 4. every way a goon goes down
+  g.setScene('horde-ko-test', {});
+  const T = g.hordeKoTest;
+  step(90, () => (T.done ? false : undefined));
+  const kinds = ['plain', 'juggle', 'wake', 'armor', 'throw'];
+  for (const k of kinds) {
+    const r = T.results.find(x => x.kind === k);
+    ok(`KOs: a goon down by ${k} keeps the run going, counts once`, r && r.ok, r ? JSON.stringify(r) : 'no result');
+  }
+  const last = T.results.find(x => x.kind === 'throw');
+  ok('KOs: the fifth goon down clears the floor', last && last.floorsCleared === 1 && last.wave === '5/5', last ? `wave ${last.wave}, floors ${last.floorsCleared}` : 'none');
+  const hk = T.results.find(x => x.kind === 'hero');
+  ok('KOs: a goon KOing the hero still ends the run', hk && hk.ok && sim.phase === 'match', hk ? JSON.stringify(hk) + ` phase ${sim.phase}` : 'no result');
   return out;
 });
+
+// 5. the same run in the arcade flow: its own scoring and its GAME OVER
+await pg.goto(`http://127.0.0.1:${server.address().port}/play/index.html`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+await pg.waitForFunction(() => window.__flow && window.__game, null, { timeout: 30000 });
+const flowRes = await pg.evaluate(async () => {
+  const g = window.__game, sim = g.sim, F = window.__flow, out = [];
+  const ok = (name, pass, detail) => out.push({ name, pass: !!pass, detail });
+  F.debug.go('modeSelect'); F.debug.sel.player = 'temp'; F.debug.startHorde();
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  for (let i = 0; i < 200 && sim.phase !== 'fight'; i++) await wait(50);
+  g.installHordeKo({});
+  const T = g.hordeKoTest, states = new Set();
+  // real time, the flow's own loop; record every flow state on the way
+  for (let i = 0; i < 1200 && !(T.done && F.state === 'gameOver'); i++) { states.add(F.state); await wait(50); }
+  states.add(F.state);
+  const goonRes = T.results.filter(r => r.kind !== 'hero');
+  ok('flow: run.goons up by exactly one for each of the five goons', goonRes.length === 5 && goonRes.every(r => r.goonsUp === 1) && F.debug.run.goons === 5,
+    `${goonRes.map(r => `${r.kind}:${r.goonsUp}`).join(' ')} run.goons ${F.debug.run.goons}`);
+  ok('flow: every goon KO keeps the run going', goonRes.length === 5 && goonRes.every(r => r.ok), goonRes.map(r => `${r.kind}:${r.ok ? 'ok' : r.why || JSON.stringify(r)}`).join(' '));
+  const hk = T.results.find(r => r.kind === 'hero');
+  ok('flow: GAME OVER comes after the hero goes down, not before', hk && hk.heroDown && F.state === 'gameOver', `hero ${hk ? JSON.stringify(hk) : 'none'}, flow ${F.state}, states ${[...states].join(' > ')}`);
+  return out;
+}).catch(e => [{ name: 'flow: ran', pass: false, detail: String(e) }]);
+results.push(...flowRes);
 
 let fail = 0;
 for (const r of results) { if (!r.pass) fail++; console.log(`${r.pass ? 'ok  ' : 'FAIL'} ${r.name}  (${r.detail})`); }
