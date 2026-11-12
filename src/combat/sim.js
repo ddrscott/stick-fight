@@ -128,6 +128,8 @@ function resolveButton(btn, inp, u, step) {
 }
 const ANIM = {};
 const missingAnim = new Set();
+// the round is on: sim.result until resolveKOs or the clock ends it (frozen, so a snapshot can share it)
+const PLAYING = Object.freeze({ over: false, winner: -1, reason: '', final: false });
 function warnOnce(key, msg) { if (!missingAnim.has(key)) { missingAnim.add(key); console.info('[combat] ' + msg); } }
 // Horde: the hero heals HORDE_REGEN health a second once he's gone HORDE_REGEN_DELAY seconds without losing any
 const HORDE_REGEN = 1, HORDE_REGEN_DELAY = 3;
@@ -363,6 +365,9 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     perfectT: -1, perfectRel: -1, perfectWait: 0, perfectOn: true, perfectSkip: 'any',
     accumulator: 0, hitstopActive: 0, koSlow: 0, finisher: false, startHealth: 100, introTime: INTRO_TIME, seed: 1, horde: null, card: null,
     callouts: [], log: [],
+    // what the round came to (README, Fundamentals, How a KO resolves): set only by resolveKOs and the clock, read by the
+    // flow and main.js. { over, winner, reason: 'ko' | 'time' | 'heroDown', final: the match (or run) is over too }
+    result: PLAYING,
     botchOn: true,   // mistimed presses botch (src/combat/botch.js); the settings toggle and ?botch=0 turn it off, online the host's setting rides the start message
     floor: 0, floorBroken: false, floorInfo, get stairwell() { return stairwellNow(); }, get stairwells() { return wellsNow(); },
     get stairs() { return stairsNow(); }, stairY, sameLevel, onStair, levelY, wellNear,
@@ -491,6 +496,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   }
   sim.startRound = (n, { skipIntro = false } = {}) => {
     sim.round = n; sim.floor = 0; sim.floorBroken = false; refreshBounds(); sim.timer = sim.roundTime; sim.perfectT = -1; sim.perfectRel = -1; sim.perfectWait = 0; sim.roundClock = 0; sim.winner = -1; sim.koSlow = 0; sim.finisher = false; sim.callouts.length = 0;
+    sim.result = PLAYING; downed.length = 0;
     sim.units.forEach(spawn);
     if (skipIntro) { sim.phase = 'fight'; sim.phaseTimer = 0; sim.banner = ''; }
     else { sim.phase = 'intro'; sim.phaseTimer = sim.introTime; sim.banner = `ROUND ${n}`; }
@@ -576,16 +582,20 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const H = sim.horde, p = sim.units[0];
     if (!H.wave) H.wave = { size: 5 + Math.min(3, H.floorsCleared), spawned: 1, downed: 0 };   // a goon downed before any wave began
     H.wave.downed++;
-    p.health = Math.min(p.maxHealth || sim.startHealth, p.health + H.heal);
-    sim.winner = -1; sim.timer = sim.roundTime;
-    if (H.wave.downed >= H.wave.size) { g.hidden = true; floorClear(); return; }
-    if (H.wave.spawned < H.wave.size) freshGoon(g); else g.hidden = true;
+    if (p.state !== 'ko') p.health = Math.min(p.maxHealth || sim.startHealth, p.health + H.heal);   // a hero down on the same step stays down
+    sim.timer = sim.roundTime;
+    if (H.wave.downed >= H.wave.size) { offFloor(g); floorClear(); return; }
+    if (H.wave.spawned < H.wave.size) freshGoon(g); else offFloor(g);
     if (H.wave.downed >= 2 && H.wave.spawned < H.wave.size && goonsLive().length < 2 && makeRig) {
       let u = sim.units[2];
       if (!u) { const color = GOON_COLORS[(H.count + 3) % GOON_COLORS.length]; u = makeUnit(makeRig(color), 2); u.color = color; u.rig.color = color; u.kind = 'ai'; sim.units.push(u); }
       freshGoon(u);
     }
   }
+  // a goon with no one to replace it leaves the floor (its ragdoll flies on): hidden, and not lying there either, since
+  // the hero's run stops at the near end of a lying body (physics) and his run to the stairwell after FLOOR CLEAR
+  // stood at an invisible one
+  function offFloor(g) { g.hidden = true; g.state = 'idle'; g.rag = false; g.vx = 0; g.vy = 0; }
   function floorClear() {
     const H = sim.horde, p = sim.units[0];
     H.floorsCleared++;
@@ -645,7 +655,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     sim.seed = seed; sim.startHealth = startHealth; sim.introTime = introTime;
     sim.hordeCfg = horde;   // a lost run restarts as a fresh run, not as a 1v1
     sim.horde = horde ? { goonHealth: 40, goonDifficulty: 0.5, heal: 6, regen: HORDE_REGEN, regenDelay: HORDE_REGEN_DELAY, calm: 0, lastHp: null, count: 0, goonsAI: true, floor: 0, floorsCleared: 0, doorTurn: 0, wave: null, transit: null, ...horde } : null;
-    if (sim.horde) sim.roundTime = 0;   // a run is endless: no clock to run out (TIME used to end it, the hero standing)
+    if (!rules().clock) sim.roundTime = 0;   // a run is endless: no clock to run out (TIME used to end it, the hero standing)
     sim.ragdolls.length = 0; sim.card = null; sim.combo = null; sim.lastCombo = null;
     if (sim.units.length > 2) sim.units.length = 2;   // extra horde goons go away with the match
     sim.rng = mulberry32(seed);
@@ -1654,7 +1664,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (sim.stepCount - u.fallTrack.at > 108 || sim.stepCount - (u.fallAt || 0) > 360) { unwedge(u); return; }
     }
     if (u.rag && sim.stepCount - (u.ragAt || 0) > 600) { unwedge(u); return; }
-    if (u.breakOK && !sim.floorBroken && !sim.horde && (u.floor || 0) === 0 && !onStair(u) && (u.state === 'knockdown' || u.state === 'ko') && inAir(u)) {
+    if (u.breakOK && !sim.floorBroken && rules().floorBreak && (u.floor || 0) === 0 && !onStair(u) && (u.state === 'knockdown' || u.state === 'ko') && inAir(u)) {
       // over either railing: the body crosses an opening above its rail's top
       const hip = u.rig.joints.hip, x = u.rag ? hip.x : u.x;
       for (const sw of wellsNow()) {
@@ -1718,7 +1728,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // follow-down vault after a floor break normally keeps them together.)
   const REGROUP_STEPS = 720;
   function regroup() {
-    if (sim.horde || sim.phase !== 'fight') return;
+    if (!rules().regroup || sim.phase !== 'fight') return;
     const [a, b] = sim.units;
     if (!a || !b || a.hidden || b.hidden) return;
     const busy = (u) => u.falling || u.state === 'vault' || u.followDown || u.rag || onStair(u);
@@ -2425,7 +2435,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     credit(att, fd, true, move);   // armor soaked it: paid like a block
     note({ type: 'armor', att: att.id, def: def.id, move, dmg });
     onEvent({ type: 'hit', x: pt.x - dir * 10, y: pt.y, dir, strength: 0.5, move, limb: fd.limb, flashR: 24, ko: def.health <= 0, knockdown: false, armor: true, attacker: att, defender: def });
-    if (def.health <= 0) knockOut(att, def, fd, dir, 'armor');
+    if (def.health <= 0) koBody(att, def, fd, dir, 'armor');
     else { syncRig(def); seatStrike(att, def, dir); }
   }
   function parry(att, def, pt, dfd) {
@@ -2491,7 +2501,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       credit(att, fd, false, move);
       note({ type: 'hit', move, height: fd.height, att: att.id, def: def.id, counter: true, wake: true, combo: def.combo });
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.6, move, limb: fd.limb, flashR: fd.flashR, ko: def.health <= 0, knockdown: true, counter: true, attacker: att, defender: def });
-      if (def.health <= 0) { knockOut(att, def, fd, dir, 'wake'); return; }
+      if (def.health <= 0) { koBody(att, def, fd, dir, 'wake'); return; }
       restDown(def, hip);
       def.otgHit = true;   // it took its ground hit: no stomp on top
       return;
@@ -2556,7 +2566,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         let vx = dir * 40;
         if (fd.splat) def.splatPending = true;
         if (fd.ender && fd.kb.x > 400) vx = dir * fd.kb.x * 0.7 * def.char.kbX;
-        if (fd.ender) { callout(att.seqName || fd.callout || move.toUpperCase(), att.id, 'ender'); def.breakOK = !sim.horde; }
+        if (fd.ender) { callout(att.seqName || fd.callout || move.toUpperCase(), att.id, 'ender'); def.breakOK = rules().floorBreak; }
         // the rig adds an impulse to the body's current velocity: aim for the pop, not past it
         if (def.rag) startRag(def, vx - def.vx, -pop - def.vy, { wall: wallMode(def), spin: 160 });
         else { def.vy = -pop; def.vx = vx; }
@@ -2564,13 +2574,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       att.hitstop = def.hitstop = f60(ko ? 8 : 5); att.vx = 0;
       def.launchedBy = att.id; def.launchStep = sim.stepCount;
       att.launchCancelAt = sim.stepCount + att.hitstop + 4;
-      const goon = ko && isGoon(def);
-      if (ko && !goon) koDefender(att, def, fd, dir);
+      if (ko) koBody(att, def, fd, dir, 'juggle');
       att.releaseEv = { type: 'release', x: pt.x, y: pt.y, dir, strength: 0.6, ko };
       credit(att, fd, false, move);
       note({ type: 'hit', move, att: att.id, def: def.id, air: def.airHits, splat });
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.6, move, limb: fd.limb, flashR: 30, ko, knockdown: true, attacker: att, defender: def });
-      if (goon) goonKO(att, def, fd, dir, 'juggle');
       return;
     }
     // the universal parry: tapped toward him in the last PARRY.win steps, standing for a high, a mid or an air
@@ -2627,7 +2635,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // enders and throws use the whole approach to the opening; an ordinary launcher or heavy hit only
     // breaks it when he's already at the rail (within about 60px)
     const swB = wellNear(def.x), railGap = swB && !onStair(def) ? Math.max(0, swB.x0 - def.x, def.x - swB.x1) : Infinity;
-    def.breakOK = !sim.horde && (!!fd.ender || !!fd.throw || ((!!fd.juggle || fd.kb.x >= 400) && railGap <= 60));
+    def.breakOK = rules().floorBreak && (!!fd.ender || !!fd.throw || ((!!fd.juggle || fd.kb.x >= 400) && railGap <= 60));
     if (move === 'spinKick' && wallGap(def, dir) < 230) { def.wallBounce = true; callout('WALL SPIN', att.id, 'ender'); }
     else if (fd.wallBounce && wallGap(def, dir) < 230) def.wallBounce = true;   // a character move's wall bounce
     // knockback by the defender's weight (src/characters/; exactly 1 for TEMP)
@@ -2635,18 +2643,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (fd.kb.y) { def.vy = -fd.kb.y * def.char.kbY; def.grounded = false; }
     if (fd.knockdown) { att.vx = dir * (fd.kb.x + 100); att.followThrough = true; att.chase = true; }   // ride the launch: be on the body when it lands
     else { att.vx = 0; att.followThrough = false; }   // the seat sets contact spacing; no slide in
-    if (ko && isGoon(def)) {
-      onEvent({ type: 'hit', x: hp.x, y: hp.y, dir, strength: 1, move, limb: fd.limb, flashR: fd.flashR, ko: true, knockdown: true, attacker: att, defender: def });
-      credit(att, fd, false, move);
-      goonKO(att, def, fd, dir, fd.throw ? 'throw' : 'plain');
-      return;
-    }
-    if (ko) koDefender(att, def, fd, dir);
+    if (ko) koBody(att, def, fd, dir, fd.throw ? 'throw' : 'plain');
     else if (fd.knockdown || !def.grounded) {
       def.state = 'knockdown'; def.landJoints = null; def.otgHit = false; def.rolled = false; safePlay(def.rig, 'knockdown');
       def.juggle = !!fd.juggle;
       def.launchedBy = att.id; def.launchStep = sim.stepCount;
-      const towardWell = !sim.floorBroken && (def.floor || 0) === 0 && !onStair(def) && !sim.horde && wellsNow().some(sw => sw.toFloor != null &&
+      const towardWell = !sim.floorBroken && (def.floor || 0) === 0 && !onStair(def) && rules().floorBreak && wellsNow().some(sw => sw.toFloor != null &&
         ((dir > 0 && def.x < sw.x1 && sw.x0 - def.x < 170) || (dir < 0 && def.x > sw.x0 && def.x - sw.x1 < 170)));
       if (fd.throw && towardWell) {
         // thrown toward the stairwell: over the railing it goes
@@ -2685,7 +2687,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       else if (fd.low && HAS_HITLOW) react = 'hitLow';
       else if (fd.low || move === 'lkick' || move === 'bodyBlow' || move === 'uptown') react = HAS_HITBODY ? 'hitBody' : 'hitLight';
       // hitstun shrinks with the hit's place in the combo, so a loop drops and the defender can act
-      const stun = (sim.horde && att.id >= 1 ? fd.hitstun * 0.5 : fd.hitstun) * (counter ? COUNTER_STUN : 1) * comboScale(COMBO_STUN, def.combo);
+      const stun = fd.hitstun * rules().hitstunFrom(att) * (counter ? COUNTER_STUN : 1) * comboScale(COMBO_STUN, def.combo);
       const wasAttacking = trade || counter;
       const wasCrouching = !!def.wasLow;   // a croucher reels low: the reaction is layered over the crouch
       def.state = 'hitstun'; def.stun = f60(stun);
@@ -2736,7 +2738,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // It's sim state like the dance, so both machines in an online match play it the same, and a press
   // skips it (perfectSkip). All of it sits inside the 'ko' phase, before the KO hold counts down.
   function perfectReady(loser) {
-    if (!sim.perfectOn || sim.horde || sim.winner < 0 || !loser) return 'no';
+    if (!sim.perfectOn || !rules().perfect || sim.winner < 0 || !loser) return 'no';
     const w = sim.units[sim.winner];
     if (!w || w === loser || w.hidden || w.state === 'ko' || !w.char || !w.char.perfect || w.health < w.maxHealth) return 'no';
     if (w.grounded && !w.rag && PF_FREE.has(w.state)) return 'go';
@@ -2833,27 +2835,17 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     sim.perfectT = -2;
     return false;
   }
-  // Every way a hit can take the last point goes through knockOut. In horde a goon going down is never the
-  // round's KO: only the hero (unit 0) going down ends a run. The site sends its own `hit` event (ko: true),
-  // which is what the flow scores (goonDown, run.goons), so nothing here sends another.
-  const isGoon = (u) => !!sim.horde && u.id >= 1;
-  function knockOut(att, def, fd, dir, how) {
-    if (isGoon(def)) goonKO(att, def, fd, dir, how); else koDefender(att, def, fd, dir);
-  }
-  // horde: the goon flies off as a ragdoll, joins the pile, and the next goon is already running in
-  // how: which hit did it (plain, throw, juggle, wake, armor), for the log
-  function goonKO(att, def, fd, dir, how) {
-    def.grabbedBy = -1; def.grabTo = null;
-    syncRig(def); rigUpd(def, 0.05);
-    launchRagdoll(def, dir * Math.max(fd.kb.x, 380), -Math.max(Math.abs(fd.kb.y), 300));
-    att.vx = dir * 60; att.followThrough = false; att.chase = false; att.glide = null;
-    att.launchCancelAt = sim.stepCount + att.hitstop + 8;   // straight on to the next goon
-    sim.horde.count++; sim.card = { text: `${sim.horde.count} DOWN`, t: 0.9 };
-    note({ type: 'goonDown', att: att.id, def: def.id, count: sim.horde.count, how: how || 'other' });
-    goonDown(def);
-  }
-  function koDefender(att, def, fd, dir) {
-    if (isGoon(def)) { console.warn('[combat] koDefender on a horde goon: sent down the goon path instead'); goonKO(att, def, fd, dir); return; }
+  // ---- how a KO resolves (README, Fundamentals, How a KO resolves) ----------------------------------------------
+  // A hit path only deals damage and reacts: at 0 health it calls koBody(), which shapes the fall (the KO pose, the
+  // launch, the ragdoll), decides nothing about the round, and reports the KO. resolveKOs() then asks the mode's rules
+  // what it means. It runs at fixed points in tick(): at the start of each unit's update (a throw lands inside the
+  // unit loop, and the units after it must see the round over on that same step, as they always have) and right
+  // after resolveHits() (strikes). After resolveHits it also sweeps for anyone at 0 health that no path reported, so
+  // a new damage path that forgets koBody() still ends in a KO the rules decide, never in a body standing at 0.
+  // `downed` is drained before every step ends, so it is never part of a snapshot.
+  const downed = [];
+  const NO_HIT = { kb: { x: 0, y: 0 } };   // a KO with no hit behind it (the sweep, the flow's test hook)
+  function koBody(att, def, fd, dir, how) {
     // the knockdown clip lands sprawled; the ko clip ends as a flat bar
     def.state = 'ko'; def.koDone = false; def.landJoints = null; safePlay(def.rig, 'knockdown');
     def.splatPending = false; def.wallBounce = false; def.groundBounce = false;
@@ -2861,12 +2853,90 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     syncRig(def);
     if (!startRag(def, def.vx * 0.8 - (def.rag ? def.vx * 0 : 0), def.vy * 0.9, { wall: 'stop', spin: 420 })) def.grounded = false;
     att.vx = dir * (fd.kb.x + 100); att.followThrough = true; att.chase = true;
+    // The FINISH call sits on the hit, where it always has (it's logged between the hit's own entries, and the log is
+    // part of the rollback state). It only asks the rules whether this KO ends the round; resolveKOs decides that.
+    if ((fd.ender || fd.splat) && rules().endsRound(def)) callout('FINISH', att.id, 'finish');
+    downed.push({ att, def, fd, dir, how: how || 'other' });
+  }
+  // every KO reported so far this step, in the order they happened (a trade that KOs both ends with the later one's
+  // winner, as it always has); then, with sweep, anyone at 0 health nobody reported, by unit index
+  function resolveKOs(sweep) {
+    if (sweep && sim.phase === 'fight') {
+      for (const u of sim.units) {
+        if (u.hidden || u.health > 0 || u.state === 'ko' || downed.some((k) => k.def === u)) continue;
+        const att = oppOf(u) || u;
+        console.warn(`[combat] unit ${u.id} reached 0 health with no KO reported: resolved by the sweep`);
+        koBody(att, u, NO_HIT, Math.sign(u.x - att.x) || -u.facing, 'other');
+      }
+    }
+    if (!downed.length) return;
+    const R = rules();
+    for (let i = 0; i < downed.length; i++) R.onKO(downed[i]);
+    downed.length = 0;
+  }
+  // the round is over: the KO card, the winner, the finisher's slow motion (the perfect round takes it from here)
+  function roundKO({ att, fd }, reason) {
     sim.phase = 'ko'; sim.phaseTimer = KO_HOLD; sim.winner = att.id;
     // a KO by an ender gets the slow-motion finisher beat
     sim.finisher = !!fd.ender || !!fd.splat; sim.koSlow = sim.finisher ? 0.9 : 0.3;
-    if (sim.finisher) callout('FINISH', att.id, 'finish');
     sim.banner = 'KO';
+    sim.result = Object.freeze({ over: true, winner: att.id, reason, final: false });
   }
+  // horde: the goon flies off as a ragdoll, joins the pile, and the next goon is already running in
+  // how: which hit did it (plain, throw, juggle, wake, armor, other), for the log
+  function goonKO({ att, def, fd, dir, how }) {
+    def.grabbedBy = -1; def.grabTo = null;
+    syncRig(def); rigUpd(def, 0.05);
+    launchRagdoll(def, dir * Math.max(fd.kb.x, 380), -Math.max(Math.abs(fd.kb.y), 300));
+    att.vx = dir * 60; att.followThrough = false; att.chase = false; att.glide = null;
+    att.launchCancelAt = sim.stepCount + att.hitstop + 8;   // straight on to the next goon
+    sim.horde.count++; sim.card = { text: `${sim.horde.count} DOWN`, t: 0.9 };
+    note({ type: 'goonDown', att: att.id, def: def.id, count: sim.horde.count, how });
+    onEvent({ type: 'goonDown', count: sim.horde.count, how, attacker: att, defender: def });   // the flow scores this (run.goons)
+    goonDown(def);
+  }
+  // The mode rules: what a KO means, and every rule that differs between a 1v1 and a horde run. A check that's
+  // about the mode's rules reads rules(); what's horde *state* (the wave, the floor, the transit) reads sim.horde.
+  const RULES = {
+    versus: {
+      onKO: (k) => roundKO(k, 'ko'),   // any KO ends the round
+      endsRound: () => true,
+      clock: true,                     // the round clock runs (TIME)
+      oneRound: false,                 // best of 2n-1
+      floorBreak: true,                // an ender, a throw or a heavy hit can carry him over a railing
+      regroup: true,                   // fighters a floor apart are brought back together
+      followPair: true,                // the fight's floor follows the two fighters
+      perfect: true,                   // the perfect round finisher
+      dance: true,                     // the winner's dance on the WINS card
+      timeByPoints: false,             // TIME compares share of the bar when the bars differ
+      hitstunFrom: () => 1,
+      matchBanner: () => (sim.wins[0] === sim.wins[1] ? 'DRAW' : `${sim.units[sim.wins[0] > sim.wins[1] ? 0 : 1].name} WINS`),
+    },
+    horde: {
+      onKO: (k) => (k.def.id === 0 ? roundKO(k, 'heroDown') : goonKO(k)),   // only the hero going down ends a run
+      endsRound: (u) => u.id === 0,
+      clock: false,                    // a run is endless
+      oneRound: true,                  // the hero down ends the run
+      floorBreak: false,               // the floors are the run's: a goon never goes over a railing
+      regroup: false,
+      followPair: false,               // the floor is the wave's (sim.horde.floor)
+      perfect: false,
+      dance: false,
+      timeByPoints: true,
+      hitstunFrom: (att) => (att.id >= 1 ? 0.5 : 1),   // a goon's hit stuns the hero half as long
+      matchBanner: () => `${sim.horde.count} GOONS` + (sim.horde.floorsCleared ? `  ${sim.horde.floorsCleared} FLOORS` : ''),
+    },
+  };
+  function rules() { return sim.horde ? RULES.horde : RULES.versus; }
+  sim.rules = rules;
+  // the flow's test hook (flow debugKO): def goes down to att now, through the same resolution as any KO
+  sim.forceKO = (def, att) => {
+    if (sim.phase !== 'fight' || def.hidden || def.state === 'ko') return false;
+    def.health = 0;
+    koBody(att, def, NO_HIT, Math.sign(def.x - att.x) || -def.facing, 'debug');
+    resolveKOs();
+    return true;
+  };
 
   // A body is moved at most SEP_CAP px a step by the pushing apart (720 px/s, about twice a run): a
   // deep overlap (a getup turning solid under a man at the wall, a landing on top of someone, a body
@@ -3063,9 +3133,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (sim.roundTime > 0) sim.timer = Math.max(0, sim.timer - DT);   // no limit: the clock never runs out
         if (sim.roundTime > 0 && sim.timer <= 0) {
           // characters with different health compare what's left of each bar
-          const same = !!sim.horde || (a.maxHealth || 100) === (b.maxHealth || 100), ha = same ? a.health : a.health / a.maxHealth, hb = same ? b.health : b.health / b.maxHealth;
+          const same = rules().timeByPoints || (a.maxHealth || 100) === (b.maxHealth || 100), ha = same ? a.health : a.health / a.maxHealth, hb = same ? b.health : b.health / b.maxHealth;
           const w = ha === hb ? -1 : (ha > hb ? 0 : 1);
           sim.winner = w; sim.banner = 'TIME'; sim.phase = 'ko'; sim.phaseTimer = KO_HOLD;
+          sim.result = Object.freeze({ over: true, winner: w, reason: 'time', final: false });
         }
         break;
       case 'ko': {
@@ -3083,17 +3154,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (loser && !loser.hidden) { arena.addBody(snapshot(loser)); loser.hidden = true; onEvent({ type: 'body', x: loser.x, y: loser.y, unit: loser }); }
         sim.phaseTimer -= DT;
         if (sim.phaseTimer > 0) break;
-        if (sim.horde && sim.units[0] && sim.units[0].state !== 'ko' && sim.units[0].health > 0) {
-          // belt and braces: a horde round only ends with the hero down; anything else carries on
-          console.warn('[combat] horde KO without the hero down (winner ' + sim.winner + '): the run carries on');
-          sim.phase = 'fight'; sim.banner = ''; sim.winner = -1; sim.finisher = false; sim.koSlow = 0;
-          break;
-        }
         if (sim.winner >= 0) sim.wins[sim.winner]++;
         const need = sim.winsNeeded || WINS_NEEDED;   // best of 2n-1: the last round drawn ends it too
-        if (sim.horde || sim.wins[0] >= need || sim.wins[1] >= need || (sim.winner < 0 && sim.round >= 2 * need - 1)) {
+        const R = rules();
+        if (R.oneRound || sim.wins[0] >= need || sim.wins[1] >= need || (sim.winner < 0 && sim.round >= 2 * need - 1)) {
           sim.phase = 'match'; sim.phaseTimer = MATCH_HOLD;
-          sim.banner = sim.horde ? `${sim.horde.count} GOONS` + (sim.horde.floorsCleared ? `  ${sim.horde.floorsCleared} FLOORS` : '') : sim.wins[0] === sim.wins[1] ? 'DRAW' : `${sim.units[sim.wins[0] > sim.wins[1] ? 0 : 1].name} WINS`;
+          sim.banner = R.matchBanner();
+          sim.result = Object.freeze({ ...sim.result, final: true });   // the match (or the run) is over too
           onEvent({ type: 'match', winner: sim.winner });
         } else sim.startRound(sim.round + 1);
         break;
@@ -3126,13 +3193,14 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
     }
     for (const u of sim.units) {
+      if (downed.length) resolveKOs();   // a throw that KO'd on the last unit's update: the round is over for this one
       const opp = oppOf(u);
       if (u.hidden || !opp) continue;
       // the winner stays live through the KO and WINS cards; the loser is done
       const live = sim.phase === 'fight' || ((sim.phase === 'ko' || sim.phase === 'match') && u.id === sim.winner);
       // the match is won: the winner, standing free on the ground, breaks into the character's celebration
       // dance (registry `dance`, a looping clip) and holds it through the WINS card; nothing cancels it
-      if (sim.phase === 'match' && u.id === sim.winner && !sim.horde && u.char && u.char.dance && u.grounded && !u.rag && /^(idle|walk|run|block|crouch)$/.test(u.state)) {
+      if (sim.phase === 'match' && u.id === sim.winner && rules().dance && u.char && u.char.dance && u.grounded && !u.rag && /^(idle|walk|run|block|crouch)$/.test(u.state)) {
         u.vx = 0; u.running = false; setState(u, 'celebrate', u.char.dance);
       }
       const inp = (live && u.controller && u.state !== 'celebrate' && u.state !== 'perfect' && !(sim.perfectT >= 0)) ? u.controller(u, opp, sim) : EMPTY_INPUT;
@@ -3204,11 +3272,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       floorStep(u);
     }
     resolveHits();
+    resolveKOs(true);   // the step's KOs mean what the mode's rules say (and nobody stands at 0 health)
     separate();
     regroup();
     // the fight's floor (the camera's band, the walls the CPU reads) follows the two fighters once they're
     // both on one floor
-    if (!sim.horde) { const [a, b] = sim.units; if (a && b && !onStair(a) && !onStair(b) && !a.falling && !b.falling && (a.floor || 0) === (b.floor || 0) && (a.floor || 0) !== sim.floor) { sim.floor = a.floor || 0; refreshBounds(); } }
+    if (rules().followPair) { const [a, b] = sim.units; if (a && b && !onStair(a) && !onStair(b) && !a.falling && !b.falling && (a.floor || 0) === (b.floor || 0) && (a.floor || 0) !== sim.floor) { sim.floor = a.floor || 0; refreshBounds(); } }
     stepRagdolls();
     if (sim.card) { sim.card.t -= DT; if (sim.card.t <= 0) sim.card = null; }
     for (let i = sim.callouts.length - 1; i >= 0; i--) { sim.callouts[i].t -= DT; if (sim.callouts[i].t <= 0) sim.callouts.splice(i, 1); }

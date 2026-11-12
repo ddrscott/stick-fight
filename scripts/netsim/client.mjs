@@ -176,8 +176,13 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
 // and character definitions by reference (they never change), and the units' live references are skipped
 // (their fields are in vals, their rigs in rigs).
 const SKIP = new Set(['rig', 'controller', 'char', 'charDef', 'rng', 'units']);
-export function deepHash(sim) {
+// omit: top-level snapshot keys left out (proof.mjs --hashes leaves out `result`, so a build without it compares)
+export function deepHash(sim, omit) {
   const s = sim.saveState();
+  if (omit) { const c = { ...s }; for (const k of omit) delete c[k]; return hashOf(c); }
+  return hashOf(s);
+}
+function hashOf(s) {
   let h = 0x811c9dc5;
   const f64 = new Float64Array(1), u32 = new Uint32Array(f64.buffer);
   const mix = (v) => { h ^= v; h = Math.imul(h, 0x01000193) >>> 0; };

@@ -12,6 +12,8 @@
 //                 wake or armor KO of a goon)
 //   5. flow       the same run inside the arcade flow (index.html, HORDE): run.goons goes up by one a goon and the
 //                 flow reaches GAME OVER only after the hero goes down
+//   6. debugKO    the flow's test hook goes through the sim's KO resolution: debugKO(0) puts a goon down and the run
+//                 goes on (it used to end it), debugKO(1) puts the hero down, sim.result says heroDown, GAME OVER follows
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -121,6 +123,28 @@ const flowRes = await pg.evaluate(async () => {
   return out;
 }).catch(e => [{ name: 'flow: ran', pass: false, detail: String(e) }]);
 results.push(...flowRes);
+
+// 6. the flow's debugKO in horde
+await pg.goto(`http://127.0.0.1:${server.address().port}/play/index.html`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+await pg.waitForFunction(() => window.__flow && window.__game, null, { timeout: 30000 });
+const dbgRes = await pg.evaluate(async () => {
+  const g = window.__game, sim = g.sim, F = window.__flow, out = [];
+  const ok = (name, pass, detail) => out.push({ name, pass: !!pass, detail });
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  F.debug.go('modeSelect'); F.debug.sel.player = 'temp'; F.debug.startHorde();
+  for (let i = 0; i < 200 && sim.phase !== 'fight'; i++) await wait(50);
+  const c0 = sim.horde.count;
+  F.debug.debugKO(0);
+  await wait(1500);
+  ok('debugKO: debugKO(0) in horde puts a goon down and the run goes on', sim.horde.count === c0 + 1 && F.debug.run.goons === 1 && !sim.result.over && F.state === 'fighting',
+    `count ${c0} -> ${sim.horde.count}, run.goons ${F.debug.run.goons}, result ${JSON.stringify(sim.result)}, flow ${F.state}`);
+  F.debug.debugKO(1);
+  const reason = sim.result.reason;
+  for (let i = 0; i < 300 && F.state !== 'gameOver'; i++) await wait(50);
+  ok('debugKO: debugKO(1) puts the hero down: heroDown, then GAME OVER', reason === 'heroDown' && F.state === 'gameOver', `reason ${reason}, flow ${F.state}`);
+  return out;
+}).catch(e => [{ name: 'debugKO: ran', pass: false, detail: String(e) }]);
+results.push(...dbgRes);
 
 let fail = 0;
 for (const r of results) { if (!r.pass) fail++; console.log(`${r.pass ? 'ok  ' : 'FAIL'} ${r.name}  (${r.detail})`); }
