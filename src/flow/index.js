@@ -66,8 +66,10 @@ import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';  
 import { rootUrl } from '../root.js';
 import { createTicker } from '../ticker.js';
 import { closetBody } from './closet.js';   // the Supply Closet (README, Progression)
-import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards } from './careerUI.js';   // career and sticks (README, Progression)
-import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer } from '../career/store.js';
+import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip } from './careerUI.js';   // career and sticks (README, Progression)
+import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery } from '../career/store.js';
+import { masteryPalette } from '../career/palettes.js';
+import { earlyRank } from '../career/mastery.js';
 import { palettesFor } from '../career/palettes.js';   // the title's ticker of game-wide stats (README, Analytics, The title's ticker)
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
@@ -491,9 +493,10 @@ export function createFlow(ctx) {
   function startArcade() { newRun('arcade'); run.ladder = buildLadder(sel.player, getCharacter); track('mode', ['arcade', sel.player]); go('stageIntro'); }
   /** the palette ids a scene draws: the player's for their fighter (README, Progression), the CPU or the dummy in its own */
   const palOf = (id) => { const p = equipped(id); return p ? p.id : ''; };
-  function hordeScene() { ctx.scene('horde', { chars: [sel.player, TEMP_ID], pals: [palOf(sel.player), ''] }); if (ctx.book) ctx.book.begin({ mode: 'horde', local: 0 }); }   // the run is one entry in the books
+  const lookOf = (id) => look(id);   // the palette plus fighter mastery's pose and taunt, for the scene (src/main.js looksFor)
+  function hordeScene() { ctx.scene('horde', { chars: [sel.player, TEMP_ID], pals: [lookOf(sel.player), ''] }); if (ctx.book) ctx.book.begin({ mode: 'horde', local: 0 }); }   // the run is one entry in the books
   function startHorde() { newRun('horde'); track('mode', ['horde', sel.player]); hordeScene(); go('fighting'); }
-  function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [palOf(sel.player), ''] }); go('fighting'); }
+  function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [lookOf(sel.player), ''] }); go('fighting'); }
   // ---- character select --------------------------------------------------------------------------------
   function toSelect(m) { sel.mode = m; sel.step = 'player'; go('charSelect'); }
   // VERSUS ONLINE goes straight to the online menu: you get into a room first, and both pick there
@@ -507,19 +510,24 @@ export function createFlow(ctx) {
     const sub = { arcade: `ARCADE  ·  ${LADDER.length} STAGES UP THE BUILDING`, horde: 'HORDE  ·  FLOOR BY FLOOR', training: 'TRAINING  ·  STEP 1 OF 2' }[sel.mode] || '';
     selCtl = openSelect(ui, { title: dummy ? 'PICK YOUR DUMMY' : 'SELECT FIGHTER', sub: dummy ? 'TRAINING  ·  STEP 2 OF 2  ·  WHO TAKES THE HITS' : sub,
       roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack, onMoves: openMoves,
-      palettes: dummy ? undefined : palettePicker() });
+      palettes: dummy ? undefined : palettePicker(), ...(dummy ? {} : masteryOpts) });
   }
   /** The character select's palette strip (README, Progression): MAIN and each palette for the fighter under the cursor.
    *  A press on an owned one fights in it; on a locked one the first press asks and the second buys it with sticks.
    *  changed: online, the pick goes out again so the rival sees the new look. */
+  // fighter mastery on the select screens (README, Progression, Fighter mastery): the rank on each card and under the tagline
+  const masteryOpts = { mastery: (id) => masteryChip(id), rank: (id) => mastery(id).rank };
   function palettePicker(changed = () => {}) {
     let armed = '';
     return {
-      list: (c) => [{ id: '', name: 'MAIN', body: c.color, pants: c.pants || c.color, accent: c.accent, price: 0 }, ...palettesFor(c.id)],
+      slots: 5,   // MAIN, the three sold palettes and the mastery-only one
+      list: (c) => [{ id: '', name: 'MAIN', body: c.color, pants: c.pants || c.color, accent: c.accent, price: 0 }, ...palettesFor(c.id), ...(masteryPalette(c.id) ? [masteryPalette(c.id)] : [])],
+      how: (c, p) => (p.price ? `${p.price} STICKS${earlyRank(c.id, p.id) ? ` OR MASTERY ${earlyRank(c.id, p.id)}` : ''}` : `${c.name} MASTERY ${p.mastery}`),
       state: (c, p) => ({ owned: owns(c.id, p.id), using: palOf(c.id) === p.id }),
       choose: async (c, p) => {
         const key = `${c.id}:${p.id}`;
         if (owns(c.id, p.id)) { armed = ''; equip(c.id, p.id); changed(); return `${p.name}  ·  IN USE`; }
+        if (!p.price) { armed = ''; return `${p.name}  ·  UNLOCKS AT ${c.name} MASTERY ${p.mastery}`; }   // never for sale
         const have = careerNow().sticks;
         if (have < p.price) { armed = ''; return `${p.name} COSTS ${p.price} STICKS  ·  YOU HAVE ${have}`; }
         if (armed !== key) { armed = key; return `BUY ${p.name} FOR ${p.price} STICKS? PRESS AGAIN`; }
@@ -839,7 +847,7 @@ export function createFlow(ctx) {
     for (const u of sim.units) hp.delete(u);
     // each continue on this stage eases its CPU (src/flow/ladder.js retryDifficulty)
     const level = retryDifficulty(st.difficulty, run.stageContinues);
-    ctx.scene('arcade', { stage: { ...st, difficulty: level }, chars: [sel.player, st.char || TEMP_ID], pals: [palOf(sel.player), ''] });
+    ctx.scene('arcade', { stage: { ...st, difficulty: level }, chars: [sel.player, st.char || TEMP_ID], pals: [lookOf(sel.player), ''] });
     if (ctx.book) ctx.book.begin({ mode: 'arcade', level, stage: st.n, local: 0 });   // the books: one match per stage fought
     ui.show('fl-stage', (root) => {
       root.append(el('div', 'fl-label', st.boss ? 'FINAL STAGE' : `STAGE ${st.n} OF ${ladder().length}`));
@@ -1046,7 +1054,7 @@ export function createFlow(ctx) {
       items.push(movesBtn);
       if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
       if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); hordeScene(); go('fighting'); }));
-      if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [palOf(sel.player), ''] }); go('fighting'); }));
+      if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [lookOf(sel.player), ''] }); go('fighting'); }));
       // botches on or off (src/combat/botch.js): remembered, and it takes effect from the next fight (online
       // the host's setting rides the start message; online never pauses anyway)
       const label = () => `BOTCHES: ${botchEnabled() ? 'ON' : 'OFF'}`;
@@ -1604,7 +1612,7 @@ export function createFlow(ctx) {
       // the first pick (straight from the room) says who you're up against, and in a crew match which crew
       title: v.n === 0 ? `VS ${rivalLabel(v)}` : 'NEW CHARACTERS', sub: `${crewName ? `${crewName}  ·  ` : ''}MATCH ${v.n + 1}  ·  YOU ${tl.you} – ${tl.rival} ${rivalLabel(v)}  ·  ${host ? 'YOU START THE MATCH' : 'THE HOST STARTS THE MATCH'}`,
       roster: roster(), initial: sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), status, cls: 'fl-netpick',
-      palettes: palettePicker(() => { try { getNet().repick?.(); } catch { /* stub */ } }),
+      palettes: palettePicker(() => { try { getNet().repick?.(); } catch { /* stub */ } }), ...masteryOpts,
       backLabel: crewMatch ? 'BACK TO CREW' : 'LEAVE ROOM', extra: startBtn ? [startBtn] : [],
       onPick: (id) => {
         if (state !== 'onlineSelect' || t < 0.15) return;

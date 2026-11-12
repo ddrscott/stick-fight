@@ -99,8 +99,28 @@ const perfect = { name: 'PERFORMANCE REVIEW FLING', note: 'A performance-review 
   K({ face: 0.75, ...F(10, HIP, LF + 16, RF + 6), torso: 2, head: -10, la: [38, 112], ra: [96, 94] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Hands on hips: chest out, both fists on the hips, surveying the floor.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [20, 30], ra: [20, 30] }, 200, 'in'),
+  K({ ...F(0, HIP, LF + 4, RF - 4), torso: -4, bend: -4, head: -8, la: [30, -70], ra: [-30, 70] }, 260, 'out'),
+  K({ ...F(0, HIP, LF + 4, RF - 4), torso: -4, bend: -4, head: -10, la: [30, -70], ra: [-30, 70] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). My office. Now.: points at them, then crooks a finger to beckon.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -4, la: [92, 92], ra: [12, 24] }, 200, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -4, la: [92, 92], ra: [12, 24] }, 160, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [70, 150], ra: [12, 24] }, 160, 'inOut'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [74, 110], ra: [12, 24] }, 140, 'inOut'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [70, 150], ra: [12, 24] }, 140, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'manager',
   name: 'THE MANAGER',

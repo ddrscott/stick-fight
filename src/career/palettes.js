@@ -11,6 +11,8 @@
 //   palettesFor(fighter)   [{ id, name, body, pants, accent, price }], the extras only, cheapest first
 //   palette(fighter, id)   one of them, or null
 //   itemKey(fighter, id)   how an owned palette is stored: 'courier:nightShift'
+//   masteryPalette(f)      the fighter's mastery-only palette (fighter mastery, src/career/mastery.js): never sold,
+//                          unlocked at MASTERY_PALETTE_RANK. palette(f, id) and isItem find it too.
 
 /** sticks per palette, by its place in the fighter's list */
 export const PRICES = [150, 300, 600];
@@ -38,17 +40,52 @@ const RAW = {
   ceo: [['goldenParachute', 'GOLDEN PARACHUTE', '#ffffff', '#ffd84f', '#ff3b3b'], ['boardroom', 'BOARDROOM', '#9b8cff', '#25153a', '#ffd84f'], ['ipo', 'IPO DAY', '#5dff8a', '#3d7bff', '#ffffff']],
 };
 
-/** @typedef {{ id: string, name: string, body: string, pants: string, accent: string, price: number }} Palette */
+// The mastery-only palette (README, Progression, Fighter mastery): one each, never for sale, unlocked by playing that
+// fighter to MASTERY_PALETTE_RANK. Same rules as the rest: flat solid colors, drawn only.
+/** the mastery rank that unlocks a fighter's mastery palette (src/career/mastery.js UNLOCKS says the same) */
+export const MASTERY_PALETTE_RANK = 5;
+/** @type {Record<string, string[]>} */
+const MASTERY_RAW = {
+  temp: ['fullTime', 'FULL TIME', '#f4f4f4', '#22252e', '#ff8a3d'],
+  intern: ['returnOffer', 'RETURN OFFER', '#ffe066', '#3d5afe', '#ff3b3b'],
+  helpdesk: ['rootAccess', 'ROOT ACCESS', '#1f1f1f', '#5dff8a', '#5dff8a'],
+  courier: ['signedFor', 'SIGNED FOR', '#ff5fd2', '#1c2440', '#ffe066'],
+  security: ['allClear', 'ALL CLEAR', '#f4f4f4', '#2a6bff', '#ffd84f'],
+  janitor: ['spotless', 'SPOTLESS', '#7af0ff', '#f4f4f4', '#ff5fd2'],
+  manager: ['cornerOffice', 'CORNER OFFICE', '#ffd84f', '#22252e', '#ffffff'],
+  accountant: ['auditProof', 'AUDIT PROOF', '#f4f4f4', '#3a2040', '#5dff8a'],
+  windowWasher: ['penthouse', 'PENTHOUSE', '#9b8cff', '#ffd84f', '#ffffff'],
+  hrRep: ['openEnrollment', 'OPEN ENROLLMENT', '#ff8a3d', '#22252e', '#7af0ff'],
+  salesRep: ['presidentsClub', "PRESIDENT'S CLUB", '#ffd84f', '#3a2a40', '#ffffff'],
+  barista: ['latteArt', 'LATTE ART', '#fff1dc', '#5a3a28', '#ff5fd2'],
+  chef: ['threeStar', 'THREE STAR', '#ff3b3b', '#f4f4f4', '#ffd84f'],
+  wellness: ['innerPeace', 'INNER PEACE', '#9b8cff', '#f4f4f4', '#ffd84f'],
+  electrician: ['highVoltage', 'HIGH VOLTAGE', '#d8ff3a', '#25153a', '#2ef2ff'],
+  receptionist: ['allLines', 'ALL LINES OPEN', '#5dff8a', '#22252e', '#ff9de6'],
+  lawyer: ['verdict', 'THE VERDICT', '#1f1f1f', '#c0c6d4', '#ffd84f'],
+  ceo: ['founder', "FOUNDER'S EDITION", '#2ef2ff', '#22252e', '#ffd84f'],
+};
+
+/** @typedef {{ id: string, name: string, body: string, pants: string, accent: string, price: number, mastery?: number }} Palette */
 /** fighter id -> its extra palettes, cheapest first @type {Record<string, Palette[]>} */
 export const PALETTES = Object.fromEntries(Object.entries(RAW).map(([fighter, list]) => [fighter,
   list.map(([id, name, body, pants, accent], i) => ({ id, name, body, pants, accent, price: PRICES[i] ?? PRICES[PRICES.length - 1] }))]));
 
-/** @param {string} fighter @returns {Palette[]} */
+/** fighter id -> its mastery-only palette (price 0: it can't be bought) @type {Record<string, Palette>} */
+export const MASTERY_PALETTES = Object.fromEntries(Object.entries(MASTERY_RAW).map(([fighter, [id, name, body, pants, accent]]) => [fighter,
+  { id, name, body, pants, accent, price: 0, mastery: MASTERY_PALETTE_RANK }]));
+
+/** the palettes sold for sticks @param {string} fighter @returns {Palette[]} */
 export function palettesFor(fighter) { return PALETTES[fighter] || []; }
-/** @param {string} fighter @param {string} id @returns {Palette | null} */
-export function palette(fighter, id) { return palettesFor(fighter).find((p) => p.id === id) || null; }
+/** @param {string} fighter @returns {Palette | null} */
+export function masteryPalette(fighter) { return Object.hasOwn(MASTERY_PALETTES, fighter) ? MASTERY_PALETTES[fighter] : null; }
+/** any palette of the fighter's, sold or mastery-only @param {string} fighter @param {string} id @returns {Palette | null} */
+export function palette(fighter, id) {
+  const m = masteryPalette(fighter);
+  return palettesFor(fighter).find((p) => p.id === id) || (m && m.id === id ? m : null);
+}
 export const itemKey = (/** @type {string} */ fighter, /** @type {string} */ id) => `${fighter}:${id}`;
-/** an owned-item key that names a real palette */
+/** an owned-item key that names a real palette (sold or mastery-only) */
 /** @param {unknown} key */
 export function isItem(key) {
   if (typeof key !== 'string') return false;

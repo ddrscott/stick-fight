@@ -131,8 +131,28 @@ const perfect = { name: 'LATTE POUR', note: 'A latte pour: the body across both 
   K({ face: 0.55, ...F(2, HIP, LF + 6, RF), torso: 2, head: -8, la: [130, 220], ra: [120, 210] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Order up: one hand presents the cup high, the other on the hip.
+const victory = { keys: [
+  K({ ...F(0, HIP - 3, LF, RF), torso: 6, head: 4, la: [50, 110], ra: [20, 30] }, 180, 'in'),
+  K({ ...F(0, HIP, LF + 4, RF), torso: -4, bend: -3, head: -12, la: [150, 170], ra: [30, -70] }, 240, 'out'),
+  K({ ...F(0, HIP, LF + 4, RF), torso: -4, bend: -3, head: -14, la: [150, 170], ra: [30, -70] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Name on the cup: holds up a cup, scribbles on it, squints at the name.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 10, la: [60, 120], ra: [12, 24] }, 180, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 12, la: [60, 120], ra: [50, 108] }, 140, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 12, la: [60, 120], ra: [54, 100] }, 110, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 12, la: [60, 120], ra: [50, 112] }, 110, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 0, head: -4, la: [80, 150], ra: [12, 24] }, 240, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 220, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'barista',
   name: 'BARISTA',

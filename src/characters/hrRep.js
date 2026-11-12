@@ -129,8 +129,28 @@ const perfect = { name: 'MANDATORY OFFBOARDING', note: 'Up by the collar, the pr
   K({ face: 0.55, ...F(14, HIP, LF + 22, RF + 10), torso: 6, head: 6, la: [62, 118], ra: [68, 98] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Open door policy: arms spread wide, palms up, a warm head tilt.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 6, head: 6, la: [30, 90], ra: [30, 90] }, 200, 'in'),
+  K({ ...F(0, HIP, LF + 2, RF - 2), torso: -2, bend: -2, head: -10, la: [104, 120], ra: [-104, -120] }, 260, 'out'),
+  K({ ...F(0, HIP, LF + 2, RF - 2), torso: -2, bend: -2, head: -12, la: [104, 120], ra: [-104, -120] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Let's circle back: a finger traces two slow circles in the air.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [100, 110], ra: [12, 24] }, 180, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [120, 150], ra: [12, 24] }, 150, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [90, 120], ra: [12, 24] }, 150, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [120, 150], ra: [12, 24] }, 150, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [90, 120], ra: [12, 24] }, 150, 'sine'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 220, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'hrRep',
   name: 'HR REP',

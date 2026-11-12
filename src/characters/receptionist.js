@@ -117,8 +117,28 @@ const perfect = { name: 'TRANSFER TO THE LENS', note: 'Transfer, the long way: b
   K({ face: 0.55, ...F(6, HIP - 1, LF + 16, RF + 8), torso: 2, head: -6, la: [40, 122], ra: [152, 224] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Please hold: one finger raised, the other hand at the ear on the phone.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 6, la: [150, 250], ra: [30, 60] }, 200, 'inOut'),
+  K({ ...F(0, HIP - 1, LF + 2, RF), torso: -2, head: -2, la: [150, 250], ra: [86, 172] }, 240, 'out'),
+  K({ ...F(0, HIP - 1, LF + 2, RF), torso: -2, head: -4, la: [150, 250], ra: [86, 174] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Next!: a wave over and a point at the next in line.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [120, 160], ra: [12, 24] }, 160, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [120, 200], ra: [12, 24] }, 140, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: -4, la: [120, 160], ra: [12, 24] }, 140, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -6, la: [92, 92], ra: [12, 24] }, 180, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -6, la: [94, 96], ra: [12, 24] }, 200, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 220, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'receptionist',
   name: 'RECEPTIONIST',

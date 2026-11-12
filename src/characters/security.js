@@ -90,8 +90,27 @@ const perfect = { name: 'FACE-FIRST ESCORT', note: 'An escort: up by the collar,
   K({ face: 0.7, ...F(26, HIP, LF + 36, RF + 30), torso: -2, head: -8, la: [30, 126], ra: [40, 134] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Arms crossed: feet planted wide, arms folded, the chin up. Nobody gets past.
+const victory = { keys: [
+  K({ ...F(0, HIP - 3, LF + 6, RF - 6), torso: 4, head: 2, la: [30, 100], ra: [30, 100] }, 200, 'in'),
+  K({ ...F(0, HIP - 2, LF + 8, RF - 8), torso: -3, bend: -3, head: -10, la: [40, 150], ra: [60, 170] }, 260, 'out'),
+  K({ ...F(0, HIP - 2, LF + 8, RF - 8), torso: -3, bend: -3, head: -12, la: [40, 150], ra: [60, 170] }, 440, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Not on the list: a slow head shake and a wagging finger.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF + 4, RF - 4), torso: 2, head: 4, tw: 6, la: [62, 168], ra: [40, 150] }, 200, 'out'),
+  K({ ...F(0, HIP - 1, LF + 4, RF - 4), torso: 2, head: 4, tw: -6, la: [62, 152], ra: [40, 150] }, 160, 'sine'),
+  K({ ...F(0, HIP - 1, LF + 4, RF - 4), torso: 2, head: 4, tw: 6, la: [62, 172], ra: [40, 150] }, 160, 'sine'),
+  K({ ...F(0, HIP - 1, LF + 4, RF - 4), torso: 2, head: 4, tw: -6, la: [62, 152], ra: [40, 150] }, 160, 'sine'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 260, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'security',
   name: 'SECURITY',

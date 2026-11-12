@@ -115,8 +115,26 @@ const perfect = { name: 'CASE CLOSED', note: 'Up by the collar in the pointing h
   K({ face: 0.6, ...F(8, HIP, LF + 12, RF + 4), torso: -2, head: -12, la: [72, 152], ra: [30, 120] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Case closed: one hand on the lapel, the other pointing straight up. The court has ruled.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [60, 140], ra: [40, 150] }, 200, 'in'),
+  K({ ...F(0, HIP, LF + 4, RF - 2), torso: -4, bend: -3, head: -12, la: [172, 178], ra: [40, 160] }, 240, 'out'),
+  K({ ...F(0, HIP, LF + 4, RF - 2), torso: -4, bend: -3, head: -14, la: [172, 178], ra: [40, 160] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Objection!: a sharp step in and a finger thrust at them.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [60, 140], ra: [40, 150] }, 200, 'in'),
+  K({ ...F(6, HIP - 2, LF + 14, RF), torso: 10, head: -6, la: [94, 94], ra: [40, 150] }, 140, 'snap'),
+  K({ ...F(6, HIP - 2, LF + 14, RF), torso: 10, head: -8, la: [96, 96], ra: [40, 150] }, 360, 'sine'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 280, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'lawyer',
   name: 'LAWYER',

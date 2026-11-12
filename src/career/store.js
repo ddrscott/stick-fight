@@ -21,10 +21,16 @@
 //   todayShifts()          the day's three shifts with this player's progress (src/career/shifts.js):
 //                          { day, swapUsed, list: [{ ...shift, slot, prog, done }] }
 //   swapToday(slot)        swap one unfinished shift, once a day: { ok } | { error: 'used' | 'done' | 'unreachable' ... }
+//   mastery(fighter)       fighter mastery (src/career/mastery.js): { xp, n, rank, into, span, next, newHire }
+//   kit(fighter)           { pose, taunt }: whether the fighter plays its unlocked victory pose and taunt
+//   setKit(fighter, kind, on)   switch an unlocked pose or taunt on or off (the closet)
+//   look(fighter)          the look string a fight is started with: the palette id, then '+p' / '+t' / '+pt' for the
+//                          pose and taunt (src/main.js lookFor reads it; online it rides where the palette always did)
 //
 // Every storage call is wrapped: blocked storage just means the career lives for this page.
-import { applyAward, blankCareer, titleFor, utcDay, NUDGE, PAID_MODES, ONLINE_MODES } from './rules.js';
-import { payMatch, shiftsFor, cleanShifts, swapShift } from './shifts.js';
+import { blankCareer, titleFor, utcDay, NUDGE, PAID_MODES, ONLINE_MODES } from './rules.js';
+import { shiftsFor, cleanShifts, swapShift } from './shifts.js';
+import { payWithMastery, applyWithMastery, cleanMastery, masteryOf, rankFor, NEW_HIRE, kitOn, kitKey, kitItemKey } from './mastery.js';
 import { palette, itemKey } from './palettes.js';
 import { profile } from '../net/profile.js';
 import { apiUrl } from '../net/link.js';
@@ -46,6 +52,7 @@ function read() {
   c.owned = Array.isArray(c.owned) ? c.owned.filter((k) => typeof k === 'string') : [];
   c.equip = c.equip && typeof c.equip === 'object' && !Array.isArray(c.equip) ? c.equip : {};
   c.shifts = cleanShifts(c.shifts);
+  c.mastery = cleanMastery(c.mastery);
   return { career: c, email: typeof s.email === 'string' ? s.email : '', nudge: s.nudge && typeof s.nudge === 'object' ? s.nudge : { xp: -1, title: -1 } };
 }
 function write(s) {
@@ -75,6 +82,7 @@ function adopt(acct, email) {
   const s = read();
   const c = { ...blankCareer(), ...acct };
   delete c.title;
+  c.mastery = cleanMastery(c.mastery);
   write({ ...s, career: c, email });
 }
 
@@ -89,9 +97,9 @@ export function reportMatch(m) {
   if (!m || !PAID_MODES.includes(m.mode)) return null;
   const s = read(), p = profile(), day = utcDay();
   const signed = !!p.email && s.email === p.email;
-  const award = payMatch(m, s.career, day);   // payout plus any daily shift it finished
+  const award = payWithMastery(m, s.career, day);   // payout plus any daily shift it finished, plus the fighter's mastery
   if (!award.lines.length) return null;
-  const after = applyAward(s.career, award, day);
+  const after = applyWithMastery(s.career, award, day);
   setLast(s.career, after, award, m.mode, signed);
   if (!signed) {
     write({ ...s, career: after });
@@ -172,7 +180,7 @@ export function equipped(fighter) {
 
 export async function buy(fighter, id) {
   const pal = palette(fighter, id);
-  if (!pal) return { error: 'unknown' };
+  if (!pal || !pal.price) return { error: 'unknown' };   // a mastery-only palette isn't for sale
   const s = read(), p = profile();
   if (s.career.owned.includes(itemKey(fighter, id))) return { error: 'owned' };
   if (s.career.sticks < pal.price) return { error: 'short' };
@@ -196,6 +204,31 @@ export function equip(fighter, id) {
   if (p.email && s.email === p.email) api('career/equip', 'PUT', { fighter, id: id || '' });
   changed();
   return true;
+}
+
+/** fighter mastery for one fighter: the XP, the matches, the rank and the bar to the next, and whether NEW HIRE still pays */
+export function mastery(fighter) {
+  const m = masteryOf(read().career, fighter), r = rankFor(m.xp);
+  return { ...m, ...r, newHire: m.n < NEW_HIRE.matches };
+}
+/** whether this fighter plays its victory pose and its taunt (unlocked and switched on) */
+export function kit(fighter) { return kitOn(read().career, fighter); }
+/** switch an unlocked pose or taunt on or off. Signed in, the account keeps it too (PUT career/equip with kind). */
+export function setKit(fighter, kind, on) {
+  const s = read(), p = profile();
+  if (!s.career.owned.includes(kitItemKey(fighter, kind))) return false;
+  const eq = { ...s.career.equip }, k = kitKey(fighter, kind), id = kind === 'pose' ? 'victory' : 'taunt';
+  if (on) eq[k] = id; else delete eq[k];
+  write({ ...s, career: { ...s.career, equip: eq } });
+  if (p.email && s.email === p.email) api('career/equip', 'PUT', { fighter, kind, id: on ? id : '' });
+  changed();
+  return true;
+}
+/** the look a fight starts this fighter in: 'coldBrew', 'coldBrew+pt', '+t' (no palette, the taunt on) */
+export function look(fighter) {
+  const pal = equipped(fighter), k = kit(fighter);
+  const flags = `${k.pose ? 'p' : ''}${k.taunt ? 't' : ''}`;
+  return `${pal ? pal.id : ''}${flags ? `+${flags}` : ''}`;
 }
 
 /** A guest with something to lose: after the first promotion or NUDGE.sticks, then only after more progress. */

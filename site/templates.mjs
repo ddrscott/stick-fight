@@ -155,6 +155,34 @@ ${script(root)}
 }
 
 // ---- one fighter --------------------------------------------------------------------------------------------
+// Fighter mastery (README, Progression, Fighter mastery): what playing this fighter unlocks, rank by rank, and the pose
+// and taunt playing. Flat swatches and plain rigs: nothing here glows.
+const KIND_WORD = { palette: 'PALETTE', pose: 'VICTORY POSE', taunt: 'TAUNT' };
+function masterySection(s) {
+  const m = s.mastery;
+  if (!m || !m.rows.length) return '';
+  const fmtN = (n) => Number(n).toLocaleString('en-US');
+  const rows = m.rows.map((r) => `<tr><td>${r.rank}</td><td>${fmtN(r.xp)}</td><td>${KIND_WORD[r.kind]}</td><td>${r.colors ? `<span class="s-mswatch">${r.colors.map((c) => `<i style="background:${c}"></i>`).join('')}</span>` : ''}${esc(r.name)}</td><td>${r.price ? `or ${fmtN(r.price)} sticks before that` : 'mastery only'}</td></tr>`).join('\n        ');
+  const clip = (seq, label, cls) => (seq ? `<article class="s-move s-dance ${cls}"><canvas class="s-rig s-move-rig" data-char="${s.id}" data-mode="move" data-seq="${esc(seq)}" aria-label="${esc(s.name)} ${label}"></canvas><div class="s-move-body"><h3 class="s-h3">${label.toUpperCase()}</h3><p class="s-desc">${esc(m.rows.find((r) => r.kind === (cls === 's-mpose' ? 'pose' : 'taunt'))?.name || '')}</p></div></article>` : '');
+  return `<section class="s-section" id="mastery">
+    <h2 class="s-h2">MASTERY</h2>
+    <p class="s-note">Play ${esc(s.name)} to earn ${esc(s.name)} mastery XP: the same XP a match pays your career, from finishing, winning and technique (parries, punishes, enders, happy accidents, perfect rounds), never from raw hits or button presses. Your first ${m.hire.matches} matches with ${esc(s.name)} pay a ${m.hire.xp} XP new hire bonus on top. Each rank unlocks something for ${esc(s.name)} alone. Cosmetics only, earned by playing.</p>
+    <div class="s-table-wrap"><table class="s-table s-mtable">
+      <thead><tr><th>RANK</th><th>MASTERY XP</th><th>UNLOCKS</th><th>NAME</th><th>OTHERWISE</th></tr></thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table></div>
+    <p class="s-note">The victory pose takes the place of the celebration on the WINS banner. The taunt plays only between rounds, from the round's winner while the next ROUND card is up, so no button sets it off.</p>
+    <div class="s-moves">
+      ${clip(m.victory, 'victory pose', 's-mpose')}
+      ${clip(m.taunt, 'taunt', 's-mtaunt')}
+    </div>
+  </section>
+
+  `;
+}
+
 function swatch(label, color) {
   if (!color) return '';
   return `<li><i style="background:${color}"></i><span>${label}</span><code>${esc(color.toUpperCase())}</code></li>`;
@@ -349,7 +377,7 @@ ${s.dance ? `<section class="s-section" id="celebration">
     </article>
   </section>
 
-  ` : ''}<section class="s-section" id="strings">
+  ` : ''}${masterySection(s)}<section class="s-section" id="strings">
     <h2 class="s-h2">STRINGS AND ENDERS</h2>
     <p class="s-note">Press in rhythm: each press goes in during the last hit's recovery. Damage is for the whole string landing on TEMP, with combo decay. Stamina is the bar it spends, out of 100.</p>
     ${stringsTable(s)}

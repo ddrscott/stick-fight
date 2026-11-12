@@ -392,6 +392,14 @@ function injectStyle() {
   .fl-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.9cqh; }
   .fl-cname { margin: 0; font: 400 3.1cqw/1 'Bungee', 'Arial Black', sans-serif; color: color-mix(in srgb, var(--c) 45%, #fff); white-space: nowrap; }
   .fl-tagline { font-size: 1.8cqw; font-weight: 500; letter-spacing: 0.1em; line-height: 1.05; color: rgba(230,214,255,0.85); }
+  /* fighter mastery (src/flow/careerUI.js masteryChip): the sheet's line, and M2 in a card's corner. Plain, no glow */
+  .fl-mastery { min-height: 1.2em; }
+  /* sideways the sheet is one fixed height, full already: the line sits in the empty corner over the big rig's head */
+  #flow .fl-select:not(.fl-tall) .fl-detail { position: relative; }
+  #flow .fl-select:not(.fl-tall) .fl-mastery { position: absolute; left: 1.4cqw; top: 1.4cqh; min-height: 0; }
+  #flow .fl-select:not(.fl-tall) .fl-mastery .ms-chip { flex-wrap: wrap; max-width: 13cqw; gap: 0.5cqh 0.6cqw; }
+  .fl-card { position: relative; }
+  .fl-card .fl-mrank { position: absolute; top: 0.5cqh; right: 0.35cqw; font: 600 1.25cqw/1 'Teko', sans-serif; letter-spacing: 0.06em; color: #ffb02e; text-shadow: none; }
   .fl-stats { display: grid; grid-template-columns: auto 1fr; column-gap: 1cqw; row-gap: 0.55cqh; align-items: center; margin-top: 0.4cqh; }
   .fl-stats span { font-size: 1.7cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1; color: rgba(214,190,255,0.85); }
   .fl-stats i { display: block; height: 1.25cqh; min-height: 6px; background: rgba(255,255,255,0.08);
@@ -414,6 +422,8 @@ function injectStyle() {
   .fl-btn.fl-pal.fl-pallock small { color: #ffc46b; }
   .fl-btn.fl-pal.fl-focus small { color: var(--deep); }
   .fl-select:not(.fl-tall) .fl-btn.fl-pal { min-height: max(34px, 5.6cqh); }
+  /* five swatches (MAIN, three sold, the mastery palette): the tag stays on one line */
+  .fl-select:not(.fl-tall) .fl-pal small { font-size: 1.25cqw; letter-spacing: 0.04em; white-space: nowrap; }
   .fl-select:not(.fl-tall) .fl-info:has(.fl-pals) { gap: 0.5cqh; }
   .fl-select:not(.fl-tall) .fl-info:has(.fl-pals) .fl-moves { margin-top: 0.2cqh; padding-top: 0.6cqh; gap: 0.3cqh; }
   .fl-palnote { min-height: 1.1em; font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.08em; color: #eadcff; }
@@ -683,7 +693,8 @@ function injectStyle() {
   #flow .fl-tall .fl-cname { font-size: 7.6cqw; }
   #flow .fl-tall .fl-cname.fl-long { font-size: 6cqw; }
   #flow .fl-tall .fl-cname { height: 7.6cqw; line-height: 7.6cqw; }   /* a long name is smaller type in the same line, so the sheet stays one height */
-  #flow .fl-tall .fl-tagline { font-size: 4.4cqw; min-height: 2.1em; }   /* two lines' room whether it takes one or two: the sheet is one height for every fighter */
+  #flow .fl-tall .fl-tagline { font-size: 4.4cqw; min-height: 2.1em; }
+  #flow .fl-tall .fl-card .fl-mrank { font-size: 3.4cqw; top: 1cqh; right: 1.6cqw; }   /* two lines' room whether it takes one or two: the sheet is one height for every fighter */
   #flow .fl-tall .fl-moves b, #flow .fl-tall .fl-moves em, #flow .fl-tall .fl-moves small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   #flow .fl-tall .fl-moves b, #flow .fl-tall .fl-moves em { height: 1.05em; line-height: 1.05; }   /* every line one height, arrows and empty notes too */
   #flow .fl-tall .fl-moves small { display: block; height: 1.15em; line-height: 1.15; }

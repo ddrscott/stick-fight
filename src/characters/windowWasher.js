@@ -135,8 +135,27 @@ const perfect = { name: 'SQUEEGEE PUSH', note: 'Up by the collar, a wax-on circl
   K({ face: 0.6, ...F(10, HIP, LF + 16, RF + 6), torso: 4, head: -8, la: [40, 110], ra: [112, 164] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Top floor view: one hand shading the eyes, gazing out over the city, the other on the hip.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 2, la: [60, 150], ra: [20, 30] }, 200, 'inOut'),
+  K({ ...F(2, HIP, LF + 6, RF - 2), torso: -4, bend: -3, head: -10, la: [128, 232], ra: [30, -70] }, 260, 'out'),
+  K({ ...F(2, HIP, LF + 6, RF - 2), torso: -4, bend: -3, head: -12, la: [128, 232], ra: [30, -70] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Streaky: spots a smudge in the air, wipes it in two big arcs.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -6, la: [100, 110], ra: [12, 24] }, 200, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -6, la: [130, 140], ra: [12, 24] }, 180, 'inOut'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -6, la: [80, 90], ra: [12, 24] }, 180, 'inOut'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -6, la: [130, 140], ra: [12, 24] }, 180, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'windowWasher',
   name: 'WINDOW WASHER',

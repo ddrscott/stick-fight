@@ -126,8 +126,27 @@ const perfect = { name: 'PANCAKE FLIP', note: 'A pancake flip: the body on the s
   K({ face: 0.7, ...F(4, HIP, LF + 4, RF), torso: 2, head: -12, la: [128, 128], ra: [40, 120] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Plated: a low bow with one arm sweeping out to present the dish.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [40, 100], ra: [12, 24] }, 200, 'in'),
+  K({ ...F(0, HIP - 3, LF + 6, RF - 2), torso: 28, bend: 6, head: 18, la: [70, 60], ra: [-20, 40] }, 280, 'out'),
+  K({ ...F(0, HIP - 3, LF + 6, RF - 2), torso: 30, bend: 6, head: 20, la: [70, 60], ra: [-20, 40] }, 440, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Taste test: a spoon to the lips, a frown, a slow head shake.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 6, la: [40, 168], ra: [12, 24] }, 220, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -6, la: [40, 168], ra: [12, 24] }, 180, 'inOut'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 0, head: 4, tw: 8, la: [30, 120], ra: [12, 24] }, 160, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 0, head: 4, tw: -8, la: [30, 120], ra: [12, 24] }, 160, 'sine'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'chef',
   name: 'CHEF',

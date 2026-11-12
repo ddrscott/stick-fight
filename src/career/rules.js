@@ -17,6 +17,9 @@
 //   applyAward(career, award, day)      the career after it (a new object)
 //   blankCareer()                       a new player's
 //
+// Fighter mastery (src/career/mastery.js) sits on top of that: payWithMastery and applyWithMastery add the XP the
+// fighter played earned (the match's own XP here, plus NEW HIRE) and whatever a new rank unlocked.
+//
 // Daily shifts (src/career/shifts.js) sit on top: shifts.js payMatch is payout plus any shift the match finished, and
 // its award carries the new shift state, which applyAward stores as career.shifts.
 //
@@ -78,7 +81,8 @@ export const utcDay = (/** @type {number} */ t = Date.now()) => new Date(t).toIS
 
 /**
  * @typedef {{ xp: number, sticks: number, winDay: string, onlineDay: string, offDay: string, offXp: number, offSticks: number,
- *   owned: string[], equip: Record<string, string>, shifts: { day: string, swap: number, prog: number[], done: boolean[] } }} Career
+ *   owned: string[], equip: Record<string, string>, shifts: { day: string, swap: number, prog: number[], done: boolean[] },
+ *   mastery: Record<string, { xp: number, n: number }> }} Career
  * @typedef {{ id: string, label: string, n: number, xp: number, sticks: number }} Line
  * @typedef {{ lines: Line[], xp: number, sticks: number, firstWin: boolean, firstOnline: boolean, capped: boolean,
  *   offline: boolean, match: { xp: number, sticks: number }, shifts?: Career['shifts'], moved?: boolean[] }} Award
@@ -86,7 +90,7 @@ export const utcDay = (/** @type {number} */ t = Date.now()) => new Date(t).toIS
 
 /** a new player's career @returns {Career} */
 export function blankCareer() {
-  return { xp: 0, sticks: 0, winDay: '', onlineDay: '', offDay: '', offXp: 0, offSticks: 0, owned: [], equip: {}, shifts: { day: '', swap: -1, prog: [0, 0, 0], done: [false, false, false] } };
+  return { xp: 0, sticks: 0, winDay: '', onlineDay: '', offDay: '', offXp: 0, offSticks: 0, owned: [], equip: {}, shifts: { day: '', swap: -1, prog: [0, 0, 0], done: [false, false, false] }, mastery: {} };
 }
 
 /** the rung for this much XP, and how far along the bar to the next one */

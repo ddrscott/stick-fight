@@ -111,8 +111,27 @@ const perfect = { name: 'CLOSE THE DEAL', note: 'The handshake: he takes it by t
   K({ face: 0.85, ...F(8, HIP, LF + 8, RF + 4), torso: 4, head: -8, la: [98, 96], ra: [96, 94] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): The closer: a step in, a hand stuck out for the handshake, a big grin up.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 2, la: [30, 60], ra: [12, 24] }, 180, 'in'),
+  K({ ...F(4, HIP - 1, LF + 10, RF), torso: 6, head: -6, la: [70, 80], ra: [30, -70] }, 240, 'out'),
+  K({ ...F(4, HIP - 1, LF + 10, RF), torso: 6, head: -8, la: [70, 80], ra: [30, -70] }, 460, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Call me: thumb and pinkie at the ear, then a point at them.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: 8, la: [150, 250], ra: [12, 24] }, 200, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 2, head: 4, la: [150, 250], ra: [12, 24] }, 180, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -4, la: [92, 92], ra: [12, 24] }, 160, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: -4, la: [96, 98], ra: [12, 24] }, 200, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'salesRep',
   name: 'SALES REP',

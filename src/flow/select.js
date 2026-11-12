@@ -114,6 +114,8 @@ const wrapOff = (o, n) => { o = ((o % n) + n) % n; return o >= n / 2 ? o - n : o
  *   more footer buttons (the host's START), the card under the cursor as it moves (onHover), and a
  *   back key that does something other than the BACK button (un-ready, not leave). onMoves adds the MOVE LIST
  *   button, for the fighter under the cursor.
+ *   mastery, rank (README, Progression, Fighter mastery): mastery(id) the sheet's line under the tagline (an element),
+ *   rank(id) the number for the card's corner.
  *   palettes (README, Progression): the strip of looks under the fighter's sheet. { list(c): the looks, its own
  *   (id '') first; state(c, p): { owned, using }; choose(c, p): a press on one (use it, or buy it on a second press),
  *   resolving to the line to show under the strip }. Flat swatches; the sheet's rig previews the one under the cursor.
@@ -127,6 +129,7 @@ export function openSelect(ui, o) {
   let bigs = new Map();    // id -> its big rigView (the sheet's rig, sideways)
   let statBars = [], moveRows = [];
   let palBtns = [], palNote = null, palFor = null;   // the palette strip (o.palettes): its buttons, the line under it, whose it shows
+  let mastEl = null;   // fighter mastery's line under the tagline (o.mastery)
   let tall = false;
   // the carousel: pos is the ring's position in cards (fractional while it slides; not wrapped), target where it's going
   let pos = cur, target = cur, drag = null;
@@ -141,6 +144,7 @@ export function openSelect(ui, o) {
     detail.style.setProperty('--c', c.color);
     nameEl.textContent = c.name; nameEl.classList.toggle('fl-long', c.name.length > 11);
     tagEl.textContent = c.tagline;
+    if (mastEl) mastEl.replaceChildren(o.mastery(c.id));
     STATS.forEach(([, f], i) => statBars[i].style.setProperty('--v', String(clamp01(f(c)))));
     const list = (c.moveList || []).slice(0, moveRows.length);
     moveRows.forEach((r, i) => {
@@ -188,7 +192,7 @@ export function openSelect(ui, o) {
       b.el.classList.toggle('fl-palon', st.using);
       b.el.classList.toggle('fl-pallock', !st.owned);
       const tag = b.el.querySelector('small');
-      if (tag) tag.textContent = st.using ? 'IN USE' : st.owned ? 'OWNED' : `${p.price}`;
+      if (tag) tag.textContent = st.using ? 'IN USE' : st.owned ? 'OWNED' : p.price ? `${p.price}` : `M${p.mastery || ''}`;
     });
     if (palNote) palNote.textContent = note || palLine(c, inUse(c));
     showLook(c, inUse(c));
@@ -196,7 +200,7 @@ export function openSelect(ui, o) {
   function palLine(c, p) {
     if (!p) return '';
     const st = o.palettes.state(c, p);
-    return `${p.id ? p.name : 'MAIN'}${st.using ? '  ·  IN USE' : st.owned ? '  ·  OWNED' : `  ·  ${p.price} STICKS`}`;
+    return `${p.id ? p.name : 'MAIN'}${st.using ? '  ·  IN USE' : st.owned ? '  ·  OWNED' : `  ·  ${o.palettes.how ? o.palettes.how(c, p) : `${p.price} STICKS`}`}`;
   }
   async function choosePal(k) {
     const c = palFor || bigChar;
@@ -254,6 +258,8 @@ export function openSelect(ui, o) {
         b.el.style.setProperty('--c', c.color);
         const cv = document.createElement('canvas'); cv.width = cw; cv.height = chh;   // the card's shape, so the rig isn't stretched
         b.el.append(cv, el('b', c.name.length > 9 ? 'fl-long' : '', c.name));   // a long name (WINDOW WASHER) goes smaller and may take two lines
+        // fighter mastery's rank on the card (o.mastery): M2 in the corner, nothing before the first rank
+        if (o.mastery && o.rank) { const r = o.rank(c.id); if (r > 0) { const m = el('small', 'fl-mrank', `M${r}`); m.setAttribute('aria-label', `mastery ${r}`); b.el.appendChild(m); } }
         deck.appendChild(b.el);
         cards.set(c.id, b.el);
         const look = o.palettes ? (o.palettes.list(c).find((p) => o.palettes.state(c, p).using) || null) : null;
@@ -273,11 +279,12 @@ export function openSelect(ui, o) {
         r.p.append(r.name, r.input, r.note); r.p.style.display = 'none';
         moveRows.push(r); movesEl.appendChild(r.p);
       }
-      info.append(nameEl, tagEl, statsEl, movesEl);
+      mastEl = o.mastery ? el('div', 'fl-mastery') : null;
+      info.append(nameEl, tagEl, ...(mastEl ? [mastEl] : []), statsEl, movesEl);
       palBtns = []; palNote = null;
       if (o.palettes) {
         const strip = el('div', 'fl-pals');
-        for (let k = 0; k < 4; k++) {
+        for (let k = 0; k < (o.palettes.slots || 4); k++) {
           const b = button('', () => choosePal(k), 'fl-pal');
           b.el.append(el('i', 'fl-sw'), el('small', ''));
           b.el.setAttribute('aria-label', 'palette');

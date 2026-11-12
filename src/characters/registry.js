@@ -11,6 +11,8 @@ import { buildStrings } from '../combat/strings.js';
 // the select screen's order (registered ones only); TEMP, the baseline, comes first
 export const ROSTER_ORDER = ['temp', 'intern', 'helpdesk', 'courier', 'security', 'janitor', 'manager', 'accountant', 'windowWasher', 'hrRep', 'salesRep', 'barista', 'chef', 'wellness', 'electrician', 'receptionist', 'lawyer', 'ceo'];
 export const TEMP_ID = 'temp';
+/** the longest a taunt clip may run: it plays under the ROUND card (sim INTRO_TIME 1.4 s) and is cut at FIGHT */
+export const TAUNT_MAX_MS = 1200;
 const STAT_DEFAULTS = { health: 100, walk: 1, backWalk: 1, run: 1, jump: 1, dash: 1, weight: 1, stamina: 1, regen: 1, damage: 1 };
 const MOTIONS = new Set(['', 'f', 'b', 'd', 'df', 'db', 'ff', 'run', 'rise', 'air', 'airDown']);
 const BUTTONS = new Set(['1', '2', '3', '4', '1+3', '2+4']);
@@ -46,6 +48,16 @@ export function registerCharacter(def) {
   // the celebration dance (a looping clip the match winner plays under the WINS banner, sim.js 'match'):
   // a clip only, no frame data, so nothing can press it
   if (def.dance) { c.dance = `${id}_dance`; rigs[c.dance] = { blend: 180, ...def.dance, loop: true }; }
+  // fighter mastery (README, Progression, Fighter mastery; names in src/career/mastery.js KIT): the victory pose, a
+  // clip that settles into a held pose and replaces the dance for a player who's unlocked it and has it on; and the
+  // taunt, a short clip the round's winner plays under the next ROUND card, when nobody can move (sim.js startRound).
+  // Clips only, no frame data, so nothing can press either. A taunt must be over by the time FIGHT goes up (TAUNT_MAX_MS).
+  if (def.victory) { c.victory = `${id}_victory`; rigs[c.victory] = { blend: 160, ...def.victory, loop: false }; }
+  if (def.taunt) {
+    c.taunt = `${id}_taunt`; rigs[c.taunt] = { blend: 140, ...def.taunt, loop: false };
+    const ms = def.taunt.keys.reduce((s, k) => s + (k.d || 0), 0);
+    if (ms > TAUNT_MAX_MS) console.warn(`[characters] ${id}: the taunt runs ${ms} ms, past ${TAUNT_MAX_MS} (it's cut at FIGHT)`);
+  }
   // the perfect round finisher (sim.js startPerfect, src/fx/perfect.js): a clip the winner plays over the beaten
   // body. Its 'grab' key picks the body up in `hand`, its 'release' key throws it at the camera; the last key is
   // the pose he holds while it squeaks down the glass. hold: how the body hangs from the hand ('collar', 'ankle',

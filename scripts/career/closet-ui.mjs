@@ -9,8 +9,8 @@
 //   3. buying: the first press only asks, the second spends the sticks, the card turns IN USE in full, the counts go up;
 //      a press on one you can't afford says the price and spends nothing
 //   4. equipping: MAIN puts the own look back, the palette puts it on again; character select shows it IN USE
-//   5. mastery (a stand-in item, the way fighter mastery will add them): BARISTA MASTERY 3 while locked, a press says
-//      how to get it, unlocked at rank 3 and counted
+//   5. mastery (fighter mastery's real items, with the test's ranks): the pose reads BARISTA MASTERY 4 while locked, a
+//      press says how to get it, unlocked at rank 4 and counted
 //   6. it's on screen, no text glows, no page errors
 import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 import fs from 'node:fs';
@@ -49,7 +49,6 @@ const inks = (p, key) => p.evaluate((key) => {
 
 const F = 'barista', PALS = palettesFor(F).slice().sort((a, b) => a.price - b.price);
 const [P1, P2, P3] = PALS, K = (p) => `${F}:${p.id}`;
-const MASTERY = [{ fighter: F, kind: 'pose', id: 'latteArt', name: 'LATTE ART', mastery: 3 }];
 
 const b = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--mute-audio'] });
 try {
@@ -121,18 +120,17 @@ try {
     c = await saved(p);
     check(`${label}: one press on an owned palette puts it on`, c.equip[F] === P1.id && (await p.locator(`${card(K(P1))}.cl-using`).count()) === 1 && (await saved(p)).sticks === 320 - P1.price);
 
-    // 5. a mastery item
-    await p.evaluate((x) => { window.__flow.debug.closet.extras = x; window.__flow.debug.closet.ranks = { barista: 0 }; }, MASTERY);
-    await press(`.cl-tab[data-fighter="${F}"]`);
-    const mk = `${F}:pose:latteArt`;
-    check(`${label}: a mastery item is locked: rank`, (await st(mk)) === 'rank' && (await p.locator(card(mk)).innerText()).includes('BARISTA MASTERY 3') && (await inks(p, mk)).sil);
-    check(`${label}: ...on the VICTORY POSES shelf, in the total`, (await flowText(p)).includes('VICTORY POSES 0 / 1') && (await flowText(p)).includes(`COLLECTED 1 / ${total + 1}`));
+    // 5. fighter mastery's items (src/career/mastery.js): the pose locked at rank 0, unlocked at rank 4 (a test's ranks)
+    const mk = `${F}:pose:victory`;
+    check(`${label}: the victory pose is locked: rank`, (await st(mk)) === 'rank' && (await p.locator(card(mk)).innerText()).includes('BARISTA MASTERY 4') && (await inks(p, mk)).sil);
+    check(`${label}: ...on the VICTORY POSES shelf, in the total`, (await flowText(p)).includes('VICTORY POSES 0 / 1') && (await flowText(p)).includes(`COLLECTED 1 / ${total}`));
     await press(card(mk));
-    check(`${label}: pressing it says how to get it`, (await flowText(p)).includes('LATTE ART UNLOCKS AT BARISTA MASTERY 3'));
+    check(`${label}: pressing it says how to get it`, (await flowText(p)).includes('UNLOCKS AT BARISTA MASTERY 4'));
     if (SHOTS) await p.screenshot({ path: `${SHOTS}/${label}-3-mastery.png` });
-    await p.evaluate(() => { window.__flow.debug.closet.ranks = { barista: 3 }; });
+    await p.evaluate(() => { window.__flow.debug.closet.ranks = { barista: 4 }; });
     await press(`.cl-tab[data-fighter="${F}"]`);
-    check(`${label}: at rank 3 it's unlocked and counted`, (await st(mk)) === 'owned' && (await flowText(p)).includes(`COLLECTED 2 / ${total + 1}`) && (await flowText(p)).includes('MASTERY 3'));
+    // rank 4: the 150 palette (bought already), the taunt, the 300 palette and the pose
+    check(`${label}: at rank 4 it's unlocked and counted (with the taunt and the 300 palette)`, (await st(mk)) === 'owned' && (await flowText(p)).includes(`COLLECTED 4 / ${total}`) && (await flowText(p)).includes('MASTERY 4'));
     await p.evaluate(() => { window.__flow.debug.closet.extras = null; window.__flow.debug.closet.ranks = null; });
 
     // 4b. character select sees the closet's pick

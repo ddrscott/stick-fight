@@ -108,8 +108,27 @@ const perfect = { name: 'OFF AND ON AGAIN', note: 'Have you tried turning them o
   K({ face: 0.7, ...F(0, HIP, LF, RF), torso: 4, head: -8, la: [26, 36], ra: [74, 174] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Ticket resolved: one stiff arm out with a thumbs up, the other hand on the hip.
+const victory = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [40, 120], ra: [30, -70] }, 180, 'snap'),
+  K({ ...F(0, HIP - 1, LF + 2, RF), torso: -2, head: -6, la: [84, 160], ra: [30, -70] }, 220, 'out'),
+  K({ ...F(0, HIP - 1, LF + 2, RF), torso: -2, head: -8, la: [84, 162], ra: [30, -70] }, 420, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Turn it off and on: a finger presses an invisible button, the body slumps, then snaps back up.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: 6, la: [80, 90], ra: [12, 24] }, 180, 'out'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 8, head: 8, la: [84, 84], ra: [12, 24] }, 100, 'snap'),
+  K({ ...F(0, HIP - 8, LF, RF), torso: 30, bend: 10, head: 30, la: [4, 8], ra: [2, 6] }, 300, 'in'),
+  K({ ...F(0, HIP, LF, RF), torso: -2, head: -8, la: [20, 40], ra: [16, 36] }, 200, 'snap'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 220, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'helpdesk',
   name: 'HELPDESK',

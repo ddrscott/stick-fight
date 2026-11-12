@@ -67,8 +67,27 @@ const perfect = { name: 'SAME-DAY DROP KICK', note: 'He picks it up like a parce
   K({ face: 0.7, ...F(2, HIP, LF, RF + 6), torso: 2, head: -10, la: [156, 236], ra: [20, 40] }, 0, 'sine'),
 ] };
 
+// Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
+// (registry `victory`, in place of the dance once it's unlocked and on): Signed, sealed: heels together, a sharp salute.
+const victory = { keys: [
+  K({ ...F(0, HIP - 3, LF + 4, RF - 4), torso: 6, head: 4, la: [30, 90], ra: [12, 24] }, 160, 'in'),
+  K({ ...F(0, HIP + 1, LF + 6, RF - 6), torso: -2, bend: -2, head: -4, la: [116, 222], ra: [6, 14] }, 200, 'snap'),
+  K({ ...F(0, HIP + 1, LF + 6, RF - 6), torso: -2, bend: -2, head: -4, la: [116, 224], ra: [6, 14] }, 440, 'sine'),
+] };
+// The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
+// over by FIGHT (TAUNT_MAX_MS). Running late: a jog on the spot, a glance at the wrist, and off again.
+const taunt = { keys: [
+  K({ ...F(0, HIP - 2, LF, RF), rl: [60, -40], torso: 8, head: 0, la: [-30, 60], ra: [60, 140] }, 160, 'inOut'),
+  K({ ...F(0, HIP - 2, LF, RF), ll: [60, -40], torso: 8, head: 0, la: [60, 140], ra: [-30, 60] }, 160, 'inOut'),
+  K({ ...F(0, HIP - 2, LF, RF), rl: [60, -40], torso: 8, head: 0, la: [-30, 60], ra: [60, 140] }, 160, 'inOut'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 14, la: [70, 150], ra: [12, 24] }, 260, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 220, 'inOut'),
+] };
+
 export default {
   dance,
+  victory,
+  taunt,
   perfect,
   id: 'courier',
   name: 'COURIER',

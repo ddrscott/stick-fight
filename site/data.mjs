@@ -27,6 +27,8 @@ import { MOVE_DATA, RIG, RIG_KIT, createFighter } from '../src/fighter/index.js'
 import { SHARED_INPUTS, inputFor, tokenGlyph, keysGlyph, norm, humanize, animOf, heightOf, quiet, payoffOf, comboDamage, listEntry, nameOf, inputsOf } from '../src/combat/moveinfo.js';
 export { SHARED_INPUTS, inputFor, tokenGlyph, animOf };
 import { buildHitboxes } from '../src/combat/hitboxes.js';
+import { unlocksFor, RANKS, NEW_HIRE } from '../src/career/mastery.js';
+import { palette } from '../src/career/palettes.js';
 
 const PREROLL_MS = 50;   // src/combat/sim.js PREROLL
 const fr = (ms) => Math.round(ms * 0.06);
@@ -338,6 +340,15 @@ function strategyOf(c, moves, strings) {
   return out;
 }
 
+/** What fighter mastery unlocks for a character, rank by rank (README, Progression, Fighter mastery) */
+function masteryOf(c) {
+  const rows = unlocksFor(c.id).map((u) => {
+    const p = u.kind === 'palette' ? palette(c.id, u.id) : null;
+    return { rank: u.rank, xp: RANKS[u.rank], kind: u.kind, name: u.name, price: u.price || 0, colors: p ? [p.body, p.pants, p.accent] : null };
+  });
+  return { rows, victory: c.victory || null, taunt: c.taunt || null, hire: NEW_HIRE };
+}
+
 /** Everything the site shows about one character. */
 export function sheetOf(c) {
   const moves = uniqueMovesOf(c);
@@ -351,6 +362,7 @@ export function sheetOf(c) {
     mechanics: mechanicsOf(c, names),
     moveList: c.moveList || [],
     dance: c.dance || null,
+    mastery: masteryOf(c),   // fighter mastery (src/career/mastery.js): what each rank unlocks, and the pose and taunt clips
     perfect: c.perfect ? { clip: c.perfect.clip, name: c.perfect.name, note: c.perfect.note, stamp: c.perfect.stamp } : null,   // the perfect round finisher (registry `perfect`)   // the celebration clip (registry `dance`), played by the match winner
     moves,
     strings,
