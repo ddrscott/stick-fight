@@ -224,8 +224,10 @@ export function createOnline(game) {
     game.startMatch({ seed, localIndex, lockstep, chars, botch, rules });
     if (localIndex === 0) track('online_match', [chars[0] || '', chars[1] || '', crewMode ? 'crew' : 'quick'], m);   // the host counts it once
     // the live count (api/now): the host tells its room a match is on, with the two fighters and nothing else; the
-    // room takes it off when the result comes in or a player leaves (worker/index.ts Lobby)
-    if (localIndex === 0 && analyticsOn && link) { try { link.sendControl({ t: 'sys', ev: 'live', chars: [chars[0] || '', chars[1] || ''] }); } catch { /* closing */ } }
+    // room takes it off when the result comes in or a player leaves (worker/index.ts Lobby). Both pages say it, with
+    // the match number: the room times the match itself, so a match with no agreed result (a rival who left, a lost
+    // link) still counts its play time (worker/stats.ts roomLive). The room only takes the host's for the count.
+    if (analyticsOn && link) { try { link.sendControl({ t: 'sys', ev: 'live', n: m, chars: [chars[0] || '', chars[1] || ''] }); } catch { /* closing */ } }
     emit('start', { seed, localIndex, chars, botch, n: m, crew: crewMode });
     readout.show(true);
   }

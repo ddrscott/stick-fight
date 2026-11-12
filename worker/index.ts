@@ -42,7 +42,8 @@
 // messages it writes itself are {"t":"sys",...} notices: welcome, peer joined or left, and
 // errors. The one message it keeps for itself is a page's {"t":"sys","ev":"result"} when a match ends:
 // the result goes on the books only when both players' pages report the same one (worker/stats.ts).
-// Nothing stored but the time the room expires and a result waiting for the other side's. A crew room opens one of these for each
+// Nothing stored but the time the room expires, a result waiting for the other side's, and when the match on now started (its play
+// time, if it never gets an agreed result: worker/stats.ts roomLive). A crew room opens one of these for each
 // match it starts.
 //
 // Spectators (README, "Multiplayer", Spectators). The one thing the room reads: messages the host
@@ -63,7 +64,7 @@ import { Crew, SLUG_RE } from "./crew";
 import { handleAuth } from "./auth";
 import { handleAdmin } from "./admin";
 import { cleanLink, linkPage, ogImage, oldLink, playPage } from "./og";
-import { offlineMatch, recordMatch, recordPick, recordPlay, roomResult, statsResponse } from "./stats";
+import { offlineMatch, recordMatch, recordPick, recordPlay, roomLive, roomResult, roomSettle, statsResponse } from "./stats";
 import { isFighter } from "./roster";
 
 // the events the page may send (src/analytics.js); anything else is dropped. `match` and `pick` also
@@ -661,12 +662,15 @@ export class Room extends DurableObject<Env> {
     if (ev === "result") {
       await this.notBusy();   // either side's word that it's over takes it off the count
       await roomResult(this.ctx.storage, this.env, role, message);
-    } else if (ev === "live" && role === "host") {
-      // the host's word that a match started: its two fighters, for the live count (api/now)
-      let chars: unknown;
-      try { chars = (JSON.parse(message) as { chars?: unknown }).chars; } catch { return; }
-      if (!Array.isArray(chars) || !isFighter(chars[0]) || !isFighter(chars[1])) return;
+    } else if (ev === "live") {
+      // a page's word that a match started: the room's play-time clock (worker/stats.ts roomLive) hears both sides;
+      // the live count (api/now) takes the host's, with its two fighters
+      let msg: { chars?: unknown; n?: unknown };
+      try { msg = JSON.parse(message); } catch { return; }
       const fl = await this.getFlags();
+      await roomLive(this.ctx.storage, this.env, role, msg.n, fl.priv);
+      const chars = msg.chars;
+      if (role !== "host" || !Array.isArray(chars) || !isFighter(chars[0]) || !isFighter(chars[1])) return;
       if (!fl.code) return;
       await this.lobby().begin(fl.code, [chars[0], chars[1]], fl.priv).catch(() => {});
     }
@@ -697,6 +701,7 @@ export class Room extends DurableObject<Env> {
     // sends its spectators away
     await this.getFlags();
     await this.notBusy();   // and for the live count
+    await roomSettle(this.ctx.storage, this.env);   // a match with no agreed result still counts the time the room saw it run
     const rest = this.players(ws).length;
     this.desk.stop("left", rest === 0, true);   // (off the LIVE list even if the room had forgotten its match)
     // the last one out starts the short clock: an empty room's code stops working in minutes
@@ -709,6 +714,7 @@ export class Room extends DurableObject<Env> {
     if (at > Date.now()) { await this.ctx.storage.setAlarm(at); return; }
     // gone: no storage and no alarm left behind, so the object costs nothing until a code reuses it
     await this.getFlags();
+    await roomSettle(this.ctx.storage, this.env);   // (normally settled when the last player left)
     this.desk.stop("left", true);
     this.flags = null;
     await this.ctx.storage.deleteAlarm();

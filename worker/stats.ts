@@ -14,7 +14,15 @@
 //                     vs = 'pvp'. One page alone can't put a result on the books.
 //   horde             one `match` data point per run, for its length and hit counts; a run has no
 //                     opponent fighter and always ends in a loss, so it stays out of the matchups
-//                     (its time still counts).
+//                     (its time still counts). A run cut short (quit, restart, tab closed) is sent the
+//                     same way: a quit run is as good as a death.
+//
+// Cut short (src/bookkeeping.js cut): an arcade stage quit partway comes with quit: 1. It's a `match` data
+// point with result `quit` and its play time, and never touches stats_matchups: a quit isn't a loss to that
+// CPU. An online match that never gets a result both pages agree on (a rival who left, a lost link) counts
+// its play time from the room's own clock (roomLive, roomSettle): the seconds the room saw it running, from
+// both pages saying it started to the first result or a player leaving, capped at an hour. A page's number
+// is never trusted for it, and win or loss still needs both pages to agree, as before.
 //
 // Play time (migrations/0004_playtime.sql): every match above also adds its length to stats_time, one
 // row per UTC day and mode, and training (which has no match) adds the page's heartbeats ({ e: 'play' }).
@@ -69,6 +77,7 @@ export type Match = {
   level: number;                          // the CPU's difficulty 0..1 (0 online)
   hits: [number, number]; combo: [number, number]; perfects: [number, number];
   stage: number;                          // arcade: the stage; horde: floors cleared
+  quit?: boolean;                         // arcade: cut short partway (play time only, no matchup)
 };
 
 /** The details a page adds to a result; the same fields for a vs-CPU match and an online one. */
@@ -88,6 +97,7 @@ export function offlineMatch(raw: unknown): Match | null {
   return {
     mode, p1: m.p1, p2: horde ? "goons" : (m.p2 as string), wins: horde ? [0, 0] : pair(m.wins, 9), secs: int(m.secs, 0, MAX_SECS), how,
     level: Math.round(Math.max(0, Math.min(1, Number(m.level) || 0)) * 100) / 100, stage: int(m.stage, 0, 999), ...details(m),
+    ...(!horde && m.quit ? { quit: true, how: "ko", move: "" } : {}),   // a horde run cut short is just a run
   };
 }
 
@@ -95,14 +105,14 @@ export function offlineMatch(raw: unknown): Match | null {
 export async function recordMatch(env: Env, req: Request | null, m: Match): Promise<void> {
   const horde = m.mode === "horde", pvp = m.mode === "quick" || m.mode === "crew";
   const winner = m.wins[0] > m.wins[1] ? 0 : m.wins[1] > m.wins[0] ? 1 : -1;
-  const mirror = m.p1 === m.p2;
-  // blobs: event, mode, P1's fighter, P2's fighter, result, cpu / pvp, how it ended, the finishing move (then the country)
+  const mirror = m.p1 === m.p2, quit = !!m.quit && m.mode === "arcade";
+  // blobs: event, mode, P1's fighter, P2's fighter, result (p1, p2, draw, run, quit), cpu / pvp, how it ended, the finishing move (then the country)
   // doubles: seconds, P1's rounds, P2's rounds, CPU level, hits P1, hits P2, best combo P1, best combo P2,
   //          perfect rounds P1, perfect rounds P2, mirror (1 or 0), stage
-  track(env, req, "match", [m.mode, m.p1, m.p2, horde ? "run" : winner < 0 ? "draw" : winner === 0 ? "p1" : "p2", pvp ? "pvp" : "cpu", m.how, m.move],
+  track(env, req, "match", [m.mode, m.p1, m.p2, horde ? "run" : quit ? "quit" : winner < 0 ? "draw" : winner === 0 ? "p1" : "p2", pvp ? "pvp" : "cpu", m.how, m.move],
     m.secs, [m.wins[0], m.wins[1], m.level, m.hits[0], m.hits[1], m.combo[0], m.combo[1], m.perfects[0], m.perfects[1], mirror ? 1 : 0, m.stage]);
-  await recordTime(env, m.mode, m.secs, 1);   // play time: every mode, horde included
-  if (horde) return;
+  await recordTime(env, m.mode, m.secs, quit ? 0 : 1);   // play time: every mode, horde included; a quit stage is time, not a match finished
+  if (horde || quit) return;   // a quit isn't a loss to that CPU: no matchup
   // vs CPU the row reads player's fighter against the CPU's; online the pair is stored once, a <= b
   const flip = pvp && m.p1 > m.p2;
   const [a, b] = flip ? [m.p2, m.p1] : [m.p1, m.p2];
@@ -155,21 +165,62 @@ function onlineReport(m: Record<string, unknown>): Report | null {
   };
 }
 
-/** A {t:'sys', ev:'result'} message from one player's page (worker/index.ts Room). Never passed on to the other. */
-export async function roomResult(storage: DurableObjectStorage, env: Env, role: "host" | "guest", raw: string): Promise<void> {
+/** A {t:'sys', ev:'result'} message from one player's page (worker/index.ts Room). Never passed on to the other.
+ *  The first report stops the room's clock for that match; an agreed result takes over its time (the match's own
+ *  length), and a rejected one counts no time at all. */
+export async function roomResult(storage: DurableObjectStorage, env: Env, role: "host" | "guest", raw: string): Promise<"recorded" | "rejected" | "waiting" | "dup" | null> {
   let msg: Record<string, unknown>;
-  try { msg = JSON.parse(raw); } catch { return; }
-  if (!msg || msg.ev !== "result") return;
+  try { msg = JSON.parse(raw); } catch { return null; }
+  if (!msg || msg.ev !== "result") return null;
   const mine = onlineReport(msg);
-  if (!mine) return;
-  if ((await storage.get<string>("res:done")) === mine.key) return;   // already on the books: a resend
+  if (!mine) return null;
+  const n = int(msg.n, 1, 9999), clock = await storage.get<Clock>("clock");
+  if (clock && clock.n === n && !clock.end) { clock.end = Date.now(); await storage.put("clock", clock); }
+  if ((await storage.get<string>("res:done")) === mine.key) return "dup";   // already on the books: a resend
   const peer = role === "host" ? "guest" : "host";
   const theirs = await storage.get<Report>(`res:${peer}`);
-  if (!theirs || theirs.key !== mine.key || Date.now() - theirs.at > REPORT_TTL_MS) { await storage.put(`res:${role}`, mine); return; }
+  if (!theirs || theirs.key !== mine.key || Date.now() - theirs.at > REPORT_TTL_MS) { await storage.put(`res:${role}`, mine); return "waiting"; }
   await storage.delete(["res:host", "res:guest"]);
-  if (theirs.core !== mine.core) { track(env, null, "match_reject", [mine.match.mode, mine.match.p1, mine.match.p2]); return; }
+  if (clock && clock.n === n) await storage.delete("clock");   // its time is the match's own length, or (rejected) none
+  if (theirs.core !== mine.core) { track(env, null, "match_reject", [mine.match.mode, mine.match.p1, mine.match.p2]); return "rejected"; }
   await storage.put("res:done", mine.key);
   await recordMatch(env, null, role === "host" ? mine.match : theirs.match);
+  return "recorded";
+}
+
+// ---- online play time without a result: the room's own clock ----------------------------------------------
+// Each page tells its room a match started ({t:'sys', ev:'live', n, chars}; the guest's word too, since
+// 2026-11-12). The clock starts on the first word and counts only once both pages have said it (a page with Do
+// Not Track says nothing, which keeps the match off the books for both, as for a result). It stops at the first
+// result report or when a player leaves. If both pages agree on the result, the match's own length counts and
+// the clock is dropped; otherwise roomSettle adds what the room saw (Date.now(), never a page's number) to
+// stats_time, capped at MAX_SECS, and nothing under ROOM_MIN_SECS (the intro plus about 5 s of fighting).
+export type Clock = { n: number; at: number; end: number; host: boolean; guest: boolean; crew: boolean };
+export const ROOM_MIN_SECS = 8;
+
+/** One page's word that match n started. A clock left from an earlier match is settled first. */
+export async function roomLive(storage: DurableObjectStorage, env: Env, role: "host" | "guest", n: unknown, crew: boolean): Promise<void> {
+  const num = Math.floor(Number(n));
+  if (!(num >= 1 && num <= 9999)) return;
+  let clock = await storage.get<Clock>("clock");
+  if (clock && clock.n !== num) { await roomSettle(storage, env); clock = undefined; }
+  if (!clock) clock = { n: num, at: Date.now(), end: 0, host: false, guest: false, crew };
+  if (clock[role]) return;
+  clock[role] = true;
+  await storage.put("clock", clock);
+}
+
+/** A player left, or the room is closing: a match still on the clock (no agreed result) adds the seconds the room
+ *  saw it running. Returns the seconds counted. */
+export async function roomSettle(storage: DurableObjectStorage, env: Env): Promise<number> {
+  const clock = await storage.get<Clock>("clock");
+  if (!clock) return 0;
+  await storage.delete("clock");
+  if (!clock.host || !clock.guest) return 0;
+  const secs = Math.min(MAX_SECS, Math.floor(((clock.end || Date.now()) - clock.at) / 1000));
+  if (secs < ROOM_MIN_SECS) return 0;
+  await recordTime(env, clock.crew ? "crew" : "quick", secs, 0);
+  return secs;
 }
 
 // ---- GET /api/stats -------------------------------------------------------------------------
