@@ -155,9 +155,13 @@ export function recordPick(env: Env, req: Request, ctx: ExecutionContext, labels
 // it's recorded, once. Different: nothing is recorded but a `match_reject` data point. The extra details (the
 // finishing move, hit counts) come from each page's own effects, which rollback can leave a hit apart, so
 // they're taken from the host's report and aren't part of the agreement.
-type Report = { key: string; core: string; match: Match; at: number };
+// tech: this side's own technique counts for its career award ([parries, punishes, enders, accidents, perfects], from
+// x.tech[side]); dnt: the page asked not to be tracked, so the result counts for careers but goes on no books
+type Report = { key: string; core: string; match: Match; at: number; tech: unknown; dnt: boolean };
+/** both pages agreed: the room awards each signed-in side its career (worker/career.ts awardOnline) */
+export type Agreed = (mode: "quick" | "crew", wins: [number, number], tech: [unknown, unknown]) => Promise<void>;
 
-function onlineReport(m: Record<string, unknown>): Report | null {
+function onlineReport(m: Record<string, unknown>, side: 0 | 1): Report | null {
   const mode = m.mode === "crew" ? "crew" : m.mode === "quick" ? "quick" : null;
   const chars = Array.isArray(m.chars) ? m.chars : [];
   if (!mode || !isFighter(chars[0]) || !isFighter(chars[1])) return null;
@@ -167,17 +171,18 @@ function onlineReport(m: Record<string, unknown>): Report | null {
   return {
     key: `${n}:${seed}`, core: [n, seed, mode, chars[0], chars[1], wins[0], wins[1], frames, how].join("|"), at: Date.now(),
     match: { mode, p1: chars[0], p2: chars[1], wins, secs: Math.round(frames / SIM_HZ), how, level: 0, stage: 0, ...details(x) },
+    tech: Array.isArray(x.tech) ? x.tech[side] : null, dnt: m.dnt === 1 || m.dnt === true,
   };
 }
 
 /** A {t:'sys', ev:'result'} message from one player's page (worker/index.ts Room). Never passed on to the other.
  *  The first report stops the room's clock for that match; an agreed result takes over its time (the match's own
  *  length), and a rejected one counts no time at all. */
-export async function roomResult(storage: DurableObjectStorage, env: Env, role: "host" | "guest", raw: string): Promise<"recorded" | "rejected" | "waiting" | "dup" | null> {
+export async function roomResult(storage: DurableObjectStorage, env: Env, role: "host" | "guest", raw: string, agreed?: Agreed): Promise<"recorded" | "rejected" | "waiting" | "dup" | null> {
   let msg: Record<string, unknown>;
   try { msg = JSON.parse(raw); } catch { return null; }
   if (!msg || msg.ev !== "result") return null;
-  const mine = onlineReport(msg);
+  const mine = onlineReport(msg, role === "host" ? 0 : 1);
   if (!mine) return null;
   const n = int(msg.n, 1, 9999), clock = await storage.get<Clock>("clock");
   if (clock && clock.n === n && !clock.end) { clock.end = Date.now(); await storage.put("clock", clock); }
@@ -189,7 +194,10 @@ export async function roomResult(storage: DurableObjectStorage, env: Env, role: 
   if (clock && clock.n === n) await storage.delete("clock");   // its time is the match's own length, or (rejected) none
   if (theirs.core !== mine.core) { track(env, null, "match_reject", [mine.match.mode, mine.match.p1, mine.match.p2]); return "rejected"; }
   await storage.put("res:done", mine.key);
-  await recordMatch(env, null, role === "host" ? mine.match : theirs.match);
+  const host = role === "host" ? mine : theirs, guest = role === "host" ? theirs : mine;
+  // a page with Do Not Track still reports, so the other player's career counts the match, but it goes on no books
+  if (!mine.dnt && !theirs.dnt) await recordMatch(env, null, host.match);
+  if (agreed) { try { await agreed(host.match.mode as "quick" | "crew", host.match.wins, [host.tech, guest.tech]); } catch (e) { console.error("career: online award failed", e); } }
   return "recorded";
 }
 

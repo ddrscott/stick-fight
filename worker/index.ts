@@ -61,7 +61,8 @@ import { createWatchRoom } from "../src/net/watchroom.js";
 
 import { blockedName } from "../src/namefilter.js";
 import { Crew, SLUG_RE } from "./crew";
-import { handleAuth } from "./auth";
+import { handleAuth, currentEmail } from "./auth";
+import { handleCareer, awardOnline } from "./career";
 import { handleAdmin } from "./admin";
 import { cleanLink, linkPage, ogImage, oldLink, playPage } from "./og";
 import { offlineMatch, recordMatch, recordPick, recordPlay, roomLive, roomResult, roomSettle, statsResponse } from "./stats";
@@ -370,6 +371,9 @@ async function app(req: Request, env: Env, ctx: ExecutionContext): Promise<Respo
     const auth = await handleAuth(req, env, parts);
     if (auth) return auth;
 
+    const career = await handleCareer(req, env, parts);   // career XP, sticks and palettes (worker/career.ts)
+    if (career) return career;
+
     return notFound();
   }
 }
@@ -581,6 +585,9 @@ export class Room extends DurableObject<Env> {
       return new Response(null, { status: 101, webSocket: client });
     }
     for (const w of mine) w.close(4001, "replaced");   // the host reconnecting from a new tab
+    // who's playing, when signed in (the session cookie came with the upgrade): the room awards their career
+    // from an agreed result (worker/career.ts awardOnline). Kept on the socket, so it outlives hibernation.
+    try { const email = await currentEmail(req, this.env); if (email) server.serializeAttachment({ email }); } catch { /* no award, the match still plays */ }
     server.send(JSON.stringify({ t: "sys", ev: "welcome", role, peer: peer.length > 0 }));
     for (const w of peer) w.send(JSON.stringify({ t: "sys", ev: "peer", present: true }));
     const fl = await this.getFlags();
@@ -661,7 +668,7 @@ export class Room extends DurableObject<Env> {
     try { ev = String((JSON.parse(message) as { ev?: unknown }).ev || ""); } catch { return; }
     if (ev === "result") {
       await this.notBusy();   // either side's word that it's over takes it off the count
-      await roomResult(this.ctx.storage, this.env, role, message);
+      await roomResult(this.ctx.storage, this.env, role, message, (mode, wins, tech) => this.award(mode, wins, tech));
     } else if (ev === "live") {
       // a page's word that a match started: the room's play-time clock (worker/stats.ts roomLive) hears both sides;
       // the live count (api/now) takes the host's, with its two fighters
@@ -673,6 +680,17 @@ export class Room extends DurableObject<Env> {
       if (role !== "host" || !Array.isArray(chars) || !isFighter(chars[0]) || !isFighter(chars[1])) return;
       if (!fl.code) return;
       await this.lobby().begin(fl.code, [chars[0], chars[1]], fl.priv).catch(() => {});
+    }
+  }
+  /** Both pages agreed on a result: each signed-in player's career, and the award told to their page alone. */
+  private async award(mode: "quick" | "crew", wins: [number, number], tech: [unknown, unknown]) {
+    for (const side of [0, 1] as const) {
+      for (const ws of this.ctx.getWebSockets(side === 0 ? "host" : "guest")) {
+        const att = ws.deserializeAttachment() as { email?: string } | null;
+        if (!att || !att.email) continue;
+        const r = await awardOnline(this.env, att.email, mode, side, wins, tech[side]);
+        if (r) { try { ws.send(JSON.stringify({ t: "sys", ev: "career", ...r })); } catch { /* gone: the page asks api/career next time */ } }
+      }
     }
   }
   private async notBusy() {

@@ -127,6 +127,7 @@ export function adaptOnline(online) {
     postPoke: () => online.postPoke(),
     postFocus: (c) => online.postFocus(c),
     pick: (id, ready) => online.pick(id, ready),
+    repick: () => online.repick(),   // the palette changed on the pick screen: the rival sees it
     startNow: () => online.startNow(),
     // spectators: the host's switch (kept in localStorage), and how many are watching this room
     watchable: () => !!online.watchable,

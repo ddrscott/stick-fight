@@ -41,11 +41,12 @@ const clamp01 = (v) => Math.max(0.06, Math.min(1, v));
 // GLOW_COATS times (plain blits, no more blurring) to bring the halo back to the weight it had.
 const GLOW = 9, GLOW_COATS = 2, GLOW_EVERY = 0.1, CARD_STEP = 1 / 30;
 
-// a rig drawn into its own canvas, glowing in the character's color (glow: the blur, bigger on a bigger canvas)
-function rigView(canvas, c, zoom, glowPx = GLOW) {
-  const rig = createFighter({ color: c.color, x: 0, y: 0, facing: 1, body: c.body });
-  rig.pants = c.pants || null;
-  rig.setBody(c.body, { accent: c.accent });
+// a rig drawn into its own canvas, glowing in the character's color (glow: the blur, bigger on a bigger canvas).
+// look: a palette ({ body, pants, accent }, src/career/palettes.js) to draw it in instead of its own colors
+function rigView(canvas, c, zoom, glowPx = GLOW, look = null) {
+  const rig = createFighter({ color: (look && look.body) || c.color, x: 0, y: 0, facing: 1, body: c.body });
+  rig.pants = look ? look.pants : c.pants || null;
+  rig.setBody(c.body, { accent: (look && look.accent) || c.accent });
   rig.speedLines = false;
   rig.charDef = c;   // its cloth (a tie, a lanyard, an apron's hem) hangs at rest
   const ctx = canvas.getContext('2d');
@@ -53,14 +54,22 @@ function rigView(canvas, c, zoom, glowPx = GLOW) {
   const layer = () => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; return cv; };
   const plain = layer(), pctx = plain.getContext('2d');
   const glow = layer(), gctx = glow.getContext('2d');
-  gctx.shadowColor = c.color; gctx.shadowBlur = glowPx;
+  gctx.shadowColor = rig.color; gctx.shadowBlur = glowPx;
   // a floor glow under the feet
-  const floor = ctx.createRadialGradient(w / 2, h * 0.93, 2, w / 2, h * 0.93, w * 0.42);
-  floor.addColorStop(0, c.color + '55'); floor.addColorStop(1, 'transparent');
+  let floor;
+  const makeFloor = () => { floor = ctx.createRadialGradient(w / 2, h * 0.93, 2, w / 2, h * 0.93, w * 0.42); floor.addColorStop(0, rig.color + '55'); floor.addColorStop(1, 'transparent'); };
+  makeFloor();
   const pose = (x) => { x.setTransform(zoom, 0, 0, zoom, w / 2, h * 0.93); rig.draw(x); x.setTransform(1, 0, 0, 1, 0, 0); };
   const halo = () => { for (let k = 0; k < GLOW_COATS; k++) ctx.drawImage(glow, 0, 0); };
   return {
     rig,
+    /** draw it in a palette (null: its own colors); the glow is remade on the next frame */
+    recolor(p) {
+      const col = (p && p.body) || c.color;
+      if (rig.color === col && rig.pants === (p ? p.pants : c.pants || null)) return;
+      rig.color = col; rig.pants = p ? p.pants : c.pants || null; rig.accent = (p && p.accent) || c.accent;
+      gctx.shadowColor = col; makeFloor(); this.age = Infinity;
+    },
     age: Infinity,   // seconds since the glow was remade
     wait: 0,         // seconds since it was drawn (the select's tick keeps it)
     /** the first glow counts as this much newer than it is, so cards given different leads take turns from then on */
@@ -104,7 +113,10 @@ const wrapOff = (o, n) => { o = ((o % n) + n) % n; return o >= n / 2 ? o - n : o
  *   the online pick screen's extras: BACK's label (LEAVE ROOM), a status line under the subtitle,
  *   more footer buttons (the host's START), the card under the cursor as it moves (onHover), and a
  *   back key that does something other than the BACK button (un-ready, not leave). onMoves adds the MOVE LIST
- *   button, for the fighter under the cursor
+ *   button, for the fighter under the cursor.
+ *   palettes (README, Progression): the strip of looks under the fighter's sheet. { list(c): the looks, its own
+ *   (id '') first; state(c, p): { owned, using }; choose(c, p): a press on one (use it, or buy it on a second press),
+ *   resolving to the line to show under the strip }. Flat swatches; the sheet's rig previews the one under the cursor.
  */
 export function openSelect(ui, o) {
   const roster = o.roster, n = roster.length;
@@ -114,6 +126,7 @@ export function openSelect(ui, o) {
   let cards = new Map();   // id -> the card's element (mark() tags the rival's)
   let bigs = new Map();    // id -> its big rigView (the sheet's rig, sideways)
   let statBars = [], moveRows = [];
+  let palBtns = [], palNote = null, palFor = null;   // the palette strip (o.palettes): its buttons, the line under it, whose it shows
   let tall = false;
   // the carousel: pos is the ring's position in cards (fractional while it slides; not wrapped), target where it's going
   let pos = cur, target = cur, drag = null;
@@ -143,11 +156,56 @@ export function openSelect(ui, o) {
       big.rig.x = 0; big.rig.play('idle');
     } else {
       big = bigs.get(c.id);
-      if (!big) bigs.set(c.id, big = rigView(bigCanvas, c, 1.9));
+      if (!big) { const look = inUse(c); bigs.set(c.id, big = rigView(bigCanvas, c, 1.9, GLOW, look && look.id ? look : null)); }
       else { big.rig.x = 0; big.rig.play('idle'); }   // back from another card: standing, not mid-move
     }
     bigChar = c; bigT = 0; showing = false;
+    paintPals(c);
     if (!tall) big.draw(0);
+  }
+
+  // ---- palettes (o.palettes): the swatches for the fighter under the cursor -----------------------------------
+  const looks = (c) => (o.palettes && c ? o.palettes.list(c) : []);
+  const inUse = (c) => looks(c).find((p) => o.palettes.state(c, p).using) || null;
+  /** a card and the sheet's rig in the look this fighter fights in */
+  function showLook(c, p) {
+    const look = p && p.id ? p : null;
+    const v = views[roster.indexOf(c)];
+    if (v) v.recolor(look);
+    const b = tall ? v : bigs.get(c.id);
+    if (b && b !== v) b.recolor(look);
+  }
+  function paintPals(c, note = '') {
+    if (!o.palettes || !palBtns.length) return;
+    palFor = c;
+    const list = looks(c);
+    palBtns.forEach((b, k) => {
+      const p = list[k];
+      b.el.style.display = p ? '' : 'none';
+      if (!p) return;
+      const st = o.palettes.state(c, p);
+      b.el.style.setProperty('--sw', p.body); b.el.style.setProperty('--sw2', p.pants || p.body); b.el.style.setProperty('--sw3', p.accent || p.body);
+      b.el.classList.toggle('fl-palon', st.using);
+      b.el.classList.toggle('fl-pallock', !st.owned);
+      const tag = b.el.querySelector('small');
+      if (tag) tag.textContent = st.using ? 'IN USE' : st.owned ? 'OWNED' : `${p.price}`;
+    });
+    if (palNote) palNote.textContent = note || palLine(c, inUse(c));
+    showLook(c, inUse(c));
+  }
+  function palLine(c, p) {
+    if (!p) return '';
+    const st = o.palettes.state(c, p);
+    return `${p.id ? p.name : 'MAIN'}${st.using ? '  ·  IN USE' : st.owned ? '  ·  OWNED' : `  ·  ${p.price} STICKS`}`;
+  }
+  async function choosePal(k) {
+    const c = palFor || bigChar;
+    const p = looks(c)[k];
+    if (!c || !p) return;
+    const note = await o.palettes.choose(c, p);
+    if (palFor === c) paintPals(c, note || '');
+    const v = views[roster.indexOf(c)];
+    if (v) v.card.style.setProperty('--c', (inUse(c) && inUse(c).id ? inUse(c).body : c.color));
   }
 
   // the carousel's cards where pos puts them (every frame it moves; nothing while it sits still)
@@ -198,7 +256,9 @@ export function openSelect(ui, o) {
         b.el.append(cv, el('b', c.name.length > 9 ? 'fl-long' : '', c.name));   // a long name (WINDOW WASHER) goes smaller and may take two lines
         deck.appendChild(b.el);
         cards.set(c.id, b.el);
-        const v = rigView(cv, c, cz, tall ? 12 : GLOW); v.lead = GLOW_EVERY * views.length / n;
+        const look = o.palettes ? (o.palettes.list(c).find((p) => o.palettes.state(c, p).using) || null) : null;
+        const v = rigView(cv, c, cz, tall ? 12 : GLOW, look && look.id ? look : null); v.lead = GLOW_EVERY * views.length / n;
+        if (look && look.id) b.el.style.setProperty('--c', look.body);
         v.card = b.el; v.hidden = false;
         views.push(v);
         items.push({ ...b, focusFirst: true, manual: tall, char: c });
@@ -207,12 +267,26 @@ export function openSelect(ui, o) {
       const info = el('div', 'fl-info');
       nameEl = el('h1', 'fl-cname'); tagEl = el('div', 'fl-tagline'); statsEl = el('div', 'fl-stats'); movesEl = el('div', 'fl-moves');
       for (const [label] of STATS) { const i = el('i'); statBars.push(i); statsEl.append(el('span', '', label), i); }
-      for (let k = 0; k < 4; k++) {
+      // sideways the sheet has a fixed height: with the palette strip under it, the move list shows three rows
+      for (let k = 0; k < (o.palettes && !tall ? 3 : 4); k++) {
         const r = { p: el('p'), name: el('b'), input: el('em'), note: el('small') };
         r.p.append(r.name, r.input, r.note); r.p.style.display = 'none';
         moveRows.push(r); movesEl.appendChild(r.p);
       }
       info.append(nameEl, tagEl, statsEl, movesEl);
+      palBtns = []; palNote = null;
+      if (o.palettes) {
+        const strip = el('div', 'fl-pals');
+        for (let k = 0; k < 4; k++) {
+          const b = button('', () => choosePal(k), 'fl-pal');
+          b.el.append(el('i', 'fl-sw'), el('small', ''));
+          b.el.setAttribute('aria-label', 'palette');
+          strip.appendChild(b.el);
+          palBtns.push({ ...b, palIdx: k });
+        }
+        palNote = el('div', 'fl-palnote');
+        info.append(strip, palNote);
+      }
       if (tall) {
         // ‹ and › on the carousel's edges, over the cards hanging off them: plain buttons, not stops for the D-pad
         // (left and right already spin it). The count (3 / 18) sits in the sheet's corner.
@@ -244,9 +318,11 @@ export function openSelect(ui, o) {
         el('div', 'fl-small fl-found', `TECHNIQUES FOUND ${tc.found}/${tc.total}`)];
       if (tall) { root.appendChild(foot); const h = el('div', 'fl-selhints'); h.append(...hints); root.appendChild(h); }
       else { foot.append(...hints); root.appendChild(foot); }
-      items.push(back, pick, ...extra);
+      items.push(back, pick, ...extra, ...palBtns);
       return { items, focus: cur, back: o.onBackKey || o.onBack, move: arrows,
         onFocus: (k, it) => {
+          // a swatch under the cursor: the sheet's rig tries it on, and the line says what it is
+          if (it && it.palIdx != null && bigChar) { const p = looks(bigChar)[it.palIdx]; if (p) { showLook(bigChar, p); if (palNote) palNote.textContent = palLine(bigChar, p); } return; }
           if (!it || !it.char) return;
           cur = roster.indexOf(it.char);
           aimAt(cur);

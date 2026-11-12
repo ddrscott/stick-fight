@@ -189,12 +189,14 @@ check('two members are in the lobby', A.you && B.you && A.you !== B.you);
   check('scores: an unknown crew is refused (no-crew)', nope.error === 'no-crew', JSON.stringify(nope));
   // the top 10: eleven more members post 1,000 to 11,000
   const extra = [];
-  for (let i = 0; i < 11; i++) { const id = pid(); extra.push(await member(slug, id, `MEMBER ${i}`)); const r = await sub(id, run({ initials: `M${String(i).padStart(2, '0')}`, score: 1000 * (i + 1), reach: 1, char: 'temp' })); if (!r.ok) console.log('  post failed', r); }
+  for (let i = 0; i < 11; i++) { const id = pid(); extra.push(await member(slug, id, `MEMBER ${i}`)); const r = await sub(id, run({ initials: `M${String(i).padStart(2, '0')}`, score: 1000 * (i + 1), reach: 1, char: 'temp', title: i === 10 ? 'MANAGER' : i === 9 ? 'GRAND POOBAH' : undefined })); if (!r.ok) console.log('  post failed', r); }
   const board = await getJson(`crews/${slug}/scores`);
   const ar = board.body && board.body.arcade;
   check('scores: GET gives the crew\'s name and both tables', board.status === 200 && board.body.name === 'LUNCH CREW' && Array.isArray(board.body.horde), JSON.stringify(board.body).slice(0, 120));
   check('scores: the arcade table keeps the top 10, best first', ar && ar.length === 10 && ar[0].score === 50000 && ar[0].initials === 'ABC' && ar[9].score === 3000 && ar.every((r, i) => !i || ar[i - 1].score >= r.score), ar && ar.map((r) => r.score).join(','));
-  check('scores: a row has initials, score, fighter, stage, date, and never who posted it', ar && Object.keys(ar[0]).sort().join() === 'at,char,clear,initials,reach,score', ar && Object.keys(ar[0]).join());
+  check('scores: a row has initials, score, fighter, stage, date, the poster\'s job title, and never who posted it', ar && Object.keys(ar[0]).sort().join() === 'at,char,clear,initials,reach,score,title', ar && Object.keys(ar[0]).join());
+  const m10 = ar && ar.find((r) => r.initials === 'M10'), m09 = ar && ar.find((r) => r.initials === 'M09');
+  check('scores: a run posted with a job title keeps it (MANAGER); one not on the ladder is dropped', m10 && m10.title === 'MANAGER' && m09 && m09.title === '', JSON.stringify([m10, m09]));
   const hz = board.body && board.body.horde;
   check('scores: the horde table', hz && hz.length === 1 && hz[0].initials === 'BOB' && hz[0].reach === 2, JSON.stringify(hz));
   const lobby = A.last((m) => m.t === 'state');

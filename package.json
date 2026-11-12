@@ -35,6 +35,9 @@
     "test:delete": "node scripts/delete/check.mjs",
     "test:delete:ui": "node scripts/delete/ui.mjs",
     "test:age": "node scripts/age/check.mjs",
+    "test:career": "node scripts/career/rules.mjs",
+    "test:career:worker": "node scripts/career/worker.mjs",
+    "test:career:ui": "node scripts/career/ui.mjs",
     "test:device": "node scripts/perf/device.mjs"
   },
   "devDependencies": {

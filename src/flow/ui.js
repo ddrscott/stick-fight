@@ -403,6 +403,20 @@ function injectStyle() {
   .fl-moves em { font: normal 600 2cqw/1 'Teko', sans-serif; color: var(--amber); text-align: right; letter-spacing: 0.06em; }
   .fl-moves small { grid-column: 1 / -1; font-size: 1.55cqw; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(214,190,255,0.75); }
   .fl-selfoot { display: flex; align-items: center; gap: 2cqw; }
+  /* palettes (README, Progression): flat swatches, body over pants with the accent as a stripe; the one in use outlined
+     in white, a locked one shows its price in sticks. Readable text, no glow. */
+  .fl-pals { display: flex; gap: 0.8cqw; margin-top: auto; }
+  .fl-btn.fl-pal { min-width: 0; flex: 1; min-height: max(36px, 6.4cqh); padding: 0.3cqw; gap: 0.2cqh; box-shadow: none; --c: rgba(214,190,255,0.55); }
+  .fl-pal .fl-sw { display: block; width: 100%; height: 2.6cqh; min-height: 12px;
+    background: linear-gradient(var(--sw) 0 55%, var(--sw3) 55% 65%, var(--sw2) 65% 100%); }
+  .fl-pal small { margin: 0; font-size: 1.5cqw; letter-spacing: 0.08em; color: #eadcff; }
+  .fl-btn.fl-pal.fl-palon { --c: #ffffff; }
+  .fl-btn.fl-pal.fl-pallock small { color: #ffc46b; }
+  .fl-btn.fl-pal.fl-focus small { color: var(--deep); }
+  .fl-select:not(.fl-tall) .fl-btn.fl-pal { min-height: max(34px, 5.6cqh); }
+  .fl-select:not(.fl-tall) .fl-info:has(.fl-pals) { gap: 0.5cqh; }
+  .fl-select:not(.fl-tall) .fl-info:has(.fl-pals) .fl-moves { margin-top: 0.2cqh; padding-top: 0.6cqh; gap: 0.3cqh; }
+  .fl-palnote { min-height: 1.1em; font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.08em; color: #eadcff; }
   .fl-found { color: #c8ff3a; }
 
   /* pause: the menu beside the book of happy accidents (src/flow/techniques.js) */

@@ -21,7 +21,8 @@ export const POINTS = {
 };
 
 /** @typedef {'arcade' | 'horde'} Mode */
-/** @typedef {{ name: string, score: number, note: string }} Row */
+/** @typedef {{ name: string, score: number, note: string, title?: string }} Row  title: the player's job title when they signed it (README, Progression) */
+import { TITLES } from '../career/rules.js';
 
 const KEY = 'stick-fight-scores';
 const DEFAULTS = {
@@ -48,7 +49,7 @@ function readAll() {
   if (!all && memory) all = memory;
   const clean = (rows, mode)=> (Array.isArray(rows) ? rows : DEFAULTS[mode])
     .filter((r) => r && typeof r.score === 'number')
-    .map((r) => ({ name: String(r.name || '???').slice(0, 3).toUpperCase(), score: Math.max(0, Math.floor(r.score)), note: String(r.note || '') }))
+    .map((r) => ({ name: String(r.name || '???').slice(0, 3).toUpperCase(), score: Math.max(0, Math.floor(r.score)), note: String(r.note || ''), ...(TITLES.includes(r.title) ? { title: r.title } : {}) }))
     .sort((a, b) => b.score - a.score).slice(0, 5);
   return { arcade: clean(all && all.arcade, 'arcade'), horde: clean(all && all.horde, 'horde') };
 }

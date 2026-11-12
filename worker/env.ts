@@ -17,6 +17,7 @@ export interface Env {
   AUTH_LIMIT?: RateLimit;    // profile and sign-in calls per IP
   EVENT_LIMIT?: RateLimit;   // analytics events per IP
   STATS_LIMIT?: RateLimit;   // GET /api/stats per IP (worker/stats.ts)
+  CAREER_LIMIT?: RateLimit;  // career calls per IP (worker/career.ts)
   OG_LIMIT?: RateLimit;      // share images drawn per IP (worker/og.ts; a cached one doesn't count)
   EVENTS?: AnalyticsEngineDataset;   // game analytics (worker/index.ts track, README Analytics)
   TURN_KEY_ID?: string;      // secrets; absent in local dev unless .dev.vars has them

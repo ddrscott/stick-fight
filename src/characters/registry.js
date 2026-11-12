@@ -105,15 +105,19 @@ export function canUse(c, move) {
   const fd = FRAME_DATA[move];
   return !!fd && (!fd.owner || (!!c && fd.owner === c.id));
 }
-/** a fighter's neon: TEMP keeps the old white (P1) and orange (P2); a mirror match gives P2 the alt color */
-export function colorFor(c, slot, other) {
+/** a fighter's neon: TEMP keeps the old white (P1) and orange (P2); a mirror match gives P2 the alt color.
+ *  opts (palettes, src/career/palettes.js): mine, the color this fighter's palette gives it; theirs, the color P1 is
+ *  actually wearing. P2's palette color stands only when it doesn't clash with P1's; otherwise the usual rule picks. */
+export function colorFor(c, slot, other, opts = {}) {
   const own = (x, s) => (!x || x.id === TEMP_ID ? (s === 0 ? '#f0f0f0' : '#E85D00') : x.color);
-  if (slot === 0 || !other) return own(c, slot);
+  if (slot === 0 || !other) return opts.mine || own(c, slot);
   // P2 changes color when P1 looks the same: the same fighter, or two colors close in hue (INTERN's
   // amber next to ACCOUNTANT's yellow read as one color), then its alt, then a contrasting fallback
-  const theirs = own(other, 0);
+  const theirs = opts.theirs || own(other, 0);
+  if (opts.mine && !clash(opts.mine, theirs)) return opts.mine;
   let mine = own(c, 1);
-  if ((c && other.id === c.id && c.id !== TEMP_ID) || clash(mine, theirs)) mine = c && c.id !== TEMP_ID ? c.altColor : '#2ef2ff';
+  const p1Own = !opts.theirs || opts.theirs === own(other, 0);   // P1 in its own color (no palette)
+  if ((c && other.id === c.id && c.id !== TEMP_ID && p1Own) || clash(mine, theirs)) mine = c && c.id !== TEMP_ID ? c.altColor : '#2ef2ff';
   if (clash(mine, theirs)) mine = clash('#2ef2ff', theirs) ? '#ff2bd6' : '#2ef2ff';
   return mine;
 }

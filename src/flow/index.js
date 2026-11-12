@@ -62,15 +62,18 @@ import { onSquare } from '../square.js';
 import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE list and the watch link
 import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';   // the name filter (README, Privacy and terms)
 import { rootUrl } from '../root.js';
-import { createTicker } from '../ticker.js';   // the title's ticker of game-wide stats (README, Analytics, The title's ticker)
+import { createTicker } from '../ticker.js';
+import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar } from './careerUI.js';   // career and sticks (README, Progression)
+import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer } from '../career/store.js';
+import { palettesFor } from '../career/palettes.js';   // the title's ticker of game-wide stats (README, Analytics, The title's ticker)
 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
   off: ['attract', 'onlineJoin', 'onlineConnecting', 'charSelect', 'nameEntry', 'crewLobby', 'signInCode', 'watching'],
   attract: ['modeSelect', 'highScores', 'controls'],
-  highScores: ['attract', 'modeSelect'],
+  highScores: ['attract', 'modeSelect', 'ageCheck'],   // ageCheck: the save-your-sticks nudge after a game (README, Progression)
   controls: ['attract', 'modeSelect'],
-  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry'],
+  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck'],   // ageCheck: the save nudge
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
   stageIntro: ['fighting', 'modeSelect'],
   fighting: ['roundEnd', 'result', 'paused', 'attract'],
@@ -92,7 +95,7 @@ const TRANSITIONS = {
   onlineFighting: ['onlineEnd', 'onlinePost'],
   onlinePost: ['onlineFighting', 'onlineSelect', 'onlineEnd', 'onlineMenu', 'modeSelect', 'crewLobby'],
   onlineSelect: ['onlineFighting', 'onlineEnd', 'onlineMenu', 'modeSelect', 'crewLobby'],
-  onlineEnd: ['onlineMenu', 'onlineHost', 'onlineConnecting', 'modeSelect', 'attract', 'crewLobby'],
+  onlineEnd: ['onlineMenu', 'onlineHost', 'onlineConnecting', 'modeSelect', 'attract', 'crewLobby', 'ageCheck'],
   // profiles and crew rooms (src/net/profile.js, src/net/crew.js)
   nameEntry: ['onlineJoin', 'crewLobby', 'onlineMenu', 'profile', 'modeSelect', 'attract', 'ageCheck'],
   profile: ['nameEntry', 'ageCheck', 'onlineMenu', 'modeSelect', 'attract'],
@@ -134,6 +137,8 @@ const HUD_ON = new Set(['attract', 'fighting', 'roundEnd', 'result', 'paused', '
 const PLAY = new Set(['fighting', 'roundEnd', 'result', 'onlineFighting']);
 const IDLE_MS = 30000;
 const ONLINE = new Set(['watchList', 'watching', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineFighting', 'onlineEnd', 'onlinePost', 'onlineSelect', 'crewLobby', 'crewLinking']);
+// the sticks counter shows on these menus (src/flow/careerUI.js), never in a fight
+const COUNTER = new Set(['modeSelect', 'charSelect', 'onlineMenu', 'profile', 'onlineSelect', 'onlineEnd', 'crewLobby', 'highScores', 'watchList']);
 // between online matches: the room is open, the scene behind is the last match's final frame (held)
 const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
 
@@ -193,6 +198,7 @@ export function createFlow(ctx) {
   const history = [];
   const ui = createUI((k) => { if (ctx.click) ctx.click(k); });
   const ticker = createTicker();
+  const counter = createCounter(ui.root);
   // turning the phone: the crew lobby lists the whole crew upright and the top seven sideways (paintLobby)
   onSquare(() => { if (state === 'crewLobby') paintLobby(); });
   // the pause button: the desktop corner row's (a click) and the touch layer's (src/touch.js sends 'sf:pause')
@@ -253,6 +259,7 @@ export function createFlow(ctx) {
     for (const k of [...c]) if (k.startsWith('fl-')) c.remove(k);
     c.toggle('flow-on', state !== 'off');
     ticker.show(state === 'attract');
+    counter.show(COUNTER.has(state));
     if (state === 'off') return;
     // main.js marks the old flow-less demo 'attract', which hides the touch layer (index.html); a page opened on a
     // crew or room link starts that demo before the menus are on, and kept the mark, so it had no menu button
@@ -475,9 +482,11 @@ export function createFlow(ctx) {
   function resume() { if (state === 'paused') go(resumeTo); }
   function mainMenu() { if (mode === 'online') netReset(); mode = null; go('modeSelect'); }
   function startArcade() { newRun('arcade'); run.ladder = buildLadder(sel.player, getCharacter); track('mode', ['arcade', sel.player]); go('stageIntro'); }
-  function hordeScene() { ctx.scene('horde', { chars: [sel.player, TEMP_ID] }); if (ctx.book) ctx.book.begin({ mode: 'horde', local: 0 }); }   // the run is one entry in the books
+  /** the palette ids a scene draws: the player's for their fighter (README, Progression), the CPU or the dummy in its own */
+  const palOf = (id) => { const p = equipped(id); return p ? p.id : ''; };
+  function hordeScene() { ctx.scene('horde', { chars: [sel.player, TEMP_ID], pals: [palOf(sel.player), ''] }); if (ctx.book) ctx.book.begin({ mode: 'horde', local: 0 }); }   // the run is one entry in the books
   function startHorde() { newRun('horde'); track('mode', ['horde', sel.player]); hordeScene(); go('fighting'); }
-  function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }
+  function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [palOf(sel.player), ''] }); go('fighting'); }
   // ---- character select --------------------------------------------------------------------------------
   function toSelect(m) { sel.mode = m; sel.step = 'player'; go('charSelect'); }
   // VERSUS ONLINE goes straight to the online menu: you get into a room first, and both pick there
@@ -490,7 +499,30 @@ export function createFlow(ctx) {
     const dummy = sel.step === 'dummy';
     const sub = { arcade: `ARCADE  ·  ${LADDER.length} STAGES UP THE BUILDING`, horde: 'HORDE  ·  FLOOR BY FLOOR', training: 'TRAINING  ·  STEP 1 OF 2' }[sel.mode] || '';
     selCtl = openSelect(ui, { title: dummy ? 'PICK YOUR DUMMY' : 'SELECT FIGHTER', sub: dummy ? 'TRAINING  ·  STEP 2 OF 2  ·  WHO TAKES THE HITS' : sub,
-      roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack, onMoves: openMoves });
+      roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack, onMoves: openMoves,
+      palettes: dummy ? undefined : palettePicker() });
+  }
+  /** The character select's palette strip (README, Progression): MAIN and each palette for the fighter under the cursor.
+   *  A press on an owned one fights in it; on a locked one the first press asks and the second buys it with sticks.
+   *  changed: online, the pick goes out again so the rival sees the new look. */
+  function palettePicker(changed = () => {}) {
+    let armed = '';
+    return {
+      list: (c) => [{ id: '', name: 'MAIN', body: c.color, pants: c.pants || c.color, accent: c.accent, price: 0 }, ...palettesFor(c.id)],
+      state: (c, p) => ({ owned: owns(c.id, p.id), using: palOf(c.id) === p.id }),
+      choose: async (c, p) => {
+        const key = `${c.id}:${p.id}`;
+        if (owns(c.id, p.id)) { armed = ''; equip(c.id, p.id); changed(); return `${p.name}  ·  IN USE`; }
+        const have = careerNow().sticks;
+        if (have < p.price) { armed = ''; return `${p.name} COSTS ${p.price} STICKS  ·  YOU HAVE ${have}`; }
+        if (armed !== key) { armed = key; return `BUY ${p.name} FOR ${p.price} STICKS? PRESS AGAIN`; }
+        armed = '';
+        const r = await buy(c.id, p.id);
+        if (r.error) return r.error === 'short' ? `NOT ENOUGH STICKS FOR ${p.name}` : r.error === 'busy' ? 'SERVER BUSY: TRY AGAIN SHORTLY' : "CAN'T REACH THE SERVER: NOTHING WAS SPENT";
+        changed();
+        return `BOUGHT ${p.name}  ·  IN USE`;
+      },
+    };
   }
   function pickChar(id) {
     if (state !== 'charSelect' || t < 0.15) return;
@@ -583,6 +615,15 @@ export function createFlow(ctx) {
   // doesn't say it right. MAIN MENU is always modeSelect.
   const MOVE = ['move'], SELECT = ['confirm', 'SELECT'];
   /** a row of buttons, the same width */
+  /** The save-your-sticks nudge (README, Progression) for a guest with something to lose: the prompt and SAVE MY
+   *  PROFILE, which opens the usual save flow (the age question, then the email). Only on screens between games,
+   *  never in a fight, and only when it's due (src/career/store.js nudgeDue). Adds its button to items. */
+  function addNudge(root, items) {
+    const n = nudgeBlock(() => { signInReturn = null; go('ageCheck'); });
+    if (!n) return;
+    root.appendChild(n.el);
+    items.push(...btnRow(root, [n.button], '26cqw'));
+  }
   function btnRow(root, items, width = '20cqw') {
     const row = el('div', 'fl-row');
     for (const it of items) { it.el.style.minWidth = width; row.appendChild(it.el); }
@@ -654,7 +695,7 @@ export function createFlow(ctx) {
       tb.dataset.scroll = 'y';
       rows.forEach((r, i) => {
         const cls = i === hs.highlight ? ' fl-new' : '';
-        tb.append(el('span', 'fl-rank' + cls, `${i + 1}`), el('span', cls, board ? r.initials : r.name), el('span', 'fl-score' + cls, S.fmt(r.score)));
+        tb.append(el('span', 'fl-rank' + cls, `${i + 1}`), el('span', cls, withTitle(board ? r.initials : r.name, r.title || '')), el('span', 'fl-score' + cls, S.fmt(r.score)));
         if (board) { const f = el('span', 'fl-fighter' + cls, characterOr(r.char).name); f.style.setProperty('--fc', characterOr(r.char).color); tb.appendChild(f); }
         tb.appendChild(el('span', 'fl-note' + cls, board ? CS.rowNote(hs.mode, r) : r.note));
       });
@@ -679,6 +720,7 @@ export function createFlow(ctx) {
         items.push(button(nb ? nb.name : 'THIS DEVICE', () => { hs.crew = next; hs.highlight = -1; hs.manual = true; screenScores(3); }, 'fl-crewsrc'));
       }
       btnRow(root, items, '17cqw');
+      if (hs.postGame) addNudge(root, items);
       return { items, focus, back: () => go('attract'), legend: [MOVE, SELECT, ['back', 'TITLE']] };
     });
   }
@@ -713,6 +755,7 @@ export function createFlow(ctx) {
       const back = button('BACK', () => go('attract'), 'fl-violet fl-slim');
       list.appendChild(back.el); items.push(back);
       root.appendChild(list);
+      addNudge(root, items);
       return { items, back: () => go('attract') };
     });
   }
@@ -744,7 +787,7 @@ export function createFlow(ctx) {
     for (const u of sim.units) hp.delete(u);
     // each continue on this stage eases its CPU (src/flow/ladder.js retryDifficulty)
     const level = retryDifficulty(st.difficulty, run.stageContinues);
-    ctx.scene('arcade', { stage: { ...st, difficulty: level }, chars: [sel.player, st.char || TEMP_ID] });
+    ctx.scene('arcade', { stage: { ...st, difficulty: level }, chars: [sel.player, st.char || TEMP_ID], pals: [palOf(sel.player), ''] });
     if (ctx.book) ctx.book.begin({ mode: 'arcade', level, stage: st.n, local: 0 });   // the books: one match per stage fought
     ui.show('fl-stage', (root) => {
       root.append(el('div', 'fl-label', st.boss ? 'FINAL STAGE' : `STAGE ${st.n} OF ${ladder().length}`));
@@ -780,6 +823,8 @@ export function createFlow(ctx) {
       root.appendChild(tl);
       const last = run.stage >= ladder().length - 1;
       root.appendChild(el('div', 'fl-label', last ? 'THE BUILDING IS YOURS' : `NEXT  ${ladder()[run.stage + 1].name}`));
+      const earn = earningsPanel();   // what the stage paid (README, Progression)
+      if (earn) root.appendChild(earn);
       const items = btnRow(root, [button(last ? 'CONTINUE' : 'NEXT STAGE', () => { if (t > 0.5) nextStage(); }, 'fl-amber'), mainMenuBtn(0.5)]);
       return { items, legend: [MOVE, SELECT] };
     });
@@ -791,6 +836,8 @@ export function createFlow(ctx) {
       countEl = el('div', 'fl-count', '10');
       root.appendChild(countEl);
       root.appendChild(el('div', 'fl-label', `RETRY STAGE ${ladder()[run.stage].n}  ·  ${ladder()[run.stage].name}`));
+      const earn = earningsPanel(true);   // a loss pays too (README, Progression)
+      if (earn) root.appendChild(earn);
       const yes = button('YES', () => { if (t < 0.4 || state !== 'continue') return; run.score = run.stageStart; run.continues++; run.stageContinues++; go('stageIntro'); }, 'fl-pink');
       const no = button('NO', () => { if (t < 0.4) return; go('gameOver'); });
       // no back: NO is a choice, not a way out, and B is the kick a player who just lost is mashing
@@ -809,6 +856,8 @@ export function createFlow(ctx) {
       tl.append(el('span', '', 'FINAL SCORE'), el('span', '', S.fmt(run.score)));
       root.appendChild(tl);
       if (entry && S.rankFor(entry.mode, entry.score) >= 0) root.appendChild(el('div', 'fl-label fl-newhi', 'NEW HIGH SCORE  ·  CONTINUE TO SIGN IT'));
+      const earn = earningsPanel(true);   // what the run (or the last stage) paid
+      if (earn) root.appendChild(earn);
       const items = btnRow(root, [button('CONTINUE', () => { if (t > 0.8) afterGame(); }, 'fl-amber'), mainMenuBtn(0.8)]);
       return { items, legend: [MOVE, SELECT] };
     });
@@ -874,11 +923,11 @@ export function createFlow(ctx) {
       initials = ['A', 'A', 'A'];
     }
     const name = initials.join('');
-    const rank = S.rankFor(entry.mode, entry.score) >= 0 ? S.addScore(entry.mode, { name, score: entry.score, note: entry.note }) : -1;
+    const rank = S.rankFor(entry.mode, entry.score) >= 0 ? S.addScore(entry.mode, { name, score: entry.score, note: entry.note, title: careerNow().title }) : -1;
     // a run that only made a crew's table shows that table; the rest show this device's
     const crewPlace = rank < 0 ? CS.placeFor(entry.mode, entry.score) : null;
     hs = { mode: entry.mode, highlight: rank, postGame: true, loop: hs.loop, manual: false, crew: crewPlace ? crewPlace.slug : '', posted: [] };
-    const run = entry.char ? { kind: entry.mode, initials: name, score: entry.score, char: entry.char, reach: entry.reach | 0, clear: !!entry.clear } : null;
+    const run = entry.char ? { kind: entry.mode, initials: name, score: entry.score, char: entry.char, reach: entry.reach | 0, clear: !!entry.clear, title: careerNow().title } : null;
     entry = null;
     go('highScores');
     // post it to the crews (README, Crew rooms, High scores), then show where it landed
@@ -945,7 +994,7 @@ export function createFlow(ctx) {
       items.push(movesBtn);
       if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
       if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); hordeScene(); go('fighting'); }));
-      if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy] }); go('fighting'); }));
+      if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [palOf(sel.player), ''] }); go('fighting'); }));
       // botches on or off (src/combat/botch.js): remembered, and it takes effect from the next fight (online
       // the host's setting rides the start message; online never pauses anyway)
       const label = () => `BOTCHES: ${botchEnabled() ? 'ON' : 'OFF'}`;
@@ -1069,6 +1118,7 @@ export function createFlow(ctx) {
     // who's signed in on this browser (a session from another visit, or one that ended): repaint if it changed
     const shown = ui.screen;
     syncProfile().then(() => {
+      syncCareer();   // the career follows whoever is signed in (src/career/store.js)
       const q = profile();
       if (state === 'onlineMenu' && ui.screen === shown && (q.name !== p.name || q.email !== p.email || q.crews.length !== p.crews.length)) screenOnline();
     });
@@ -1355,7 +1405,7 @@ export function createFlow(ctx) {
   const view = () => { try { const n = getNet(); return n.view ? n.view() : null; } catch { return null; } };
   const nameOf = (id) => characterOr(id).name;
   function leaveRoom() { if (BETWEEN.has(state)) go(crewMatch ? 'crewLobby' : 'onlineMenu'); }
-  const rivalLabel = (v) => (v && v.rivalName) || (crewMatch && crewMatch.rival && crewMatch.rival.name) || 'RIVAL';
+  const rivalLabel = (v) => withTitle((v && v.rivalName) || (crewMatch && crewMatch.rival && crewMatch.rival.name) || 'RIVAL', v && v.rivalName ? v.rivalTitle : '');   // SP · MANAGER
   function scoreLine(root, v) {
     const set = el('div', 'fl-set');
     const me = el('span', 'fl-me'), them = el('span', 'fl-them');
@@ -1385,6 +1435,8 @@ export function createFlow(ctx) {
       const cdRow = el('div', 'fl-row fl-cdrow');
       cdRow.appendChild(post.cdEl);
       root.append(cdRow, post.rivalEl);
+      const earn = earningsPanel(true);   // what the match paid (a signed-in player's settles when the room's word comes)
+      if (earn) root.appendChild(earn);
       const mk = (c, sub, cls) => {
         const b = button(CHOICE[c], () => { if (t < 0.4 || t < guardUntil || state !== 'onlinePost') return; getNet().postChoose?.(c); paintBetween(); }, cls);
         b.el.appendChild(el('small', '', sub));
@@ -1500,6 +1552,7 @@ export function createFlow(ctx) {
       // the first pick (straight from the room) says who you're up against, and in a crew match which crew
       title: v.n === 0 ? `VS ${rivalLabel(v)}` : 'NEW CHARACTERS', sub: `${crewName ? `${crewName}  ·  ` : ''}MATCH ${v.n + 1}  ·  YOU ${tl.you} – ${tl.rival} ${rivalLabel(v)}  ·  ${host ? 'YOU START THE MATCH' : 'THE HOST STARTS THE MATCH'}`,
       roster: roster(), initial: sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), status, cls: 'fl-netpick',
+      palettes: palettePicker(() => { try { getNet().repick?.(); } catch { /* stub */ } }),
       backLabel: crewMatch ? 'BACK TO CREW' : 'LEAVE ROOM', extra: startBtn ? [startBtn] : [],
       onPick: (id) => {
         if (state !== 'onlineSelect' || t < 0.15) return;
@@ -1553,6 +1606,7 @@ export function createFlow(ctx) {
       if (retryTo) items.push(button(retryTo === 'onlineHost' ? 'HOST AGAIN' : 'TRY AGAIN', () => { const to = retryTo; retryTo = null; if (to) go(to); }, 'fl-pink'));
       items.push(button('ONLINE MENU', () => go('onlineMenu'), retryTo ? '' : 'fl-pink'), mainMenuBtn());
       btnRow(root, items, '18cqw');
+      addNudge(root, items);
       return { items, back: () => go('onlineMenu') };
     });
   }
@@ -1670,15 +1724,19 @@ export function createFlow(ctx) {
     ui.show('fl-profile', (root) => {
       root.append(el('h1', 'fl-h2', 'PROFILE'), el('div', 'fl-label', 'YOUR NAME ONLINE'), el('div', 'fl-h1 fl-pname fl-read', p.name || '???'));
       root.appendChild(el('div', 'fl-label fl-pemail', p.email ? `SAVED TO ${p.email}` : 'KEPT ON THIS DEVICE ONLY'));
+      // the career (README, Progression): the title and the review bar, and the sticks
+      const cr = careerNow(), cbox = el('div', 'fl-pcareer');
+      cbox.append(reviewBar(cr.xp), el('div', 'cr-wallet', `${cr.sticks.toLocaleString('en-US')} STICKS`));
+      root.appendChild(cbox);
       if (profileMsg) root.appendChild(el('div', 'fl-label fl-newhi', profileMsg));
       root.appendChild(el('div', 'fl-small', p.email
         ? 'SIGN IN WITH THIS EMAIL ON ANOTHER DEVICE TO PLAY AS YOU THERE'
-        : 'SAVE IT WITH YOUR EMAIL TO KEEP YOUR NAME, CREWS AND RECORDS ON ANY DEVICE. THE EMAIL IS ONLY FOR SIGN-IN CODES, AND NOBODY ELSE SEES IT'));
+        : 'SAVE IT WITH YOUR EMAIL TO KEEP YOUR NAME, CREWS, RECORDS, TITLE AND STICKS ON ANY DEVICE. THE EMAIL IS ONLY FOR SIGN-IN CODES, AND NOBODY ELSE SEES IT'));
       const name = button('CHANGE NAME', () => askName(null, () => go('profile')), 'fl-pink');
       const acct = p.email
         ? button('SIGN OUT', () => {
           if (!signOutArmed) { signOutArmed = true; acct.el.textContent = 'SIGN OUT? PRESS AGAIN'; return; }
-          signOut().then(() => { profileMsg = 'SIGNED OUT: THIS DEVICE STARTS FRESH'; if (state === 'profile') { askName(() => go('profile'), () => go('onlineMenu')); } });
+          signOut().then(() => { resetCareer(); profileMsg = 'SIGNED OUT: THIS DEVICE STARTS FRESH'; if (state === 'profile') { askName(() => go('profile'), () => go('onlineMenu')); } });
         }, 'fl-amber')
         : button('SAVE MY PROFILE', () => go('ageCheck'), 'fl-amber');
       const back = button('BACK', () => go('onlineMenu'), 'fl-violet');
@@ -1698,6 +1756,7 @@ export function createFlow(ctx) {
           deleteProfile().then((r) => {
             deleting = false;
             if (r.error) { deleteArmed = false; del.el.textContent = 'DELETE MY PROFILE'; note.textContent = r.error === 'busy' ? 'SERVER BUSY: TRY AGAIN SHORTLY' : r.error === 'signed-out' ? 'SIGNED OUT ALREADY: SIGN IN AGAIN TO DELETE IT' : "CAN'T REACH THE SERVER: NOTHING WAS DELETED"; return; }
+            resetCareer();
             profileMsg = 'PROFILE DELETED: THIS DEVICE STARTS FRESH';
             if (state === 'profile') askName(() => go('profile'), () => go('onlineMenu'));
           });
@@ -1806,6 +1865,7 @@ export function createFlow(ctx) {
         }
         const p = profile();
         try { getNet().setName?.(p.name); } catch { /* stub */ }
+        syncCareer();   // a guest's career merges into the account (the larger of each number), then the account's is the one
         profileMsg = r.restored ? `WELCOME BACK${p.name ? `, ${p.name}` : ''}: PROFILE RESTORED` : 'PROFILE SAVED';
         signIn = { email: '', dev: '', code: '', auto: false };
         const r2 = signInReturn; signInReturn = null;
@@ -2128,7 +2188,7 @@ export function createFlow(ctx) {
     rows.forEach((r, i) => {
       const cls = r.member && r.member === you ? ' fl-me' : '';
       t.appendChild(el('span', 'fl-srank' + cls, String(i + 1)));
-      t.appendChild(el('span', 'fl-sname fl-sinit' + cls, r.initials));
+      t.appendChild(el('span', 'fl-sname fl-sinit' + cls, withTitle(r.initials, r.title || '')));
       t.appendChild(el('span', 'fl-snum' + cls, S.fmt(r.score)));
       const f = el('span', 'fl-sfav' + cls, characterOr(r.char).name);
       f.style.setProperty('--fc', characterOr(r.char).color);

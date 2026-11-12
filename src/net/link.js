@@ -188,6 +188,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     if (msg.t === 'sys') {
       if (msg.ev === 'error') { link.error = msg.reason; emit('closed', msg.reason); return; }
       if (msg.ev === 'watching') { emit('watching', msg); return; }   // spectators: how many, and what the room needs
+      if (msg.ev === 'career') { emit('career', msg); return; }   // the room's award for this player's online match (worker/career.ts)
       if (msg.ev === 'welcome') emit('open');   // the room is there: the host's spectator switch goes out first
       if (msg.ev === 'welcome' || msg.ev === 'peer') {
         const present = msg.ev === 'welcome' ? !!msg.peer : !!msg.present;

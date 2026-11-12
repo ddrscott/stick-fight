@@ -76,7 +76,7 @@ export function privacyPage() {
       <li>whether you're on a phone or a computer, and which website sent you here (just the site's name);</li>
       <li>the country you're in, which Cloudflare (the company that runs our servers) works out from your connection.</li>
     </ul>
-    <p>They <b>never</b> carry your name, email, player id or internet address. The game doesn't send them at all if your browser has <b>Do Not Track</b> or <b>Global Privacy Control</b> turned on. The notes are deleted after three months. We also keep running totals (how many times each fighter was picked, who wins which matchup, which moves finish matches). Those are just numbers with no player in them, so they stay. They're what the stats on the homepage and the game's title screen show.</p>
+    <p>They <b>never</b> carry your name, email, player id or internet address. The game doesn't send them at all if your browser has <b>Do Not Track</b> or <b>Global Privacy Control</b> turned on. (After an online match your game still tells the room who won, so a signed-in rival's XP and sticks count, but with one of those on, the match is left out of every count.) The notes are deleted after three months. We also keep running totals (how many times each fighter was picked, who wins which matchup, which moves finish matches). Those are just numbers with no player in them, so they stay. They're what the stats on the homepage and the game's title screen show.</p>
 
     <h3 class="s-h3">Page views (everyone)</h3>
     <p>The site uses a page counter called Plausible (at plausible.ljs.app). It counts visits to each page without cookies and without keeping your internet address.</p>
@@ -85,6 +85,7 @@ export function privacyPage() {
     <ul>
       <li><b>Your email address</b>, so we can send you a 6-digit sign-in code. We don't use it for anything else.</li>
       <li>Your random player id, your nickname, the crews you've been in (up to 20), and the size you picked for the touch controls.</li>
+      <li>Your game progress: your XP and job title, your sticks, the colors you've bought and picked for each fighter, and the dates you last got the first-win and first-online-match bonuses (so they come once a day). Sticks are only earned by playing. They can't be bought with money.</li>
       <li>When you first saved it and when you last signed in.</li>
       <li>While you're signing in: the code, stored scrambled (a hash) so not even we can read it. It expires in 10 minutes.</li>
       <li>One cookie, <code>sf_session</code>, which keeps you signed in for 30 days. Its server copy is scrambled too.</li>
@@ -93,15 +94,15 @@ export function privacyPage() {
 
     <h3 class="s-h3">Crews</h3>
     <p>A crew is a room with a link you share with friends. The crew keeps its name and, for each member: their nickname, a scrambled member id (not their player id), when they first and last showed up, wins, losses, draws, rounds, favorite fighter and last pick, how they've done against each other member, and the last 300 matches (who played who, with which fighters, and the score). Everyone who has the link and opens it can see all of that.</p>
-    <p><b>Crew high scores.</b> Each crew has its own arcade and horde tables, the top 10 of each. A finished run is sent to the crews on your device's recent list, and a crew keeps it only if you're a member. A row shows the three initials you entered, the score, the fighter, how far the run got and the date. The server remembers which member sent each row, so it can limit how often you post and mark your own rows in your lobby, but the table never shows other people who sent it.</p>
+    <p><b>Crew high scores.</b> Each crew has its own arcade and horde tables, the top 10 of each. A finished run is sent to the crews on your device's recent list, and a crew keeps it only if you're a member. A row shows the three initials you entered, your job title then (like INTERN), the score, the fighter, how far the run got and the date. The server remembers which member sent each row, so it can limit how often you post and mark your own rows in your lobby, but the table never shows other people who sent it.</p>
     <p><b>Crew stats.</b> The crew also adds up time played, matches, the fighters picked most, and each member's time played and favorite fighter. Everyone with the crew link sees these.</p>
     <p><b>Game-wide time and the live count.</b> Every match, even one you quit or leave partway (and time spent in training), adds to totals of time played per mode per day, and the server counts how many matches are going on right now. Both are just numbers with no player in them.</p>
 
     <h3 class="s-h3">Quick matches</h3>
-    <p>A quick room (a four-letter code) lives in our server's memory while it's open. Nothing about it is saved, except the match result while both players' games agree on it and when the match started (so the time played still counts if someone leaves), and the room is gone within 30 minutes of everyone leaving.</p>`),
+    <p>A quick room (a four-letter code) lives in our server's memory while it's open. Nothing about it is saved, except the match result while both players' games agree on it and when the match started (so the time played still counts if someone leaves), and the room is gone within 30 minutes of everyone leaving. If you're signed in, the room knows which saved profile is yours while you're connected, so it can add the match to your XP and sticks. It never tells the other player.</p>`),
 
       q('names', 'Who can see my name?', `    <ul>
-      <li><b>Your rival</b> in an online match sees your nickname.</li>
+      <li><b>Your rival</b> in an online match sees your nickname, your job title (like MANAGER) and the colors your fighter wears.</li>
       <li><b>Spectators.</b> A quick match can show up under LIVE NOW on the homepage and under WATCH in the game, with both nicknames, for anyone to watch. The host can switch SPECTATORS off on the HOST A GAME screen, and then nobody can watch. Crew matches can never be watched.</li>
       <li><b>Your crew.</b> Everyone with the crew link sees each member's nickname, record and time played, and the crew's high score tables with the initials on them.</li>
       <li><b>Link previews.</b> When someone pastes a crew link into a chat app, the preview shows the crew's name and how many members it has. Anyone who gets that link can see this. It never shows members' names.</li>
@@ -117,6 +118,7 @@ export function privacyPage() {
     <ul>
       <li>your profile: the random player id, your nickname, and your recent crews;</li>
       <li>your arcade and horde high scores, and the last fighter you picked;</li>
+      <li>your XP, job title and sticks, the colors you've bought and picked, and the dates of your last daily bonuses (if you save your profile, the server keeps the same numbers);</li>
       <li>your settings: sound, music, round time, rounds per match, botches on or off, touch-control size, the graphics setting (and the graphics level the game settled on, so the next visit starts there), and whether spectators may watch your rooms;</li>
       <li>the happy accidents you've found, your record against each online rival (by a random id), and whether you've seen the "add to home screen" tip;</li>
       <li>your answer to the age question, if you said under 13;</li>
