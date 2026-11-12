@@ -42,7 +42,8 @@ for (const dev of ['cros', 'croshd']) {
   const p95 = (r) => (!r ? '-' : r.fps < 1 ? '>500' : r.p95.toFixed(0));
   console.log(`\n| ${dev === 'cros' ? '1366x768 @1' : '1920x1080 @1.25'}, 6x CPU, SwiftShader | Tier | fps before → after | frame p95 ms before → after | main thread p50 ms after |\n|---|---|---|---|---|`);
   for (const r of a) {
-    const o = b.find((x) => x.scenario === r.scenario && String(x.asked) === String(r.asked));
+    // the old AUTO could only step down to tier 1, so AUTO's before is the before build's tier 1 (its best case)
+    const o = b.find((x) => x.scenario === r.scenario && String(x.asked) === (r.asked === 'auto' ? '1' : String(r.asked)));
     const tier = r.asked === 'auto' ? `AUTO → ${r.tier}` : r.asked;
     console.log(`| ${r.scenario} | ${tier} | ${fps(o)} → ${fps(r)} | ${p95(o)} → ${p95(r)} | ${r.work50.toFixed(1)} |`);
   }

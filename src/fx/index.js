@@ -278,10 +278,10 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     if (!adapt.on || iv.length < 5) return;
     if (skipWindow > 0) { skipWindow--; return; }
     if (drawEvery > 1) {
-      // drawing every other frame: back to every frame once the pictures come faster than ~25 a second for 5 s (so every
-      // frame should clear 20); each fall back doubles the wait, so it can't flap at the edge
-      if (frameStats.avg < 40 && frameStats.median < 40) { if (++adapt.good >= everyNeed) { drawEvery = 1; adapt.good = 0; skipWindow = 1; } }
-      else adapt.good = 0;
+      // drawing every other frame: try every frame again after a while (5 s, then 10, 20...: each fall back doubles the
+      // wait). It can't judge from here whether every frame would hold, since rAF is paced by the GPU and vsync, so the
+      // drawn rate at every other frame says little; on the stand-in it never beat drawing every frame (README, Chromebooks)
+      if (++adapt.good >= everyNeed) { drawEvery = 1; adapt.good = 0; skipWindow = 1; }
       return;
     }
     const avg = frameStats.avg, med = frameStats.median;
@@ -319,7 +319,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       `${d.vendor || '?'} | webgl${d.webgl}${d.forcedMediump ? ' | FORCED mediump' : ''}`,
       `frag highp ${pf(d.precision.highp)} | mediump ${pf(d.precision.mediump)}`,
       `uniform vec ${d.limits.fragUniforms} | tex units ${d.limits.texUnits} | max tex ${d.limits.texSize}`,
-      `tier ${tier} ${Q.name}${d.adaptive ? ' (adaptive)' : pinned ? ' (pinned by ?tier)' : ' (fixed: capture)'} | coarse ${d.coarse} | preserve ${d.preserveDrawingBuffer}`,
+      `tier ${tier} ${Q.name}${d.adaptive ? ' (adaptive)' : pinned !== null ? ' (pinned by ?tier)' : ' (fixed: GRAPHICS or a capture)'} | coarse ${d.coarse} | preserve ${d.preserveDrawingBuffer}`,
       `frame avg ${frameStats.avg.toFixed(1)}ms worst ${frameStats.worst.toFixed(1)}ms`,
       `lights ${d.lights.used}/${Math.min(d.lights.cap, d.lights.tierCap)} (shader ${d.lights.cap}) | scene ${sceneScaleNow}x layers ${layerScaleNow}x canvas ${canvasScaleNow}x${drawEvery > 1 ? ' | every 2nd frame' : ''}`,
       `bloom ${onoff(o.bloom)} stars ${onoff(o.stars && Q.stars)} shadows ${onoff(o.shadows && Q.shadows)} haze ${onoff(o.haze && Q.haze)} wide light ${onoff(Q.wideLight)}`,

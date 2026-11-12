@@ -1,5 +1,5 @@
 // Software GL means software 2D canvases too (README, Performance, Chromebooks). Imported first by src/main.js, before
-// any canvas has a context. It reads the GL renderer from a throwaway 1x1 context (a few ms) and, when it's software
+// any canvas has a context. It reads the GL renderer from a throwaway 1x1 context (5 to 18 ms measured, on a busy machine) and, when it's software
 // (SwiftShader, llvmpipe: src/device.js gpuBucket), makes every 2D context from then on ask for willReadFrequently,
 // which keeps it on the CPU. An accelerated 2D canvas over a software GL rasters through that GL, about three times
 // slower than the CPU, and copying one into a CPU canvas (the HUD's text stamps, the scenery caches, the layers the

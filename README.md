@@ -1476,10 +1476,10 @@ Reports came in that the game runs **super slow on Chromebooks**, which is a lot
 - **GPU:** one flat pass straight to a canvas half the size each way (640x360, the browser scales it up), every layer at half size, the fighters too. No per-pixel lights: the room is lit by one color for the frame, most of the ambient plus a little of the average color of the lights on screen, so a red-lit stage still reads red. No bloom chain, no star streaks, no reflections, no protect mask, no final pass. What stays: the sky, the skyline, the fog band, the neon faces with a short glow from eight taps of the emissive layer, the dark edge around every fighter and body, the foreground, the hit flash, and the grade's cheap part (contrast, saturation, the toe). Fighters are drawn in their own flat color and the glow is masked off them: fighters never glow, and the HUD is unchanged (its text doesn't glow). `scripts/perf/results/tiers.jpg` (a CPU 1v1) and `tiers-horde.jpg` have tiers 3, 2, 1 and 0 side by side (`tiers.mjs`).
 - **CPU:** no drifting motes, half the rain, a third of the debris a hit throws, the cloth hanging at rest instead of swinging (`life.cloth`), and the city's lit windows from one bitmap (below).
 - **The sim and the netcode don't change.** Only drawing does: every knob is in `render()` or the compositor, never in `sim.tick()`. `npm run netsim:proof` passes (below).
-- **The last resort: every other frame.** At tier 0 under ~20 fps for a second, the picture is drawn every other refresh while the sim steps every refresh (`fx.drawEvery`, `frame()` in `src/main.js`; render()'s own clocks get the time since the last drawn frame). It's that low because the sim already keeps time down to 10 fps (up to 60 steps a frame, a frame counted as at most 100 ms), so above 20 fps skipping pictures only loses pictures: horde on the stand-in drew 31-35 a second every frame and 28 every other. It goes back to every frame once the pictures come faster than ~25 a second for 5 s, and each fall back doubles that wait, so it can't flap at the edge.
+- **The last resort: every other frame.** At tier 0 under ~20 fps for a second, the picture is drawn every other refresh while the sim steps every refresh (`fx.drawEvery`, `frame()` in `src/main.js`; render()'s own clocks get the time since the last drawn frame). It's that low because the sim already keeps time down to 10 fps (up to 60 steps a frame, a frame counted as at most 100 ms), so above 20 fps skipping pictures only loses pictures: horde on the stand-in drew 31-35 a second every frame and 28 every other. It tries every frame again after 5 s, then 10, 20 and so on, each fall back doubling the wait. **On the stand-in it never beat drawing every frame**: rAF is paced by the GPU and vsync, so skipping a picture barely shortens the refresh (close at 1x on SwiftShader: 41 drawn a second every frame, 18 every other). It stays as a guarded last resort for a machine under 20 fps, with the timed retry so it can't trap a machine that would do better drawing every frame; real `?perf=1` numbers (the overlay says "(N drawn)") should decide whether to keep it.
 
 **What was really slow, found by profiling, not guessing** (`trace.mjs --all`, `run.mjs --gpu --off ...`):
-- **Software GL turned every 2D canvas into a GPU job.** On SwiftShader, Chrome rasterized the game's 2D canvases (the six layers, the HUD, the scenery caches) through the software GL: 1.8 s of every 3 s on the GPU thread (`DoEndRasterCHROMIUM`), against 0.5 s for the WebGL. `src/softcanvas.js`, imported first, reads the GL renderer from a throwaway 1x1 context and, on a software GL only, makes every 2D context ask for `willReadFrequently`, which keeps it on the CPU. It has to be all of them: copying an accelerated canvas into a CPU one (the HUD's text stamps, the scenery caches into the layers) reads it back every time, and switching only the layers made it slower. Tier 0 went from 16 fps to 44 on this one change. (A real Chromebook whose GPU is blocklisted already rasters on the CPU; the harness's `--use-angle=swiftshader` is what made the canvases go through it, so this is the honest worst case either way.)
+- **Software GL turned every 2D canvas into a GPU job.** On SwiftShader, Chrome rasterized the game's 2D canvases (the six layers, the HUD, the scenery caches) through the software GL: 1.8 s of every 3 s on the GPU thread (`DoEndRasterCHROMIUM`), against 0.5 s for the WebGL. `src/softcanvas.js`, imported first, reads the GL renderer from a throwaway 1x1 context (5 to 18 ms here, on a busy machine) and, on a software GL only, makes every 2D context ask for `willReadFrequently`, which keeps it on the CPU. It has to be all of them: copying an accelerated canvas into a CPU one (the HUD's text stamps, the scenery caches into the layers) reads it back every time, and switching only the layers made it slower. Tier 0 went from 16 fps to 44 on this one change. (A real Chromebook whose GPU is blocklisted already rasters on the CPU; the harness's `--use-angle=swiftshader` is what made the canvases go through it, so this is the honest worst case either way.)
 - **The city's lit windows** were ~30 ms of a 51 ms tier 0 frame on the GPU thread: a few thousand rects in a `Path2D` per tower, filled under two clips every frame. The far layer's mapping cancels the camera's zoom, so the city is always drawn at the layer's own scale; at half-size layers (tiers 1 and 0) it now comes from one bitmap per scale, placed on whole device pixels so the windows stay sharp (`cityBitmap` in `src/arena/building.js`). Full-size layers (tiers 3 and 2) draw the paths as before, so their look is unchanged.
 - **Not the problem:** the HUD (0.2-0.3 ms of main thread a frame; hiding it changed nothing), the body pile in horde (skipping it changed nothing), the scenery cache's blit, and premultiplied or unflipped uploads (2 ms of main thread at 6x, no change in the frame rate, so not done). The tier 0 flat pass itself is 5.5 ms on SwiftShader.
 
@@ -1494,7 +1494,7 @@ The adaptive tier then works as before, now down to 0: two slow half-seconds or 
 
 **GRAPHICS in SETTINGS:** AUTO, HIGH, MEDIUM, LOW, LOWEST (tiers 3 to 0). AUTO, the default, is the adaptive tier, and the note beside the label says what it's drawing at now (`AUTO · NOW LOW`), the way CONTROLS says SCREEN FITS; a fixed choice says FIXED and turns adaptation off. Keys and the pad step it with left and right. It's saved on the device like the touch size but, unlike the touch size, not carried to the account: a Chromebook and a desktop want different answers. `?tier=` still beats both.
 
-**Measured.** "Before" is `main` at c75cae0 with the harness changes only; it had no tier 0, and its AUTO on a Chromebook started at 3 and could only reach tier 1. "fps" is pictures drawn a second. "<2" is a run where every frame took over half a second, which the profiler drops as a pause. The before runs swing a lot (the rain row at tier 3 caught a lucky stretch).
+**Measured.** "Before" is `main` at c75cae0 with the harness changes only; it had no tier 0, and its AUTO on a Chromebook started at 3 and could only reach tier 1, so the AUTO rows' before is the before build's tier 1 (its best case). "fps" is pictures drawn a second. "<2" is a run where every frame took over half a second, which the profiler drops as a pause. The before runs swing a lot (the rain row at tier 3 caught a lucky stretch). The AUTO rows were measured again on their own after the last change to the every-other-frame rule (`cros-auto.json`, `croshd-auto.json`), and the throttle table's attract row at 1x caught a load spike (the machine's load went from 7 to 30 during it).
 
 | 1366x768 @1, 6x CPU, SwiftShader | Tier | fps before → after | frame p95 ms before → after | main thread p50 ms after |
 |---|---|---|---|---|
@@ -1502,27 +1502,27 @@ The adaptive tier then works as before, now down to 0: two slow half-seconds or 
 | close | 2 | 3 → 7 | 483 → 189 | 117.4 |
 | close | 1 | 4 → 11 | 367 → 109 | 32.8 |
 | close | 0 | - → 38 | - → 42 | 15.6 |
-| close | AUTO → 0 | - → 39 | - → 43 | 15.3 |
+| close | AUTO → 0 | 4 → 36 | 367 → 42 | 16.9 |
 | horde | 3 | 4 → 5 | 492 → 317 | 205.2 |
 | horde | 2 | 9 → 5 | 309 → 341 | 155.9 |
 | horde | 1 | 4 → 10 | 474 → 175 | 46.8 |
 | horde | 0 | - → 31 | - → 50 | 20.1 |
-| horde | AUTO → 0 | - → 29 | - → 58 | 22.7 |
+| horde | AUTO → 0 | 4 → 31 | 474 → 50 | 22.1 |
 | rain | 3 | 15 → 5 | 192 → 350 | 195.7 |
 | rain | 2 | <2 → 7 | >500 → 267 | 121.6 |
 | rain | 1 | <2 → 11 | >500 → 108 | 33.8 |
 | rain | 0 | - → 38 | - → 42 | 16.8 |
-| rain | AUTO → 0 | - → 39 | - → 42 | 16.4 |
+| rain | AUTO → 0 | <2 → 34 | >500 → 42 | 19.1 |
 | floor | 3 | 9 → 4 | 324 → 326 | 212.3 |
 | floor | 2 | <2 → 7 | >500 → 230 | 123.6 |
 | floor | 1 | 7 → 10 | 467 → 118 | 32.5 |
 | floor | 0 | - → 41 | - → 40 | 13.7 |
-| floor | AUTO → 0 | - → 39 | - → 42 | 14.2 |
+| floor | AUTO → 0 | 7 → 37 | 467 → 42 | 15.8 |
 | attract | 3 | <2 → 5 | >500 → 290 | 198.9 |
 | attract | 2 | 7 → 7 | 488 → 225 | 128.7 |
 | attract | 1 | 6 → 11 | 433 → 102 | 36.0 |
 | attract | 0 | - → 37 | - → 42 | 16.6 |
-| attract | AUTO → 0 | - → 36 | - → 42 | 16.3 |
+| attract | AUTO → 0 | 6 → 33 | 433 → 49 | 18.6 |
 
 | 1920x1080 @1.25, 6x CPU, SwiftShader | Tier | fps before → after | frame p95 ms before → after | main thread p50 ms after |
 |---|---|---|---|---|
@@ -1530,41 +1530,41 @@ The adaptive tier then works as before, now down to 0: two slow half-seconds or 
 | close | 2 | 3 → 7 | 492 → 251 | 118.9 |
 | close | 1 | 5 → 11 | 249 → 109 | 31.4 |
 | close | 0 | - → 30 | - → 50 | 16.8 |
-| close | AUTO → 0 | - → 31 | - → 44 | 15.6 |
+| close | AUTO → 0 | 5 → 27 | 249 → 58 | 18.5 |
 | horde | 3 | 3 → 5 | 483 → 281 | 168.5 |
 | horde | 2 | 3 → 6 | 458 → 232 | 132.4 |
 | horde | 1 | 5 → 9 | 281 → 134 | 71.5 |
 | horde | 0 | - → 25 | - → 59 | 21.5 |
-| horde | AUTO → 0 | - → 29 | - → 50 | 19.1 |
+| horde | AUTO → 0 | 5 → 24 | 281 → 58 | 22.7 |
 | rain | 3 | 3 → 5 | 401 → 308 | 172.0 |
 | rain | 2 | 4 → 7 | 325 → 238 | 123.9 |
 | rain | 1 | 5 → 10 | 266 → 109 | 38.7 |
 | rain | 0 | - → 28 | - → 50 | 18.4 |
-| rain | AUTO → 0 | - → 28 | - → 50 | 17.0 |
+| rain | AUTO → 0 | 5 → 33 | 266 → 50 | 14.8 |
 | floor | 3 | 4 → 5 | 399 → 328 | 163.2 |
 | floor | 2 | 6 → 7 | 353 → 247 | 107.4 |
 | floor | 1 | 5 → 10 | 317 → 126 | 32.6 |
 | floor | 0 | - → 31 | - → 50 | 14.3 |
-| floor | AUTO → 0 | - → 32 | - → 50 | 14.1 |
+| floor | AUTO → 0 | 5 → 35 | 317 → 45 | 13.3 |
 | attract | 3 | 3 → 5 | 404 → 283 | 164.2 |
 | attract | 2 | 3 → 7 | 413 → 225 | 104.4 |
 | attract | 1 | 4 → 11 | 349 → 109 | 36.5 |
 | attract | 0 | - → 28 | - → 58 | 15.5 |
-| attract | AUTO → 0 | - → 23 (every 2nd) | - → 48 | 7.8 |
+| attract | AUTO → 0 | 4 → 32 | 349 → 50 | 14.2 |
 
 | AUTO, 1366x768 @1, SwiftShader | CPU | settled on | fps | frame p95 ms | main thread p50 ms |
 |---|---|---|---|---|---|
-| close | 1x | tier 0 | 42 | 40 | 3.7 |
-| close | 10x | tier 0, every 2nd frame | 17 | 58 | 12.0 |
-| close | 20x | tier 0, every 2nd frame | 8 | 134 | 46.2 |
-| horde | 1x | tier 0 | 40 | 40 | 5.6 |
-| horde | 10x | tier 0, every 2nd frame | 17 | 67 | 16.6 |
-| horde | 20x | tier 0, every 2nd frame | 8 | 142 | 33.3 |
-| attract | 1x | tier 0 | 38 | 41 | 4.0 |
-| attract | 10x | tier 0, every 2nd frame | 16 | 79 | 13.3 |
-| attract | 20x | tier 0, every 2nd frame | 10 | 117 | 23.3 |
+| close | 1x | tier 0 | 56 | 30 | 2.7 |
+| close | 10x | tier 0 | 33 | 49 | 20.1 |
+| close | 20x | tier 0 | 14 | 83 | 21.2 |
+| horde | 1x | tier 0 | 49 | 33 | 3.9 |
+| horde | 10x | tier 0 | 25 | 68 | 27.7 |
+| horde | 20x | tier 0 | 4 | 400 | 185.4 |
+| attract | 1x | tier 0 | 16 | 99 | 4.1 |
+| attract | 10x | tier 0, every 2nd frame | 8 | 208 | 28.3 |
+| attract | 20x | tier 0 | 5 | 433 | 125.1 |
 
-**The target, said plainly: not reached on this stand-in.** At 6x plus SwiftShader, AUTO settles on tier 0 and holds about 38 fps in close and the attract demo (target 55) and about 30 in horde (target 45). That's 4 to 10 times the before, but not 55. What's left is the main thread: about 15 ms a frame at 6x, most of it the CPU raster of the layers and their upload (`texImage2D`, 37% of the main thread's profile), and SwiftShader's composite on top. For scale, the harness's own floor: this page with no GL work at all runs about 54 fps at 6x on SwiftShader, and tier 0 at 1x (a fast CPU with software GL) holds 54. The next steps, worth taking with a real Chromebook's `?perf=1` numbers in hand: upload only the part of the figures layer the fighters cover, a quarter-size emissive layer at tier 0 (2-3 ms at 6x, measured), and the HUD canvas at 1x on the 1080p panel.
+**The target, said plainly: not reached on this stand-in.** At 6x plus SwiftShader, AUTO settles on tier 0 and holds about 33 to 45 fps in close and the attract demo (target 55) and 31 to 42 in horde (target 45), depending on how busy the shared machine was; at 1080p and DPR 1.25, 24 to 35. That's 4 to 10 times the before, but not 55. With a fast CPU (1x) and software GL, tier 0 holds 56 in close and 49 in horde. What's left at 6x is the main thread, about 15 ms a frame, most of it the CPU raster of the layers and their upload (`texImage2D`, 37% of the main thread's profile), with SwiftShader's composite on top. For scale, the harness's floor: this page with no GL work at all runs about 54 fps at 6x on SwiftShader. At 10x tier 0 is about 25-33 fps, and at 20x it's down to 4-14: a machine that slow gets a playable but choppy game, since the sim keeps time down to 10 fps. The next steps, worth taking with a real Chromebook's `?perf=1` numbers in hand: upload only the part of the figures layer the fighters cover, a quarter-size emissive layer at tier 0 (2-3 ms of main thread at 6x, measured), and the HUD canvas at 1x on the 1080p panel.
 
 ### The character select
 
