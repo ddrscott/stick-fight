@@ -521,6 +521,8 @@ export function createOnline(game) {
       if (role === 'host') hostPicks();
       changed();
     },
+    /** the palette for this side's pick changed (src/career/store.js): the pick goes out again so the rival draws it */
+    repick() { if (state === 'select') sendPick(); },
     /** the host's START on the pick screen */
     startNow() { if (canStart()) { cd = null; startNext(); } },
     /** hotkeys during a match: true = swallowed. Escape or P (pad Start or Select, touch LEAVE) asks to

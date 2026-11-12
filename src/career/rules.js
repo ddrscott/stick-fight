@@ -66,9 +66,9 @@ export const ONLINE_MODES = ['quick', 'crew'];
 /** The save-your-sticks nudge for guests (the result screen): after the first promotion or this many sticks,
  *  and again only after `againXp` more XP or a new title. */
 export const NUDGE = { sticks: 200, againXp: 400 };
-/** A guest's progress merged into an account at sign-in is taken at most this far (a hand-edited localStorage
- *  can't hand an account the top of the ladder). Roughly two months of play. */
-export const MERGE_MAX = { xp: 20000, sticks: 20000 };
+/** A guest's progress merged into an account at sign-in is taken at most this far: about a month of play as a guest,
+ *  short of VP, so a hand-edited localStorage can't hand an account the top of the ladder. */
+export const MERGE_MAX = { xp: 9000, sticks: 8000 };
 
 /** today's key: the UTC date */
 export const utcDay = (/** @type {number} */ t = Date.now()) => new Date(t).toISOString().slice(0, 10);
