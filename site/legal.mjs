@@ -8,7 +8,7 @@
 
 import { head, topbar, footer, script } from './templates.mjs';
 
-export const UPDATED = '2026-11-11';
+export const UPDATED = '2026-11-12';
 export const CONTACT = 'hey@askscottpierce.com';
 const mail = (subject) => `<a href="mailto:${CONTACT}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}">${CONTACT}</a>`;
 
@@ -95,10 +95,10 @@ export function privacyPage() {
     <p>A crew is a room with a link you share with friends. The crew keeps its name and, for each member: their nickname, a scrambled member id (not their player id), when they first and last showed up, wins, losses, draws, rounds, favorite fighter and last pick, how they've done against each other member, and the last 300 matches (who played who, with which fighters, and the score). Everyone who has the link and opens it can see all of that.</p>
     <p><b>Crew high scores.</b> Each crew has its own arcade and horde tables, the top 10 of each. A finished run is sent to the crews on your device's recent list, and a crew keeps it only if you're a member. A row shows the three initials you entered, the score, the fighter, how far the run got and the date. The server remembers which member sent each row, so it can limit how often you post and mark your own rows in your lobby, but the table never shows other people who sent it.</p>
     <p><b>Crew stats.</b> The crew also adds up time played, matches, the fighters picked most, and each member's time played and favorite fighter. Everyone with the crew link sees these.</p>
-    <p><b>Game-wide time and the live count.</b> Every match (and time spent in training) adds to totals of time played per mode per day, and the server counts how many matches are going on right now. Both are just numbers with no player in them.</p>
+    <p><b>Game-wide time and the live count.</b> Every match, even one you quit or leave partway (and time spent in training), adds to totals of time played per mode per day, and the server counts how many matches are going on right now. Both are just numbers with no player in them.</p>
 
     <h3 class="s-h3">Quick matches</h3>
-    <p>A quick room (a four-letter code) lives in our server's memory while it's open. Nothing about it is saved, except the match result while both players' games agree on it, and the room is gone within 30 minutes of everyone leaving.</p>`),
+    <p>A quick room (a four-letter code) lives in our server's memory while it's open. Nothing about it is saved, except the match result while both players' games agree on it and when the match started (so the time played still counts if someone leaves), and the room is gone within 30 minutes of everyone leaving.</p>`),
 
       q('names', 'Who can see my name?', `    <ul>
       <li><b>Your rival</b> in an online match sees your nickname.</li>
@@ -120,6 +120,7 @@ export function privacyPage() {
       <li>your settings: sound, music, round time, rounds per match, botches on or off, touch-control size, the graphics setting (and the graphics level the game settled on, so the next visit starts there), and whether spectators may watch your rooms;</li>
       <li>the happy accidents you've found, your record against each online rival (by a random id), and whether you've seen the "add to home screen" tip;</li>
       <li>your answer to the age question, if you said under 13;</li>
+      <li>while the game is in the background, the numbers from the fight on screen (fighters, floors, hits, how long), so they still count if your phone closes the game there. They're sent or deleted the next time the game opens;</li>
       <li>a copy of the game's files, so it can load fast and play offline.</li>
     </ul>`),
 

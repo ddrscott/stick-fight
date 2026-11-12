@@ -7,14 +7,25 @@
 //            (src/net/online.js matchOver, worker/stats.ts); this module only hands over the details
 //   every mode: one `move` event per unique move the local player used (how often, and how often it landed)
 //
+// A match cut short still counts (cut: a restart, the menu, the demo or attract timeout, a new match, the tab
+// closing), once, as it stands: a horde run exactly as if the hero had gone down (floors, hits, combo, length), an
+// arcade stage with quit: 1 (its length and the rounds finished; the Worker leaves it out of the matchups, so a
+// quit is never a loss), online only the move counts (the room times the match itself, worker/stats.ts). Less
+// than MIN_FIGHT_SECS of fighting since the first FIGHT counts for nothing. A hidden tab keeps its match in
+// localStorage (hide), which the next page load sends if the page was killed there (sendLeftovers); a page that
+// comes back carries on, so nothing is sent twice. High scores don't go through here at all: a quit run never
+// reaches the initials screen, so it never lands on a board.
+//
 // It reads the sim and never writes it. Events re-fired by a rollback are already filtered by the netcode
 // (README, Rollback, Effects); a stray one can leave the hit counts a hit off, which is why the online
 // agreement doesn't include them.
-import { trackAll } from './analytics.js';
+import { trackAll, analyticsOn } from './analytics.js';
 import { FRAME_DATA } from './combat/frameData.js';
 
 const SIM_HZ = 120;
 const MAX_MOVES = 10;
+/** A match cut short with less fighting than this since the first FIGHT isn't reported */
+export const MIN_FIGHT_SECS = 5;
 
 /** How the match's last round ended, from the final state alone (so both online sims say the same):
  *  'time' the clock ran out, 'perfect' a KO by a winner at full health, 'ko' any other KO. */
@@ -26,22 +37,38 @@ export function howEnded(sim) {
   return win.health >= (win.maxHealth || 100) ? 'perfect' : 'ko';
 }
 
-export function createBook(sim) {
+/** The page's own lock while it lives (navigator.locks), so another tab never sends a match this one still has on screen. */
+const LOCK = 'stick-fight-book:';
+/** localStorage keys of a match in progress on a hidden page (book.hide), sent by the next page load if this one never came back */
+const KEEP = 'stick-fight-book-';
+const KEEP_MS = 24 * 3600 * 1000;
+function localStore() { try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; } }
+
+/** Make the books for one sim. opts (tests): send (default trackAll), store (default localStorage), page (this page's token). */
+export function createBook(sim, opts = {}) {
+  const send = opts.send || trackAll;
+  const store = opts.store !== undefined ? opts.store : analyticsOn ? localStore() : null;   // nothing kept when nothing would be sent
+  const page = opts.page || Math.random().toString(36).slice(2, 10);
+  if (!opts.page && typeof navigator !== 'undefined' && navigator.locks) { try { navigator.locks.request(LOCK + page, () => new Promise(() => {})).catch(() => {}); } catch { /* no locks */ } }
   /** @type {null | { mode: string, level: number, stage: number, local: number }} */
   let on = null;
+  let fightAt = -1;   // the step the first FIGHT showed on, or -1 before it
   let hits = [0, 0], combo = [0, 0], perfects = [0, 0], lastHit = ['', ''], koMove = '';
   /** @type {Map<string, { used: number, landed: number }>} */ const moves = new Map();
   /** @type {(string|null)[]} */ let swing = [null, null];   // the unique move each side has in the air, until it lands once
   const sideOf = (u) => (u.id === 0 ? 0 : 1);   // horde: every goon is side 1
 
-  function reset() { hits = [0, 0]; combo = [0, 0]; perfects = [0, 0]; lastHit = ['', '']; koMove = ''; moves.clear(); swing = [null, null]; }
-  /** a match starts: mode 'arcade' | 'horde' | 'quick' | 'crew', the CPU's level, the stage, and which side is this player */
-  function begin(meta) { on = { mode: meta.mode, level: meta.level || 0, stage: meta.stage || 0, local: meta.local || 0 }; reset(); }
-  function cancel() { on = null; }
+  function reset() { hits = [0, 0]; combo = [0, 0]; perfects = [0, 0]; lastHit = ['', '']; koMove = ''; moves.clear(); swing = [null, null]; fightAt = -1; }
+  /** a match starts: mode 'arcade' | 'horde' | 'quick' | 'crew', the CPU's level, the stage, and which side is this player.
+   *  One still open is cut short first (cut). */
+  function begin(meta) { cut(); on = { mode: meta.mode, level: meta.level || 0, stage: meta.stage || 0, local: meta.local || 0 }; reset(); if (sim.phase && sim.phase !== 'intro') fightAt = sim.stepCount; }   // a scene that skips its intro is already fighting
+  /** seconds fought since the first FIGHT, 0 before it */
+  const fought = () => (fightAt < 0 ? 0 : Math.max(0, sim.stepCount - fightAt) / SIM_HZ);
 
   /** every sim event (main.js onEvent) */
   function event(ev) {
     if (!on) return;
+    if (ev.type === 'fight') { if (fightAt < 0) fightAt = sim.stepCount; return; }
     if (ev.type === 'attack' && ev.unit && ev.unit.id <= 1) {
       const u = ev.unit, fd = FRAME_DATA[ev.move];
       swing[u.id] = null;
@@ -65,21 +92,76 @@ export function createBook(sim) {
     return { move, hits: [...hits], combo: [...combo], perfects: [...perfects] };
   }
 
+  /** What goes out for match o: the `match` event (arcade and horde; online results go through the room) and the
+   *  move counts. quit: the match was cut short. A horde run cut short is the same as one that ended (a run has no
+   *  win or loss, so a quit run is as good as a death); an arcade stage cut short carries quit: 1, which the Worker
+   *  counts as play time only, never as a win or a loss (worker/stats.ts). */
+  function events(o, quit) {
+    const p1 = (sim.units[0].char && sim.units[0].char.id) || '', p2 = (sim.units[1] && sim.units[1].char && sim.units[1].char.id) || '';
+    const out = [];
+    if (o.mode === 'arcade' || o.mode === 'horde') {
+      const horde = o.mode === 'horde', q = quit && !horde;
+      const d = detail();
+      out.push({ e: 'match', m: { mode: o.mode, p1, p2: horde ? '' : p2, wins: horde ? [0, 0] : [sim.wins[0] | 0, sim.wins[1] | 0], secs: Math.round(sim.stepCount / SIM_HZ),
+        how: horde || q ? 'ko' : howEnded(sim), level: o.level, stage: horde ? (sim.horde && sim.horde.floorsCleared) || 0 : o.stage, ...d, ...(q ? { move: '', quit: 1 } : {}) } });
+    }
+    const mine = o.local === 0 ? p1 : p2;
+    for (const [move, m] of moves) out.push({ e: 'move', l: [mine, move, o.mode], v: m.used, d: [m.landed] });
+    return out;
+  }
+  const keepKey = KEEP + page;
+  function unkeep() { try { if (store) store.removeItem(keepKey); } catch { /* full or blocked */ } }
+
   /** the match is over: send it (a vs-CPU match or a horde run; an online result went through the room) and the move counts */
   function end() {
     if (!on) return;
-    const o = on; on = null;
-    const p1 = (sim.units[0].char && sim.units[0].char.id) || '', p2 = (sim.units[1] && sim.units[1].char && sim.units[1].char.id) || '';
-    const events = [];
-    if (o.mode === 'arcade' || o.mode === 'horde') {
-      const horde = o.mode === 'horde';
-      events.push({ e: 'match', m: { mode: o.mode, p1, p2: horde ? '' : p2, wins: horde ? [0, 0] : [sim.wins[0] | 0, sim.wins[1] | 0], secs: Math.round(sim.stepCount / SIM_HZ),
-        how: horde ? 'ko' : howEnded(sim), level: o.level, stage: horde ? (sim.horde && sim.horde.floorsCleared) || 0 : o.stage, ...detail() } });
-    }
-    const mine = o.local === 0 ? p1 : p2;
-    for (const [move, m] of moves) events.push({ e: 'move', l: [mine, move, o.mode], v: m.used, d: [m.landed] });
-    trackAll(events);
+    const o = on; on = null; unkeep();
+    send(events(o, false));
   }
 
-  return { begin, cancel, event, detail, end, get active() { return !!on; } };
+  /** The match is cut short (a restart, the menu, the demo, the tab closing: main.js setScene and pagehide): send it as
+   *  it stands, once. Under MIN_FIGHT_SECS of fighting since the first FIGHT counts for nothing, so bouncing
+   *  through the menus adds no noise. Online sends only the move counts: the room keeps the play time itself. */
+  function cut() {
+    if (!on) return;
+    const o = on; on = null; unkeep();
+    if (fought() < MIN_FIGHT_SECS) return;
+    send(events(o, true));
+  }
+
+  /** The tab is hidden (mobile Safari may kill it there without a pagehide): keep the match as it stands in
+   *  localStorage, for the next page load to send if this page never comes back (sendLeftovers). Nothing is sent now,
+   *  so a page that does come back carries on and sends its match once, as usual. */
+  function hide() {
+    if (!on || !store || fought() < MIN_FIGHT_SECS) return;
+    try { store.setItem(keepKey, JSON.stringify({ page, at: Date.now(), events: events(on, true) })); } catch { /* full or blocked */ }
+  }
+  /** visible again: the match carries on, so the kept copy goes */
+  function show() { unkeep(); }
+
+  return { begin, cut, cancel: cut, event, detail, end, hide, show, fought, get active() { return !!on; } };
+}
+
+/** On page load: send what a page killed while hidden left behind (book.hide), once, and only for a page that's gone
+ *  (its lock is free). A day old is too stale and is dropped. */
+export async function sendLeftovers(opts = {}) {
+  const send = opts.send || trackAll, store = opts.store !== undefined ? opts.store : analyticsOn ? localStore() : null;
+  if (!store) return 0;
+  let held = new Set();
+  try {
+    if (opts.held) held = new Set(opts.held);
+    else if (typeof navigator !== 'undefined' && navigator.locks) held = new Set(((await navigator.locks.query()).held || []).map((l) => l.name));
+  } catch { /* no locks: every leftover's page is taken as gone */ }
+  let n = 0;
+  const keys = [];
+  try { for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k && k.startsWith(KEEP)) keys.push(k); } } catch { return 0; }
+  for (const k of keys) {
+    let kept = null;
+    try { kept = JSON.parse(store.getItem(k) || 'null'); } catch { kept = null; }
+    if (kept && held.has(LOCK + kept.page)) continue;   // that page is still open, only hidden
+    try { store.removeItem(k); } catch { /* blocked */ }
+    if (!kept || !Array.isArray(kept.events) || !(Date.now() - kept.at < KEEP_MS)) continue;
+    send(kept.events); n++;
+  }
+  return n;
 }
