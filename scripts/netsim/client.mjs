@@ -177,10 +177,14 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
 // (their fields are in vals, their rigs in rigs).
 const SKIP = new Set(['rig', 'controller', 'char', 'charDef', 'rng', 'units']);
 // omit: top-level snapshot keys left out (proof.mjs --hashes leaves out `result`, so a build without it compares)
-export function deepHash(sim, omit) {
+// unitOmit: unit fields left out (scripts/netsim/behave.mjs leaves out the flags enter() clears, so it compares behavior)
+export function deepHash(sim, omit, unitOmit) {
   const s = sim.saveState();
-  if (omit) { const c = { ...s }; for (const k of omit) delete c[k]; return hashOf(c); }
-  return hashOf(s);
+  if (!omit && !unitOmit) return hashOf(s);
+  const c = { ...s };
+  if (omit) for (const k of omit) delete c[k];
+  if (unitOmit) c.vals = s.vals.map((v) => { const o = { ...v }; for (const k of unitOmit) delete o[k]; return o; });
+  return hashOf(c);
 }
 function hashOf(s) {
   let h = 0x811c9dc5;
