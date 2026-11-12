@@ -174,8 +174,9 @@ export function termsPage() {
     path: 'terms/', root, title: 'House rules', kicker: 'TERMS OF PLAY', h1: 'HOUSE RULES',
     description: 'The house rules for Neon Stick Fight: trash talk in the game is part of fighting games; bullying, threats and going after real people are not. How to report a crew or a name.',
     short: [
+      'This is a fun place to compete. Have fun, and don\'t make fun of others.',
       'Trash talk inside the game is part of fighting games. Bullying outside it is not.',
-      'No slurs, threats, sexual stuff, or real people\'s names in player names, initials or crew names.',
+      'No slurs, threats, grown-up stuff, or real people\'s names in player names, initials or crew names.',
       'Don\'t cheat the scoreboards or attack the servers.',
       'The game is free and comes as-is. We can rename or close anything that breaks these rules.',
       `See something? Email ${mail('Report')} with the crew link.`,
@@ -186,13 +187,13 @@ export function termsPage() {
 
       q('not', 'What isn\'t allowed?', `    <p>Bullying, threats, harassment, or going after real people outside the game. That includes:</p>
     <ul>
-      <li>player names, initials or crew names that are slurs, threats, sexual, or make fun of a real person;</li>
+      <li>player names, initials or crew names that are slurs, threats, grown-up stuff, or make fun of a real person;</li>
       <li>using someone else's real name, or anyone's address, phone number or school;</li>
       <li>making a crew to gang up on someone, or to mock someone who isn't in on the joke;</li>
       <li>hate against people for who they are: their race, religion, gender, who they like, a disability, or where they're from;</li>
       <li>pretending to be someone else to get them in trouble.</li>
     </ul>
-    <p>The line is simple: beat their fighter, not the person.</p>`),
+    <p>The line is simple: beat their fighter, not the person. This is a fun place to compete, so have fun, and don't make fun of others.</p>`),
 
       q('names', 'Why won\'t it take my name?', `    <p>The game checks player names, crew names and high score initials against a short list of words that aren't allowed, like arcade machines always have. If yours gets turned down, pick another. The list can't catch everything, and sometimes it'll block something innocent. If you think it got one wrong, tell us.</p>`),
 
