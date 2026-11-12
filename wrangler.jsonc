@@ -55,10 +55,10 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "stick-fight-auth", "database_id": "8a0ea2d9-9d74-466f-a6ff-5a0446d35653", "migrations_dir": "migrations" }
   ],
-  // Sign-in codes go out from hey@askscottpierce.com (Email Sending is set up on the zone)
+  // Sign-in codes go out from hey@neonstickfight.com (Email Sending on the zone since 2026-11-12; replies land in webmail.neonstickfight.com)
   "send_email": [{ "name": "EMAIL" }],
   // OLD_PATH: "serve" | "redirect", what askscottpierce.com/stick-fight does (see the top of this file)
-  "vars": { "EMAIL_FROM": "hey@askscottpierce.com", "OLD_PATH": "serve" },
+  "vars": { "EMAIL_FROM": "hey@neonstickfight.com", "OLD_PATH": "serve" },
   // Abuse limits per client IP (worker/index.ts clientKey), counted per Cloudflare location.
   // Free on every plan; the period can only be 10 or 60 seconds. namespace_id must be unique on
   // the account (other projects use 1001-1003).

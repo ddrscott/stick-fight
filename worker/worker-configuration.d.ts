@@ -13,7 +13,7 @@ interface __BaseEnv_Env {
 	STATS_LIMIT: RateLimit;
 	OG_LIMIT: RateLimit;
 	ASSETS: Fetcher;
-	EMAIL_FROM: "hey@askscottpierce.com";
+	EMAIL_FROM: "hey@neonstickfight.com";
 	OLD_PATH: "serve";
 	ROOMS: DurableObjectNamespace<import("./index").Room>;
 	CREWS: DurableObjectNamespace<import("./index").Crew>;

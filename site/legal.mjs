@@ -9,7 +9,7 @@
 import { head, topbar, footer, script } from './templates.mjs';
 
 export const UPDATED = '2026-11-12';
-export const CONTACT = 'hey@askscottpierce.com';
+export const CONTACT = 'hey@neonstickfight.com';
 const mail = (subject) => `<a href="mailto:${CONTACT}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}">${CONTACT}</a>`;
 
 function shell({ path, root, title, h1, kicker, description, short, body, other }) {
