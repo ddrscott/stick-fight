@@ -34,7 +34,10 @@ for (const dev of ['cros', 'croshd']) {
   const CB = read(`${dev}-before.json`), CA = read(`${dev}-after.json`);
   if (!CA.length) continue;
   const tag = (rows, order) => { const n = new Map(); return rows.map((r) => { const i = n.get(r.scenario) || 0; n.set(r.scenario, i + 1); return { ...r, asked: r.asked ?? order[i] }; }); };
-  const b = tag(CB, ['3', '2', '1']), a = tag(CA, ['3', '2', '1', '0', 'auto']);
+  let b = tag(CB, ['3', '2', '1']), a = tag(CA, ['3', '2', '1', '0', 'auto']);
+  // ${dev}-auto.json: AUTO measured again on its own (a later build's adaptive rules), in place of the AUTO rows
+  const AUTO = read(`${dev}-auto.json`);
+  if (AUTO.length) a = a.map((r) => (r.asked === 'auto' ? AUTO.find((x) => x.scenario === r.scenario) || r : r)).map((r) => ({ ...r, asked: r.asked ?? 'auto' }));
   const fps = (r) => (!r ? '-' : r.fps < 1 ? '<2' : `${Math.round(r.drawn ?? r.fps)}${r.every > 1 ? ' (every 2nd)' : ''}`);
   const p95 = (r) => (!r ? '-' : r.fps < 1 ? '>500' : r.p95.toFixed(0));
   console.log(`\n| ${dev === 'cros' ? '1366x768 @1' : '1920x1080 @1.25'}, 6x CPU, SwiftShader | Tier | fps before → after | frame p95 ms before → after | main thread p50 ms after |\n|---|---|---|---|---|`);
@@ -43,4 +46,11 @@ for (const dev of ['cros', 'croshd']) {
     const tier = r.asked === 'auto' ? `AUTO → ${r.tier}` : r.asked;
     console.log(`| ${r.scenario} | ${tier} | ${fps(o)} → ${fps(r)} | ${p95(o)} → ${p95(r)} | ${r.work50.toFixed(1)} |`);
   }
+}
+
+// AUTO at other throttles (cros-throttle.json: 1x, 10x, 20x)
+const TH = read('cros-throttle.json');
+if (TH.length) {
+  console.log('\n| AUTO, 1366x768 @1, SwiftShader | CPU | settled on | fps | frame p95 ms | main thread p50 ms |\n|---|---|---|---|---|---|');
+  for (const r of TH) console.log(`| ${r.scenario} | ${r.throttle}x | tier ${r.tier}${r.every > 1 ? ', every 2nd frame' : ''} | ${Math.round(r.drawn ?? r.fps)} | ${r.p95.toFixed(0)} | ${r.work50.toFixed(1)} |`);
 }

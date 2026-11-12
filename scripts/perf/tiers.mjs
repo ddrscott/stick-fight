@@ -26,7 +26,7 @@ for (const tier of [3, 2, 1, 0]) {
   await ctx.close();
 }
 await b.close(); srv.close();
-const cell = (f, i) => ['(', f, '-resize', '853x480', '-gravity', 'north', '-background', '#07020f', '-splice', '0x34', '-fill', '#E85D00', '-font', 'Menlo', '-pointsize', '22', '-annotate', '+0+6', `// TIER_${3 - i}${['', '', '', ' (LOWEST)'][i]}`, ')'];
+const cell = (f, i) => ['(', f, '-resize', '853x480', '-gravity', 'north', '-background', '#07020f', '-splice', '0x34', '-fill', '#E85D00', '-font', fs.existsSync('/System/Library/Fonts/Menlo.ttc') ? '/System/Library/Fonts/Menlo.ttc' : 'Courier', '-pointsize', '22', '-annotate', '+0+6', `// TIER_${3 - i}${['', '', '', ' (LOWEST)'][i]}`, ')'];
 // two rows of two: 3 and 2 on top, 1 and 0 under them
 execFileSync('magick', ['(', ...cell(files[0], 0), ...cell(files[1], 1), '+append', ')', '(', ...cell(files[2], 2), ...cell(files[3], 3), '+append', ')', '-append', out]);
 console.log(out);

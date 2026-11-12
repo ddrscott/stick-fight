@@ -1360,7 +1360,7 @@ Two players, each on their own phone or computer, fight online. One hosts a room
 
 ## Performance
 
-The target is a steady 60 fps (every frame under 16.7 ms, no long-frame spikes) on a mid-range phone about three years old (iPhone 12 or 13, Pixel 6a class), and playable on a $150 Android. **No real phone was measured for this pass.** Every number below comes from this repo's harness on an Apple M3 Pro, and each table says which stand-in it used. `?perf=1` (below) is how to check a real phone.
+The target is a steady 60 fps (every frame under 16.7 ms, no long-frame spikes) on a mid-range phone about three years old (iPhone 12 or 13, Pixel 6a class), and playable on a $150 Android. **No real phone was measured for this pass.** Every number below comes from this repo's harness on an Apple M3 Pro, and each table says which stand-in it used. `?perf=1` (below) is how to check a real phone. School Chromebooks and software GL have their own section, with tier 0, the capability check and GRAPHICS (Chromebooks, below).
 
 ### The overlay: `?perf=1`
 
@@ -1375,7 +1375,7 @@ The target is a steady 60 fps (every frame under 16.7 ms, no long-frame spikes) 
 - **Less garbage.** Particle lighting (`fx.lightAt` per particle, over every light, with `Math.hypot`) and the particles' screen positions now write into scratch arrays: a 1v1 allocates 22 MB a second instead of 42 (Chrome's sampling heap profiler, `scripts/perf/profile.mjs --alloc`). What's left is spread thin: particle spawns, HUD color strings.
 - **Rollback.** The reach table (~190 entries) was copied into every snapshot and rewritten by every active hit test; it now has a version that changes only when a value does, and snapshots of one version share one frozen copy (`touchReach` in `src/combat/snapshot.js`, the version kept off the snapshot in a WeakMap so a snapshot's content is still exactly the state). `saveState` 42 → 17 µs, `loadState` 43 → 18 µs. `segSeg`'s closure is hoisted, `penetration` walks index loops instead of destructuring iterators (100 pairs a step), and the CPU copies its opponent with `for...in` instead of `Object.assign`: a sim step 0.061 → 0.037 ms at the median (Node, M3, `scripts/perf/simbench.mjs`). Draw-only work (the life layer, cloth, `frameDraw`) runs from `render()` only, never from `sim.tick()`, so a re-sim never pays for it. The sim is unchanged: 48,000 steps of seeded CPU bouts hash the same as before, and `npm run netsim:proof` passes (0 of 5,587 restored steps and 0 of 4,320 resynced steps differ). No `NET_VERSION` bump.
 - **Load.** The two faces are self-hosted (Latin subsets, 30 KB, `public/fonts/`, with their OFL files) and preloaded, instead of a render-blocking stylesheet from another origin, and the first frame no longer waits up to 2.5 s for them: the game draws at once and the HUD redraws in the real faces when they land. `__gauntlet.ready` still waits for the fonts, so captures see no load race. The bundle is all game code; the online code could be split out, but `main.js` uses it synchronously and that refactor wasn't worth the ~40 KB.
-- **Tiers.** Each step down is a deliberate trade, not a blur (`TIERS` in `src/fx/index.js`): tier 2 drops the contact shadows and star streaks, keeps 20 lights and lights the scene at 0.8 of the canvas (64% of the pixels); tier 1 also drops the haze and the widest glow, keeps 12 lights, and draws the scene and the backdrop at half size but the fighters at 0.75, so their edges and outlines stay sharper than a uniform half-size tier. That costs about 10% more GPU work than the old all-half tier 1 (the SwiftShader table below), set in `TIERS[1].figScale`. Tier 2 used to be only 6% cheaper than tier 3; now it's about 25% cheaper. `scripts/perf/results/tiers.png` shows the three side by side.
+- **Tiers.** Each step down is a deliberate trade, not a blur (`TIERS` in `src/fx/index.js`): tier 2 drops the contact shadows and star streaks, keeps 20 lights and lights the scene at 0.8 of the canvas (64% of the pixels); tier 1 also drops the haze and the widest glow, keeps 12 lights, and draws the scene and the backdrop at half size but the fighters at 0.75, so their edges and outlines stay sharper than a uniform half-size tier. That costs about 10% more GPU work than the old all-half tier 1 (the SwiftShader table below), set in `TIERS[1].figScale`. Tier 2 used to be only 6% cheaper than tier 3; now it's about 25% cheaper. `scripts/perf/results/tiers.jpg` shows them side by side (tier 0 too, since 2026-11-11).
 - **The adaptive tier.** Where it starts is now the capability check's call (Chromebooks, below); before it, phones started at tier 2 and everything else at 3. Frame intervals are judged every half second; a window is slow only when both its average and its median miss ~55 fps, so one long frame (a GC, a cache redraw) never counts, and under ~33 fps it's very slow. One very slow window or two slow ones step down. A tier that failed becomes the ceiling (so it never flaps back and forth); a tier under the ceiling is climbed back to after 5 good seconds, and a failed tier gets one retry after a good minute. The window after a change is skipped while the canvases resize. Tested with a scripted per-frame load: 0 ms then 22 ms then a single 300 ms hitch then 9 ms. It stepped down from tier 3 to 2 within a second of the load and to 1 a second and a half later, the hitch changed nothing, and it never flapped.
 - **What players get.** The `perf` analytics event (see Analytics) sends, once a session, the tier it settled on, where it started, touch or mouse, the frame time p95 and p50, and since 2026-11-11 the device's coarse buckets, what held the frame back and the GRAPHICS choice (Chromebooks, below; the sample query is in Analytics). For example: `SELECT blob2 AS tier, blob4 AS input, count() AS n, avg(double1) AS p50 FROM stick_fight_events WHERE blob1 = 'perf' GROUP BY tier, input`.
 
@@ -1465,6 +1465,106 @@ Read the work columns as the CPU cost (time inside the frame on the main thread)
 **The look at tier 3** is unchanged: `node scripts/perf/compare.mjs <main's dist> <out>` steps the same seeded scenes frame by frame in both builds, with `Math.random`, the particles and the arena clock seeded, and compares the screenshots. RMSE against main is 0.004 to 0.024 (main against itself: 0.0005 to 0.0075). The differences are sub-pixel: the cached background is sampled rather than drawn at the exact zoom, the city windows are antialiased as one path, and HUD text is stamped on whole device pixels. `scripts/perf/results/tier3-before-after.jpg` shows three scenes side by side. Fighters don't glow.
 
 **Not done, and worth doing with a real phone in hand:** a GPU trace on an actual Mali or Apple GPU (the SwiftShader numbers are relative only), the HUD's other `shadowBlur`s (the bars and the timer ring, which change size every frame), and pooling particle objects.
+
+### Chromebooks (2026-11-11)
+
+Reports came in that the game runs **super slow on Chromebooks**, which is a lot of the middle-school players: school Chromebooks have Celeron or MediaTek chips, Intel UHD 600 or Mali GPUs, 4 GB of RAM, and some run WebGL on software. Tier 1 was the floor before this, every tier was the full WebGL lighting, and a desktop-class pointer (a Chromebook's trackpad) started at tier 3 and found out the slow way. Now the game guesses the device at boot, has a tier 0 built for a weak machine, and remembers where it settled.
+
+**No real Chromebook was measured.** The stand-in is this repo's harness on the M3 Pro: Chromium on **SwiftShader** (software GL, the worst case), the CPU throttled **6x** through DevTools (an M3 core is about 7x a Celeron N4020's single-thread score), at a Chromebook's 1366x768 at DPR 1 and 1920x1080 at DPR 1.25 (`run.mjs --device cros|croshd --angle swiftshader`). The machine was shared with other agents' test runs (load average 6 to 30), so read single numbers as plus or minus 15%. To try it on a real one: `neonstickfight.com/play/?perf=1` shows the frame time, the tier, the device buckets and the tier the check started at; `?tier=0` pins tier 0; SETTINGS › GRAPHICS picks a tier for good.
+
+**Tier 0** (`TIERS[0]` in `src/fx/index.js`, `FLAT_FS` in `src/fx/shaders.js`):
+- **GPU:** one flat pass straight to a canvas half the size each way (640x360, the browser scales it up), every layer at half size, the fighters too. No per-pixel lights: the room is lit by one color for the frame, most of the ambient plus a little of the average color of the lights on screen, so a red-lit stage still reads red. No bloom chain, no star streaks, no reflections, no protect mask, no final pass. What stays: the sky, the skyline, the fog band, the neon faces with a short glow from eight taps of the emissive layer, the dark edge around every fighter and body, the foreground, the hit flash, and the grade's cheap part (contrast, saturation, the toe). Fighters are drawn in their own flat color and the glow is masked off them: fighters never glow, and the HUD is unchanged (its text doesn't glow). `scripts/perf/results/tiers.jpg` (a CPU 1v1) and `tiers-horde.jpg` have tiers 3, 2, 1 and 0 side by side (`tiers.mjs`).
+- **CPU:** no drifting motes, half the rain, a third of the debris a hit throws, the cloth hanging at rest instead of swinging (`life.cloth`), and the city's lit windows from one bitmap (below).
+- **The sim and the netcode don't change.** Only drawing does: every knob is in `render()` or the compositor, never in `sim.tick()`. `npm run netsim:proof` passes (below).
+- **The last resort: every other frame.** At tier 0 under ~20 fps for a second, the picture is drawn every other refresh while the sim steps every refresh (`fx.drawEvery`, `frame()` in `src/main.js`; render()'s own clocks get the time since the last drawn frame). It's that low because the sim already keeps time down to 10 fps (up to 60 steps a frame, a frame counted as at most 100 ms), so above 20 fps skipping pictures only loses pictures: horde on the stand-in drew 31-35 a second every frame and 28 every other. It goes back to every frame once the pictures come faster than ~25 a second for 5 s, and each fall back doubles that wait, so it can't flap at the edge.
+
+**What was really slow, found by profiling, not guessing** (`trace.mjs --all`, `run.mjs --gpu --off ...`):
+- **Software GL turned every 2D canvas into a GPU job.** On SwiftShader, Chrome rasterized the game's 2D canvases (the six layers, the HUD, the scenery caches) through the software GL: 1.8 s of every 3 s on the GPU thread (`DoEndRasterCHROMIUM`), against 0.5 s for the WebGL. `src/softcanvas.js`, imported first, reads the GL renderer from a throwaway 1x1 context and, on a software GL only, makes every 2D context ask for `willReadFrequently`, which keeps it on the CPU. It has to be all of them: copying an accelerated canvas into a CPU one (the HUD's text stamps, the scenery caches into the layers) reads it back every time, and switching only the layers made it slower. Tier 0 went from 16 fps to 44 on this one change. (A real Chromebook whose GPU is blocklisted already rasters on the CPU; the harness's `--use-angle=swiftshader` is what made the canvases go through it, so this is the honest worst case either way.)
+- **The city's lit windows** were ~30 ms of a 51 ms tier 0 frame on the GPU thread: a few thousand rects in a `Path2D` per tower, filled under two clips every frame. The far layer's mapping cancels the camera's zoom, so the city is always drawn at the layer's own scale; at half-size layers (tiers 1 and 0) it now comes from one bitmap per scale, placed on whole device pixels so the windows stay sharp (`cityBitmap` in `src/arena/building.js`). Full-size layers (tiers 3 and 2) draw the paths as before, so their look is unchanged.
+- **Not the problem:** the HUD (0.2-0.3 ms of main thread a frame; hiding it changed nothing), the body pile in horde (skipping it changed nothing), the scenery cache's blit, and premultiplied or unflipped uploads (2 ms of main thread at 6x, no change in the frame rate, so not done). The tier 0 flat pass itself is 5.5 ms on SwiftShader.
+
+**The capability check** (`src/device.js`, called from `src/main.js` right after the compositor is made; it reads values the browser already has, well under 50 ms, no test scene). The GL renderer string is sorted into a family and never kept: `software` (SwiftShader, llvmpipe, Microsoft Basic Render), `intel`, `mali`, `adreno`, `powervr`, `apple`, `nvidia-amd`, `other`. The OS comes from the user agent (`cros`, `android`, `ios`, `mac`, `win`, `linux`, `other`), the cores from `navigator.hardwareConcurrency` (`le2`, `4`, `6plus`), the memory from `navigator.deviceMemory` (`le4`, `8plus`, `unknown`; Chrome only). The start tier:
+- software GL → **tier 0**;
+- a Chromebook, or 4 cores or fewer, or 4 GB or less → **tier 1** (on the stand-in tier 1 is 10-11 fps on SwiftShader; a real Chromebook with its GPU should do much better, and the adaptive tier moves it either way);
+- a phone → tier 2; anything else → tier 3.
+
+The adaptive tier then works as before, now down to 0: two slow half-seconds or one very slow one step down a tier (from 1 to 0 like any other step: the frame interval counts whatever made it long, main thread or GPU, and tier 0 cuts both), and 5 good seconds climb one. The attract demo behind the title is the warm-up: it runs the full scene, so by the time a player has picked a fighter the tier has had the seconds it needs, and the first fight doesn't start slow. `npm run test:device` drives a scripted load through it: 3 → 2 → 1 → 0 under 22 ms of extra work a frame, every other frame under 60 ms, and every frame again once the load stops (the tiers that failed stay the ceiling until a good minute earns one retry, as before).
+
+**The remembered tier** (`src/gfxPrefs.js`, localStorage `stick-fight-gfx`, wrapped in try/catch). Once AUTO has held one tier for 15 s, it's saved; the next visit on this device starts there instead of at the check's guess, with every tier still open to climb to.
+
+**GRAPHICS in SETTINGS:** AUTO, HIGH, MEDIUM, LOW, LOWEST (tiers 3 to 0). AUTO, the default, is the adaptive tier, and the note beside the label says what it's drawing at now (`AUTO · NOW LOW`), the way CONTROLS says SCREEN FITS; a fixed choice says FIXED and turns adaptation off. Keys and the pad step it with left and right. It's saved on the device like the touch size but, unlike the touch size, not carried to the account: a Chromebook and a desktop want different answers. `?tier=` still beats both.
+
+**Measured.** "Before" is `main` at c75cae0 with the harness changes only; it had no tier 0, and its AUTO on a Chromebook started at 3 and could only reach tier 1. "fps" is pictures drawn a second. "<2" is a run where every frame took over half a second, which the profiler drops as a pause. The before runs swing a lot (the rain row at tier 3 caught a lucky stretch).
+
+| 1366x768 @1, 6x CPU, SwiftShader | Tier | fps before → after | frame p95 ms before → after | main thread p50 ms after |
+|---|---|---|---|---|
+| close | 3 | 4 → 5 | 490 → 258 | 174.4 |
+| close | 2 | 3 → 7 | 483 → 189 | 117.4 |
+| close | 1 | 4 → 11 | 367 → 109 | 32.8 |
+| close | 0 | - → 38 | - → 42 | 15.6 |
+| close | AUTO → 0 | - → 39 | - → 43 | 15.3 |
+| horde | 3 | 4 → 5 | 492 → 317 | 205.2 |
+| horde | 2 | 9 → 5 | 309 → 341 | 155.9 |
+| horde | 1 | 4 → 10 | 474 → 175 | 46.8 |
+| horde | 0 | - → 31 | - → 50 | 20.1 |
+| horde | AUTO → 0 | - → 29 | - → 58 | 22.7 |
+| rain | 3 | 15 → 5 | 192 → 350 | 195.7 |
+| rain | 2 | <2 → 7 | >500 → 267 | 121.6 |
+| rain | 1 | <2 → 11 | >500 → 108 | 33.8 |
+| rain | 0 | - → 38 | - → 42 | 16.8 |
+| rain | AUTO → 0 | - → 39 | - → 42 | 16.4 |
+| floor | 3 | 9 → 4 | 324 → 326 | 212.3 |
+| floor | 2 | <2 → 7 | >500 → 230 | 123.6 |
+| floor | 1 | 7 → 10 | 467 → 118 | 32.5 |
+| floor | 0 | - → 41 | - → 40 | 13.7 |
+| floor | AUTO → 0 | - → 39 | - → 42 | 14.2 |
+| attract | 3 | <2 → 5 | >500 → 290 | 198.9 |
+| attract | 2 | 7 → 7 | 488 → 225 | 128.7 |
+| attract | 1 | 6 → 11 | 433 → 102 | 36.0 |
+| attract | 0 | - → 37 | - → 42 | 16.6 |
+| attract | AUTO → 0 | - → 36 | - → 42 | 16.3 |
+
+| 1920x1080 @1.25, 6x CPU, SwiftShader | Tier | fps before → after | frame p95 ms before → after | main thread p50 ms after |
+|---|---|---|---|---|
+| close | 3 | 3 → 5 | 491 → 341 | 185.3 |
+| close | 2 | 3 → 7 | 492 → 251 | 118.9 |
+| close | 1 | 5 → 11 | 249 → 109 | 31.4 |
+| close | 0 | - → 30 | - → 50 | 16.8 |
+| close | AUTO → 0 | - → 31 | - → 44 | 15.6 |
+| horde | 3 | 3 → 5 | 483 → 281 | 168.5 |
+| horde | 2 | 3 → 6 | 458 → 232 | 132.4 |
+| horde | 1 | 5 → 9 | 281 → 134 | 71.5 |
+| horde | 0 | - → 25 | - → 59 | 21.5 |
+| horde | AUTO → 0 | - → 29 | - → 50 | 19.1 |
+| rain | 3 | 3 → 5 | 401 → 308 | 172.0 |
+| rain | 2 | 4 → 7 | 325 → 238 | 123.9 |
+| rain | 1 | 5 → 10 | 266 → 109 | 38.7 |
+| rain | 0 | - → 28 | - → 50 | 18.4 |
+| rain | AUTO → 0 | - → 28 | - → 50 | 17.0 |
+| floor | 3 | 4 → 5 | 399 → 328 | 163.2 |
+| floor | 2 | 6 → 7 | 353 → 247 | 107.4 |
+| floor | 1 | 5 → 10 | 317 → 126 | 32.6 |
+| floor | 0 | - → 31 | - → 50 | 14.3 |
+| floor | AUTO → 0 | - → 32 | - → 50 | 14.1 |
+| attract | 3 | 3 → 5 | 404 → 283 | 164.2 |
+| attract | 2 | 3 → 7 | 413 → 225 | 104.4 |
+| attract | 1 | 4 → 11 | 349 → 109 | 36.5 |
+| attract | 0 | - → 28 | - → 58 | 15.5 |
+| attract | AUTO → 0 | - → 23 (every 2nd) | - → 48 | 7.8 |
+
+| AUTO, 1366x768 @1, SwiftShader | CPU | settled on | fps | frame p95 ms | main thread p50 ms |
+|---|---|---|---|---|---|
+| close | 1x | tier 0 | 42 | 40 | 3.7 |
+| close | 10x | tier 0, every 2nd frame | 17 | 58 | 12.0 |
+| close | 20x | tier 0, every 2nd frame | 8 | 134 | 46.2 |
+| horde | 1x | tier 0 | 40 | 40 | 5.6 |
+| horde | 10x | tier 0, every 2nd frame | 17 | 67 | 16.6 |
+| horde | 20x | tier 0, every 2nd frame | 8 | 142 | 33.3 |
+| attract | 1x | tier 0 | 38 | 41 | 4.0 |
+| attract | 10x | tier 0, every 2nd frame | 16 | 79 | 13.3 |
+| attract | 20x | tier 0, every 2nd frame | 10 | 117 | 23.3 |
+
+**The target, said plainly: not reached on this stand-in.** At 6x plus SwiftShader, AUTO settles on tier 0 and holds about 38 fps in close and the attract demo (target 55) and about 30 in horde (target 45). That's 4 to 10 times the before, but not 55. What's left is the main thread: about 15 ms a frame at 6x, most of it the CPU raster of the layers and their upload (`texImage2D`, 37% of the main thread's profile), and SwiftShader's composite on top. For scale, the harness's own floor: this page with no GL work at all runs about 54 fps at 6x on SwiftShader, and tier 0 at 1x (a fast CPU with software GL) holds 54. The next steps, worth taking with a real Chromebook's `?perf=1` numbers in hand: upload only the part of the figures layer the fighters cover, a quarter-size emissive layer at tier 0 (2-3 ms at 6x, measured), and the HUD canvas at 1x on the 1080p panel.
 
 ### The character select
 

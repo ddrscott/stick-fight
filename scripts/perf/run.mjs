@@ -93,7 +93,7 @@ async function open(url, throttle, extra = {}) {
 
 const ms = (v) => +v.toFixed(2);
 function row(s) {
-  return { fps: ms(s.fps), drawn: ms(s.drawnFps), every: s.info.every || 1, p50: ms(s.iv.p50), p95: ms(s.iv.p95), p99: ms(s.iv.p99), longPerMin: Math.round(s.longPerMin), work50: ms(s.work.p50), work95: ms(s.work.p95),
+  return { fps: ms(s.fps), drawn: ms(s.drawnFps ?? s.fps), every: s.info.every || 1, p50: ms(s.iv.p50), p95: ms(s.iv.p95), p99: ms(s.iv.p99), longPerMin: Math.round(s.longPerMin), work50: ms(s.work.p50), work95: ms(s.work.p95),
     sim50: ms(s.sim.p50), sim95: ms(s.sim.p95), draw50: ms(s.draw.p50), draw95: ms(s.draw.p95), gl50: ms(s.gl.p50), gl95: ms(s.gl.p95), hud50: ms(s.hud.p50), tier: s.info.tier };
 }
 

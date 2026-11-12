@@ -133,8 +133,8 @@ if (!process.argv.includes('--no-browser')) {
 
   // ---- 3. the adaptive tier down to 0 and back, on this machine's GPU with a scripted load a frame ----------
   // A desktop starts at 3. 22 ms of busy work a frame (~45 fps) steps it down tier by tier to 0, and it stays drawing
-  // every frame there; 60 ms (~15 fps) turns on drawing every other frame; no load brings every frame back, then
-  // climbs a tier per 5 good seconds. --no-adapt skips it (35 s).
+  // every frame there; 60 ms (~15 fps) turns on drawing every other frame; no load brings every frame back, and the
+  // tiers that failed stay out until a minute of good frames earns a retry. --no-adapt skips it (35 s).
   if (!process.argv.includes('--no-adapt')) {
     const b2 = await pw.chromium.launch({ args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-blink-features=AutomationControlled'] });
     const p2 = await (await b2.newContext({ viewport: { width: 1280, height: 720 }, userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36' })).newPage();
@@ -157,7 +157,7 @@ if (!process.argv.includes('--no-browser')) {
     const c = await phase(0, 7000);
     ok(c[1] === 1, `no load: every frame again (got every ${c[1]})`);
     const d = await phase(0, 6000);
-    ok(d[0] >= 1, `no load: climbing back (tier ${d[0]})`);
+    ok(d[0] === 0, `no load: the tiers that failed stay the ceiling (a minute of good frames earns one retry), so no climb yet (tier ${d[0]})`);
     const log = await p2.evaluate(() => window.__log);
     // the path it took, as changes only
     const path = log.filter((x, i) => i === 0 || x[1] !== log[i - 1][1] || x[2] !== log[i - 1][2]).map((x) => `t${x[1]}${x[2] > 1 ? '/2' : ''}@${x[3]}ms`);
