@@ -215,7 +215,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   };
   ws.onclose = (e) => {
     teardownRtc();
-    if (!closed) { closed = true; emit('closed', link.error || (e.code === 1000 ? 'closed' : 'lost')); }
+    if (!closed) { closed = true; emit('closed', link.error || (e.code === 1000 ? 'closed' : 'lost'), e.code); }
   };
   ws.onerror = () => { if (!link.error) link.error = 'unreachable'; };
   return link;

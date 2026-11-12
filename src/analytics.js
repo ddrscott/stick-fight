@@ -28,9 +28,9 @@ function post(payload) {
   } catch { /* analytics never breaks the game */ }
 }
 
-export function track(event, labels = [], value = 0) {
+export function track(event, labels = [], value = 0, more = []) {
   if (!ok) return;
-  post({ e: event, l: labels.map(String).slice(0, 6), v: Number(value) || 0 });
+  post({ e: event, l: labels.map(String).slice(0, 6), v: Number(value) || 0, ...(more.length ? { d: more.slice(0, 8).map((x) => Number(x) || 0) } : {}) });
 }
 /** Several events in one request (a match's end: its result and its move counts), at most 12.
  *  Each is { e, l?, v?, d? (more numbers), m? (a match, src/bookkeeping.js) }. */

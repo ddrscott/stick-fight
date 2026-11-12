@@ -174,7 +174,7 @@ export function createOnline(game) {
         if ((msg.n | 0) === n && lockstep) rivalEnd = { n: msg.n | 0, f: msg.f | 0, h: String(msg.h), e: msg.e | 0 };
         return;
       }
-      if (msg.t === 'lost') { if (lockstep || between()) finish('lost'); return; }   // the other side gave up on the link
+      if (msg.t === 'lost') { if (lockstep || between()) finish('lost', 'rival:' + String(msg.why || '').slice(0, 24)); return; }   // the other side gave up on the link
       if (msg.t === 'ready') {
         if (msg.v !== NET_VERSION) { setState('error', 'version'); l.close(); return; }
         remoteChar = typeof msg.char === 'string' ? msg.char : 'temp';
@@ -192,8 +192,8 @@ export function createOnline(game) {
       } else onSession(msg);
     });
     l.on('packet', (buf) => { heardAt = now(); if (lockstep) lockstep.onPacket(buf); else if (drain) drain.onPacket(buf); });
-    l.on('closed', (reason) => {
-      if (lockstep || between()) finish(reason === 'closed' ? 'peer-left' : 'lost');
+    l.on('closed', (reason, code) => {
+      if (lockstep || between()) finish(reason === 'closed' ? 'peer-left' : 'lost', `ws:${reason}:${code || 0}`);
       else if (state !== 'idle') setState('error', reason);
       link = null;
     });
@@ -268,7 +268,7 @@ export function createOnline(game) {
     if (!endWait) endWait = now();
     if (word && word.f === end && word.h === h) { matchOver(); return; }
     if (current) ls.resync();
-    if (now() - endWait > END_WAIT_MS) finish('lost');
+    if (now() - endWait > END_WAIT_MS) finish('lost', 'end-wait');
   }
   function matchOver() {
     const sim = game.sim, ls = lockstep;
@@ -385,7 +385,7 @@ export function createOnline(game) {
       const t = now();
       if (drain) drain.keepalive();
       if (t - aliveAt > ALIVE_MS) { aliveAt = t; if (link) link.sendControl({ t: 'alive' }); }
-      if (t - heardAt > SILENT_MS) { finish('lost'); return; }
+      if (t - heardAt > SILENT_MS) { finish('lost', 'silent'); return; }
       if (role === 'host' && cd && t >= cd.until) { cd = null; startNext(); }
     }, 100);
   }
@@ -408,12 +408,19 @@ export function createOnline(game) {
     };
   }
 
-  function finish(reason) {
+  // why: which check gave up ('no-packets', 'broken:history', 'stalled', 'silent', 'end-wait', 'ws:<reason>:<close code>',
+  // or 'rival:<the other side's why>'), so a drop in the analytics says more than "lost"
+  function finish(reason, why = '') {
     const was = !!lockstep || between();
-    if (lockstep && (reason === 'peer-left' || reason === 'lost')) track('online_drop', [reason, crewMode ? 'crew' : 'quick', localChar, remoteChar]);   // a match that never got a result
+    if (lockstep && (reason === 'peer-left' || reason === 'lost')) {   // a match that never got a result
+      const s = lockstep.stats(), path = link ? `${link.mode}:${link.candidate || '-'}` : 'gone';
+      console.warn(`[net] match dropped: ${reason} (${why || '?'}) on ${path}, frame ${s.frame}`, s);
+      track('online_drop', [reason, crewMode ? 'crew' : 'quick', localChar, remoteChar, why || '-', path],
+        Math.round(s.frame / 120), [s.frame, Math.round(s.rtt || 0), Math.round(s.lostMs || 0), Math.round(s.stalledMs || 0), s.resyncs || 0, s.desync ? 1 : 0, s.remoteTop, lockstep.ackedByRemote]);
+    }
     lockstep = null; drain = null; stopTimer(); cd = null;
     feed.abort(); feed.close();   // anyone watching sees the match end here too
-    if (link) { const l = link; link = null; if (reason === 'lost' && was) { try { l.sendControl({ t: 'lost' }); } catch { /* gone */ } } l.close(); }
+    if (link) { const l = link; link = null; if (reason === 'lost' && was) { try { l.sendControl({ t: 'lost', why }); } catch { /* gone */ } } l.close(); }
     document.documentElement.classList.remove('online');
     readout.show(false);
     clearRoomParam();
@@ -472,7 +479,7 @@ export function createOnline(game) {
       const k = lockstep.advance(ms);
       feed.tick(game.sim);   // spectators: note what's confirmed, and send it on if anyone is watching
       // the link is gone, or can't carry this match any more: both sides end it, never two different fights
-      if (lockstep && (lockstep.lost || lockstep.broken || lockstep.stalledMs > STALL_LOST_MS)) { finish('lost'); return k; }
+      if (lockstep && (lockstep.lost || lockstep.broken || lockstep.stalledMs > STALL_LOST_MS)) { finish('lost', lockstep.lost ? 'no-packets' : lockstep.broken ? 'broken:' + lockstep.broken : 'stalled'); return k; }
       checkEnd();
       readout.tick();
       return k;
