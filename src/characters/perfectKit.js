@@ -16,10 +16,12 @@ export function stoop(hand = 'lHand', d = 220) {
   ];
 }
 
-// stand up with it: a collar held out at the shoulder (one hand or two), or the body carried overhead
-export function lift(kind = 'collar', hand = 'lHand', d = 220) {
-  if (kind === 'overhead') return K({ ...F(2, HIP, LF + 4, RF), torso: 0, bend: -4, head: -10, la: [172, 180], ra: [166, 176] }, d, 'inOut');
-  if (kind === 'chest') return K({ ...F(2, HIP - 3, LF + 4, RF), torso: 4, bend: -2, head: -6, la: [70, 120], ra: [62, 116] }, d, 'inOut');
+// stand up with it: a collar held out at the shoulder (one hand or two), or the body carried overhead.
+// face: how far he has turned toward the camera by the top of the lift (0 the side view, 1 square to the lens;
+// drawn only, src/fighter/index.js turnNow); the stoop stays in the side view, over the body on the floor
+export function lift(kind = 'collar', hand = 'lHand', d = 220, face = 0.2) {
+  if (kind === 'overhead') return K({ ...F(2, HIP, LF + 4, RF), torso: 0, bend: -4, head: -10, la: [172, 180], ra: [166, 176], face }, d, 'inOut');
+  if (kind === 'chest') return K({ ...F(2, HIP - 3, LF + 4, RF), torso: 4, bend: -2, head: -6, la: [70, 120], ra: [62, 116], face }, d, 'inOut');
   const up = [104, 112], idle = hand === 'rHand' ? [40, 110] : [30, 120];
-  return K({ ...F(2, HIP - 2, LF + 4, RF), torso: 2, bend: -4, head: -6, la: hand === 'rHand' ? idle : up, ra: hand === 'lHand' ? idle : up }, d, 'inOut');
+  return K({ ...F(2, HIP - 2, LF + 4, RF), torso: 2, bend: -4, head: -6, la: hand === 'rHand' ? idle : up, ra: hand === 'lHand' ? idle : up, face }, d, 'inOut');
 }

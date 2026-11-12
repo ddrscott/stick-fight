@@ -88,15 +88,15 @@ const dance = { keys: [
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a performance-review fling: he holds it up at eye level, shakes his head, winds the shoulders round and flings it sidearm at the camera, then straightens his tie and points.
 const perfect = { name: 'PERFORMANCE REVIEW FLING', note: 'A performance-review fling: he holds it up at eye level, shakes his head, winds the shoulders round and flings it sidearm at the camera, then straightens his tie and points.', stamp: 'NEEDS IMPROVEMENT', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 50 }, keys: [
   ...stoop('lHand'),
-  K({ ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -8, la: [130, 140], ra: [40, 110] }, 240, 'inOut'),
-  K({ ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: 10, la: [130, 138], ra: [44, 112] }, 140, 'sine'),
-  K({ ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -14, la: [128, 136], ra: [44, 112] }, 140, 'sine'),
-  K({ ...F(-6, HIP - 8, LF + 2, RF - 4), torso: 10, bend: 2, head: -4, tw: -18, la: [-50, -20], ra: [60, 120] }, 220, 'inOut'),
-  K({ ...F(10, HIP - 4, LF + 16, RF - 4), torso: 18, bend: 4, head: -8, tw: 16, la: [100, 92], ra: [-20, 20] }, 80, 'out', 'release'),
-  K({ ...F(12, HIP - 3, LF + 16, RF), torso: 14, bend: 2, head: -6, tw: 10, la: [70, 50], ra: [-10, 40] }, 200, 'out', 'footstep'),
-  K({ ...F(10, HIP - 1, LF + 16, RF + 6), torso: 2, head: -6, la: [116, 206], ra: [104, 196] }, 260, 'inOut'),
-  K({ ...F(10, HIP, LF + 16, RF + 6), torso: 2, head: -8, la: [40, 110], ra: [94, 92] }, 220, 'inOut'),
-  K({ ...F(10, HIP, LF + 16, RF + 6), torso: 2, head: -10, la: [38, 112], ra: [96, 94] }, 0, 'sine'),
+  K({ face: 0.4, ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -8, la: [130, 140], ra: [40, 110] }, 240, 'inOut'),
+  K({ face: 0.4, ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: 10, la: [130, 138], ra: [44, 112] }, 140, 'sine'),
+  K({ face: 0.4, ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -14, la: [128, 136], ra: [44, 112] }, 140, 'sine'),
+  K({ face: 0.15, ...F(-6, HIP - 8, LF + 2, RF - 4), torso: 10, bend: 2, head: -4, tw: -18, la: [-50, -20], ra: [60, 120] }, 220, 'inOut'),
+  K({ face: 0.9, ...F(10, HIP - 4, LF + 16, RF - 4), torso: 18, bend: 4, head: -8, tw: 16, la: [100, 92], ra: [-20, 20] }, 80, 'out', 'release'),
+  K({ face: 0.85, ...F(12, HIP - 3, LF + 16, RF), torso: 14, bend: 2, head: -6, tw: 10, la: [70, 50], ra: [-10, 40] }, 200, 'out', 'footstep'),
+  K({ face: 0.6, ...F(10, HIP - 1, LF + 16, RF + 6), torso: 2, head: -6, la: [116, 206], ra: [104, 196] }, 260, 'inOut'),
+  K({ face: 0.75, ...F(10, HIP, LF + 16, RF + 6), torso: 2, head: -8, la: [40, 110], ra: [94, 92] }, 220, 'inOut'),
+  K({ face: 0.75, ...F(10, HIP, LF + 16, RF + 6), torso: 2, head: -10, la: [38, 112], ra: [96, 94] }, 0, 'sine'),
 ] };
 
 export default {

@@ -112,13 +112,13 @@ const dance = { keys: [
 const perfect = { name: 'ACCIDENTAL LOB', note: 'He gets it up, it slips, he juggles it, and a panicked underhand lob sends it at the camera by accident; then both hands on his head.', stamp: 'OOPS', hand: 'lHand', hold: 'collar', fly: { spin: 2, arc: 220, wobble: 1 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
-  K({ ...F(4, HIP - 10, LF + 6, RF), torso: 30, bend: 6, head: 12, la: [28, 20], ra: [60, 30] }, 150, 'in'),
-  K({ ...F(0, HIP - 4, LF + 2, RF - 4), torso: -6, bend: -4, head: -10, la: [100, 66], ra: [130, 80] }, 130, 'out'),
-  K({ ...F(-4, HIP - 12, LF, RF - 6), torso: 18, bend: 4, head: 4, la: [-30, -24], ra: [150, 200] }, 150, 'inOut'),
-  K({ ...F(6, HIP + 2, LF + 8, RF - 6), torso: -14, bend: -6, head: -16, la: [132, 160], ra: [170, 220] }, 100, 'out', 'release'),
-  K({ ...F(8, HIP, LF + 8, RF - 4), torso: -6, head: -12, la: [150, 176], ra: [160, 210] }, 200, 'out'),
-  K({ ...F(6, HIP - 2, LF + 8, RF - 2), torso: 6, bend: 2, head: 6, la: [150, 232], ra: [144, 224] }, 260, 'inOut'),
-  K({ ...F(6, HIP - 3, LF + 8, RF - 2), torso: 9, bend: 3, head: 10, la: [146, 236], ra: [140, 228] }, 0, 'sine'),
+  K({ face: 0.3, ...F(4, HIP - 10, LF + 6, RF), torso: 30, bend: 6, head: 12, la: [28, 20], ra: [60, 30] }, 150, 'in'),
+  K({ face: 0.4, ...F(0, HIP - 4, LF + 2, RF - 4), torso: -6, bend: -4, head: -10, la: [100, 66], ra: [130, 80] }, 130, 'out'),
+  K({ face: 0.6, ...F(-4, HIP - 12, LF, RF - 6), torso: 18, bend: 4, head: 4, la: [-30, -24], ra: [150, 200] }, 150, 'inOut'),
+  K({ face: 0.95, ...F(6, HIP + 2, LF + 8, RF - 6), torso: -14, bend: -6, head: -16, la: [132, 160], ra: [170, 220] }, 100, 'out', 'release'),
+  K({ face: 0.85, ...F(8, HIP, LF + 8, RF - 4), torso: -6, head: -12, la: [150, 176], ra: [160, 210] }, 200, 'out'),
+  K({ face: 0.6, ...F(6, HIP - 2, LF + 8, RF - 2), torso: 6, bend: 2, head: 6, la: [150, 232], ra: [144, 224] }, 260, 'inOut'),
+  K({ face: 0.6, ...F(6, HIP - 3, LF + 8, RF - 2), torso: 9, bend: 3, head: 10, la: [146, 236], ra: [140, 228] }, 0, 'sine'),
 ] };
 
 export default {

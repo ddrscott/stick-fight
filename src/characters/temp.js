@@ -43,13 +43,13 @@ const dance = { keys: [
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a clumsy two-handed heave: he gets the body up by the collar, swings it back between his knees, heaves it up and over at the camera and staggers after it, then a stunned fist in the air.
 const perfect = { name: 'TWO-HANDED HEAVE', note: 'A clumsy two-handed heave: he gets the body up by the collar, swings it back between his knees, heaves it up and over at the camera and staggers after it, then a stunned fist in the air.', stamp: 'CONTRACT ENDED', hand: 'lHand', hold: 'collar', fly: { spin: 1, arc: 90 }, keys: [
   ...stoop('both'),
-  K({ ...F(0, HIP - 6, LF, RF), torso: 4, bend: -2, head: -6, la: [84, 100], ra: [76, 96] }, 200, 'inOut'),
-  K({ ...F(-4, HIP - 18, LF, RF), torso: 32, bend: 6, head: -10, la: [-24, -12], ra: [-32, -22] }, 240, 'inOut'),
-  K({ ...F(6, HIP + 2, LF + 6, RF), torso: -12, bend: -6, head: -14, la: [150, 166], ra: [140, 160] }, 110, 'out', 'release'),
-  K({ ...F(9, HIP, LF + 8, RF), torso: -4, bend: -2, head: -10, la: [172, 190], ra: [160, 182] }, 170, 'out'),
-  K({ ...F(14, HIP - 4, LF + 18, RF + 6, 0, 8), torso: 12, bend: 2, head: 4, la: [60, 140], ra: [104, 64] }, 230, 'inOut', 'footstep'),
-  K({ ...F(16, HIP - 1, LF + 18, RF + 16), torso: 4, head: -8, la: [152, 178], ra: [18, 30] }, 320, 'inOut', 'footstep'),
-  K({ ...F(16, HIP, LF + 18, RF + 16), torso: 2, head: -12, la: [162, 188], ra: [14, 26] }, 0, 'sine'),
+  K({ face: 0.3, ...F(0, HIP - 6, LF, RF), torso: 4, bend: -2, head: -6, la: [84, 100], ra: [76, 96] }, 200, 'inOut'),
+  K({ face: 0.55, ...F(-4, HIP - 18, LF, RF), torso: 32, bend: 6, head: -10, la: [-24, -12], ra: [-32, -22] }, 240, 'inOut'),
+  K({ face: 0.85, ...F(6, HIP + 2, LF + 6, RF), torso: -12, bend: -6, head: -14, la: [150, 166], ra: [140, 160] }, 110, 'out', 'release'),
+  K({ face: 0.8, ...F(9, HIP, LF + 8, RF), torso: -4, bend: -2, head: -10, la: [172, 190], ra: [160, 182] }, 170, 'out'),
+  K({ face: 0.6, ...F(14, HIP - 4, LF + 18, RF + 6, 0, 8), torso: 12, bend: 2, head: 4, la: [60, 140], ra: [104, 64] }, 230, 'inOut', 'footstep'),
+  K({ face: 0.45, ...F(16, HIP - 1, LF + 18, RF + 16), torso: 4, head: -8, la: [152, 178], ra: [18, 30] }, 320, 'inOut', 'footstep'),
+  K({ face: 0.45, ...F(16, HIP, LF + 18, RF + 16), torso: 2, head: -12, la: [162, 188], ra: [14, 26] }, 0, 'sine'),
 ] };
 
 export default {

@@ -1336,7 +1336,8 @@ function fitCameraToDrawn() {
   if (sim.hitstopActive > 0) return;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const u of camLive()) {
-    const j = drawnJ.get(u) || u.rig.joints, o = drawnOff.get(u) || NO_OFF, r = u.rig.radius;
+    const j0 = drawnJ.get(u) || u.rig.joints, o = drawnOff.get(u) || NO_OFF, r = u.rig.radius;
+    const j = (u.rig.turnPoints && u.rig.turnPoints(j0)) || j0;   // turned toward the camera (a perfect finisher, drawn only)
     for (const k in j) { const px = j[k].x + o.x, py = j[k].y + o.y; if (px - r < x0) x0 = px - r; if (px + r > x1) x1 = px + r; if (py - r < y0) y0 = py - r; if (py + 0.5 * r > y1) y1 = py + 0.5 * r; }
   }
   if (!(x1 >= x0)) return;
@@ -1712,8 +1713,9 @@ function copyJoints(src, dst) {
 }
 // where the head and hip are drawn this frame (the turnaround, the snap fade and the smoothing offset applied), for measurements
 function drawnPoints(u) {
-  const j = drawnJ.get(u) || (u.rig && u.rig.joints), off = drawnOff.get(u) || NO_OFF;
-  if (!j || !j.head) return null;
+  const j0 = drawnJ.get(u) || (u.rig && u.rig.joints), off = drawnOff.get(u) || NO_OFF;
+  if (!j0 || !j0.head) return null;
+  const j = (u.rig.turnPoints && u.rig.turnPoints(j0)) || j0;   // turned toward the camera (a perfect finisher, drawn only)
   const at = (p) => ({ x: p.x + off.x, y: p.y + off.y });
   const all = {}; for (const k in j) all[k] = at(j[k]);
   return { head: at(j.head), hip: at(j.hip), all };

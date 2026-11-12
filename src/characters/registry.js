@@ -55,7 +55,10 @@ export function registerCharacter(def) {
     const pf = def.perfect;
     c.perfect = { clip: `${id}_perfect`, name: pf.name || 'PERFECT', note: pf.note || '', stamp: pf.stamp || '', hand: pf.hand || 'lHand', hold: pf.hold || 'collar',
       fly: { spin: 1, flip: 0, arc: 60, wobble: 0, ...(pf.fly || {}) }, slide: { dx: 0, rate: 1, ...(pf.slide || {}) } };
-    rigs[c.perfect.clip] = { blend: 120, keys: pf.keys };
+    // the turn toward the camera (drawn only, src/fighter/index.js turnNow): the keys' `face`, the step at the lens
+    // around the release (`step: { grow, sink }`, or false for none) and `turn: { face, depth }` (a multiplier on
+    // every key's face, and the perspective distance in px: smaller foreshortens harder)
+    rigs[c.perfect.clip] = { blend: 120, keys: pf.keys, step: pf.step === false ? null : { grow: 0.06, sink: 8, ...(pf.step || {}) }, turn: pf.turn || null };
     const evs = pf.keys.map((k) => k.ev);
     if (!evs.includes('grab') || !evs.includes('release')) console.warn(`[characters] ${id}: perfect needs a 'grab' key and a 'release' key`);
   }

@@ -58,13 +58,13 @@ const dance = { keys: [
 const perfect = { name: 'SAME-DAY DROP KICK', note: 'He picks it up like a parcel across both arms, tosses it up and drop-kicks it at the camera, then tips his cap.', stamp: 'DELIVERED', hand: 'lHand', hold: 'carry', fly: { spin: 1, arc: 10 }, keys: [
   ...stoop('both'),
   lift('chest', 'lHand', 200),
-  K({ ...F(-2, HIP - 8, LF - 2, RF), torso: 10, bend: 2, head: -8, la: [74, 118], ra: [66, 112] }, 120, 'in'),
-  K({ ...F(0, HIP + 2, LF, RF, 0, 4), torso: -4, bend: -4, head: -14, la: [130, 150], ra: [120, 146] }, 120, 'out'),
-  K({ hx: -6, ll: RIG_KIT.L(-6, HIP + 2, LF - 4), rl: [104, 96], torso: -24, bend: -6, head: -10, la: [150, 200], ra: [-40, -20] }, 90, 'out', 'release'),
-  K({ hx: -4, ll: RIG_KIT.L(-4, HIP + 2, LF - 4), rl: [96, 84], torso: -22, bend: -6, head: -8, la: [140, 190], ra: [-30, -10] }, 160, 'out'),
-  K({ ...F(2, HIP - 2, LF, RF + 6), torso: 4, head: -6, la: [40, 100], ra: [30, 110] }, 220, 'inOut', 'footstep'),
-  K({ ...F(2, HIP, LF, RF + 6), torso: 2, head: -8, la: [150, 230], ra: [20, 40] }, 260, 'inOut'),
-  K({ ...F(2, HIP, LF, RF + 6), torso: 2, head: -10, la: [156, 236], ra: [20, 40] }, 0, 'sine'),
+  K({ face: 0.3, ...F(-2, HIP - 8, LF - 2, RF), torso: 10, bend: 2, head: -8, la: [74, 118], ra: [66, 112] }, 120, 'in'),
+  K({ face: 0.5, ...F(0, HIP + 2, LF, RF, 0, 4), torso: -4, bend: -4, head: -14, la: [130, 150], ra: [120, 146] }, 120, 'out'),
+  K({ face: 0.8, hx: -6, ll: RIG_KIT.L(-6, HIP + 2, LF - 4), rl: [104, 96], torso: -24, bend: -6, head: -10, la: [150, 200], ra: [-40, -20] }, 90, 'out', 'release'),
+  K({ face: 0.8, hx: -4, ll: RIG_KIT.L(-4, HIP + 2, LF - 4), rl: [96, 84], torso: -22, bend: -6, head: -8, la: [140, 190], ra: [-30, -10] }, 160, 'out'),
+  K({ face: 0.6, ...F(2, HIP - 2, LF, RF + 6), torso: 4, head: -6, la: [40, 100], ra: [30, 110] }, 220, 'inOut', 'footstep'),
+  K({ face: 0.7, ...F(2, HIP, LF, RF + 6), torso: 2, head: -8, la: [150, 230], ra: [20, 40] }, 260, 'inOut'),
+  K({ face: 0.7, ...F(2, HIP, LF, RF + 6), torso: 2, head: -10, la: [156, 236], ra: [20, 40] }, 0, 'sine'),
 ] };
 
 export default {

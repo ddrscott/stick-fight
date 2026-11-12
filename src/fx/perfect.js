@@ -77,10 +77,19 @@ function place(local, grip, psi, side, G, k = 1) {
   }
   return out;
 }
-function drawBody(ctx, rig, joints) {
+const SCALED = {}, SCALED_PTS = {};   // drawBody's reused joints at rig size (no garbage per frame)
+// k: drawn k times its size about its hip (the joints were placed at that size already: the hand's depth)
+function drawBody(ctx, rig, joints, k = 1) {
   const real = rig.joints, cloth = rig.cloth;
   rig.joints = joints; rig.cloth = null;
   ctx.save(); ctx.shadowBlur = 0;
+  if (k !== 1 && joints.hip) {
+    // rig.draw sizes widths by rig.scale: draw at k about the hip on joints shrunk back to rig size
+    const hx = joints.hip.x, hy = joints.hip.y, J = rig.joints = SCALED;
+    for (const n in J) delete J[n];
+    for (const n in joints) { const q = SCALED_PTS[n] || (SCALED_PTS[n] = { x: 0, y: 0 }); q.x = hx + (joints[n].x - hx) / k; q.y = hy + (joints[n].y - hy) / k; J[n] = q; }
+    ctx.translate(hx, hy); ctx.scale(k, k); ctx.translate(-hx, -hy);
+  }
   try { rig.draw(ctx); } catch (e) { /* a bad frame never breaks the game */ } finally { ctx.restore(); rig.joints = real; rig.cloth = cloth; }
 }
 
@@ -110,7 +119,12 @@ export function createPerfectFX() {
     const { w, l } = S, pf = w.char.perfect;
     if (!l.hidden || l.pfRel || !l.pfFrom || w.pfFar) return;   // on the floor (drawn as usual), or already thrown
     const poses = posesOf(l.rig), side = -w.facing;
-    const h = w.rig.joints[pf.hand] || w.rig.joints.lHand, e = w.rig.joints[pf.hand.replace('Hand', 'Elbow')] || w.rig.joints.lElbow;
+    // the hand where it's drawn: turned toward the camera (src/fighter/index.js f.turned), the body as big as the hand
+    const hn = w.rig.joints[pf.hand] ? pf.hand : 'lHand', en = hn.replace('Hand', 'Elbow'), T = w.rig.turned;
+    const h = T ? { x: w.rig.joints[hn].x + (T.dx[hn] || 0), y: w.rig.joints[hn].y + (T.dy[hn] || 0) } : w.rig.joints[hn];
+    const e = T ? { x: w.rig.joints[en].x + (T.dx[en] || 0), y: w.rig.joints[en].y + (T.dy[en] || 0) } : w.rig.joints[en];
+    const hk = T ? T.k[hn] || 1 : 1;
+    S.heldK = hk;
     dt = Math.min(1 / 30, Math.max(1 / 240, dt));
     // the hand's motion swings the body on its grip: a damped pendulum driven by the hand's acceleration
     const v = S.hand ? { x: (h.x - S.hand.x) / dt, y: (h.y - S.hand.y) / dt } : { x: 0, y: 0 };
@@ -126,17 +140,17 @@ export function createPerfectFX() {
       const psi = (w.facing > 0 ? Math.PI / 2 : -Math.PI / 2) + tilt;
       const droop = side > 0 ? psi * 180 / Math.PI : -psi * 180 / Math.PI;
       const local = localOf(l.rig, carryPose(droop)), c = center(local);
-      J = place(local, { x: c.x - 10 * side, y: c.y }, psi, side, { x: h.x, y: h.y - 4 });
+      J = place(local, { x: c.x - 10 * side, y: c.y }, psi, side, { x: h.x, y: h.y - 4 * hk }, hk);
     } else if (pf.hold === 'ankle') {
-      J = place(poses.ankle, poses.ankle.lFoot, Math.PI - S.theta, side, h);
+      J = place(poses.ankle, poses.ankle.lFoot, Math.PI - S.theta, side, h, hk);
     } else {
-      J = place(poses.hang, poses.hang.neck, -S.theta, side, { x: h.x, y: h.y + 4 });
+      J = place(poses.hang, poses.hang.neck, -S.theta, side, { x: h.x, y: h.y + 4 * hk }, hk);
     }
     // it comes up off the floor over the first moments
     const k = smooth(0, 0.2, sim.perfectT - (l.pfGrabT >= 0 ? l.pfGrabT : sim.perfectT));
     if (k < 1) J = mix(l.pfFrom, J, k);
     S.held = J;
-    drawBody(ctx, l.rig, J);
+    drawBody(ctx, l.rig, J, hk);
   }
 
   // ---- at the glass (screen space, under the HUD) -----------------------------------------
@@ -236,10 +250,11 @@ export function createPerfectFX() {
     const S1 = (H * 0.92) / box.h, target = { x: W / 2, y: H * 0.5 };
     // the throw's start: where the hand let go, as big as the world draws it
     if (!S.rel0) {
-      const from = S.held || l.pfFrom || poses.hang;
+      // (held: in the drawn hand, at the hand's size; the flight starts exactly there, with no jump)
+      const from = S.held || l.pfFrom || poses.hang, hk = S.held ? S.heldK || 1 : 1;
       const c = center(from), local = {};
-      for (const k of KEYS) if (from[k]) local[k] = { x: (from[k].x - c.x) * (camera.mirror ? -1 : 1) * side, y: from[k].y - c.y };
-      S.rel0 = { local, p0: toScreen(l.pfRel || c, camera), s0: camera.zoom };
+      for (const k of KEYS) if (from[k]) local[k] = { x: (from[k].x - c.x) / hk * (camera.mirror ? -1 : 1) * side, y: (from[k].y - c.y) / hk };
+      S.rel0 = { local, p0: toScreen(S.held ? c : (l.pfRel || c), camera), s0: camera.zoom * hk };
     }
     const { p0, s0 } = S.rel0;
     const spin = Math.round(fly.spin || 0), flip = Math.round(fly.flip || 0);
@@ -269,7 +284,9 @@ export function createPerfectFX() {
       const kk = clamp01((k - s0) / (s1 - s0));
       const endC = { x: target.x - box.cx * s1 * side, y: target.y - box.cy * s1 };
       cx = lerp(p0.x, endC.x, kk); cy = lerp(p0.y, endC.y, kk) - (fly.arc || 0) * Math.sin(Math.PI * kk) * (1 - kk * 0.3);
-      const e = 1 - Math.pow(1 - u, 1.6);
+      // the spin and the flip wait a beat (the first 12% of the flight): the body leaves the hand as it was held,
+      // clearly in front of the thrower, before it turns (whole turns still, so it lands upright)
+      const ub = clamp01((u - 0.12) / 0.88), e = 1 - Math.pow(1 - ub, 1.6);
       rot = -TAU * spin * (1 - e) * side + (fly.wobble || 0) * 0.35 * Math.sin(u * 22) * (1 - u);
       if (flip) ky = Math.cos(TAU * flip * e);
       const tumble = mix(poses.tumbleA, poses.tumbleB, 0.5 + 0.5 * Math.sin(tr * 26));

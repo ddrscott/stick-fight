@@ -3,7 +3,7 @@
 // and checks every frame outside hitstop: each drawn joint of the hero and the one he's on is inside the middle
 // of the frame the view shows (camera.safeW: 720 px when it's square, wider on a short screen, up to all 1280)
 // and inside its height. 395x700 and 412x640 are a phone with its browser's bars showing. Needs `npm run build`.
-//   node scripts/shots/square-fit.mjs [--frames 1500] [--sizes 390x844,412x640]
+//   node scripts/shots/square-fit.mjs [--frames 1500] [--sizes 390x844,412x640] [--scenes perfect-test] [--p1 chef]
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,13 +20,14 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': types[path.extname(p)] || 'application/octet-stream' }); fs.createReadStream(p).pipe(res);
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', () => r(null)));
-const SCENES = ['ai-fight', 'ai-fight-2', 'ai-fight-3', 'ko', 'juggle-test', 'wall-test', 'throw-test', 'jump-in-test', 'air-recovery-test', 'floor-break-test', 'stair-test', 'horde-ai', 'horde-floors-ai', 'windowwasher-test', 'getup-test', 'perfect-test'];
+const P1 = opt('--p1', '');
+const SCENES = opt('--scenes', '') ? opt('--scenes', '').split(',') : ['ai-fight', 'ai-fight-2', 'ai-fight-3', 'ko', 'juggle-test', 'wall-test', 'throw-test', 'jump-in-test', 'air-recovery-test', 'floor-break-test', 'stair-test', 'horde-ai', 'horde-floors-ai', 'windowwasher-test', 'getup-test', 'perfect-test'];
 const browser = await chromium.launch({ headless: true, executablePath, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
 let bad = 0;
 for (const size of SIZES) for (const scene of SCENES) {
   const ctx = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
-  await page.goto(`http://127.0.0.1:${/** @type {any} */ (server.address()).port}/play/?scene=${scene}&tier=1`);
+  await page.goto(`http://127.0.0.1:${/** @type {any} */ (server.address()).port}/play/?scene=${scene}&tier=1${P1 ? `&p1=${P1}` : ''}`);
   await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready && document.documentElement.classList.contains('sq'), null, { timeout: 60000 });
   const r = await page.evaluate(([s, n]) => {
     const g = window.__game, G = window.__gauntlet, cam = g.camera;
