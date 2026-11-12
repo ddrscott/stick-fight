@@ -73,7 +73,7 @@ const TRANSITIONS = {
   attract: ['modeSelect', 'highScores', 'controls'],
   highScores: ['attract', 'modeSelect', 'ageCheck'],   // ageCheck: the save-your-sticks nudge after a game (README, Progression)
   controls: ['attract', 'modeSelect'],
-  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry'],
+  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck'],   // ageCheck: the save nudge
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
   stageIntro: ['fighting', 'modeSelect'],
   fighting: ['roundEnd', 'result', 'paused', 'attract'],

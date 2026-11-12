@@ -151,7 +151,15 @@ function injectStyle() {
   .cr-chip span { color: #eadcff; font-size: 1.7cqw; }
   .cr-chip.cr-on { display: flex; }
   /* held upright the stage is short: everything a size up so it stays readable */
-  @container (max-aspect-ratio: 1/1) { .cr-lines { font-size: 3.4cqw; } .cr-lines .cr-num { font-size: 3cqw; } .cr-chip { font-size: 3.4cqw; } .cr-chip span { font-size: 3cqw; } }
+  @container (max-aspect-ratio: 1/1) {
+    .cr-earn { min-width: 76cqw; } .cr-nudge { max-width: 86cqw; font-size: 3.6cqw; } .cr-nudge .cr-nsub { font-size: 3cqw; }
+    .cr-lines { font-size: 3.4cqw; } .cr-lines .cr-num { font-size: 3cqw; } .cr-lines .cr-h { font-size: 2.6cqw; }
+    .cr-promo span { font-size: 3.4cqw; } .cr-promo b { font-size: 5cqw; }
+    .cr-row { font-size: 3.2cqw; } .cr-sum, .cr-wallet { font-size: 3.4cqw; } .cr-note { font-size: 2.9cqw; }
+    .cr-title { font-size: 3.6cqw; } .cr-rlabel, .cr-next { font-size: 2.8cqw; }
+    .cr-chip { font-size: 3.4cqw; } .cr-chip span { font-size: 3cqw; }
+    .fl-pcareer { width: 80cqw; }
+  }
   `;
   const st = document.createElement('style'); st.id = 'career-style'; st.textContent = css;
   document.head.appendChild(st);
