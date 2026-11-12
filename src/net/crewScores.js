@@ -10,7 +10,8 @@
 //   placeFor(kind, score)     the best place this score would take on a loaded crew board: { slug, name, rank } or null
 //   postRun(run)              post a run to every recent crew: resolves to [{ slug, name, rank } | { slug, error }]
 //   rowNote(kind, row)        'STAGE 4', 'ALL CLEAR', '3 FLOORS'
-// A Row is { initials, score, char, reach, clear, at } (and member, from the lobby's own state).
+// A Row is { initials, score, char, reach, clear, at, title } (and member, from the lobby's own state); title is the
+// poster's job title when they posted it (README, Progression), shown as AAA · MANAGER.
 
 import { apiUrl } from './link.js';
 import { profile } from './profile.js';
@@ -66,7 +67,7 @@ export function placeFor(kind, score) {
   return best;
 }
 /**
- * @param {{ kind: 'arcade' | 'horde', initials: string, score: number, char: string, reach: number, clear?: boolean }} run
+ * @param {{ kind: 'arcade' | 'horde', initials: string, score: number, char: string, reach: number, clear?: boolean, title?: string }} run  title: the poster's job title
  */
 export async function postRun(run) {
   const list = recentCrews();

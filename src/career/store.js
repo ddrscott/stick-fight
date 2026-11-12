@@ -15,7 +15,8 @@
 //   equip(fighter, id)     the palette to fight in ('' for the fighter's own look)
 //   equipped(fighter)      that palette, or null
 //   owns(fighter, id)
-//   nudgeDue() / nudgeShown()   the save-your-sticks prompt for guests (NUDGE in rules.js)
+//   nudgeDue() / nudgeShown()   the save-your-sticks prompt for guests (NUDGE in rules.js); never for a player who
+//                          answered UNDER 13 at the age question
 //   resetCareer()          signing out or deleting the profile: this device starts fresh
 //
 // Every storage call is wrapped: blocked storage just means the career lives for this page.
@@ -196,6 +197,8 @@ export function equip(fighter, id) {
 export function nudgeDue() {
   const s = read(), p = profile();
   if (p.email) return false;
+  // a player who answered UNDER 13 can't save a profile (README, Privacy and terms, The age question): never ask them
+  try { if (localStorage.getItem('stick-fight-age') === 'under13') return false; } catch { /* storage off */ }
   const t = titleFor(s.career.xp);
   if (!(t.i >= 1 || s.career.sticks >= NUDGE.sticks)) return false;
   if (s.nudge.xp < 0) return true;

@@ -59,6 +59,12 @@ try {
     check(`${label}: and the save nudge (300 sticks is past 200)`, /YOU'VE GOT 300 STICKS AND YOU'RE A TEMP/.test(txt) && /SAVE MY PROFILE/.test(txt));
     await p.evaluate(() => { window.__flow.debug.go('attract'); window.__flow.debug.go('modeSelect'); }); await sleep(500);
     check(`${label}: the next visit doesn't show it again`, !/YOU'VE GOT/.test(await flowText(p)));
+    if (label === 'upright') {   // a player who answered UNDER 13 can't save a profile: never asked, however much they have
+      await p.evaluate(() => { localStorage.setItem('stick-fight-age', 'under13'); const c = JSON.parse(localStorage.getItem('stick-fight-career')); c.career.xp = 2000; localStorage.setItem('stick-fight-career', JSON.stringify(c)); window.__flow.debug.go('attract'); window.__flow.debug.go('modeSelect'); });
+      await sleep(400);
+      check(`${label}: an UNDER 13 player is never nudged`, !/YOU'VE GOT/.test(await flowText(p)));
+      await p.evaluate(() => { localStorage.removeItem('stick-fight-age'); const c = JSON.parse(localStorage.getItem('stick-fight-career')); c.career.xp = 95; c.nudge = { xp: 95, title: 0 }; localStorage.setItem('stick-fight-career', JSON.stringify(c)); });
+    }
 
     // 4: character select, TEMP's palettes
     await p.locator('#flow .fl-btn', { hasText: 'ARCADE' }).first().click({ force: true });

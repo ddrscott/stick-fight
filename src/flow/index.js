@@ -927,7 +927,7 @@ export function createFlow(ctx) {
     // a run that only made a crew's table shows that table; the rest show this device's
     const crewPlace = rank < 0 ? CS.placeFor(entry.mode, entry.score) : null;
     hs = { mode: entry.mode, highlight: rank, postGame: true, loop: hs.loop, manual: false, crew: crewPlace ? crewPlace.slug : '', posted: [] };
-    const run = entry.char ? { kind: entry.mode, initials: name, score: entry.score, char: entry.char, reach: entry.reach | 0, clear: !!entry.clear } : null;
+    const run = entry.char ? { kind: entry.mode, initials: name, score: entry.score, char: entry.char, reach: entry.reach | 0, clear: !!entry.clear, title: careerNow().title } : null;
     entry = null;
     go('highScores');
     // post it to the crews (README, Crew rooms, High scores), then show where it landed
@@ -2188,7 +2188,7 @@ export function createFlow(ctx) {
     rows.forEach((r, i) => {
       const cls = r.member && r.member === you ? ' fl-me' : '';
       t.appendChild(el('span', 'fl-srank' + cls, String(i + 1)));
-      t.appendChild(el('span', 'fl-sname fl-sinit' + cls, r.initials));
+      t.appendChild(el('span', 'fl-sname fl-sinit' + cls, withTitle(r.initials, r.title || '')));
       t.appendChild(el('span', 'fl-snum' + cls, S.fmt(r.score)));
       const f = el('span', 'fl-sfav' + cls, characterOr(r.char).name);
       f.style.setProperty('--fc', characterOr(r.char).color);

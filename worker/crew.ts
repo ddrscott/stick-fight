@@ -32,6 +32,7 @@ import { type Env, claimRoom, sha256, PID_RE, cleanName, track } from "./env";
 import { isFighter } from "./roster";
 import { scoreCap, MAX_STAGE, MAX_FLOORS } from "../src/flow/scorecap.js";
 import { blockedName } from "../src/namefilter.js";
+import { TITLES } from "../src/career/rules.js";
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const CREW_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -51,7 +52,8 @@ const POST_GAP_MS = 20 * 1000;             // one score a member per 20 seconds 
 const POSTS_PER_DAY = 30;                  // and 30 a day
 const DAY_MS = 24 * 60 * 60 * 1000;
 const INITIALS_RE = /^[A-Z0-9]{3}$/;
-export type ScoreRow = { initials: string; score: number; char: string; reach: number; clear: number; at: number };
+// title: the poster's job title when they posted it (README, Progression), '' for a row from before titles
+export type ScoreRow = { initials: string; score: number; char: string; reach: number; clear: number; at: number; title: string };
 
 type Status = "lobby" | "ready" | "match";
 type Att = { mid: string; name: string; status: Status; readyAt: number; match: string };
@@ -85,6 +87,8 @@ export class Crew extends DurableObject<Env> {
       CREATE INDEX IF NOT EXISTS scores_kind ON scores (kind, score DESC);
       CREATE TABLE IF NOT EXISTS posts (member TEXT NOT NULL, at INTEGER NOT NULL);
     `);
+    // the poster's job title beside the initials (README, Progression; 2026-11-12): added to a crew made before it
+    try { this.ctx.storage.sql.exec("ALTER TABLE scores ADD COLUMN title TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
     this.schema = true;
     // a crew from before the matchup table: fill it once from the matches it still keeps (the last 300)
     if (this.meta("name") !== null && this.meta("fpairs") === null) {
@@ -332,7 +336,7 @@ export class Crew extends DurableObject<Env> {
   /** the two high score tables, best first (with: which member posted each row, for the lobby's YOU) */
   private boards(withMember = false): Record<ScoreKind, (ScoreRow & { member?: string })[]> {
     const read = (kind: ScoreKind) => this.sql<ScoreRow & { member: string }>(
-      `SELECT initials, score, char, reach, clear, at, member FROM scores WHERE kind = ? ORDER BY score DESC, at ASC LIMIT ${BOARD}`, kind)
+      `SELECT initials, score, char, reach, clear, at, title, member FROM scores WHERE kind = ? ORDER BY score DESC, at ASC LIMIT ${BOARD}`, kind)
       .map(({ member, ...r }) => (withMember ? { ...r, member } : r));
     return { arcade: read("arcade"), horde: read("horde") };
   }
@@ -362,6 +366,7 @@ export class Crew extends DurableObject<Env> {
     if (!kind || !INITIALS_RE.test(initials) || !isFighter(r.char) || !Number.isInteger(score) || score <= 0 || !Number.isInteger(reach)) return { error: "bad-score" };
     if (kind === "arcade" ? reach < 1 || reach > MAX_STAGE : reach < 0 || reach > MAX_FLOORS) return { error: "bad-score" };
     const clear = kind === "arcade" && r.clear === true && reach >= 6 ? 1 : 0;   // ALL CLEAR: past the boss
+    const title = typeof r.title === "string" && (TITLES as string[]).includes(r.title) ? r.title : "";   // a title from the ladder, or none
     if (score > scoreCap(kind, reach)) return { error: "too-high" };
     const now = Date.now();
     this.ctx.storage.sql.exec("DELETE FROM posts WHERE at < ?", now - DAY_MS);
@@ -369,8 +374,8 @@ export class Crew extends DurableObject<Env> {
     if (mine.length >= POSTS_PER_DAY || (mine.length && now - mine[0].at < POST_GAP_MS)) return { error: "slow-down" };
     const rank = this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec("INSERT INTO posts (member, at) VALUES (?, ?)", mid, now);
-      const id = this.sql<{ id: number }>("INSERT INTO scores (kind, at, member, initials, score, char, reach, clear) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-        kind, now, mid, initials, score, r.char, reach, clear)[0].id;
+      const id = this.sql<{ id: number }>("INSERT INTO scores (kind, at, member, initials, score, char, reach, clear, title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        kind, now, mid, initials, score, r.char, reach, clear, title)[0].id;
       // the table keeps its top 10 (an earlier score wins a tie)
       this.ctx.storage.sql.exec(`DELETE FROM scores WHERE kind = ? AND id NOT IN (SELECT id FROM scores WHERE kind = ? ORDER BY score DESC, at ASC, id ASC LIMIT ${BOARD})`, kind, kind);
       return this.sql<{ id: number }>(`SELECT id FROM scores WHERE kind = ? ORDER BY score DESC, at ASC, id ASC LIMIT ${BOARD}`, kind).findIndex((x) => x.id === id);

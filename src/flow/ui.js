@@ -414,6 +414,8 @@ function injectStyle() {
   .fl-btn.fl-pal.fl-pallock small { color: #ffc46b; }
   .fl-btn.fl-pal.fl-focus small { color: var(--deep); }
   .fl-select:not(.fl-tall) .fl-btn.fl-pal { min-height: max(34px, 5.6cqh); }
+  .fl-select:not(.fl-tall) .fl-info:has(.fl-pals) { gap: 0.5cqh; }
+  .fl-select:not(.fl-tall) .fl-info:has(.fl-pals) .fl-moves { margin-top: 0.2cqh; padding-top: 0.6cqh; gap: 0.3cqh; }
   .fl-palnote { min-height: 1.1em; font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.08em; color: #eadcff; }
   .fl-found { color: #c8ff3a; }
 
