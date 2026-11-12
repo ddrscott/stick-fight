@@ -74,7 +74,7 @@ try {
     // the mouse is where ARCADE was, which may be over a card: put the cursor on TEMP's (a hover focuses, a click picks)
     if (!touch) { await p.locator('#flow .fl-card', { hasText: /^TEMP$/ }).hover({ force: true }); await sleep(200); }
     const pal = p.locator('#flow .fl-pal');
-    check(`${label}: character select has the palette strip (MAIN + 3)`, (await pal.count()) === 4);
+    check(`${label}: character select has the palette strip (MAIN + 3 + the mastery palette)`, (await pal.count()) === 5);
     await pal.nth(3).click({ force: true }); await sleep(300);
     check(`${label}: a palette too dear says what it costs and what you have`, /CORPORATE COSTS 600 STICKS · YOU HAVE 300/.test(await p.locator('#flow .fl-palnote').innerText()));
     await pal.nth(1).click({ force: true }); await sleep(300);
@@ -164,7 +164,8 @@ try {
       await p.evaluate(() => { let last = performance.now(), k = 0; setInterval(() => { const now = performance.now(), ms = Math.min(100, now - last); last = now; if (++k % 12 === 0) window.__gauntlet.step(ms); else window.__game.advance(ms); }, 8); });
       return p;
     };
-    const H = await pg(BASE + 'play/', { xp: 150, sticks: 0, owned: ['temp:casualFriday'], equip: { temp: 'casualFriday' } }, 'HOSTY', 'a');
+    // the host has TEMP's taunt (fighter mastery 2) on: its look rides the start message as casualFriday+t
+    const H = await pg(BASE + 'play/', { xp: 150, sticks: 0, owned: ['temp:casualFriday', 'temp:taunt:taunt'], equip: { temp: 'casualFriday', 'temp:taunt': 'taunt' }, mastery: { temp: { xp: 300, n: 9 } } }, 'HOSTY', 'a');
     await H.evaluate(() => { const f = window.__flow.debug; f.go('modeSelect'); f.go('onlineMenu'); f.go('onlineHost'); });
     const code = await until(() => H.evaluate(() => (window.__net.state === 'waiting' && window.__net.code) || null), 30000);
     const G = await pg(`${BASE}room/${code}`, { xp: 0, sticks: 0, owned: ['courier:express'], equip: { courier: 'express' } }, 'GUESTY', 'b');
@@ -183,6 +184,8 @@ try {
     const gc = await G.evaluate(() => window.__game.sim.units.slice(0, 2).map((u) => u.color));
     check('online: the host\'s page draws both palettes (CASUAL FRIDAY, EXPRESS)', hc[0] === '#7dd3ff' && hc[1] === '#ffe066', hc.join(' '));
     check('online: the guest\'s page draws the same', gc[0] === '#7dd3ff' && gc[1] === '#ffe066', gc.join(' '));
+    const kits = await G.evaluate(() => window.__game.sim.units.map((u) => u.taunt));
+    check('online: the guest\'s sim has the host\'s taunt (fighter mastery) and none for itself', kits[0] === 'temp_taunt' && kits[1] === null, JSON.stringify(kits));
     if (SHOTS) { await G.evaluate(() => window.__gauntlet.step(0)); await G.screenshot({ path: `${SHOTS}/online-guest.png` }); }
     check('online: no page errors', !H.errors.length && !G.errors.length, [...H.errors, ...G.errors].join(' | '));
   }

@@ -45,7 +45,9 @@
     "test:closet": "node scripts/career/closet.mjs",
     "test:closet:ui": "node scripts/career/closet-ui.mjs",
     "test:shifts": "node scripts/career/shifts.mjs",
-    "test:shifts:ui": "node scripts/career/shifts-ui.mjs"
+    "test:shifts:ui": "node scripts/career/shifts-ui.mjs",
+    "test:mastery": "node scripts/career/mastery.mjs",
+    "test:mastery:ui": "node scripts/career/mastery-ui.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",

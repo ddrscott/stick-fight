@@ -394,6 +394,10 @@ function injectStyle() {
   .fl-tagline { font-size: 1.8cqw; font-weight: 500; letter-spacing: 0.1em; line-height: 1.05; color: rgba(230,214,255,0.85); }
   /* fighter mastery (src/flow/careerUI.js masteryChip): the sheet's line, and M2 in a card's corner. Plain, no glow */
   .fl-mastery { min-height: 1.2em; }
+  /* sideways the sheet is one fixed height, full already: the line sits in the empty corner over the big rig's head */
+  #flow .fl-select:not(.fl-tall) .fl-detail { position: relative; }
+  #flow .fl-select:not(.fl-tall) .fl-mastery { position: absolute; left: 1.4cqw; top: 1.4cqh; min-height: 0; }
+  #flow .fl-select:not(.fl-tall) .fl-mastery .ms-chip { flex-wrap: wrap; max-width: 13cqw; gap: 0.5cqh 0.6cqw; }
   .fl-card { position: relative; }
   .fl-card .fl-mrank { position: absolute; top: 0.5cqh; right: 0.35cqw; font: 600 1.25cqw/1 'Teko', sans-serif; letter-spacing: 0.06em; color: #ffb02e; text-shadow: none; }
   .fl-stats { display: grid; grid-template-columns: auto 1fr; column-gap: 1cqw; row-gap: 0.55cqh; align-items: center; margin-top: 0.4cqh; }
@@ -418,6 +422,8 @@ function injectStyle() {
   .fl-btn.fl-pal.fl-pallock small { color: #ffc46b; }
   .fl-btn.fl-pal.fl-focus small { color: var(--deep); }
   .fl-select:not(.fl-tall) .fl-btn.fl-pal { min-height: max(34px, 5.6cqh); }
+  /* five swatches (MAIN, three sold, the mastery palette): the tag stays on one line */
+  .fl-select:not(.fl-tall) .fl-pal small { font-size: 1.25cqw; letter-spacing: 0.04em; white-space: nowrap; }
   .fl-select:not(.fl-tall) .fl-info:has(.fl-pals) { gap: 0.5cqh; }
   .fl-select:not(.fl-tall) .fl-info:has(.fl-pals) .fl-moves { margin-top: 0.2cqh; padding-top: 0.6cqh; gap: 0.3cqh; }
   .fl-palnote { min-height: 1.1em; font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.08em; color: #eadcff; }

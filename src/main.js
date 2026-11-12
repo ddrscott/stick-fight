@@ -275,7 +275,8 @@ gameAudio.attach(sim);   // audio
 // endMatch goes to the flow (its VERSUS ONLINE end screen) when the flow is running, and only
 // falls back to the demo for a ?scene= page; online.js's own "rival left" panel is closed in favor of it
 const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), matchDetail: () => book.detail(),
-  palette: (id) => careerLook(id),   // the look: the palette id plus the mastery pose and taunt flags ('coldBrew+pt') title: () => career().title, botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()) }),
+  palette: (id) => careerLook(id), title: () => career().title,   // the look: the palette id plus mastery's pose and taunt flags ('coldBrew+pt')
+  botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()) }),
   endMatch: (reason) => { if (flow && flow.on) { flow.netEnded(reason); setTimeout(() => online.closeLobby(), 0); } else setScene('attract'); } });
 // bookkeeping online: count this match's effects from its start; the result itself goes through the room (online.js matchOver)
 online.on('start', (m) => book.begin({ mode: m.crew ? 'crew' : 'quick', local: m.localIndex }));

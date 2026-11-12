@@ -684,9 +684,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function freshState() {
     if (sim.units.length > 2) sim.units.length = 2;
     sim.units.forEach((u, i) => {
-      const { rig, controller, kind } = u;
+      const { rig, controller, kind, victory, taunt } = u;   // the character's look stays, fighter mastery's clips too
       for (const k of Object.keys(u)) delete u[k];
-      Object.assign(u, makeUnit(rig, i), { controller, kind });
+      Object.assign(u, makeUnit(rig, i), { controller, kind, victory: victory || null, taunt: taunt || null });
       if (typeof rig.reset === 'function') rig.reset({ full: true });
     });
     for (const k of Object.keys(reachSeen)) delete reachSeen[k];

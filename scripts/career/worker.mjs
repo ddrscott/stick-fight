@@ -17,11 +17,17 @@
 //   9. daily shifts (src/career/shifts.js): a reported match finishes one and pays it once, in D1; one swap a day and
 //      never a finished one; a guest's shift progress merges; the room moves each side's shifts from the agreed result
 //      (its fighter and rounds included), exactly as the page's own math says
+//  10. fighter mastery (src/career/mastery.js): a reported match pays the fighter played (NEW HIRE on a first match),
+//      in D1's fighter_xp; a rank reached puts its unlock in owned; a guest's mastery merges (larger, capped) with its
+//      unlocks; a pose or taunt switches on and off only once unlocked; a mastery-only palette can't be bought or
+//      equipped before its rank
 // Each run uses fresh emails, so it can run again (AUTH_LIMIT allows 20 sign-in calls a minute per IP: wait a minute
 // between runs). D1 is read with `wrangler d1 execute --local`. Exit code 1 on any failure.
 import { execFileSync } from 'node:child_process';
 import { blankCareer, OFFLINE_CAP, MERGE_MAX, PAY, DAILY, utcDay } from '../../src/career/rules.js';
 import { payMatch, shiftsFor, advanceShifts, SHIFT_PAY } from '../../src/career/shifts.js';
+import { payWithMastery, NEW_HIRE, MASTERY_MERGE_MAX, unlocksFor, rankFor } from '../../src/career/mastery.js';
+import { masteryPalette, palettesFor } from '../../src/career/palettes.js';
 // what a match pays today, shifts included (a test match can finish one of today's shifts, depending on the date)
 const payout = payMatch;
 
@@ -221,6 +227,40 @@ await sleep(61000);
   check('shifts: ...and isn\'t paid again on the account', !after.body.award.lines.some((l) => l.id === 'shift' && l.label.endsWith(list[slot].title)));
   const forged = await call('career/merge', 'POST', { career: { shifts: { day: '2020-01-01', swap: 1, prog: [9, 9, 9], done: [true, true, true] } } }, (await signIn('fred')).cookie);
   check('shifts: a guest\'s state from another day merges as nothing', forged.body.career.shifts.done.every((d) => !d) && forged.body.career.shifts.swap === -1);
+}
+
+// 10. fighter mastery
+{
+  const Mx = await signIn('mastery');
+  const m = match({ won: true, parries: 1, fighter: 'barista', rounds: 2, stage: 1 });
+  const r = await call('career/match', 'POST', { m }, Mx.cookie);
+  const want = payWithMastery(m, blankCareer(), today);
+  const a = r.body && r.body.award;
+  check('mastery: a reported match pays the fighter played its match XP plus NEW HIRE', a && a.mastery && a.mastery.fighter === 'barista' && a.mastery.hire === NEW_HIRE.xp && a.mastery.total === want.mastery.total && a.mastery.xp === a.match.xp, JSON.stringify(a && a.mastery));
+  const fx = () => JSON.parse(d1(`SELECT fighter_xp FROM accounts WHERE email = '${Mx.email}'`)[0].fighter_xp);
+  check('mastery: D1 fighter_xp has it, one match counted', fx().barista && fx().barista.xp === want.mastery.total && fx().barista.n === 1, JSON.stringify(fx()));
+  const g = await call('career/merge', 'POST', { career: { mastery: { barista: { xp: 99999, n: 2 }, chef: { xp: 700, n: 9 }, intern: { xp: 95, n: 9 }, nobody: { xp: 5000 } } } }, Mx.cookie);
+  const c = g.body && g.body.career;
+  check(`mastery: a guest's merges, the larger of each, capped at ${MASTERY_MERGE_MAX.fighter} a fighter, unknown fighters dropped`, c && c.mastery.barista.xp === MASTERY_MERGE_MAX.fighter && c.mastery.barista.n === 2 && c.mastery.chef.xp === 700 && !c.mastery.nobody, JSON.stringify(c && c.mastery));
+  const want4 = unlocksFor('barista').filter((u) => u.rank <= rankFor(MASTERY_MERGE_MAX.fighter).rank).map((u) => u.key);
+  check('mastery: ...with every unlock the merged ranks earned in owned, the pose and taunt on', c && want4.every((k) => c.owned.includes(k)) && c.owned.includes('chef:taunt:taunt') && !c.owned.includes('chef:pose:victory')
+    && c.equip['barista:pose'] === 'victory' && c.equip['chef:taunt'] === 'taunt', JSON.stringify(c && { owned: c.owned, equip: c.equip }));
+  const up = await call('career/match', 'POST', { m: match({ won: true, fighter: 'intern' }) }, Mx.cookie);
+  const ip = palettesFor('intern')[0];
+  check('mastery: a match that reaches rank 1 puts its unlock in owned, no sticks spent', up.body && up.body.award.mastery.after === 1 && up.body.career.owned.includes(`intern:${ip.id}`) && up.body.career.sticks === c.sticks + up.body.award.sticks, JSON.stringify(up.body && up.body.award.mastery));
+  const off = await call('career/equip', 'PUT', { fighter: 'barista', kind: 'pose', id: '' }, Mx.cookie);
+  check('mastery: the pose switches off', off.body && off.body.career && !off.body.career.equip['barista:pose']);
+  const on = await call('career/equip', 'PUT', { fighter: 'barista', kind: 'pose', id: 'victory' }, Mx.cookie);
+  check('...and on', on.body && on.body.career && on.body.career.equip['barista:pose'] === 'victory');
+  const no = await call('career/equip', 'PUT', { fighter: 'chef', kind: 'pose', id: 'victory' }, Mx.cookie);
+  check('mastery: a pose not unlocked yet can\'t be switched on', no.body && no.body.error === 'not-owned');
+  const mp = masteryPalette('chef');
+  const buy = await call('career/buy', 'POST', { fighter: 'chef', id: mp.id }, Mx.cookie);
+  check('mastery: the mastery palette can\'t be bought', buy.status === 400 && buy.body.error === 'unknown');
+  const eq = await call('career/equip', 'PUT', { fighter: 'chef', id: mp.id }, Mx.cookie);
+  check('mastery: ...or put on before its rank', eq.body && eq.body.error === 'not-owned');
+  const db = JSON.parse(d1(`SELECT owned FROM accounts WHERE email = '${Mx.email}'`)[0].owned);
+  check('mastery: D1 owned holds the poses and taunts by key', db.includes('barista:pose:victory') && db.includes('barista:taunt:taunt'), JSON.stringify(db));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
