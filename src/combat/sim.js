@@ -503,7 +503,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function launchRagdoll(u, vx, vy) {
     const joints = {};
     for (const k in u.rig.joints) joints[k] = { x: u.rig.joints[k].x - u.x, y: u.rig.joints[k].y - u.y };
-    sim.ragdolls.push({ x: u.x, y: u.y, floorY: u.y, vx, vy, facing: u.facing, color: u.color, radius: u.rig.radius, joints, grounded: false, spin: 0 });
+    // the floor under him: a juggled or launched body is up in the air, and its y is no floor to land on
+    const floorY = u.grounded ? u.y : onStair(u) ? stairY(u.stair, u.x) : floorInfo(u.floor || 0).y;
+    sim.ragdolls.push({ x: u.x, y: Math.min(u.y, floorY), floorY, vx, vy, facing: u.facing, color: u.color, radius: u.rig.radius, joints, grounded: false, spin: 0 });
   }
   function stepRagdolls() {
     const hero = sim.units[0];
@@ -2423,7 +2425,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     credit(att, fd, true, move);   // armor soaked it: paid like a block
     note({ type: 'armor', att: att.id, def: def.id, move, dmg });
     onEvent({ type: 'hit', x: pt.x - dir * 10, y: pt.y, dir, strength: 0.5, move, limb: fd.limb, flashR: 24, ko: def.health <= 0, knockdown: false, armor: true, attacker: att, defender: def });
-    if (def.health <= 0) koDefender(att, def, fd, dir);
+    if (def.health <= 0) knockOut(att, def, fd, dir, 'armor');
     else { syncRig(def); seatStrike(att, def, dir); }
   }
   function parry(att, def, pt, dfd) {
@@ -2489,7 +2491,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       credit(att, fd, false, move);
       note({ type: 'hit', move, height: fd.height, att: att.id, def: def.id, counter: true, wake: true, combo: def.combo });
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.6, move, limb: fd.limb, flashR: fd.flashR, ko: def.health <= 0, knockdown: true, counter: true, attacker: att, defender: def });
-      if (def.health <= 0) { koDefender(att, def, fd, dir); return; }
+      if (def.health <= 0) { knockOut(att, def, fd, dir, 'wake'); return; }
       restDown(def, hip);
       def.otgHit = true;   // it took its ground hit: no stomp on top
       return;
@@ -2562,11 +2564,13 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       att.hitstop = def.hitstop = f60(ko ? 8 : 5); att.vx = 0;
       def.launchedBy = att.id; def.launchStep = sim.stepCount;
       att.launchCancelAt = sim.stepCount + att.hitstop + 4;
-      if (ko) koDefender(att, def, fd, dir);
+      const goon = ko && isGoon(def);
+      if (ko && !goon) koDefender(att, def, fd, dir);
       att.releaseEv = { type: 'release', x: pt.x, y: pt.y, dir, strength: 0.6, ko };
       credit(att, fd, false, move);
       note({ type: 'hit', move, att: att.id, def: def.id, air: def.airHits, splat });
       onEvent({ type: 'hit', x: pt.x, y: pt.y, dir, strength: 0.6, move, limb: fd.limb, flashR: 30, ko, knockdown: true, attacker: att, defender: def });
+      if (goon) goonKO(att, def, fd, dir, 'juggle');
       return;
     }
     // the universal parry: tapped toward him in the last PARRY.win steps, standing for a high, a mid or an air
@@ -2631,16 +2635,10 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (fd.kb.y) { def.vy = -fd.kb.y * def.char.kbY; def.grounded = false; }
     if (fd.knockdown) { att.vx = dir * (fd.kb.x + 100); att.followThrough = true; att.chase = true; }   // ride the launch: be on the body when it lands
     else { att.vx = 0; att.followThrough = false; }   // the seat sets contact spacing; no slide in
-    if (ko && sim.horde && def.id >= 1) {
-      // horde: the goon flies off as a ragdoll and the next goon is already running in
-      syncRig(def); rigUpd(def, 0.05);
-      launchRagdoll(def, dir * Math.max(fd.kb.x, 380), -Math.max(fd.kb.y, 300));
-      att.vx = dir * 60; att.followThrough = false; att.chase = false;
-      att.launchCancelAt = sim.stepCount + att.hitstop + 8;   // straight on to the next goon
-      sim.horde.count++; sim.card = { text: `${sim.horde.count} DOWN`, t: 0.9 };
+    if (ko && isGoon(def)) {
       onEvent({ type: 'hit', x: hp.x, y: hp.y, dir, strength: 1, move, limb: fd.limb, flashR: fd.flashR, ko: true, knockdown: true, attacker: att, defender: def });
       credit(att, fd, false, move);
-      goonDown(def);
+      goonKO(att, def, fd, dir, fd.throw ? 'throw' : 'plain');
       return;
     }
     if (ko) koDefender(att, def, fd, dir);
@@ -2835,7 +2833,27 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     sim.perfectT = -2;
     return false;
   }
+  // Every way a hit can take the last point goes through knockOut. In horde a goon going down is never the
+  // round's KO: only the hero (unit 0) going down ends a run. The site sends its own `hit` event (ko: true),
+  // which is what the flow scores (goonDown, run.goons), so nothing here sends another.
+  const isGoon = (u) => !!sim.horde && u.id >= 1;
+  function knockOut(att, def, fd, dir, how) {
+    if (isGoon(def)) goonKO(att, def, fd, dir, how); else koDefender(att, def, fd, dir);
+  }
+  // horde: the goon flies off as a ragdoll, joins the pile, and the next goon is already running in
+  // how: which hit did it (plain, throw, juggle, wake, armor), for the log
+  function goonKO(att, def, fd, dir, how) {
+    def.grabbedBy = -1; def.grabTo = null;
+    syncRig(def); rigUpd(def, 0.05);
+    launchRagdoll(def, dir * Math.max(fd.kb.x, 380), -Math.max(Math.abs(fd.kb.y), 300));
+    att.vx = dir * 60; att.followThrough = false; att.chase = false; att.glide = null;
+    att.launchCancelAt = sim.stepCount + att.hitstop + 8;   // straight on to the next goon
+    sim.horde.count++; sim.card = { text: `${sim.horde.count} DOWN`, t: 0.9 };
+    note({ type: 'goonDown', att: att.id, def: def.id, count: sim.horde.count, how: how || 'other' });
+    goonDown(def);
+  }
   function koDefender(att, def, fd, dir) {
+    if (isGoon(def)) { console.warn('[combat] koDefender on a horde goon: sent down the goon path instead'); goonKO(att, def, fd, dir); return; }
     // the knockdown clip lands sprawled; the ko clip ends as a flat bar
     def.state = 'ko'; def.koDone = false; def.landJoints = null; safePlay(def.rig, 'knockdown');
     def.splatPending = false; def.wallBounce = false; def.groundBounce = false;
@@ -3065,6 +3083,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (loser && !loser.hidden) { arena.addBody(snapshot(loser)); loser.hidden = true; onEvent({ type: 'body', x: loser.x, y: loser.y, unit: loser }); }
         sim.phaseTimer -= DT;
         if (sim.phaseTimer > 0) break;
+        if (sim.horde && sim.units[0] && sim.units[0].state !== 'ko' && sim.units[0].health > 0) {
+          // belt and braces: a horde round only ends with the hero down; anything else carries on
+          console.warn('[combat] horde KO without the hero down (winner ' + sim.winner + '): the run carries on');
+          sim.phase = 'fight'; sim.banner = ''; sim.winner = -1; sim.finisher = false; sim.koSlow = 0;
+          break;
+        }
         if (sim.winner >= 0) sim.wins[sim.winner]++;
         const need = sim.winsNeeded || WINS_NEEDED;   // best of 2n-1: the last round drawn ends it too
         if (sim.horde || sim.wins[0] >= need || sim.wins[1] >= need || (sim.winner < 0 && sim.round >= 2 * need - 1)) {

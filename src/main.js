@@ -31,6 +31,8 @@ import { createBook } from './bookkeeping.js';   // match bookkeeping: one resul
 import { track, trackAll } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
 import { readDevice, startTier, perfLabels, boundBucket } from './device.js';   // the capability check: where AUTO starts, and the perf event's buckets
 import { gfxPick, onGfxPick, rememberedTier, rememberTier, setLiveTier } from './gfxPrefs.js';   // SETTINGS, GRAPHICS, and the tier this device settled on
+// horde-ko-test's state (installHordeKo, below): its results and the goons it saw go down
+const hordeKoTest = { results: [], done: false, phase: -1, koEvents: 0, onEvent: null };
 
 const W = 1280, H = 720;
 const P1_COLOR = '#f0f0f0', P2_COLOR = '#E85D00';
@@ -251,6 +253,7 @@ function onEvent(ev) {
       break;
     }
   }
+  if (hordeKoTest.onEvent) hordeKoTest.onEvent(ev);   // horde-ko-test counts the goons the flow would
   if (flow && flow.on) flow.event(ev);   // flow: scoring
 }
 
@@ -850,6 +853,109 @@ function syncMirror() {
   try { gameAudio.setMirror(on); } catch (e) { /* audio off */ }
 }
 
+// horde-ko-test (README, Arcade flow, Horde): one horde run, a scripted hero putting goons down every way a hit can
+// take a goon's last point, in order: a plain hit, a launcher into a juggle finisher, a counter on a wake-up strike, a
+// hit through armor (a CHEF goon's CLEAVER: real goons are all TEMP, who has no armored move, so this one is borrowed),
+// and a throw. That's the first floor's wave of 5, so the last one clears the floor. Then on the next floor a goon
+// KOs the hero and the run ends. Each phase moves the goon in front of the hero, sets its health so the named hit is
+// the one that KOs, and waits for the count. hordeKoTest.results holds what each phase saw; installHordeKo() also
+// runs it on a run the arcade flow started (scripts/horde/check.mjs), where the flow's own run.goons counts.
+const HKO_PHASES = [
+  { name: 'plain jab KOs a goon', kind: 'plain', hp: 1, gap: 78,
+    hero: (me, g, t) => (t === 12 ? { lp: true } : {}) },
+  { name: 'launcher d+2, the juggle jab KOs it', kind: 'juggle', hp: 40, gap: 72,
+    hero: (me, g, t) => (t >= 10 && t < 13 ? D('rp') : t > 40 && g.state === 'knockdown' && t % 8 === 0 ? { lp: true } : {}),
+    each: (g, t) => { if (t > 20 && g.state === 'knockdown' && g.health > 1 && !g.grounded) g.health = 1; } },
+  // the wake kick rises through anything during its startup (steps 110 to 127 here), so he steps back out of its reach
+  // and sweeps the body while the kick is out and he still lies there (128 to 159)
+  { name: 'sweep, then a counter on his WAKE KICK while he lies there KOs it', kind: 'wake', hp: 40, gap: 80,
+    hero: (me, g, t) => (t >= 10 && t < 13 ? D('rk') : t > 60 && t < 80 ? { dx: -me.facing } : t >= 130 && t < 133 ? D('rk') : {}),
+    goon: (me, h, t) => (me.state === 'down' && t >= 110 && t < 113 ? { lk: true } : {}),
+    each: (g) => { if (isWakeOf(g) && g.wakeUp === 1) g.health = 1; } },
+  { name: "a jab through a CHEF goon's CLEAVER armor KOs it", kind: 'armor', hp: 1, gap: 92, char: 'chef',
+    hero: (me, g, t) => (g.state === 'attack' && g.move && sim.FRAME_DATA[g.move].armor && g.armorLeft > 0 && t % 3 === 0 ? { lp: true } : {}),
+    goon: (me, h, t) => (t >= 10 && t < 13 ? { rp: true, dx: -me.facing } : {}) },
+  { name: 'a throw KOs the last goon of the wave: FLOOR CLEAR', kind: 'throw', hp: 1, gap: 70,
+    hero: (me, g, t) => (t === 12 ? { lp: true, lk: true } : {}) },
+  { name: 'next floor: a goon KOs the hero, the run ends', kind: 'hero', hp: 40, gap: 78, heroKO: true,
+    hero: () => ({}), goon: (me, h, t) => (t % 10 === 0 ? { lp: true } : {}) },
+];
+function installHordeKo(o = {}) {
+  const T = hordeKoTest; T.results = []; T.done = false; T.phase = o.only != null ? +o.only : 0;
+  let t = 0, target = null, count0 = 0, goons0 = 0, wait = 0, char0 = null, phaseStep = 0;
+  const live = () => sim.units.filter(u => u.id >= 1 && !u.hidden);
+  const goonCtl = () => (me, opp, s) => {
+    const ph = HKO_PHASES[T.phase];
+    if (!ph || s.phase !== 'fight' || me !== target || !ph.goon || wait) return EMPTY_INPUT;
+    return { ...EMPTY_INPUT, ...ph.goon(me, sim.units[0], t) };
+  };
+  const ctlAll = () => { for (const u of sim.units) if (u.id >= 1) sim.setController(u.id, 'script', goonCtl()); };
+  // what the flow counted (run.goons) when the flow runs this, else the same rule counted off the hit events here
+  const flowGoons = () => (flow && flow.on && flow.debug.run ? flow.debug.run.goons : T.koEvents);
+  const begin = () => {
+    const ph = HKO_PHASES[T.phase], H = sim.horde, me = sim.units[0];
+    target = live()[0] || null; t = 0; wait = 0; phaseStep = sim.stepCount;
+    count0 = H.count; goons0 = flowGoons();
+    sim.phaseName = `${T.phase + 1}/${HKO_PHASES.length} ${ph.name}`;
+    if (!target) return;
+    if (ph.char) { char0 = target.char.id; sim.setCharacter(target.id, ph.char); }
+    // the goon steps in front of the hero, the rest wait out of reach
+    const side = me.x < (sim.bounds.x0 + sim.bounds.x1) / 2 ? 1 : -1;
+    const put = (u, x) => { u.x = x; u.vx = 0; u.state = 'idle'; u.facing = me.x > x ? 1 : -1; u.rig.x = x; u.rig.facing = u.facing; u.floor = me.floor; u.stair = me.stair; u.y = me.y; u.rig.y = me.y; u.grounded = true; u.rig.update(0); sim.rigUpd(u, 0); };
+    put(target, me.x + side * ph.gap);
+    me.facing = side; me.rig.facing = side; me.state = 'idle'; me.vx = 0; me.rig.update(0); sim.rigUpd(me, 0);
+    for (const u of live()) if (u !== target) put(u, Math.max(sim.bounds.x0 + 40, Math.min(sim.bounds.x1 - 40, me.x - side * 600)));
+    target.health = ph.hp; target.stamina = target.staminaMax || 100; me.stamina = me.staminaMax || 100;
+    if (ph.heroKO) me.health = 1; else me.health = me.maxHealth || 100;
+    ctlAll();
+  };
+  const finish = (r) => {
+    T.results.push({ phase: T.phase, name: HKO_PHASES[T.phase].name, kind: HKO_PHASES[T.phase].kind, ...r });
+    if (char0 && target) { sim.setCharacter(target.id, char0); char0 = null; }
+    if (o.only != null || T.phase >= HKO_PHASES.length - 1) { T.done = true; T.phase = HKO_PHASES.length; sim.phaseName = 'done'; return; }
+    T.phase++; wait = 1;
+  };
+  T.koEvents = 0;
+  T.onEvent = (ev) => {
+    if (ev.type === 'hit' && ev.ko && ev.attacker && ev.attacker.id === 0 && ev.defender && ev.defender.id >= 1) T.koEvents++;
+    // the run's end (controllers aren't asked for input once the fight is over, so the event says it)
+    if (ev.type === 'match' && !T.done && HKO_PHASES[T.phase]) {
+      const me = sim.units[0];
+      if (HKO_PHASES[T.phase].heroKO) finish({ ok: me.health <= 0, heroDown: me.health <= 0, banner: sim.banner, winner: sim.winner });
+      else finish({ ok: false, why: `the run ended (${sim.banner}) during a goon phase, hero hp ${me.health}` });
+    }
+  };
+  const hero = (me, opp, s) => {
+    if (T.done) return EMPTY_INPUT;
+    const H = sim.horde, ph = HKO_PHASES[T.phase];
+    if (!H) return EMPTY_INPUT;
+    if (s.phase !== 'fight') return EMPTY_INPUT;
+    // a second goon comes in with the AI (goonDown makes it so): every goon stays on the script
+    if (sim.units.some(u => u.id >= 1 && u.kind !== 'script')) ctlAll();
+    // between phases: wait for the next goon in the door (and for the next floor's wave after a FLOOR CLEAR)
+    if (wait) {
+      wait++;
+      if (H.transit || !live().length || wait < 50 || (wait < 400 && (me.state !== 'idle' || !me.grounded))) return EMPTY_INPUT;
+      begin(); return EMPTY_INPUT;
+    }
+    if (!target) begin();
+    t++;
+    if (ph.each && target) ph.each(target, t);
+    if (!ph.heroKO && H.count !== count0) {
+      const down = sim.log.filter(r => r.type === 'goonDown' && r.step >= phaseStep).pop(), how = down ? down.how : '?';
+      // the flow counts the KO when its hit event goes out; give it the step
+      const d = { how, countUp: H.count - count0, goonsUp: flowGoons() - goons0, count: H.count, wave: H.wave ? `${H.wave.downed}/${H.wave.size}` : '-',
+        floorsCleared: H.floorsCleared, card: sim.card && sim.card.text, simPhase: s.phase, heroHp: me.health };
+      d.ok = d.how === ph.kind && d.countUp === 1 && d.goonsUp === 1 && s.phase === 'fight';
+      finish(d); return EMPTY_INPUT;
+    }
+    if (t > 600) { finish({ ok: false, why: `no KO in 10 s (goon ${target && target.state} hp ${target && target.health})` }); return EMPTY_INPUT; }
+    return { ...EMPTY_INPUT, ...ph.hero(me, target, t) };
+  };
+  sim.horde.goonsAI = false;
+  sim.setController(0, 'script', hero);
+  ctlAll();
+}
 const scenes = {
   play(o) { sim.setHuman(0); sim.setAI(1, 0.6); sim.resetMatch({ seed: seedOf(o, 1) }); },
   idle(o) { sim.setController(0, 'none'); sim.setController(1, 'none'); sim.resetMatch({ seed: seedOf(o, 1), skipIntro: true }); },
@@ -916,6 +1022,7 @@ const scenes = {
   horde(o) { sim.setHuman(0); sim.setAI(1, 0.45); sim.resetMatch({ seed: seedOf(o, 5), horde: { goonHealth: 30, goonDifficulty: 0.45, heal: 10 } }); },
   // v3: horde floor by floor, a strong AI hero against light goons so floors clear inside a capture
   'horde-floors-ai'(o) { sim.setAI(0, 1.0); sim.setAI(1, 0.05); sim.resetMatch({ seed: seedOf(o, 9), skipIntro: true, horde: { goonHealth: 7, goonDifficulty: 0.02, heal: 40 } }); },
+  'horde-ko-test'(o) { sim.resetMatch({ seed: seedOf(o, 3), skipIntro: true, horde: { goonHealth: 40, goonDifficulty: 0.3, heal: 10 } }); installHordeKo(o); },
   'horde-ai'(o) { sim.setAI(0, 1.0); sim.setAI(1, 0.1); sim.resetMatch({ seed: seedOf(o, 5), skipIntro: true, horde: { goonHealth: 10, goonDifficulty: 0.05, heal: 45 } }); },
   // Two aggressive AIs on short health: each round ends in a few hits, so a full
   // best-of-3 and its body pile fit in a capture.
@@ -1091,6 +1198,7 @@ const PICKED_RULES = new Set(['arcade', 'horde', 'dummy']);
 function setScene(name, opts) {
   if (!scenes[name]) name = 'play';
   sceneName = name;
+  hordeKoTest.onEvent = null;   // horde-ko-test stops following when the scene changes (its own scene sets it again)
   book.cancel();   // a match cut short (a restart, the menu, the demo) is never reported; whoever starts the next one begins it
   sim.setCharacters(pickChars(name, opts));
   syncMirror();
@@ -1809,7 +1917,7 @@ window.__gauntlet = {
   step(ms) { driven = true; lastFrameMs = ms; advance(ms); render(); },
   ready: false,   // true once fonts are in and the first frame has rendered
 };
-window.__game = { caches: { bg: bgCache, emi: emiCache }, drawState, sim, camera, fx, perfectFX, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
+window.__game = { caches: { bg: bgCache, emi: emiCache }, drawState, sim, hordeKoTest, installHordeKo, camera, fx, perfectFX, arena, fighters, roster, getCharacter, setScene(name, opts) { flow.off(); setScene(name, opts); }, advance, flow, get attract() { return attract; }, get sceneName() { return sceneName; },
   // measurement hooks: a frame stepped without drawing (the draw smoothing still runs), and where a body is drawn
   stepQuiet(ms) { driven = true; lastFrameMs = ms; advance(ms); for (const u of sim.units) if (!u.hidden) frameDraw(u); fitCameraToDrawn(); },
   drawn: (u) => drawnPoints(u), poseState, life,
