@@ -371,13 +371,19 @@ async function app(req: Request, env: Env, ctx: ExecutionContext): Promise<Respo
       return json({ wiped: await env.CREWS.get(env.CREWS.idFromName(parts[1].toLowerCase())).devExpire() });
     }
 
+    // test hook, only with DEV_HOOKS=1: this week's crew goal made small ({ target, kind? }), so a test can meet it
+    if (env.DEV_HOOKS === "1" && parts.length === 3 && parts[0] === "crews" && parts[2] === "dev-goal" && req.method === "POST") {
+      const body = await req.json<{ target?: number; kind?: string; fresh?: boolean }>().catch(() => ({} as { target?: number; kind?: string; fresh?: boolean }));
+      return json({ goal: await env.CREWS.get(env.CREWS.idFromName(parts[1].toLowerCase())).devGoal(Number(body.target) || 1, body.kind, body.fresh === true) });
+    }
+
     const admin = await handleAdmin(req, env, parts);   // acting on a report: rename or close a crew (worker/admin.ts)
     if (admin) return admin;
 
     const auth = await handleAuth(req, env, parts);
     if (auth) return auth;
 
-    const career = await handleCareer(req, env, parts);   // career XP, sticks and palettes (worker/career.ts)
+    const career = await handleCareer(req, env, parts, ctx);   // career XP, sticks and palettes (worker/career.ts)
     if (career) return career;
 
     return notFound();

@@ -26,11 +26,15 @@
 //   offline (arcade, horde) the page reports it here. Nothing can check it, so what offline play pays a day is
 //                         capped (OFFLINE_CAP): sticks only buy cosmetics, so a forged result isn't worth more.
 //   training, the dummy   nothing.
+//   crew goals            the crew's Durable Object (worker/crew.ts) pays a met weekly goal: awardCrewGoal. A
+//                         signed-in player's paid arcade stage or horde run also counts toward each of their crews'
+//                         goals (crewSolo, after the award; README, Crew rooms, Crew goals).
 // The merge takes the larger of each number (never the sum, so signing in twice adds nothing), up to MERGE_MAX,
 // and the union of owned palettes.
 import { type Env, json, allowed, BUSY } from "./env";
 import { currentEmail } from "./auth";
-import { blankCareer, utcDay, MERGE_MAX, OFFLINE_MODES, ONLINE_MODES, titleFor, cleanPto, settlePto } from "../src/career/rules.js";
+import { blankCareer, utcDay, MERGE_MAX, OFFLINE_MODES, ONLINE_MODES, titleFor, cleanPto, settlePto, applyAward } from "../src/career/rules.js";
+import { GOAL_PAY, soloCounts } from "../src/career/crewgoal.js";
 import { palette, itemKey } from "../src/career/palettes.js";
 import { cleanShifts, swapShift, mergeShifts } from "../src/career/shifts.js";
 import { payWithMastery, applyWithMastery, isOwnable, cleanMastery, mergeMastery, grantAll, kitKey, kitItemKey, MASTERY_FIGHTERS } from "../src/career/mastery.js";
@@ -146,6 +150,34 @@ export async function awardOnline(env: Env, email: string, mode: string, side: 0
   return m ? awardMatch(env, email, m) : null;
 }
 
+/** A met crew goal's bonus (worker/crew.ts payOwed), paid to the account signed in on that member's socket.
+ *  "mismatch" when that account isn't this player id (the crew pays it as a guest's), null on any failure. */
+export async function awardCrewGoal(env: Env, email: string, pid: string): Promise<{ career: ReturnType<typeof view> } | "mismatch" | null> {
+  try {
+    const acct = await env.DB.prepare("SELECT player_id FROM accounts WHERE email = ?").bind(email).first<{ player_id: string }>();
+    if (!acct) return null;
+    if (acct.player_id !== pid) return "mismatch";
+    const award = { lines: [], xp: GOAL_PAY.xp, sticks: GOAL_PAY.sticks, firstWin: false, firstOnline: false, capped: false, offline: false, match: { xp: 0, sticks: 0 } };   // nothing but the bonus
+    const r = await update(env, email, (c) => ({ next: applyAward(c, award) as Career, out: null }));
+    return r ? { career: view(r.career) } : null;
+  } catch (e) { console.error("career: crew goal failed", e); return null; }
+}
+
+/** A signed-in player's paid solo match counts toward each of their crews' weekly goals (the crew checks they're a
+ *  member and caps it at SOLO_PER_DAY). A match the offline cap zeroed, or one cut short, counts nowhere. */
+async function crewSolo(env: Env, email: string, m: NonNullable<ReturnType<typeof cleanMatch>>, paidXp: number) {
+  const c = soloCounts(m);
+  if (!c.matches || !(paidXp > 0)) return;
+  const acct = await env.DB.prepare("SELECT player_id, crews FROM accounts WHERE email = ?").bind(email).first<{ player_id: string; crews: string }>();
+  if (!acct) return;
+  const slugs = new Set<string>();
+  for (const x of parseJson<unknown[]>(acct.crews, [])) {
+    const slug = x && typeof x === "object" ? String((x as { slug?: unknown }).slug || "") : "";
+    if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length <= 40) slugs.add(slug);
+  }
+  await Promise.allSettled([...slugs].slice(0, 20).map((slug) => env.CREWS.get(env.CREWS.idFromName(slug)).solo(acct.player_id, c)));
+}
+
 /** a guest's progress over the account's: the larger of each, the union of what's owned, then every unlock the
  *  merged mastery ranks have earned */
 function merge(c: Career, raw: unknown): Career {
@@ -178,7 +210,7 @@ function mergeCareer(c: Career, raw: unknown): Career {
   return out;
 }
 
-async function route(req: Request, env: Env, path: string): Promise<Response> {
+async function route(req: Request, env: Env, path: string, ctx?: ExecutionContext): Promise<Response> {
   const email = await currentEmail(req, env);
   if (path === "GET career") {
     const c = email ? await load(env, email) : null;
@@ -190,6 +222,10 @@ async function route(req: Request, env: Env, path: string): Promise<Response> {
     const m = cleanMatch(body.m, OFFLINE_MODES);
     if (!m) return json({ error: "bad-match" }, 400);
     const r = await awardMatch(env, email, m);
+    if (r) {
+      const goal = crewSolo(env, email, m, r.award.match.xp).catch((e) => console.error("career: crew solo failed", e));   // their crews' weekly goals
+      if (ctx) ctx.waitUntil(goal); else await goal;
+    }
     return r ? json(r) : json({ error: "unavailable" }, 503);
   }
   if (path === "POST career/merge") {
@@ -246,12 +282,12 @@ async function route(req: Request, env: Env, path: string): Promise<Response> {
 }
 
 /** The career routes (parts after /api/), or null when it isn't one. */
-export async function handleCareer(req: Request, env: Env, parts: string[]): Promise<Response | null> {
+export async function handleCareer(req: Request, env: Env, parts: string[], ctx?: ExecutionContext): Promise<Response | null> {
   if (parts[0] !== "career") return null;
   const path = `${req.method} ${parts.join("/")}`;
   if (!["GET career", "POST career/match", "POST career/merge", "POST career/buy", "PUT career/equip", "POST career/shifts/swap"].includes(path)) return json({ error: "not found" }, 404);
   // a body that changes something must be JSON: a cross-site form can't send that without a preflight
   if (req.method !== "GET" && !(req.headers.get("content-type") || "").includes("application/json")) return json({ error: "expected JSON" }, 415);
   if (!(await allowed(env.CAREER_LIMIT, req))) return json({ error: "busy", message: BUSY }, 429, { "retry-after": "60" });
-  try { return await route(req, env, path); } catch (e) { console.error("career:", e); return json({ error: "unavailable" }, 503); }
+  try { return await route(req, env, path, ctx); } catch (e) { console.error("career:", e); return json({ error: "unavailable" }, 503); }
 }

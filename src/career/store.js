@@ -8,6 +8,8 @@
 //   reportMatch(m)         a match closed (src/bookkeeping.js onClose): pay it. m: { mode, won, cut, fought, parries,
 //                          punishes, enders, accidents, perfects, floors }
 //   fromRoom(msg)          the room's award for an online match ({ t:'sys', ev:'career', award, career })
+//   fromCrewGoal(msg)      a crew's met weekly goal paying this player ({ t:'goalpay', crew, week, award, career? },
+//                          worker/crew.ts): signed in, the account's numbers; a guest adds it here, once per crew and week
 //   last()                 the latest award: { award, before, after, promoted, at, mode, pending } or null
 //   syncCareer()           match this device to whoever is signed in: a guest's progress merges into the account
 //                          the first time (the larger of each number), a signed-out device starts fresh
@@ -142,6 +144,28 @@ export function fromRoom(msg) {
     setLast(prior, read().career, msg.award || lastAward.award, lastAward.mode, false);
   } else if (msg.award) setLast(before, read().career, msg.award, 'quick', false);
   changed();
+}
+
+/** A crew's weekly goal was met and paid this player (README, Crew rooms, Crew goals). Signed in, the crew paid the
+ *  account and sent its numbers; a guest's page adds the bonus itself, once per crew and week (kept beside the career,
+ *  not in it, so a merge never carries it). Returns the award when it changed anything, for the lobby to say so. */
+export function fromCrewGoal(msg) {
+  if (!msg || !msg.award) return null;
+  const s = read(), p = profile();
+  const key = `${String(msg.crew || '')}:${String(msg.week || '')}`;
+  const award = { lines: Array.isArray(msg.award.lines) ? msg.award.lines : [], xp: Math.max(0, Math.min(1000, Math.floor(Number(msg.award.xp) || 0))), sticks: Math.max(0, Math.min(1000, Math.floor(Number(msg.award.sticks) || 0))) };
+  const before = s.career;
+  if (msg.career && p.email) {
+    adopt(msg.career, p.email);
+  } else {
+    if (p.email && s.email === p.email) return null;   // a signed-in mirror only takes the account's word
+    const paid = Array.isArray(s.crewPaid) ? s.crewPaid.filter((k) => typeof k === 'string') : [];
+    if (paid.includes(key)) return null;
+    write({ ...s, career: { ...before, xp: before.xp + award.xp, sticks: before.sticks + award.sticks }, crewPaid: [key, ...paid].slice(0, 30) });
+  }
+  setLast(before, read().career, { ...award, firstWin: false, firstOnline: false, capped: false, offline: false, match: { xp: 0, sticks: 0 } }, 'crew', false);
+  changed();
+  return award;
 }
 
 let syncing = null;
