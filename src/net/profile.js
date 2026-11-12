@@ -19,6 +19,8 @@
 //   startSignIn(email)        { ok, devCode?, devLink? } or { error }
 //   verifySignIn(email, code) { ok, restored } or { error, left? }
 //   signOut()                 ends the session and forgets this device's profile (a fresh id)
+//   deleteProfile()           deletes the account on the server (and takes this player out of its
+//                             crews), then forgets this device's profile as signOut does. { ok, crews } or { error }
 
 import { apiUrl } from './link.js';
 import { touchPref, mergeTouchPref, onTouchPref } from '../touchPrefs.js';
@@ -162,4 +164,12 @@ export async function verifySignIn(email, code) {
 export async function signOut() {
   try { await api('auth/logout', 'POST', {}); } catch { /* the cookie goes when it expires */ }
   write({ id: newId(), name: '', email: '', crews: [] });
+}
+export async function deleteProfile() {
+  let r;
+  try { r = await api('me', 'DELETE', { crews: read().crews }); } catch { r = { error: 'unreachable' }; }
+  if (!r || r.error) return r || { error: 'unreachable' };
+  write({ id: newId(), name: '', email: '', crews: [] });
+  syncing = null;
+  return { ok: true, crews: r.crews || 0 };
 }

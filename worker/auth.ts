@@ -11,6 +11,14 @@
 // prefs is a small JSON object of settings that follow the account (migrations/0002_prefs.sql).
 // Only known keys with values in range are kept (cleanPrefs); today that's the touch-control size.
 //   POST /api/auth/logout                                           -> { ok }, cookie cleared
+//   DELETE /api/me                     { crews? }                   -> { ok, crews }, cookie cleared
+//
+// DELETE MY PROFILE (PROFILE, press twice): the accounts row, every session and the waiting code for
+// the email, and its limits counters (send-email, guess-email, guess-email-day) go, and the cookie is
+// cleared. First the player is taken out of every crew the account (or this device, `crews`) lists
+// (Crew.forget: their member row, record, picks, time and matches; their high score rows stay as
+// initials with nobody behind them). `crews` is how many crews had them. The page then starts fresh,
+// as after SIGN OUT. Signing in with the same email again makes a new account.
 //
 // The code is 6 digits, lasts 10 minutes and takes 5 tries; the email also carries a link to the
 // page with the code in the fragment, which the page submits from JavaScript, so a mail scanner
@@ -294,11 +302,32 @@ async function logout(req: Request, env: Env): Promise<Response> {
   return json({ ok: true }, 200, { "set-cookie": sessionCookie(req, "", 0) });
 }
 
+async function deleteMe(req: Request, env: Env): Promise<Response> {
+  const email = await currentEmail(req, env);
+  if (!email) return json({ error: "signed-out" });
+  const acct = await account(env, email);
+  const body = await req.json<{ crews?: unknown }>().catch(() => ({} as { crews?: unknown }));
+  let crews = 0;
+  if (acct) {
+    // the account's crews plus any this device knows that never reached it
+    const slugs = new Set([...parseCrews(acct.crews), ...cleanCrews(body.crews)].map((c) => c.slug));
+    const done = await Promise.allSettled([...slugs].map((slug) => env.CREWS.get(env.CREWS.idFromName(slug)).forget(acct.player_id)));
+    crews = done.filter((d) => d.status === "fulfilled" && d.value).length;
+  }
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM accounts WHERE email = ?").bind(email),
+    env.DB.prepare("DELETE FROM sessions WHERE email = ?").bind(email),
+    env.DB.prepare("DELETE FROM login_codes WHERE email = ?").bind(email),
+    env.DB.prepare("DELETE FROM limits WHERE key IN (?, ?, ?)").bind(`send-email:${email}`, `guess-email:${email}`, `guess-email-day:${email}`),
+  ]);
+  return json({ ok: true, crews }, 200, { "set-cookie": sessionCookie(req, "", 0) });
+}
+
 /** The profile routes (parts after /api/), or null when it isn't one of them. */
 export async function handleAuth(req: Request, env: Env, parts: string[]): Promise<Response | null> {
   const route = `${req.method} ${parts.join("/")}`;
   const routes: Record<string, (req: Request, env: Env) => Promise<Response>> = {
-    "POST auth/start": start, "POST auth/verify": verify, "POST auth/logout": logout, "GET me": me, "PUT me": saveMe,
+    "POST auth/start": start, "POST auth/verify": verify, "POST auth/logout": logout, "GET me": me, "PUT me": saveMe, "DELETE me": deleteMe,
   };
   const fn = routes[route];
   if (!fn) return parts[0] === "auth" || parts[0] === "me" ? json({ error: "not found" }, 404) : null;

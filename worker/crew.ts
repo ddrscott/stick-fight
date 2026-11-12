@@ -467,6 +467,36 @@ export class Crew extends DurableObject<Env> {
     return true;
   }
 
+  /**
+   * DELETE MY PROFILE (worker/auth.ts deleteMe): take this player out of the crew. Their member row,
+   * picks, time, post times, head to head rows and the matches they played go; their high score rows
+   * stay as initials with nobody behind them (`member` emptied). A lobby open as them elsewhere is
+   * told `deleted` and closed, so it doesn't reconnect and come back as a new member. True when the
+   * crew had them.
+   */
+  async forget(pid: string): Promise<boolean> {
+    if (!PID_RE.test(pid) || !this.exists()) return false;
+    const mid = (await sha256(`crew:${this.meta("slug")}:${pid}`)).slice(0, 16);
+    if (!this.sql("SELECT 1 FROM members WHERE id = ?", mid).length) return false;
+    for (const w of this.sockets()) {
+      if (this.att(w).mid !== mid) continue;
+      this.send(w, { t: "error", reason: "deleted" });
+      try { w.close(4000, "deleted"); } catch { /* gone */ }
+    }
+    const x = (q: string, ...b: unknown[]) => this.ctx.storage.sql.exec(q, ...b);
+    x("DELETE FROM members WHERE id = ?", mid);
+    x("DELETE FROM plays WHERE member = ?", mid);
+    x("DELETE FROM mtime WHERE member = ?", mid);
+    x("DELETE FROM posts WHERE member = ?", mid);
+    x("DELETE FROM h2h WHERE a = ? OR b = ?", mid, mid);
+    x("DELETE FROM matches WHERE host = ? OR guest = ?", mid, mid);
+    x("DELETE FROM live WHERE host = ? OR guest = ?", mid, mid);
+    x("UPDATE scores SET member = '' WHERE member = ?", mid);
+    x("DELETE FROM meta WHERE k = ?", `held:${mid}`);
+    this.broadcast();
+    return true;
+  }
+
   /** test hook (DEV_HOOKS=1 only, worker/index.ts): expire the crew now and run the alarm */
   async devExpire(): Promise<boolean> {
     this.ensure();

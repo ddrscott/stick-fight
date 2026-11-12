@@ -259,6 +259,8 @@ function injectStyle() {
   .fl-btn:focus { outline: none; }
   .fl-btn.fl-dis { opacity: 0.38; cursor: default; }
   .fl-pink { --c: var(--pink); } .fl-amber { --c: var(--amber); } .fl-violet { --c: var(--violet); }
+  /* DELETE MY PROFILE: red, a size down, on its own row so nobody hits it on the way to BACK */
+  .fl-red { --c: #ff4d5e; } .fl-btn.fl-quiet { font-size: 2.6cqw; min-height: max(40px, 6.5cqh); }
 
   /* title: the START button sits where the HUD's prompt would be (main.js positions the group per
      frame), HIGH SCORES and CONTROLS in a row under it */
@@ -512,6 +514,7 @@ function injectStyle() {
   .fl-pname { font-size: 6cqw; }
   .fl-pemail { text-transform: none; letter-spacing: 0.08em; }
   .fl-profile .fl-small { max-width: 70cqw; }
+  .fl-profile .fl-row + .fl-row { margin-top: -0.6cqw; }
 
   /* the privacy and house rules links (index.js legalLinks), and the age question before an email */
   .fl-legal { pointer-events: auto; }
