@@ -11,6 +11,7 @@
 //   highScores      the top-5 table between demo bouts, after a game, or from the title
 //   controls        the fight and menu controls, keyboard and gamepad (from the title)
 //   modeSelect      ARCADE, VERSUS ONLINE, HORDE, TRAINING: the MAIN MENU every screen offers, with TODAY'S SHIFTS
+//   closet          the SUPPLY CLOSET: every cosmetic per fighter, owned in full, locked in silhouette (README, Progression)
 //   shifts          the day's three shifts in full: what each teaches, HOW TO PLAY, one SWAP a day (README, Progression)
 //   charSelect      pick a fighter (select.js) for the mode picked; training then picks the dummy
 //   stageIntro      the stage card (sim held), then fighting
@@ -64,6 +65,7 @@ import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE
 import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';   // the name filter (README, Privacy and terms)
 import { rootUrl } from '../root.js';
 import { createTicker } from '../ticker.js';
+import { closetBody } from './closet.js';   // the Supply Closet (README, Progression)
 import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards } from './careerUI.js';   // career and sticks (README, Progression)
 import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer } from '../career/store.js';
 import { palettesFor } from '../career/palettes.js';   // the title's ticker of game-wide stats (README, Analytics, The title's ticker)
@@ -74,8 +76,9 @@ const TRANSITIONS = {
   attract: ['modeSelect', 'highScores', 'controls'],
   highScores: ['attract', 'modeSelect', 'ageCheck'],   // ageCheck: the save-your-sticks nudge after a game (README, Progression)
   controls: ['attract', 'modeSelect'],
-  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts'],   // ageCheck: the save nudge
+  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts', 'closet'],   // ageCheck: the save nudge
   shifts: ['modeSelect', 'attract'],   // the daily shifts (README, Progression, Daily shifts)
+  closet: ['modeSelect', 'attract'],   // the Supply Closet (README, Progression, The Supply Closet)
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
   stageIntro: ['fighting', 'modeSelect'],
   fighting: ['roundEnd', 'result', 'paused', 'attract'],
@@ -130,7 +133,7 @@ export function playTime(secs) {
 }
 const CREW_KEEP = new Set(['crewLobby', 'crewLinking', 'onlineFighting', 'onlinePost', 'onlineSelect', 'onlineEnd']);
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
-const DEMO = new Set(['attract', 'controls', 'modeSelect', 'shifts', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking']);
+const DEMO = new Set(['attract', 'controls', 'modeSelect', 'shifts', 'closet', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking']);
 // the sim steps in these (plus onlineFighting, unless the net module steps it)
 const STEPS = new Set([...DEMO, 'fighting', 'roundEnd', 'result']);
 // the HUD draws in these; everything else is a menu over a dimmed scene, HUD off
@@ -140,7 +143,7 @@ const PLAY = new Set(['fighting', 'roundEnd', 'result', 'onlineFighting']);
 const IDLE_MS = 30000;
 const ONLINE = new Set(['watchList', 'watching', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineFighting', 'onlineEnd', 'onlinePost', 'onlineSelect', 'crewLobby', 'crewLinking']);
 // the sticks counter shows on these menus (src/flow/careerUI.js), never in a fight
-const COUNTER = new Set(['modeSelect', 'shifts', 'charSelect', 'onlineMenu', 'profile', 'onlineSelect', 'onlineEnd', 'crewLobby', 'highScores', 'watchList']);
+const COUNTER = new Set(['modeSelect', 'shifts', 'closet', 'charSelect', 'onlineMenu', 'profile', 'onlineSelect', 'onlineEnd', 'crewLobby', 'highScores', 'watchList']);
 // between online matches: the room is open, the scene behind is the last match's final frame (held)
 const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
 
@@ -162,7 +165,7 @@ const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
 const ENDING_ROLL = 22;   // seconds the ending's roll takes to scroll by (the story and the credits); it moves on 3s after
-const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'modeSelect', 'shifts', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking', 'watchList']);
+const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'modeSelect', 'shifts', 'closet', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking', 'watchList']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -290,6 +293,7 @@ export function createFlow(ctx) {
       case 'controls': ensureDemo(); return screenControls();
       case 'modeSelect': mode = null; ensureDemo(); return screenModes();
       case 'shifts': ensureDemo(); return screenShifts();
+      case 'closet': ensureDemo(); return screenCloset();
       case 'charSelect': ensureDemo(); return screenSelect();
       case 'stageIntro': return screenStage();
       case 'fighting': ui.clear(); return;   // go() swallowed the press that got us here, so it doesn't throw a punch
@@ -361,7 +365,7 @@ export function createFlow(ctx) {
       // the demo's KO card holds a beat longer
       if (sim.phase === 'ko' && !demoKO) { demoKO = true; sim.phaseTimer = 1.6; }
       // (never the crew lobby, the typing screens or sign-in: friends wait there, and a code takes a trip to the inbox)
-      if (idle > IDLE_MS && (state === 'watchList' || state === 'controls' || state === 'modeSelect' || state === 'shifts' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || (state === 'onlineEnd' && !crewMatch) || state === 'profile')) go('attract');
+      if (idle > IDLE_MS && (state === 'watchList' || state === 'controls' || state === 'modeSelect' || state === 'shifts' || state === 'closet' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || (state === 'onlineEnd' && !crewMatch) || state === 'profile')) go('attract');
     }
     if ((state === 'charSelect' || state === 'onlineSelect') && selCtl) selCtl.tick(dt);
     if (BETWEEN.has(state)) paintBetween();   // the countdowns tick
@@ -755,6 +759,8 @@ export function createFlow(ctx) {
         mk('TRAINING', 'A DUMMY THAT NEVER HITS BACK', () => toSelect('training'), 'fl-violet'),
       ];
       for (const b of rulesButtons('fl-slim')) { list.appendChild(b.el); items.push(b); }
+      const closet = button('SUPPLY CLOSET', () => go('closet'), 'fl-slim');
+      list.appendChild(closet.el); items.push(closet);
       const back = button('BACK', () => go('attract'), 'fl-violet fl-slim');
       list.appendChild(back.el); items.push(back);
       // today's shifts beside the modes (README, Progression, Daily shifts); the button opens them in full
@@ -782,6 +788,28 @@ export function createFlow(ctx) {
       return { items, back: () => go('modeSelect'), legend: [MOVE, SELECT, ['back', 'BACK']] };
     });
     paint();
+  }
+  // The Supply Closet (README, Progression, The Supply Closet; src/flow/closet.js): a tab per fighter with its count,
+  // that fighter's shelf, buy with a second press, put on with one. Repaints keep the focus where it was.
+  const closetSt = { fighter: '', extras: null, ranks: null };   // extras/ranks: the tests' stand-in for fighter mastery (debug.closet)
+  function screenCloset() {
+    const r = roster();
+    if (!r.some((c) => c.id === closetSt.fighter)) closetSt.fighter = (r.find((c) => c.id === sel.player) || r[0]).id;
+    let msg = 'LOCKED ITEMS SAY HOW TO GET THEM. PRESS ONE TO PUT IT ON OR TO BUY IT.';
+    const paint = (focusKey = '') => ui.show('fl-closet', (root) => {
+      root.append(el('h1', 'fl-h2', 'SUPPLY CLOSET'));
+      const note = el('div', 'fl-small cl-note', msg);
+      const body = closetBody({
+        roster: r, fighter: closetSt.fighter, focusKey, extras: closetSt.extras, ranks: closetSt.ranks,
+        pick: (id, fk) => { closetSt.fighter = id; if (state === 'closet') paint(fk); },
+        repaint: (fk, m) => { msg = m; if (state === 'closet') paint(fk); },
+        note: (m) => { msg = m; note.textContent = m; },
+      });
+      root.append(body.el, note);
+      const items = [...body.items, ...btnRow(root, [button('BACK', () => go('modeSelect'), 'fl-violet')], '20cqw')];
+      return { items, focus: body.focus, back: () => go('modeSelect'), legend: [MOVE, SELECT, ['back', 'BACK']] };
+    });
+    paint(`f:${closetSt.fighter}`);
   }
   // the match rules (src/flow/rules.js): ROUNDS cycles best of 1, 3, 5 and TIME cycles 30, 60, 99 and no
   // limit, each press stepping to the next and remembering it; they take effect from the next fight
@@ -2342,7 +2370,7 @@ export function createFlow(ctx) {
     get on() { return state !== 'off'; },
     /** the sim's demo audio gate: the demo runs behind these states */
     get demo() { return DEMO.has(state) || state === 'highScores'; },
-    debug: { history, run, sel, go, debugKO, ui, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S,
+    debug: { history, run, sel, closet: closetSt, go, debugKO, ui, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S,
       // crew high scores (scripts/crew/lobby.mjs): the run's end as the flow does it, the tables the attract loop turns through
       crewScores: CS, startArcade, startHorde, startTraining, decide, afterGame, attractTables, get hs() { return hs; }, get crewView() { return crewView; } },
   };

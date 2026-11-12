@@ -156,7 +156,7 @@ function injectStyle() {
   .cl-cards { display: flex; gap: 1.2cqw; }
   #flow .cl-card { flex: 1 1 0; min-width: 0; min-height: 0; padding: 0.6cqh 0.6cqw 0.4cqh; display: flex; flex-direction: column; align-items: center; gap: 0.3cqh;
     border-radius: 0; border: 2px solid rgba(214,190,255,0.35); background: rgba(4,1,10,0.6); }
-  #flow .cl-card canvas { width: auto; height: 22cqh; display: block; }
+  #flow .cl-card canvas { position: static; inset: auto; width: auto; height: 22cqh; display: block; flex: none; }   /* not #stage canvas's full-bleed layer */
   #flow .cl-card .cl-text { display: flex; flex-direction: column; align-items: center; gap: 0.3cqh; text-align: center; }
   #flow .cl-card .cl-name { font: 400 1.6cqw/1.1 'Bungee', sans-serif; color: #fff4d6; }
   #flow .cl-card .cl-how { font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #ffc46b; }
