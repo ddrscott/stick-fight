@@ -110,7 +110,7 @@ if (!flag('--gpu') && !flag('--rollback') && !flag('--load')) {
       await page.evaluate(() => window.__perf.reset());
       await page.waitForTimeout(SECS * 1000);
       const s = await page.evaluate(() => window.__perf.summary());
-      const r = { scenario: name, throttle, tier, device: DEVICE, ...row(s), errors: errors.length };
+      const r = { scenario: name, throttle, asked: tier, device: DEVICE, ...row(s), errors: errors.length };   // tier: where it was at the end (AUTO's settled tier)
       results.push(r);
       console.log(JSON.stringify(r));
       await ctx.close();

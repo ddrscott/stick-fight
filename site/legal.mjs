@@ -72,7 +72,7 @@ export function privacyPage() {
     <p>While you play, the game sends small notes to our server, like "someone picked COURIER in arcade" or "a match ended by KO after 64 seconds." They're how we know which fighters are too strong and which modes people play. Each note says:</p>
     <ul>
       <li>what happened (a pick, a match, a move used, a stage reached), the fighters, and numbers like hits and match length;</li>
-      <li>how smoothly the game runs on your device (frame times), once a visit;</li>
+      <li>how smoothly the game runs on your device, once a visit: the frame times, the graphics level it settled on, and a rough sort of device. That's only broad groups: the kind of system (like Chromebook, Android or Windows), the maker family of the graphics chip (like Intel or Mali, or "software" when there's no graphics chip), whether it has 2, 4 or 6+ processor cores, and whether it has 4 GB of memory or less. Never the exact model, and nothing that could pick your device out from others like it;</li>
       <li>whether you're on a phone or a computer, and which website sent you here (just the site's name);</li>
       <li>the country you're in, which Cloudflare (the company that runs our servers) works out from your connection.</li>
     </ul>
@@ -117,7 +117,7 @@ export function privacyPage() {
     <ul>
       <li>your profile: the random player id, your nickname, and your recent crews;</li>
       <li>your arcade and horde high scores, and the last fighter you picked;</li>
-      <li>your settings: sound, music, round time, rounds per match, botches on or off, touch-control size, and whether spectators may watch your rooms;</li>
+      <li>your settings: sound, music, round time, rounds per match, botches on or off, touch-control size, the graphics setting (and the graphics level the game settled on, so the next visit starts there), and whether spectators may watch your rooms;</li>
       <li>the happy accidents you've found, your record against each online rival (by a random id), and whether you've seen the "add to home screen" tip;</li>
       <li>your answer to the age question, if you said under 13;</li>
       <li>a copy of the game's files, so it can load fast and play offline.</li>

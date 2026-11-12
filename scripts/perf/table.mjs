@@ -25,3 +25,22 @@ console.log('\n| GPU work (SwiftShader, ms a frame) | Tier | p50 before → afte
 for (const a of SA) { const b = SB.find((r) => r.scenario === a.scenario && r.tier === a.tier); console.log(`| ${a.scenario} | ${a.tier} | ${ba(b, a, 'synced50', 0)} | ${ba(b, a, 'synced95', 0)} |`); }
 const AU = read('after-auto.json');
 if (AU.length) { console.log('\n| Adaptive tier (phone start: 2) | CPU | settled on | fps | p95 ms |\n|---|---|---|---|---|'); for (const a of AU) console.log(`| ${a.scenario} | ${a.throttle}x | tier ${a.tier} | ${a.fps.toFixed(0)} | ${a.p95.toFixed(1)} |`); }
+
+// The Chromebook stand-in (README, Performance, Chromebooks): 6x CPU plus SwiftShader, before (tiers 3, 2, 1) and after
+// (3, 2, 1, 0 and AUTO). Rows say the tier asked for (asked; older runs are in the order they ran), the tier AUTO
+// settled on, pictures drawn a second, and the frame p95. "<2" is a run whose every frame took over half a second,
+// which the profiler drops as a pause.
+for (const dev of ['cros', 'croshd']) {
+  const CB = read(`${dev}-before.json`), CA = read(`${dev}-after.json`);
+  if (!CA.length) continue;
+  const tag = (rows, order) => { const n = new Map(); return rows.map((r) => { const i = n.get(r.scenario) || 0; n.set(r.scenario, i + 1); return { ...r, asked: r.asked ?? order[i] }; }); };
+  const b = tag(CB, ['3', '2', '1']), a = tag(CA, ['3', '2', '1', '0', 'auto']);
+  const fps = (r) => (!r ? '-' : r.fps < 1 ? '<2' : `${Math.round(r.drawn ?? r.fps)}${r.every > 1 ? ' (every 2nd)' : ''}`);
+  const p95 = (r) => (!r ? '-' : r.fps < 1 ? '>500' : r.p95.toFixed(0));
+  console.log(`\n| ${dev === 'cros' ? '1366x768 @1' : '1920x1080 @1.25'}, 6x CPU, SwiftShader | Tier | fps before → after | frame p95 ms before → after | main thread p50 ms after |\n|---|---|---|---|---|`);
+  for (const r of a) {
+    const o = b.find((x) => x.scenario === r.scenario && String(x.asked) === String(r.asked));
+    const tier = r.asked === 'auto' ? `AUTO → ${r.tier}` : r.asked;
+    console.log(`| ${r.scenario} | ${tier} | ${fps(o)} → ${fps(r)} | ${p95(o)} → ${p95(r)} | ${r.work50.toFixed(1)} |`);
+  }
+}

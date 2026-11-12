@@ -21,6 +21,7 @@ import { rootUrl } from '../root.js';   // the privacy and house rules pages, at
 import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 import { MENU_ICON, cornerButton, cornerRow } from '../corner.js';
+import { GFX_CHOICES, TIER_NAME, gfxPick, setGfxPick, onGfxPick, liveTier, onLiveTier } from '../gfxPrefs.js';   // GRAPHICS (README, Performance, Chromebooks)
 
 
 export function createSoundUI({ settings, music, actions, isUnlocked }) {
@@ -56,6 +57,10 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
         <button class="sf-step" data-d="1" type="button" aria-label="Bigger controls">+</button>
         <button class="sf-reset" type="button">RESET</button>
       </div>
+    </div>
+    <div class="sf-gfx">
+      <div class="sf-size-head"><label>GRAPHICS</label><span class="sf-gfx-note"></span></div>
+      <div class="sf-gfx-row">${GFX_CHOICES.map((c) => `<button class="sf-gfx-b" data-g="${c.id}" type="button">${c.name}</button>`).join('')}</div>
     </div>
     <p class="sf-keys">M MUSIC ON/OFF &nbsp; N NEXT TRACK</p>
     <p class="sf-credit">MUSIC MADE WITH <a href="https://strudel.cc" target="_blank" rel="noopener">STRUDEL</a> (<a href="https://codeberg.org/uzu/strudel" target="_blank" rel="noopener">AGPL-3.0</a>) &nbsp;·&nbsp; GAME <a href="https://github.com/ddrscott/stick-fight" target="_blank" rel="noopener">SOURCE</a></p>
@@ -109,6 +114,17 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
   }
   onTouchPref(paintSize);
 
+  // GRAPHICS: AUTO (the adaptive tier, the default) or a fixed tier, which turns adaptation off. Beside the label, what
+  // AUTO is drawing at right now, the way CONTROLS says SCREEN FITS (src/gfxPrefs.js; src/main.js applies the choice).
+  const pickGfx = (id) => { actions.click(id === gfxPick() ? 'off' : 'on'); setGfxPick(id); };
+  panel.querySelectorAll('.sf-gfx-b').forEach((b) => b.addEventListener('click', () => pickGfx(/** @type {HTMLElement} */ (b).dataset.g)));
+  function paintGfx() {
+    const pick = gfxPick(), live = liveTier();
+    panel.querySelectorAll('.sf-gfx-b').forEach((b) => b.classList.toggle('sf-on', /** @type {HTMLElement} */ (b).dataset.g === pick));
+    $('.sf-gfx-note').textContent = pick === 'auto' ? (live >= 0 ? `AUTO · NOW ${TIER_NAME[live]}` : 'AUTO') : 'FIXED';
+  }
+  onGfxPick(paintGfx); onLiveTier(paintGfx); paintGfx();
+
   // the touch layer's menu button, and a click for its small buttons
   window.addEventListener('sf:settings', () => toggle());
   document.addEventListener('touchstart', (e) => {
@@ -146,6 +162,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     { el: $('.sf-next') },
     { el: $('.sf-slider[data-k="musicVolume"]'), slide: 'musicVolume' }, { el: $('.sf-slider[data-k="sfxVolume"]'), slide: 'sfxVolume' },
     { el: $('.sf-pips'), size: true }, { el: $('.sf-reset') },
+    { el: $('.sf-gfx-row'), gfx: true },
     { el: $('.sf-close') },
   ].filter((it) => it.el.offsetParent !== null && !(/** @type {any} */ (it.el)).disabled);
   function setCursor(it) {
@@ -169,6 +186,10 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
         const v = Math.round(Math.max(0, Math.min(1, settings[it.slide] + d * 0.05)) * 100) / 100;
         if (it.slide === 'musicVolume') actions.setMusicVolume(v); else { actions.setSfxVolume(v); actions.sfxPreview(); }
       } else if (it.size) pickStep(touchStep() + d);
+      else if (it.gfx) {
+        const at = GFX_CHOICES.findIndex((c) => c.id === gfxPick()), to = GFX_CHOICES[at + d];
+        if (to) pickGfx(to.id);
+      }
       else if (it.row !== undefined && its[i + d] && its[i + d].row === it.row) { actions.click(); setCursor(its[i + d]); }
     } else if (k === 'confirm' && it.el.tagName === 'BUTTON') {
       (/** @type {HTMLElement} */ (it.el)).click();
@@ -309,6 +330,15 @@ function injectStyle() {
     html.touch-ui .sf-step { width: 44px; }
     html.touch-ui .sf-reset { font-size: 13px; }
   }
+  /* GRAPHICS: five hard-cornered buttons in a row, the picked one lit */
+  .sf-gfx { margin-top: 6px; padding-top: 6px; border-top: 2px solid rgba(166,107,255,0.3); }
+  .sf-gfx-note { font-size: 18px; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; color: var(--amber); }
+  .sf-gfx-row { display: flex; gap: 4px; margin-top: 2px; }
+  .sf-gfx-b { flex: 1; min-width: 0; height: 34px; padding: 0; background: transparent; color: rgba(255,244,253,0.6);
+    border: 2px solid rgba(166,107,255,0.5); border-radius: 2px; font-size: 10px; letter-spacing: 0.02em; }
+  .sf-gfx-b.sf-on { color: var(--ink); border-color: var(--cyan); background: rgba(46,242,255,0.12); box-shadow: 0 0 10px rgba(46,242,255,0.55); }
+  .sf-gfx-b:active { transform: scale(0.95); }
+  @media (orientation: portrait) { html.touch-ui .sf-gfx-b { height: 44px; } }
   .sf-keys { margin: 6px 0 0; font-size: 15px; letter-spacing: 0.08em; color: rgba(255,244,253,0.65); }
   html.touch-ui .sf-keys { display: none; }
   .sf-credit { margin: 8px 0 0; font-size: 14px; letter-spacing: 0.08em; color: rgba(255,244,253,0.65); }

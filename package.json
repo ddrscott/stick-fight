@@ -29,7 +29,8 @@
     "test:crew": "node scripts/crew/check.mjs && node scripts/crew/lobby.mjs",
     "test:names": "node scripts/names/check.mjs",
     "test:admin": "node scripts/admin/check.mjs",
-    "test:age": "node scripts/age/check.mjs"
+    "test:age": "node scripts/age/check.mjs",
+    "test:device": "node scripts/perf/device.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",
