@@ -674,7 +674,7 @@ export class Room extends DurableObject<Env> {
     try { ev = String((JSON.parse(message) as { ev?: unknown }).ev || ""); } catch { return; }
     if (ev === "result") {
       await this.notBusy();   // either side's word that it's over takes it off the count
-      await roomResult(this.ctx.storage, this.env, role, message, (mode, wins, tech) => this.award(mode, wins, tech));
+      await roomResult(this.ctx.storage, this.env, role, message, (mode, wins, tech, chars) => this.award(mode, wins, tech, chars));
     } else if (ev === "live") {
       // a page's word that a match started: the room's play-time clock (worker/stats.ts roomLive) hears both sides;
       // the live count (api/now) takes the host's, with its two fighters
@@ -689,12 +689,12 @@ export class Room extends DurableObject<Env> {
     }
   }
   /** Both pages agreed on a result: each signed-in player's career, and the award told to their page alone. */
-  private async award(mode: "quick" | "crew", wins: [number, number], tech: [unknown, unknown]) {
+  private async award(mode: "quick" | "crew", wins: [number, number], tech: [unknown, unknown], chars: [string, string]) {
     for (const side of [0, 1] as const) {
       for (const ws of this.ctx.getWebSockets(side === 0 ? "host" : "guest")) {
         const att = ws.deserializeAttachment() as { email?: string } | null;
         if (!att || !att.email) continue;
-        const r = await awardOnline(this.env, att.email, mode, side, wins, tech[side]);
+        const r = await awardOnline(this.env, att.email, mode, side, wins, tech[side], chars[side]);   // chars: each side's fighter, for the shifts
         if (r) { try { ws.send(JSON.stringify({ t: "sys", ev: "career", ...r })); } catch { /* gone: the page asks api/career next time */ } }
       }
     }

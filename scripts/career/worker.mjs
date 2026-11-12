@@ -14,10 +14,16 @@
 //   7. online: two signed-in players in a quick room agree on a result; the room awards both (the winner's WIN, both
 //      FIRST ONLINE MATCH TODAY) and tells each page its own award; a report with dnt still awards but goes on no books
 //   8. a resend of the same result doesn't pay twice
+//   9. daily shifts (src/career/shifts.js): a reported match finishes one and pays it once, in D1; one swap a day and
+//      never a finished one; a guest's shift progress merges; the room moves each side's shifts from the agreed result
+//      (its fighter and rounds included), exactly as the page's own math says
 // Each run uses fresh emails, so it can run again (AUTH_LIMIT allows 20 sign-in calls a minute per IP: wait a minute
 // between runs). D1 is read with `wrangler d1 execute --local`. Exit code 1 on any failure.
 import { execFileSync } from 'node:child_process';
-import { payout, blankCareer, OFFLINE_CAP, MERGE_MAX, PAY, DAILY, utcDay } from '../../src/career/rules.js';
+import { blankCareer, OFFLINE_CAP, MERGE_MAX, PAY, DAILY, utcDay } from '../../src/career/rules.js';
+import { payMatch, shiftsFor, advanceShifts, SHIFT_PAY } from '../../src/career/shifts.js';
+// what a match pays today, shifts included (a test match can finish one of today's shifts, depending on the date)
+const payout = payMatch;
 
 const BASE = (process.argv.slice(2).find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const API = BASE + 'api/', WS = API.replace(/^http/, 'ws');
@@ -67,7 +73,8 @@ check('signed in (dev code)', !!A.cookie, A.email);
   const db = row(A.email);
   check('D1 has it: career_xp, sticks, win_day', db.career_xp === want.xp && db.sticks === want.sticks && db.win_day === today, JSON.stringify(db));
   const r2 = await call('career/match', 'POST', { m }, A.cookie);
-  check('the second win today: no FIRST WIN TODAY', r2.body && r2.body.award && !r2.body.award.firstWin && r2.body.award.sticks === want.sticks - DAILY.firstWin.sticks);
+  const want2 = payMatch(m, r.body.career, today);
+  check('the second win today: no FIRST WIN TODAY', r2.body && r2.body.award && !r2.body.award.firstWin && r2.body.award.sticks === want2.sticks && !want2.firstWin);
 }
 
 // 3. the mash case
@@ -139,6 +146,7 @@ function sock(url, cookie) {
   const H = sock(`${WS}rooms/${code}/ws?role=host`, A.cookie), G = sock(`${WS}rooms/${code}/ws?role=guest`, B.cookie);
   await H.open; await G.open; await sleep(300);
   const a0 = row(A.email), b0 = row(B.email);
+  const shiftsBefore = { A: (await call('career', 'GET', null, A.cookie)).body.career, B: (await call('career', 'GET', null, B.cookie)).body.career };
   const pair = () => d1(`SELECT games FROM stats_matchups WHERE a = 'barista' AND b = 'chef' AND vs = 'pvp'`)[0] || { games: 0 };
   const g0 = pair();
   const tech = [[3, 1, 0, 0, 1], [1, 0, 2, 0, 0]];   // host: 3 parries, a punish, a perfect round; guest: a parry, two enders
@@ -167,7 +175,52 @@ function sock(url, cookie) {
   const a2 = row(A.email).sticks;
   H.send(rep(3)); G.send(rep(3, { wins: [1, 2] })); await sleep(1500);
   check('reports that disagree pay nobody', !H.q.some((x) => x.ev === 'career') && row(A.email).sticks === a2);
+  // 9d. the room moved each side's shifts from the agreed result, as the page's own math says
+  const want = (c, side) => advanceShifts(c.shifts, { mode: 'quick', won: side === 0, cut: false, parries: tech[side][0], punishes: tech[side][1], enders: tech[side][2], perfects: tech[side][4], fighter: side ? 'chef' : 'barista', rounds: side ? 1 : 2 }, today).state;
+  check('shifts online: the room moved both sides\' shifts exactly as src/career/shifts.js says (fighter and rounds from the agreed result)', ha && ga && JSON.stringify(ha.career.shifts) === JSON.stringify(want(shiftsBefore.A, 0)) && JSON.stringify(ga.career.shifts) === JSON.stringify(want(shiftsBefore.B, 1)), JSON.stringify([ha && ha.career.shifts, want(shiftsBefore.A, 0)]));
   H.close(); G.close();
+}
+
+// 9. daily shifts on the account. The sections above spend CAREER_LIMIT's 40 calls a minute (the offline cap alone
+// takes about 25), so wait the minute out first.
+console.log('      (waiting a minute for CAREER_LIMIT)');
+await sleep(61000);
+{
+  const D = await signIn('dave');
+  const list = shiftsFor(today);
+  const g = await call('career', 'GET', null, D.cookie);
+  check('shifts: a new account has today\'s, nothing done', g.body.career.shifts && g.body.career.shifts.day === today && g.body.career.shifts.swap === -1 && g.body.career.shifts.done.every((d) => !d), JSON.stringify(g.body.career.shifts));
+  // a match that finishes the first shift arcade or horde can report (the online one comes from a room)
+  const finish = (sh) => match({ won: true, ...{ parry: { parries: sh.n }, punish: { punishes: sh.n }, ender: { enders: sh.n }, perfect: { perfects: 1, rounds: 2 }, fighter: { fighter: sh.f, rounds: 2 }, arcade: { stage: sh.n }, horde: { mode: 'horde', floors: sh.n } }[sh.kind] });
+  const slot = list.findIndex((sh) => sh.kind !== 'online');
+  const r = await call('career/match', 'POST', { m: finish(list[slot]) }, D.cookie);
+  const line = r.body.award && r.body.award.lines.find((l) => l.id === 'shift' && l.label.endsWith(list[slot].title));
+  check(`shifts: "${list[slot].title}" finished by a reported match pays SHIFT DONE`, line && line.sticks === SHIFT_PAY.sticks && line.xp === SHIFT_PAY.xp && r.body.career.shifts.done[slot], JSON.stringify(r.body.award && r.body.award.lines));
+  const db = JSON.parse(d1(`SELECT shifts FROM accounts WHERE email = '${D.email}'`)[0].shifts);
+  check('shifts: D1 has it done', db.day === today && db.done[slot] === true, JSON.stringify(db));
+  const r2 = await call('career/match', 'POST', { m: finish(list[slot]) }, D.cookie);
+  check('shifts: the same again pays no shift', !r2.body.award.lines.some((l) => l.id === 'shift' && l.label.endsWith(list[slot].title)));
+  const sd = await call('career/shifts/swap', 'POST', { slot }, D.cookie);
+  check('shifts: a finished one can\'t be swapped', sd.body.error === 'done');
+  const other = [0, 1, 2].find((i) => i !== slot && !r2.body.career.shifts.done[i]);
+  const sw = await call('career/shifts/swap', 'POST', { slot: other }, D.cookie);
+  check('shifts: swapping another gives today\'s replacement for that slot', sw.body.career && sw.body.career.shifts.swap === other && sw.body.career.shifts.prog[other] === 0, JSON.stringify(sw.body));
+  const third = [0, 1, 2].find((i) => i !== slot && i !== other);
+  const sw2 = await call('career/shifts/swap', 'POST', { slot: third }, D.cookie);
+  check('shifts: one swap a day', sw2.body.error === 'used' && JSON.parse(d1(`SELECT shifts FROM accounts WHERE email = '${D.email}'`)[0].shifts).swap === other);
+  const bad = await call('career/shifts/swap', 'POST', { slot: 9 }, D.cookie);
+  check('shifts: a slot that doesn\'t exist is refused', bad.body.error === 'used' || bad.body.error === 'bad');
+  const out = await call('career/shifts/swap', 'POST', { slot: 0 });
+  check('shifts: signed out, no swap', out.body.error === 'signed-out');
+  // a guest's progress merges in
+  const E = await signIn('erin');
+  const gprog = list.map((sh, i) => (i === slot ? sh.n : 0));
+  const mg = await call('career/merge', 'POST', { career: { xp: 50, sticks: 50, shifts: { day: today, swap: -1, prog: gprog, done: list.map((_, i) => i === slot) } } }, E.cookie);
+  check('shifts: a guest\'s finished shift merges in as done', mg.body.career.shifts.done[slot] === true, JSON.stringify(mg.body.career.shifts));
+  const after = await call('career/match', 'POST', { m: finish(list[slot]) }, E.cookie);
+  check('shifts: ...and isn\'t paid again on the account', !after.body.award.lines.some((l) => l.id === 'shift' && l.label.endsWith(list[slot].title)));
+  const forged = await call('career/merge', 'POST', { career: { shifts: { day: '2020-01-01', swap: 1, prog: [9, 9, 9], done: [true, true, true] } } }, (await signIn('fred')).cookie);
+  check('shifts: a guest\'s state from another day merges as nothing', forged.body.career.shifts.done.every((d) => !d) && forged.body.career.shifts.swap === -1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -41,7 +41,9 @@
     "test:career": "node scripts/career/rules.mjs",
     "test:career:worker": "node scripts/career/worker.mjs",
     "test:career:ui": "node scripts/career/ui.mjs",
-    "test:device": "node scripts/perf/device.mjs"
+    "test:device": "node scripts/perf/device.mjs",
+    "test:shifts": "node scripts/career/shifts.mjs",
+    "test:shifts:ui": "node scripts/career/shifts-ui.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",

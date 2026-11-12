@@ -9,8 +9,14 @@
 //   createCounter(root)    the sticks and title chip for the menus: .show(on)
 //   nudgeBlock(onSave)     the save prompt for a guest with something to lose: { el, button } or null
 //   withTitle(name, title) 'SP · MANAGER'
+//   shiftsBlock()          today's three shifts with their ticks, for the main menu (src/career/shifts.js)
+//   shiftCards(opts)       the SHIFTS screen's body: one card per shift (what it teaches, a coaching line, the ticks,
+//                          what it pays) with HOW TO PLAY and SWAP buttons; returns { el, items }
+//   shiftTicks(moved, compact)  the result screen's progress row (earningsPanel adds it)
 import { el, button } from './ui.js';
-import { career, last, onCareer, nudgeDue, nudgeShown } from '../career/store.js';
+import { career, last, onCareer, nudgeDue, nudgeShown, todayShifts, swapToday } from '../career/store.js';
+import { SHIFT_PAY } from '../career/shifts.js';
+import { rootUrl } from '../root.js';
 import { titleFor, lineText } from '../career/rules.js';
 
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
@@ -52,7 +58,7 @@ export function earningsPanel(compact = false) {
     if (compact) {
       const row = el('div', 'cr-row');
       for (const l of cur.award.lines) {
-        const daily = l.id === 'firstWin' || l.id === 'firstOnline', cap = l.id === 'cap';
+        const daily = l.id === 'firstWin' || l.id === 'firstOnline' || l.id === 'shift', cap = l.id === 'cap';
         row.appendChild(el('span', daily ? 'cr-daily' : cap ? 'cr-cap' : '', `${lineText(l)} ${signed(l.sticks)}`));
       }
       box.append(row, el('div', 'cr-sum', `EARNED ${signed(cur.award.sticks)} STICKS  ·  ${signed(cur.award.xp)} XP`));
@@ -60,7 +66,7 @@ export function earningsPanel(compact = false) {
       const grid = el('div', 'cr-lines');
       grid.append(el('span', 'cr-h', 'EARNED'), el('span', 'cr-h cr-num', 'XP'), el('span', 'cr-h cr-num', 'STICKS'));
       for (const l of cur.award.lines) {
-        const daily = l.id === 'firstWin' || l.id === 'firstOnline', cap = l.id === 'cap';
+        const daily = l.id === 'firstWin' || l.id === 'firstOnline' || l.id === 'shift', cap = l.id === 'cap';
         grid.append(el('span', daily ? 'cr-daily' : cap ? 'cr-cap' : '', lineText(l)), el('span', 'cr-num', signed(l.xp)), el('span', 'cr-num cr-st', signed(l.sticks)));
       }
       grid.append(el('span', 'cr-tot', 'TOTAL'), el('span', 'cr-num cr-tot', signed(cur.award.xp)), el('span', 'cr-num cr-st cr-tot', signed(cur.award.sticks)));
@@ -69,6 +75,7 @@ export function earningsPanel(compact = false) {
     if (cur.award.firstWin) box.appendChild(el('div', 'cr-note', "YOUR FIRST WIN TODAY PAYS EXTRA. IT'S BACK TOMORROW."));
     else if (cur.award.firstOnline) box.appendChild(el('div', 'cr-note', 'YOUR FIRST ONLINE MATCH TODAY PAYS EXTRA.'));
     if (cur.award.capped) box.appendChild(el('div', 'cr-note', 'ARCADE AND HORDE HAVE PAID ALL THEY CAN TODAY. ONLINE STILL PAYS.'));
+    box.appendChild(shiftTicks(cur.award.moved, compact));   // the day's shifts, the ones this match moved lit
     const c = career();
     box.appendChild(reviewBar(c.xp));
     box.appendChild(el('div', 'cr-wallet', `${fmt(c.sticks)} STICKS${cur.pending ? '  ·  SAVING…' : ''}`));
@@ -109,6 +116,89 @@ export function walletLine() {
   return el('div', 'fl-small cr-walletline', `${fmt(c.sticks)} STICKS  ·  ${c.title}`);
 }
 
+// ---- daily shifts (README, Progression, Daily shifts) -------------------------------------------------------
+/** n boxes, the first p filled (a target past 5 reads as numbers instead) */
+function ticks(p, n) {
+  const t = el('span', 'sh-ticks');
+  if (n > 5) { t.textContent = `${p}/${n}`; return t; }
+  for (let i = 0; i < n; i++) t.appendChild(el('i', i < p ? 'sh-on' : ''));
+  return t;
+}
+const payText = () => `+${SHIFT_PAY.sticks} STICKS  +${SHIFT_PAY.xp} XP`;
+
+/** The result screen's row: each shift's ticks, the ones this match moved lit, DONE on a finished one. */
+export function shiftTicks(moved, compact = false) {
+  injectStyle();
+  const { list } = todayShifts();
+  const box = el('div', compact ? 'sh-res sh-rescompact' : 'sh-res');
+  box.appendChild(el('span', 'sh-reshead', "TODAY'S SHIFTS"));
+  list.forEach((sh, i) => {
+    const r = el('span', `sh-resrow${moved && moved[i] ? ' sh-moved' : ''}${sh.done ? ' sh-done' : ''}`);
+    r.append(ticks(sh.prog, sh.n), el('span', '', sh.done ? `${sh.title}  DONE` : sh.title));
+    box.appendChild(r);
+  });
+  return box;
+}
+
+/** The main menu's panel: today's three, their ticks and what each pays. Repaints when progress changes. */
+export function shiftsBlock() {
+  injectStyle();
+  const box = el('div', 'sh-menu');
+  const paint = () => {
+    box.textContent = '';
+    const { list } = todayShifts();
+    box.appendChild(el('div', 'sh-head', "TODAY'S SHIFTS"));
+    for (const sh of list) {
+      const r = el('div', `sh-row${sh.done ? ' sh-done' : ''}`);
+      r.append(ticks(sh.prog, sh.n), el('span', 'sh-title', sh.title), el('span', 'sh-pay', sh.done ? 'DONE' : `+${SHIFT_PAY.sticks}`));
+      box.appendChild(r);
+    }
+    box.appendChild(el('div', 'sh-foot', 'NEW ONES EVERY DAY AT MIDNIGHT UTC. THE SAME FOR EVERYONE.'));
+  };
+  paint();
+  const off = onCareer(() => { if (!box.isConnected) { off(); return; } paint(); });
+  return box;
+}
+
+/**
+ * The SHIFTS screen's body: a card per shift, each with HOW TO PLAY (the guide page that covers it, in a new tab)
+ * and SWAP (one a day, on a shift that isn't done; the first press asks, the second swaps). repaint(): called after
+ * a swap so the flow can rebuild the screen. @param {{ repaint: () => void, note: (msg: string) => void }} opts
+ */
+export function shiftCards(opts) {
+  injectStyle();
+  const { list, swapUsed } = todayShifts();
+  const wrap = el('div', 'sh-cards'), items = [];
+  let armed = -1;
+  for (const sh of list) {
+    const card = el('div', `sh-card${sh.done ? ' sh-done' : ''}`);
+    const top = el('div', 'sh-ctop');
+    top.append(el('b', 'sh-ctitle', sh.title), ticks(sh.prog, sh.n));
+    card.appendChild(top);
+    if (sh.mechanic) card.appendChild(el('div', 'sh-mech', `TEACHES: ${sh.mechanic}`));
+    card.appendChild(el('div', 'sh-coach', sh.coach));
+    card.appendChild(el('div', 'sh-cpay', sh.done ? 'DONE. PAID ' + payText() : `PAYS ${payText()}`));
+    const row = el('div', 'sh-cbtns');
+    if (sh.guide) {
+      const g = button('HOW TO PLAY', () => { try { window.open(rootUrl(sh.guide).href, '_blank', 'noopener'); } catch { /* blocked */ } }, 'fl-slim');
+      row.appendChild(g.el); items.push(g);
+    }
+    if (!sh.done && !swapUsed) {
+      const sw = button('SWAP', () => {
+        if (armed !== sh.slot) { armed = sh.slot; sw.el.textContent = 'SWAP IT? PRESS AGAIN'; opts.note('YOU GET ONE SWAP A DAY. ITS PROGRESS STARTS OVER.'); return; }
+        swapToday(sh.slot).then((r) => {
+          if (r.error) opts.note(r.error === 'used' ? 'ALREADY SWAPPED ONE TODAY' : r.error === 'done' ? "THAT ONE'S DONE" : "CAN'T REACH THE SERVER: TRY AGAIN");
+          opts.repaint();
+        });
+      }, 'fl-violet fl-slim');
+      row.appendChild(sw.el); items.push(sw);
+    }
+    if (row.childNodes.length) card.appendChild(row);
+    wrap.appendChild(card);
+  }
+  return { el: wrap, items, swapUsed };
+}
+
 function injectStyle() {
   if (document.getElementById('career-style')) return;
   const css = `
@@ -144,6 +234,35 @@ function injectStyle() {
   .cr-nudge .cr-nsub { font-size: 1.8cqw; font-weight: 500; color: rgba(230,214,255,0.86); }
   .cr-walletline { color: #ffc46b; }
   .fl-pcareer { width: 46cqw; display: flex; flex-direction: column; gap: 0.6cqh; }
+  /* daily shifts: plain text, square corners, the career's amber */
+  .sh-ticks { display: inline-flex; gap: 0.35cqw; align-items: center; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 1.6cqw; color: #ffc46b; }
+  .sh-ticks i { display: block; width: max(7px, 1cqw); height: max(7px, 1cqw); border: 2px solid rgba(255,176,46,0.75); }
+  .sh-ticks i.sh-on { background: #ffb02e; }
+  .sh-modeswrap { display: flex; align-items: center; gap: 3cqw; }
+  .sh-menu .fl-btn { min-width: 0; margin-top: 0.4cqh; }
+  .sh-menu { display: flex; flex-direction: column; gap: 0.7cqh; width: 40cqw; padding: 1cqh 1.4cqw; border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.82); }
+  .sh-head, .sh-reshead { font: 600 1.8cqw/1 'Teko', sans-serif; letter-spacing: 0.16em; color: rgba(255,224,168,0.9); }
+  .sh-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1cqw; font: 600 2cqw/1.05 'Teko', sans-serif; letter-spacing: 0.08em; color: #eadcff; }
+  .sh-row .sh-pay { color: #ffc46b; font-size: 1.8cqw; }
+  .sh-done .sh-title, .sh-done .sh-ctitle { color: #9dffc0; }
+  .sh-row.sh-done .sh-pay { color: #9dffc0; }
+  .sh-foot { font: 500 1.4cqw/1.1 'Teko', sans-serif; letter-spacing: 0.1em; color: rgba(214,190,255,0.7); }
+  .sh-res { display: flex; flex-direction: column; gap: 0.3cqh; border-top: 2px solid rgba(255,176,46,0.35); padding-top: 0.5cqh; }
+  .sh-resrow { display: flex; align-items: center; gap: 1cqw; font: 600 1.8cqw/1.05 'Teko', sans-serif; letter-spacing: 0.08em; color: rgba(234,220,255,0.7); }
+  .sh-resrow.sh-moved { color: #fff4d6; }
+  .sh-resrow.sh-done { color: #9dffc0; }
+  .sh-rescompact { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 0.3cqh 1.6cqw; }
+  .sh-cards { display: flex; gap: 1.4cqw; align-items: stretch; width: 92cqw; }
+  .sh-card { flex: 1 1 0; display: flex; flex-direction: column; gap: 0.8cqh; padding: 1.2cqh 1.2cqw; border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.85); }
+  .sh-card.sh-done { border-color: rgba(157,255,192,0.7); }
+  .sh-ctop { display: flex; flex-direction: column; gap: 0.6cqh; }
+  .sh-ctitle { font: 400 1.9cqw/1.1 'Bungee', sans-serif; color: #fff4d6; }
+  .sh-mech { font: 600 1.8cqw/1 'Teko', sans-serif; letter-spacing: 0.14em; color: #ffc46b; }
+  .sh-coach { flex: 1; font: 500 1.8cqw/1.15 'Teko', sans-serif; letter-spacing: 0.06em; color: #eadcff; }
+  .sh-cpay { font: 600 1.7cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #ffc46b; }
+  .sh-done .sh-cpay { color: #9dffc0; }
+  .sh-cbtns { display: flex; flex-direction: column; gap: 0.8cqh; }
+  .sh-cbtns .fl-btn { min-width: 0; font-size: 2.2cqw; }
   /* the menus' counter: top right, under the corner buttons' row, plain text */
   .cr-chip { position: absolute; z-index: 4; left: 1.2cqw; top: 1.2cqh; display: none; align-items: baseline; gap: 1cqw; padding: 0.3cqh 1cqw 0;
     border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.78); pointer-events: none;
@@ -159,6 +278,10 @@ function injectStyle() {
     .cr-title { font-size: 3.6cqw; } .cr-rlabel, .cr-next { font-size: 2.8cqw; }
     .cr-chip { font-size: 3.4cqw; } .cr-chip span { font-size: 3cqw; }
     .fl-pcareer { width: 80cqw; }
+    .sh-modeswrap { flex-direction: column; gap: 1.6cqh; } .sh-menu { width: 86cqw; } .sh-head, .sh-reshead { font-size: 2.8cqw; } .sh-row, .sh-resrow { font-size: 3.2cqw; } .sh-row .sh-pay { font-size: 3cqw; }
+    .sh-foot { font-size: 2.4cqw; } .sh-ticks { font-size: 2.8cqw; } .sh-ticks i { width: max(8px, 1.8cqw); height: max(8px, 1.8cqw); }
+    .sh-cards { flex-direction: column; width: 90cqw; } .sh-ctitle { font-size: 3.4cqw; } .sh-mech, .sh-cpay { font-size: 3cqw; } .sh-coach { font-size: 3cqw; }
+    .sh-cbtns { flex-direction: row; } .sh-cbtns .fl-btn { flex: 1; font-size: 3.4cqw; }
   }
   `;
   const st = document.createElement('style'); st.id = 'career-style'; st.textContent = css;

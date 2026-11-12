@@ -18,9 +18,13 @@
 //   nudgeDue() / nudgeShown()   the save-your-sticks prompt for guests (NUDGE in rules.js); never for a player who
 //                          answered UNDER 13 at the age question
 //   resetCareer()          signing out or deleting the profile: this device starts fresh
+//   todayShifts()          the day's three shifts with this player's progress (src/career/shifts.js):
+//                          { day, swapUsed, list: [{ ...shift, slot, prog, done }] }
+//   swapToday(slot)        swap one unfinished shift, once a day: { ok } | { error: 'used' | 'done' | 'unreachable' ... }
 //
 // Every storage call is wrapped: blocked storage just means the career lives for this page.
-import { payout, applyAward, blankCareer, titleFor, utcDay, NUDGE, PAID_MODES, ONLINE_MODES } from './rules.js';
+import { applyAward, blankCareer, titleFor, utcDay, NUDGE, PAID_MODES, ONLINE_MODES } from './rules.js';
+import { payMatch, shiftsFor, cleanShifts, swapShift } from './shifts.js';
 import { palette, itemKey } from './palettes.js';
 import { profile } from '../net/profile.js';
 import { apiUrl } from '../net/link.js';
@@ -41,6 +45,7 @@ function read() {
   const c = { ...blankCareer(), ...(s.career || {}) };
   c.owned = Array.isArray(c.owned) ? c.owned.filter((k) => typeof k === 'string') : [];
   c.equip = c.equip && typeof c.equip === 'object' && !Array.isArray(c.equip) ? c.equip : {};
+  c.shifts = cleanShifts(c.shifts);
   return { career: c, email: typeof s.email === 'string' ? s.email : '', nudge: s.nudge && typeof s.nudge === 'object' ? s.nudge : { xp: -1, title: -1 } };
 }
 function write(s) {
@@ -84,7 +89,7 @@ export function reportMatch(m) {
   if (!m || !PAID_MODES.includes(m.mode)) return null;
   const s = read(), p = profile(), day = utcDay();
   const signed = !!p.email && s.email === p.email;
-  const award = payout(m, s.career, day);
+  const award = payMatch(m, s.career, day);   // payout plus any daily shift it finished
   if (!award.lines.length) return null;
   const after = applyAward(s.career, award, day);
   setLast(s.career, after, award, m.mode, signed);
@@ -207,4 +212,26 @@ export function nudgeDue() {
 export function nudgeShown() {
   const s = read();
   write({ ...s, nudge: { xp: s.career.xp, title: titleFor(s.career.xp).i } });
+}
+
+/** The day's shifts with this player's progress. A new UTC day shows fresh ones with nothing done. */
+export function todayShifts() {
+  const day = utcDay(), st = cleanShifts(read().career.shifts, day);
+  return { day, swapUsed: st.swap >= 0, list: shiftsFor(day, st.swap).map((sh, slot) => ({ ...sh, slot, prog: st.prog[slot], done: st.done[slot] })) };
+}
+
+/** Swap one shift that isn't done, once a day. Signed in, the account decides (it answers with the career). */
+export async function swapToday(slot) {
+  const s = read(), p = profile(), day = utcDay();
+  const r = swapShift(s.career.shifts, slot, day);
+  if (r.error) return { error: r.error };
+  if (p.email && s.email === p.email) {
+    const res = await api('career/shifts/swap', 'POST', { slot });
+    if (res && res.career) adopt(res.career, p.email);
+    changed();
+    return res && !res.error ? { ok: true } : { error: (res && res.error) || 'unreachable' };
+  }
+  write({ ...s, career: { ...s.career, shifts: r.state } });
+  changed();
+  return { ok: true };
 }
