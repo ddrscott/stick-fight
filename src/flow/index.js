@@ -67,7 +67,8 @@ import { rootUrl } from '../root.js';
 import { createTicker } from '../ticker.js';
 import { closetBody } from './closet.js';   // the Supply Closet (README, Progression)
 import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip } from './careerUI.js';   // career and sticks (README, Progression)
-import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery } from '../career/store.js';
+import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery, fromCrewGoal } from '../career/store.js';
+import { goalText } from '../career/crewgoal.js';   // crew goals (README, Crew rooms, Crew goals)
 import { masteryPalette } from '../career/palettes.js';
 import { earlyRank } from '../career/mastery.js';
 import { palettesFor } from '../career/palettes.js';   // the title's ticker of game-wide stats (README, Analytics, The title's ticker)
@@ -1956,6 +1957,13 @@ export function createFlow(ctx) {
       else if (state === 'onlinePost') paintBetween();   // the crew record under the score
     });
     c.on('status', () => { if (state === 'crewLobby') paintLobby(); });
+    c.on('goalpay', (m) => {   // the crew's weekly goal was met: the bonus, said on the status line
+      const a = fromCrewGoal(m);
+      if (!a) return;
+      crewNote = `CREW GOAL MET: +${a.xp} XP  +${a.sticks} STICKS`;
+      if (lob) lob.noteUntil = performance.now() + 6000;
+      if (state === 'crewLobby') paintLobby();
+    });
     c.on('match', (m) => { if (state === 'crewLobby') startCrewMatch(m); else c.lobby(); });
     c.on('rotate', (m) => {
       // (the guest may still be confirming the match's last frames when this lands: it waits for the post-match screen)
@@ -1983,8 +1991,9 @@ export function createFlow(ctx) {
   /** entering the lobby: connect (or say we're back from a match), and a winner staying on is ready at once */
   function crewEnter() {
     const p = profile(), c = crewC();
-    if (!c.active || c.slug !== crewSlug) { crewFail = ''; c.connect(crewSlug, { pid: p.id, name: p.name }); }
-    else c.lobby();
+    const title = careerNow().title;   // beside their initials on the crew goal
+    if (!c.active || c.slug !== crewSlug) { crewFail = ''; c.connect(crewSlug, { pid: p.id, name: p.name, title }); }
+    else c.lobby(title);
     if (rotating && rotating.stay && rotating.stay === c.you) c.play(true, true);
     rotating = null; crewMatch = null;
     setCrewParam(crewSlug);   // the address bar holds the crew's link while you're in it: bookmark it
@@ -2182,8 +2191,43 @@ export function createFlow(ctx) {
     else paintStandings(t, s, c, you, list);
     paintLobbyRest(c, s, you, list);
   }
+  /** The crew's weekly goal (README, Crew rooms, Crew goals): what it is, a bar, and who has played toward it by
+   *  initials and title (in the order they joined in, no counts), then Employee of the Month. Cooperative and
+   *  celebratory: nothing here names anyone at the bottom. */
+  function goalBox(s, you, up) {
+    const g = s && s.goal;
+    if (!g) return null;
+    const box = el('div', `fl-goal${g.met ? ' fl-goalmet' : ''}`);
+    const head = el('div', 'fl-goalhead');
+    head.append(el('span', 'fl-goalsl', '//'), el('span', 'fl-goalkey', g.met ? 'CREW GOAL MET' : 'CREW GOAL'), el('span', 'fl-goaltext', goalText(g.kind, g.target)), el('span', 'fl-goalnum', `${g.progress} / ${g.target}`));
+    const bar = el('div', 'fl-goalbar'), fill = el('i', '');
+    fill.style.width = `${Math.round((100 * Math.min(g.progress, g.target)) / Math.max(1, g.target))}%`;
+    bar.appendChild(fill);
+    const who = el('div', 'fl-goalwho');
+    const list = g.who || [], cap = up ? 50 : 6;
+    for (const w of list.slice(0, cap)) who.appendChild(el('span', `fl-goalchip${w.id === you ? ' fl-me' : ''}`, withTitle(w.ini, w.title || '')));
+    if (list.length > cap) who.appendChild(el('span', 'fl-goalchip fl-goalmore', `+${list.length - cap} MORE`));
+    if (!list.length) who.appendChild(el('span', 'fl-goalnone', 'NOBODY YET THIS WEEK  ·  EVERY CREW MATCH COUNTS'));
+    const days = Math.max(0, Math.ceil((g.ends - Date.now()) / 86400000));
+    const left = days <= 1 ? 'ENDS TONIGHT (UTC)' : `${days} DAYS LEFT`;
+    const pay = `+${g.pay.xp} XP  +${g.pay.sticks} STICKS`;
+    const note = el('div', 'fl-goalnote', g.met ? `NICE WORK. EVERYONE WHO PLAYED THIS WEEK GETS ${pay}` : `EVERYONE WHO PLAYS THIS WEEK GETS ${pay} WHEN THE CREW HITS IT  ·  ${left}`);
+    box.append(head, bar, who, note);
+    const e = s.eotm;
+    if (e) {
+      const eo = el('div', `fl-eotm${e.id === you ? ' fl-me' : ''}`);
+      eo.append(el('span', 'fl-eotmstar', '★'), el('span', 'fl-eotmkey', e.current ? 'EMPLOYEE OF THE MONTH' : `${e.name}'S EMPLOYEE OF THE MONTH`),
+        el('span', 'fl-eotmwho', withTitle(e.ini, e.title || '')), el('span', 'fl-eotmw', `${e.w} CREW ${e.w === 1 ? 'WIN' : 'WINS'}${e.current ? ` IN ${e.name}` : ''}`));
+      box.appendChild(eo);
+    }
+    return box;
+  }
   /** the standings: everyone who has opened the link, the most wins first */
   function paintStandings(t, s, c, you, list) {
+    const up = !!t.closest('.fl-up');
+    const gb = goalBox(s, you, up);
+    if (gb) t.appendChild(gb);
+    const star = s && s.eotm && s.eotm.current ? s.eotm.id : '';   // Employee of the Month's row gets a star
     // (upright shows only rank, name with its READY/PLAYING chip, W and L: the D, VS YOU and FAVORITE cells carry fl-sd, fl-svs and fl-sfav so the layout can drop them)
     for (const h of ['', 'NAME', 'W', 'L', 'D', 'VS YOU', 'FAVORITE']) t.appendChild(el('span', `fl-sth${'WLDVS YOU'.includes(h) && h ? ' fl-snum' : ''}${h === 'D' ? ' fl-sd' : ''}${h === 'VS YOU' ? ' fl-svs' : ''}${h === 'FAVORITE' ? ' fl-sthfav' : ''}`, h));
     const shown = list.slice(0, t.closest('.fl-up') ? 50 : 7);
@@ -2193,7 +2237,9 @@ export function createFlow(ctx) {
       t.appendChild(el('span', 'fl-srank' + cls, String(i + 1)));
       const nm = el('span', 'fl-sname' + cls);
       const dot = el('i', `fl-dot ${m.on ? ON[m.on][1] : ''}`);
-      nm.append(dot, el('span', 'fl-snm', m.name));   // the name clips, never the chip after it
+      nm.append(dot);
+      if (m.id === star) nm.appendChild(el('b', 'fl-star', '★'));
+      nm.append(el('span', 'fl-snm', m.name));   // the name clips, never the chip after it
       const chip = m.on === 'ready' || m.on === 'match';
       // (YOU) goes when a chip shows, and always upright: the row's pink and YOU'RE <name> above say it, so the name gets the room
       if (mine && !chip) nm.appendChild(el('span', 'fl-youtag', ' (YOU)'));

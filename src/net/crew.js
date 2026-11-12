@@ -4,10 +4,12 @@
 // opens for the two players.
 //
 //   const crew = createCrew()
-//   crew.connect(slug, { pid, name })   open (or switch to) a crew; reconnects by itself if dropped
-//   crew.on('state' | 'match' | 'rotate' | 'error' | 'status', fn)
+//   crew.connect(slug, { pid, name, title })   open (or switch to) a crew; reconnects by itself if dropped
+//                          (title: the player's job title, shown beside their initials on the crew goal)
+//   crew.on('state' | 'match' | 'rotate' | 'goalpay' | 'error' | 'status', fn)
+//                          goalpay: the crew's weekly goal was met and paid this player (src/career/store.js fromCrewGoal)
 //   crew.play(on, stay?)   ready to fight whoever else is ready (stay: the winner staying on goes first)
-//   crew.lobby()           back in the lobby after a match
+//   crew.lobby(title?)     back in the lobby after a match (with the title, which a promotion may have changed)
 //   crew.result(r)         the host reports a match: { match, n, winner, wins, chars }
 //   crew.rename(name)
 //   crew.close()
@@ -47,6 +49,7 @@ export function createCrew() {
       } else if (m.t === 'state') { state = m; emit('state', m); }
       else if (m.t === 'match') { ready = false; stay = false; emit('match', m); }
       else if (m.t === 'rotate') emit('rotate', m);
+      else if (m.t === 'goalpay') emit('goalpay', m);
       else if (m.t === 'error') {
         if (FATAL.has(m.reason)) want = false;
         emit('error', String(m.reason || 'error'));
@@ -64,14 +67,14 @@ export function createCrew() {
   const crew = {
     on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); return () => { const l = handlers[ev]; const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1); }; },
     connect(s, who) {
-      hello = { pid: who.pid, name: who.name };
+      hello = { pid: who.pid, name: who.name, title: who.title || '' };
       if (s === slug && want && ws) { send({ t: 'name', name: who.name }); return; }
       crew.close();
       slug = s; want = true; tries = 0; state = null; you = '';
       open();
     },
     play(on, stayOn = false) { ready = !!on; stay = !!on && stayOn; send({ t: 'play', on: !!on, stay: !!stayOn }); },
-    lobby() { ready = false; stay = false; send({ t: 'lobby' }); },
+    lobby(title) { ready = false; stay = false; if (hello && title) hello.title = title; send({ t: 'lobby', title: title || '' }); },
     result(r) { send({ t: 'result', ...r }); },
     rename(name) { if (hello) hello.name = name; send({ t: 'name', name }); },
     close() {

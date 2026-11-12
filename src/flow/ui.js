@@ -603,6 +603,31 @@ function injectStyle() {
   .fl-stgrid { display: grid; column-gap: 0.8cqw; row-gap: 0.3cqh; align-items: baseline; font-size: 2cqw; }
   .fl-stmem { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .fl-stmu { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
+  /* the crew's weekly goal over the standings (README, Crew rooms, Crew goals): plain text, square, no glow */
+  .fl-goal, .fl-goal * { text-shadow: none; }
+  .fl-goal { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 0.5cqh; padding: 0.5cqw 0.8cqw 0.6cqw; margin-bottom: 0.6cqh; border: 2px solid rgba(255,176,46,0.55); background: rgba(10,4,20,0.7); }
+  .fl-goal.fl-goalmet { border-color: #9dffc0; }
+  .fl-goalhead { display: flex; align-items: baseline; gap: 0.8cqw; min-width: 0; font-size: 1.9cqw; letter-spacing: 0.08em; }
+  .fl-standings .fl-goalhead .fl-goalsl { color: var(--amber); flex: none; }
+  .fl-standings .fl-goalhead .fl-goalkey { color: rgba(214,190,255,0.75); flex: none; font: 400 1.2cqw/1 'Bungee', sans-serif; }
+  .fl-standings .fl-goalhead .fl-goaltext { color: #fff4d6; flex: 1 1 auto; min-width: 0; }
+  .fl-standings .fl-goalhead .fl-goalnum { color: var(--amber); flex: none; font-variant-numeric: tabular-nums; }
+  .fl-goalmet .fl-goalhead .fl-goalsl, .fl-standings .fl-goalmet .fl-goalhead .fl-goalnum, .fl-standings .fl-goalmet .fl-goalhead .fl-goalkey { color: #9dffc0; }
+  .fl-goalbar { height: 0.9cqw; min-height: 6px; border: 2px solid rgba(255,176,46,0.45); background: rgba(255,176,46,0.08); }
+  .fl-goalbar > i { display: block; height: 100%; background: var(--amber); }
+  .fl-goalmet .fl-goalbar { border-color: rgba(157,255,192,0.6); } .fl-goalmet .fl-goalbar > i { background: #9dffc0; }
+  .fl-goalwho { display: flex; flex-wrap: wrap; gap: 0.4cqw 0.6cqw; font-size: 1.5cqw; }
+  .fl-standings .fl-goalwho .fl-goalchip { padding: 0.25cqw 0.5cqw 0.1cqw; border: 2px solid rgba(46,242,255,0.45); color: #d9fbff; letter-spacing: 0.1em; }
+  .fl-standings .fl-goalwho .fl-goalchip.fl-me { border-color: rgba(255,43,214,0.6); color: #ffc2f3; }
+  .fl-standings .fl-goalwho .fl-goalmore, .fl-standings .fl-goalwho .fl-goalnone { border-color: transparent; color: rgba(214,190,255,0.7); }
+  .fl-standings .fl-goalnote { font-size: 1.4cqw; font-weight: 500; letter-spacing: 0.08em; color: rgba(214,190,255,0.8); white-space: normal; }
+  .fl-standings .fl-goalmet .fl-goalnote { color: #9dffc0; }
+  .fl-eotm { display: flex; align-items: baseline; gap: 0.8cqw; min-width: 0; padding-top: 0.4cqh; border-top: 2px solid rgba(255,176,46,0.25); font-size: 1.6cqw; letter-spacing: 0.08em; }
+  .fl-standings .fl-eotm .fl-eotmstar, .fl-standings .fl-star { color: #ffd23f; flex: none; }
+  .fl-standings .fl-eotm .fl-eotmkey { color: #ffd98f; flex: none; font: 400 1.1cqw/1 'Bungee', sans-serif; }
+  .fl-standings .fl-eotm .fl-eotmwho { color: #fff4d6; flex: none; }
+  .fl-standings .fl-eotm .fl-eotmw { color: rgba(214,190,255,0.8); min-width: 0; }
+  .fl-standings .fl-star { font-weight: 400; }
   .fl-stgrid .fl-sfav { font-size: 1.8cqw; }
 
   /* A narrow stage: a phone held upright, where the stage is about 390 by 219. A column of seven or nine
@@ -889,6 +914,14 @@ function injectStyle() {
   #flow > .fl-up.fl-crew .fl-stsum { font-size: max(14px, 4.4cqw); }
   #flow > .fl-up.fl-crew .fl-stgrid { font-size: max(13px, 3.9cqw); column-gap: 2.4cqw; }
   #flow > .fl-up.fl-crew .fl-stgrid .fl-sfav, #flow > .fl-up.fl-crew .fl-stpicks .fl-sfav { font-size: max(12px, 3.6cqw); }
+  /* the crew goal held upright: the same box, at phone sizes, scrolling with the list under the tabs */
+  #flow > .fl-up.fl-crew .fl-goal { gap: 0.4em; padding: 0.5em 2.4cqw 0.6em; margin: 0.4em 0 0.2em; }
+  #flow > .fl-up.fl-crew .fl-goalhead { font-size: max(13px, 3.9cqw); gap: 1.6cqw; flex-wrap: wrap; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-goalhead .fl-goalkey, #flow > .fl-up.fl-crew .fl-standings .fl-eotm .fl-eotmkey { font: 600 max(12px, 3.4cqw)/1 'Teko', sans-serif; letter-spacing: 0.1em; }
+  #flow > .fl-up.fl-crew .fl-goalbar { height: 8px; }
+  #flow > .fl-up.fl-crew .fl-goalwho { font-size: max(12px, 3.4cqw); gap: 1.4cqw 1.6cqw; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-goalnote { font-size: max(12px, 3.3cqw); }
+  #flow > .fl-up.fl-crew .fl-eotm { font-size: max(12px, 3.5cqw); gap: 1.6cqw; flex-wrap: wrap; }
 
   /* the LIVE list: every match, scrolling past what fits */
   #flow > .fl-up .fl-livelist { width: 100%; flex: 0 1 auto; padding: 1cqw; margin: -1cqw; }

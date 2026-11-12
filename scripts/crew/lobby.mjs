@@ -9,9 +9,14 @@
 // member: the ARCADE, HORDE and STATS tabs show the crew's tables and stats, on the screen. Then a run that
 // misses this device's table but makes the crew's goes through GAME OVER to the initials (which say so),
 // is posted, lands on the crew's table, and the attract loop's tables include the crew's.
+// Crew goals (README, Crew rooms, Crew goals): at each size the STANDINGS tab opens on the week's goal (its words,
+// the bar, who played by initials and title, Employee of the Month with a star on that row), on screen, square and
+// with no glow, and nothing that names a worst or a bottom; then on the desktop a match that meets the goal pays
+// ALICE's page +150 sticks and +100 XP once (in localStorage), and says CREW GOAL MET. Needs DEV_HOOKS=1.
 import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { goalFor, goalText, weekOf, GOAL_PAY, monthName, monthOf } from '../../src/career/crewgoal.js';
 
 const argv = process.argv.slice(2);
 const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
@@ -32,12 +37,24 @@ function sock(url) {
   const next = async (pred, ms = 6000) => { const t0 = Date.now(); for (;;) { const i = q.findIndex(pred); if (i >= 0) return q.splice(i, 1)[0]; if (Date.now() - t0 > ms) throw new Error('timeout'); await sleep(30); } };
   return { ws, open, q, next, send: (o) => ws.send(JSON.stringify(o)), close: () => { try { ws.close(); } catch { /* gone */ } } };
 }
-async function member(slug, pid, name) { const s = sock(`${WS}crews/${slug}/ws`); await s.open; s.send({ t: 'hello', pid, name }); await s.next((m) => m.t === 'welcome'); return s; }
+/** a member in the lobby. Run right after check.mjs, the Worker's JOIN_LIMIT (30 sockets a minute per IP) may say busy:
+ *  wait it out and try again */
+async function member(slug, pid, name, title = '') {
+  for (let k = 0; ; k++) {
+    const s = sock(`${WS}crews/${slug}/ws`); await s.open;
+    s.send({ t: 'hello', pid, name, ...(title ? { title } : {}) });
+    const m = await s.next((x) => x.t === 'welcome' || x.ev === 'error' || x.t === 'error', 8000).catch(() => null);
+    if (m && m.t === 'welcome') return s;
+    s.close();
+    if (k > 20) throw new Error(`no welcome: ${JSON.stringify(m)}`);
+    await sleep(4000);
+  }
+}
 
 const crew = await (await post('crews', { name: 'LUNCH CREW' })).json();
 const slug = crew.slug;
 const P = { alice: 'a'.repeat(32), bob: 'b'.repeat(32) };
-const A = await member(slug, P.alice, 'ALICE'), B = await member(slug, P.bob, 'BOB');
+const A = await member(slug, P.alice, 'ALICE'), B = await member(slug, P.bob, 'BOB', 'INTERN');
 const MATCHES = [[['courier', 'intern'], 0, 75], [['courier', 'intern'], 1, 92], [['lawyer', 'chef'], 0, 140], [['courier', 'barista'], -1, 198], [['courier', 'intern'], 0, 66]];
 for (const [chars, winner, secs] of MATCHES) {
   A.send({ t: 'play', on: true }); await sleep(60); B.send({ t: 'play', on: true });
@@ -56,6 +73,33 @@ for (const [initials, kind, score, char, reach, clear] of RUNS) {
 }
 for (const s of [A, B, ...extra]) s.close();
 check('a crew with matches and runs', true, slug);
+// this week's goal, made when ALICE first opened the crew (one member): the five matches above count toward it
+const GOAL = { ...goalFor(weekOf(), 1) };
+let EW = 3;   // ALICE's crew wins this month (Employee of the Month)
+let PROG = Math.min(GOAL.target, { matches: 5, rounds: 3 + 2 + 3 + 2 + 3, wins: 4 }[GOAL.kind]);
+/** a seeded match between ALICE and BOB that ALICE wins 2-0 (from sockets beside any page) */
+async function seedMatch() {
+  const a = await member(slug, P.alice, 'ALICE'), b = await member(slug, P.bob, 'BOB', 'INTERN');
+  a.send({ t: 'play', on: true }); await sleep(60); b.send({ t: 'play', on: true });
+  const m = await a.next((x) => x.t === 'match'); await b.next((x) => x.t === 'match');
+  a.send({ t: 'result', match: m.id, n: 1, winner: 0, wins: [2, 0], chars: ['courier', 'intern'], secs: 50 });
+  await sleep(500); a.close(); b.close();
+}
+const goalBox = (p) => p.evaluate(() => {
+  const g = document.querySelector('.fl-crew .fl-standings .fl-goal');
+  if (!g) return null;
+  const all = [g, ...g.querySelectorAll('*')];
+  const fill = g.querySelector('.fl-goalbar > i');
+  const starRow = document.querySelector('.fl-crew .fl-standings .fl-star');
+  return {
+    text: g.innerText.replace(/\s+/g, ' '),
+    chips: [...g.querySelectorAll('.fl-goalchip')].map((c) => c.textContent),
+    fill: fill ? Math.round((100 * fill.offsetWidth) / fill.parentElement.clientWidth) : -1,   // (layout sizes: the stage is scaled)
+    glow: all.filter((e) => getComputedStyle(e).textShadow !== 'none' || /blur|drop-shadow/.test(getComputedStyle(e).filter)).length,
+    round: all.filter((e) => parseFloat(getComputedStyle(e).borderTopLeftRadius) > 2).length,
+    star: starRow ? starRow.parentElement.innerText.replace(/\s+/g, ' ') : '',
+  };
+});
 
 // ---- the pages -----------------------------------------------------------------------------------------
 const browsers = [];
@@ -103,6 +147,18 @@ try {
     check(`${label}: the crew link opens the lobby`, await until(async () => (await flow(p)) === 'crewLobby'), await flow(p));
     check(`${label}: the lobby has its four tabs`, await until(() => p.evaluate(() => document.querySelectorAll('.fl-crewtab').length === 4)));
     await until(async () => /ALICE/.test(await tableText(p)));
+    // the week's goal over the standings
+    const gb = await until(() => goalBox(p));
+    const words = goalText(GOAL.kind, GOAL.target);
+    check(`${label}: the goal is over the standings: ${words}, ${PROG} / ${GOAL.target}`, gb && gb.text.includes('CREW GOAL') && gb.text.includes(words) && gb.text.includes(`${PROG} / ${GOAL.target}`), gb && gb.text.slice(0, 120));
+    check(`${label}: the bar is ${Math.round((100 * PROG) / GOAL.target)}% full`, gb && Math.abs(gb.fill - (100 * PROG) / GOAL.target) <= 3, gb && String(gb.fill));
+    check(`${label}: who played this week, by initials and title only (AL · TEMP from this page, BO · INTERN)`, gb && gb.chips.includes('AL · TEMP') && gb.chips.includes('BO · INTERN') && !gb.text.includes('ALICE') && !gb.text.includes('BOB'), gb && gb.chips.join(','));
+    check(`${label}: what it pays, said up front`, gb && gb.text.includes(`+${GOAL_PAY.xp} XP +${GOAL_PAY.sticks} STICKS`), gb && gb.text.slice(-140));
+    check(`${label}: Employee of the Month: AL with ${EW} crew wins in ${monthName(monthOf())}`, gb && gb.text.includes('EMPLOYEE OF THE MONTH') && gb.text.includes('AL · TEMP') && gb.text.includes(`${EW} CREW WINS IN ${monthName(monthOf())}`), gb && gb.text.slice(-90));
+    check(`${label}: and ALICE's row in the standings has the star`, gb && /★\s*ALICE/.test(gb.star), gb && gb.star);
+    check(`${label}: the goal box is plain: no glow, square corners`, gb && gb.glow === 0 && gb.round === 0, gb && `${gb.glow} glowing, ${gb.round} rounded`);
+    check(`${label}: nothing names a worst, a bottom or a last place`, !/WORST|BOTTOM|LAST PLACE|LOSER|SLACK/.test(await tableText(p)));
+    check(`${label}: the standings with the goal are on the screen`, !(await onScreen(p)), await onScreen(p));
     await sleep(500); await shot(p, `lobby-standings-${label}`);
     await tab(p, 'arcade');
     const ar = await until(async () => { const t = await tableText(p); return /SCO/.test(t) && /ABC/.test(t) ? t : null; });
@@ -115,12 +171,35 @@ try {
     await tab(p, 'stats');
     const st = await until(async () => { const t = await tableText(p); return /PLAYED/.test(t) ? t : null; });
     const flat = (st || '').replace(/\s+/g, ' ');
-    check(`${label}: STATS: time played (571 s is 9M) and matches`, /9M PLAYED/.test(flat) && /5 MATCHES/.test(flat), flat.slice(0, 80));
-    check(`${label}: STATS: most picked, each player's time and favorite, the crew's matchups`, /MOST PICKED/.test(flat) && /COURIER 4/.test(flat) && /ALICE 9M COURIER/.test(flat) && /MATCHUPS/.test(flat) && /COURIER 67% INTERN 3/.test(flat), flat.slice(0, 260));
+    // (after the desktop's goal-meeting match, one more: 621 s, COURIER 3 of 4 against INTERN)
+    const X = EW > 3 ? { t: '10M', n: 6, c: 5, mu: 'COURIER 75% INTERN 4' } : { t: '9M', n: 5, c: 4, mu: 'COURIER 67% INTERN 3' };
+    check(`${label}: STATS: time played (${X.t}) and matches`, flat.includes(`${X.t} PLAYED`) && flat.includes(`${X.n} MATCHES`), flat.slice(0, 80));
+    check(`${label}: STATS: most picked, each player's time and favorite, the crew's matchups`, /MOST PICKED/.test(flat) && flat.includes(`COURIER ${X.c}`) && flat.includes(`ALICE ${X.t} COURIER`) && /MATCHUPS/.test(flat) && flat.includes(X.mu), flat.slice(0, 260));
     check(`${label}: STATS is on the screen`, !(await onScreen(p)), await onScreen(p));
     const f = await minFont(p);
     check(`${label}: the stats' smallest text is ${f} px`, f >= (label === 'desktop' ? 12 : 6), String(f));
     await sleep(300); await shot(p, `lobby-stats-${label}`);
+    if (label === 'desktop') {
+      await tab(p, 'standings');
+      // meet the goal: a target one past where it stands, then ALICE (this page's member) wins one more
+      await post(`crews/${slug}/dev-goal`, { target: PROG + 1, kind: GOAL.kind });
+      const before = await p.evaluate(() => JSON.parse(localStorage.getItem('stick-fight-career') || '{}'));
+      await seedMatch();
+      const met = await until(async () => { const g = await goalBox(p); return g && g.text.includes('CREW GOAL MET') ? g : null; }, 10000);
+      check('desktop: met: the box says CREW GOAL MET and the bar is full', met && met.fill >= 99, met && met.text.slice(0, 100));
+      const status = await until(() => p.evaluate(() => { const t = document.querySelector('.fl-crewstatus').innerText; return /CREW GOAL MET/.test(t) ? t : null; }), 6000);
+      check('desktop: the status line says what it paid', status && status.includes(`+${GOAL_PAY.xp} XP`) && status.includes(`+${GOAL_PAY.sticks} STICKS`), status);
+      await shot(p, 'lobby-goal-met-desktop');
+      const after = await p.evaluate(() => JSON.parse(localStorage.getItem('stick-fight-career') || '{}'));
+      const s0 = (before.career && before.career.sticks) || 0, x0 = (before.career && before.career.xp) || 0;
+      check('desktop: the guest page added +150 sticks and +100 XP to its own career, keyed to the crew and week', after.career && after.career.sticks - s0 === GOAL_PAY.sticks && after.career.xp - x0 === GOAL_PAY.xp && (after.crewPaid || []).includes(`${slug}:${weekOf()}`), JSON.stringify([s0, after.career && after.career.sticks, after.crewPaid]));
+      await p.reload(); await p.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 90000 });
+      await p.evaluate(() => { let last = performance.now(), k = 0; window.__pump = setInterval(() => { const now = performance.now(), ms = Math.min(100, now - last); last = now; if (++k % 12 === 0) window.__gauntlet.step(ms); else window.__game.advance(ms); }, 8); });
+      await until(async () => (await flow(p)) === 'crewLobby'); await sleep(1500);
+      const again = await p.evaluate(() => JSON.parse(localStorage.getItem('stick-fight-career') || '{}'));
+      GOAL.target = PROG + 1; PROG += 1; EW += 1;   // the sizes after this see it met
+      check('desktop: reloading the lobby pays nothing more', again.career && again.career.sticks === after.career.sticks, `${after.career && after.career.sticks} -> ${again.career && again.career.sticks}`);
+    }
     check(`${label}: no page errors`, !p.errors.length, p.errors.join(' | ').slice(0, 200));
     await closeAll();
   }
@@ -144,7 +223,7 @@ try {
   await p.evaluate(() => [...document.querySelectorAll('.fl-key')].find((k) => k.textContent === 'ENTER').click());
   check('run: on to the crew\'s table', await until(async () => (await flow(p)) === 'highScores'));
   const landed = await until(() => p.evaluate(() => { const s = document.querySelector('.fl-scores'); const n = s && s.querySelector('.fl-new'); return n && /ZED/.test(s.innerText) ? s.innerText.replace(/\s+/g, ' ') : null; }), 10000);
-  check('run: LUNCH CREW · HORDE with ZED highlighted in 2nd', landed && /LUNCH CREW · HORDE/.test(landed) && /2 ZED 15,500 CHEF 2 FLOORS/.test(landed), (landed || '').slice(0, 160));
+  check('run: LUNCH CREW · HORDE with ZED highlighted in 2nd', landed && /LUNCH CREW · HORDE/.test(landed) && /2 ZED( · TEMP)? 15,500 CHEF 2 FLOORS/.test(landed), (landed || '').slice(0, 160));
   await sleep(300); await shot(p, 'run-crew-table');
   const board = await (await fetch(`${API}crews/${slug}/scores`)).json();
   check('run: the crew\'s horde table has it, from the server', board.horde.some((r) => r.initials === 'ZED' && r.score === 15500 && r.char === 'chef' && r.reach === 2));
