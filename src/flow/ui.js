@@ -645,7 +645,7 @@ function injectStyle() {
      height, where 18 cards were 60 px tall. So this one screen leaves the box: #flow takes the whole viewport
      under the top buttons, and the roster is a carousel with the sheet under it. Units here are the phone's
      (#flow is the container), so 1cqw is about 4 px, not 13. The touch controls stand down while it's up. */
-  html.sq #flow:has(> .fl-tall) { position: fixed; inset: 0; z-index: 19; }
+  html.sq #flow:has(> .fl-tall) { position: fixed; inset: 0 0 auto 0; height: 100vh; height: 100dvh; height: var(--sf-seen-h, 100dvh); z-index: 19; }   /* the height you can see (select.js syncVisible) */
   html.sq:has(#flow > .fl-tall) .tc-stickzone, html.sq:has(#flow > .fl-tall) .tc-cluster { display: none; }
   #flow .fl-tall { justify-content: flex-start; gap: 1.1cqh; padding: calc(var(--tc-strip, 3rem) + 0.25rem) 4cqw max(0.75rem, env(safe-area-inset-bottom)); }
   html.sq #flow .fl-tall.fl-veil { background: radial-gradient(ellipse at 50% 28%, rgba(26,8,54,0.97), rgba(5,1,12,0.985) 70%); }   /* outranks the square's see-through veil (src/touch.js) */
@@ -713,6 +713,15 @@ function injectStyle() {
   @container (max-height: 600px) {
     #flow .fl-tall .fl-moves, #flow .fl-tall .fl-tagline { display: none; }
   }
+  /* the same steps by measure (select.js fitTall): whatever the breakpoints left in, if the footer still runs off
+     the bottom (the online pick screen's extra lines, a phone's bars), the screen takes the next step */
+  #flow .fl-tall.fl-fit1 .fl-moves small { display: none; }
+  #flow .fl-tall.fl-fit1 .fl-tagline { font-size: 4cqw; }
+  #flow .fl-tall.fl-fit1 .fl-stats { grid-template-columns: auto 1fr auto 1fr; }
+  #flow .fl-tall.fl-fit1 .fl-stats span { font-size: 3.4cqw; }
+  #flow .fl-tall.fl-fit1 { gap: 0.9cqh; }
+  #flow .fl-tall.fl-fit2 .fl-moves, #flow .fl-tall.fl-fit2 .fl-tagline { display: none; }
+  #flow .fl-tall.fl-fit3 .fl-selhints { display: none; }
 
   /* ---- Held upright: every menu (.fl-up, set by show() above) -------------------------------------------------
      The menu leaves the 16:9 strip for the whole screen under the top buttons, like the character select. #flow is

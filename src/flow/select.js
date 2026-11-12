@@ -335,7 +335,44 @@ export function openSelect(ui, o) {
     paint(roster[cur]);
     place(true);
     if (marked) { const [id, label, cls] = marked.split('|'); marked = ''; api.mark(id, label, cls); }
+    if (tall) { fitTall(); requestAnimationFrame(fitTall); watchFit(); }
   }
+
+  // Upright, the screen has to fit the height you can see, and how much it holds above the carousel varies: the
+  // online pick screen has a second subtitle line and a status line, a long rival name wraps, and a phone's
+  // browser bars take what they take. So rather than guess with breakpoints, it measures: with everything in, then
+  // a step at a time (fl-fit1: the move notes go and the bars pair up; fl-fit2: the moves and tagline go, MOVE LIST
+  // has them; fl-fit3: the hint line goes) until the footer is on screen and the carousel is at least RING_MIN tall. The
+  // carousel shrinks first on its own (flex, down to its 120 px floor); the steps are for when that isn't enough. Until 2026-11-12 these were
+  // @container height breakpoints tuned for the offline select, and the online one ran its footer off the bottom.
+  const FIT_STEPS = ['fl-fit1', 'fl-fit2', 'fl-fit3'];
+  // too tall for the screen, or the carousel squeezed under RING_MIN (a card you can't read at a glance)
+  const RING_MIN = 150;
+  function overflows() { return screenEl.scrollHeight > screenEl.clientHeight + 1 || (!!ring && ring.clientHeight < RING_MIN); }
+  function fitTall() {
+    if (!tall || !screenEl || !screenEl.isConnected) return;
+    syncVisible();
+    screenEl.classList.remove(...FIT_STEPS);
+    for (const c of FIT_STEPS) { if (!overflows()) break; screenEl.classList.add(c); }
+  }
+  /** the height you can actually see, for #flow's fixed layer upright (ui.js): a phone browser whose toolbar
+   *  sits over the page reports a layout height taller than what shows; the visual viewport doesn't */
+  function syncVisible() {
+    const vv = window.visualViewport, root = document.documentElement;
+    if (vv && vv.height > 0 && vv.scale <= 1.01) root.style.setProperty('--sf-seen-h', `${Math.round(vv.height)}px`);
+    else root.style.removeProperty('--sf-seen-h');
+  }
+  let fitObs = null, fitRaf = 0;
+  function watchFit() {
+    if (fitObs) fitObs.disconnect();
+    if (typeof ResizeObserver === 'undefined' || !screenEl) return;
+    // the layer's size (the phone turning, the bars sliding) and the lines above the carousel (a status that
+    // grows a line); the fit steps change neither, so this never feeds itself
+    fitObs = new ResizeObserver(() => { cancelAnimationFrame(fitRaf); fitRaf = requestAnimationFrame(() => { if (ui.screen !== screenEl) { fitObs.disconnect(); return; } fitTall(); }); });
+    if (screenEl.parentElement) fitObs.observe(screenEl.parentElement);
+    for (const k of screenEl.querySelectorAll(':scope > .fl-h2, :scope > .fl-label, :scope > .fl-selstatus')) fitObs.observe(k);
+  }
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (tall && ui.screen === screenEl) fitTall(); });
 
   // Left and right go round the ring: on a card they step through the roster in order and wrap from the last
   // fighter to the first. Upright, down from the carousel goes to PICK and up from the footer comes back to
