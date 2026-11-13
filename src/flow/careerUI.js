@@ -372,7 +372,7 @@ function injectStyle() {
   #flow .fl-btn.fl-pcard { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.5cqh 1.2cqw; width: 40cqw; min-width: 0;
     padding: 1cqh 1.4cqw; text-align: left; border: 2px solid rgba(255,176,46,0.85); background: rgba(10,4,20,0.86); color: #fff4fd; box-shadow: none; }
   #flow .fl-btn.fl-pcard.fl-focus, #flow .fl-btn.fl-pcard:focus-visible { background: rgba(255,176,46,0.16); border-color: #ffb02e; outline: 2px solid #ffb02e; outline-offset: 2px; }
-  .pc-top { display: flex; align-items: baseline; gap: 1.2cqw; min-width: 0; }
+  .pc-top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 1.2cqw; min-width: 0; }   /* the whole width: SAVE MY PROFILE sizes column 2 */
   .pc-name { font: 400 2.6cqw/1 'Bungee', sans-serif; color: #fff4fd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pc-title { font: 600 2.4cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffc46b; white-space: nowrap; }
   .pc-bar { grid-column: 1 / -1; display: block; height: max(6px, 0.9cqh); background: rgba(255,176,46,0.18); border: 1px solid rgba(255,176,46,0.6); }
@@ -429,24 +429,31 @@ function injectStyle() {
     .cr-title { font-size: max(16px, 2.4cqw); } .cr-rlabel, .cr-next { font-size: max(12px, 1.6cqw); }
     .cr-wallet { text-align: right; }
     .ms-head { flex-wrap: wrap; row-gap: 0.4cqh; } .ms-head > * { white-space: nowrap; }
+    /* MAIN MENU's profile card and shifts, the corner chip and the sign-up nudge get the same floors */
+    .pc-name { font-size: max(17px, 2.6cqw); } .pc-title { font-size: max(16px, 2.4cqw); } .pc-xp, .pc-tag { font-size: max(13px, 1.6cqw); }
+    .sh-head { font-size: max(13px, 1.8cqw); } .sh-row { font-size: max(14px, 2cqw); } .sh-row .sh-pay { font-size: max(13px, 1.8cqw); } .sh-foot { font-size: max(12px, 1.4cqw); }
+    .pto-x, .pto-text { font-size: max(14px, 2cqw); }
+    .cr-chip { font-size: max(14px, 2cqw); } .cr-chip span { font-size: max(13px, 1.7cqw); }
+    .cr-nudge { font-size: max(15px, 2.2cqw); } .cr-nudge .cr-nsub { font-size: max(13px, 1.8cqw); }
   }
-  /* held upright the stage is short: everything a size up so it stays readable */
+  /* held upright the stage is narrow: everything a size up, and on a phone (about 390 px wide, so 1cqw is 4 px)
+     every size has a pixel floor so nothing is under 13 px */
   @container (max-aspect-ratio: 1/1) {
-    .cr-earn { min-width: 76cqw; } .cr-nudge { max-width: 86cqw; font-size: 3.6cqw; } .cr-nudge .cr-nsub { font-size: 3cqw; }
-    .cr-lines { font-size: 3.4cqw; } .cr-lines .cr-num { font-size: 3cqw; } .cr-lines .cr-h { font-size: 2.6cqw; }
-    .cr-promo span { font-size: 3.4cqw; } .cr-promo b { font-size: 5cqw; }
-    .cr-row { font-size: 3.2cqw; } .cr-sum, .cr-wallet { font-size: 3.4cqw; } .cr-note { font-size: 2.9cqw; }
-    .ms-head, .ms-unlock { font-size: 3.2cqw; } .ms-next { font-size: 2.8cqw; } .ms-up span { font-size: 3.4cqw; } .ms-up b { font-size: 4.6cqw; }
-    .ms-chip { font-size: 3.2cqw; }
-    .cr-title { font-size: 3.6cqw; } .cr-rlabel, .cr-next { font-size: 2.8cqw; }
-    .cr-chip { font-size: 3.4cqw; } .cr-chip span { font-size: 3cqw; }
+    .cr-earn { min-width: 76cqw; } .cr-nudge { max-width: 86cqw; font-size: max(16px, 3.6cqw); } .cr-nudge .cr-nsub { font-size: max(15px, 3cqw); }
+    .cr-lines { font-size: max(16px, 3.4cqw); } .cr-lines .cr-num { font-size: max(15px, 3cqw); } .cr-lines .cr-h { font-size: max(13px, 2.6cqw); }
+    .cr-promo span { font-size: max(16px, 3.4cqw); } .cr-promo b { font-size: max(18px, 5cqw); }
+    .cr-row { font-size: max(16px, 3.2cqw); } .cr-sum, .cr-wallet { font-size: max(16px, 3.4cqw); } .cr-note { font-size: max(13px, 2.9cqw); }
+    .ms-head, .ms-unlock { font-size: max(16px, 3.2cqw); } .ms-next { font-size: max(13px, 2.8cqw); } .ms-up span { font-size: max(16px, 3.4cqw); } .ms-up b { font-size: max(18px, 4.6cqw); }
+    .ms-chip { font-size: max(16px, 3.2cqw); }
+    .cr-title { font-size: max(16px, 3.6cqw); } .cr-rlabel, .cr-next { font-size: max(13px, 2.8cqw); }
+    .cr-chip { font-size: max(16px, 3.4cqw); } .cr-chip span { font-size: max(15px, 3cqw); }
     .fl-pcareer { width: 80cqw; }
     .sh-modeswrap { flex-direction: column; gap: 1.6cqh; } #flow .fl-btn.fl-pcard { width: 86cqw; }
-    .pc-name { font-size: 4.4cqw; } .pc-title { font-size: 4cqw; } .pc-xp, .pc-tag { font-size: 3cqw; } .sh-menu { width: 86cqw; } .sh-head, .sh-reshead { font-size: 2.8cqw; } .sh-row, .sh-resrow { font-size: 3.2cqw; } .sh-row .sh-pay { font-size: 3cqw; }
-    .pto-x, .pto-text { font-size: 3.2cqw; }
-    .sh-foot { font-size: 2.4cqw; } .sh-ticks { font-size: 2.8cqw; } .sh-ticks i { width: max(8px, 1.8cqw); height: max(8px, 1.8cqw); }
-    .sh-cards { flex-direction: column; width: 90cqw; } .sh-ctitle { font-size: 3.4cqw; } .sh-mech, .sh-cpay { font-size: 3cqw; } .sh-coach { font-size: 3cqw; }
-    .sh-cbtns { flex-direction: row; } .sh-cbtns .fl-btn { flex: 1; font-size: 3.4cqw; }
+    .pc-name { font-size: max(18px, 4.4cqw); } .pc-title { font-size: max(16px, 4cqw); } .pc-xp, .pc-tag { font-size: max(15px, 3cqw); } .sh-menu { width: 86cqw; } .sh-head, .sh-reshead { font-size: max(13px, 2.8cqw); } .sh-row, .sh-resrow { font-size: max(16px, 3.2cqw); } .sh-row .sh-pay { font-size: max(15px, 3cqw); }
+    .pto-x, .pto-text { font-size: max(16px, 3.2cqw); }
+    .sh-foot { font-size: max(13px, 2.4cqw); } .sh-ticks { font-size: max(13px, 2.8cqw); } .sh-ticks i { width: max(8px, 1.8cqw); height: max(8px, 1.8cqw); }
+    .sh-cards { flex-direction: column; width: 90cqw; } .sh-ctitle { font-size: max(16px, 3.4cqw); } .sh-mech, .sh-cpay { font-size: max(15px, 3cqw); } .sh-coach { font-size: max(15px, 3cqw); }
+    .sh-cbtns { flex-direction: row; } .sh-cbtns .fl-btn { flex: 1; font-size: max(16px, 3.4cqw); }
   }
   `;
   const st = document.createElement('style'); st.id = 'career-style'; st.textContent = css;
