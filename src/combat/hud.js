@@ -44,6 +44,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
   let foundTech = null;   // the techniques found, for the move list's third line
   let names = null;          // the flow's fighter names (the arcade ladder), else the labels below
   let charNames = null;
+  let scoreOn = false;       // the arcade score is drawn after P1's name (score()), so a long plate leaves it room
+  let plates = null;         // the flow's profile per slot ({ name, title, frac }): drawn in place of YOU / P1
   const labelW = [0, 0];     // how wide each side's name label drew, so the score starts after it      // the flow's character names per slot (an arcade stage's name), else each unit's character
   let layout = {};           // what draw() returns: where the title's prompt sits (src/flow/ puts its START button there)
 
@@ -184,7 +186,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     if (faint && Math.floor(clock * 8) % 2 === 0) plainText('FAINT', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, L.tag, NEON.pink, { align: side === 0 ? 'left' : 'right' });
     else if (low && blink) plainText('LOW', side === 0 ? x + 6 : x + BAR_W - 6, sy + 3, L.tag, NEON.pink, { align: side === 0 ? 'left' : 'right' });
 
-    // name and a small player marker (YOU / RIVAL online, P1 / P2, CPU 7, TRAINER), then pips; the
+    // name and a small player marker (YOU / RIVAL online, P1 / P2, CPU 7, TRAINER, or the flow's profile plate), then pips; the
     // line under it cycles through the character's special moves (hint below)
     const ly = sy + ST_H + L.nameDy;
     const diff = u.kind === 'ai' && u.controller && u.controller.getDifficulty ? u.controller.getDifficulty() : sim.difficulty;
@@ -196,21 +198,50 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     const al = side === 0 ? 'left' : 'right';
     // what sits at the bar's inner end on the name line: the horde's count, else a pip per round win the match needs
     const hordeText = sim.horde ? (who === 0 ? `FLOOR ${sim.horde.floorsCleared + 1}   ${sim.horde.count} DOWN` : `WAVE ${(sim.horde.wave || { downed: 0 }).downed}/${(sim.horde.wave || { size: 0 }).size}`) : '';
-    let ns = L.name, rs = L.role, showRole = true;
-    if (L.band && cname) {
-      // the band is narrow: a long name (WELLNESS COACH) gets smaller, and gives up its marker, before it runs into the pips
-      const inner = sim.horde ? measure(hordeText, L.info, LABEL, 600) + 8 : L.pipIn + (sim.winsNeeded || 2) * L.pipGap;
-      const room = BAR_W - inner, nw = measure(cname, ns, LABEL, 600), rw = measure(role, rs, LABEL, 500) + L.roleGap;
+    // a profile (the flow's plates): the player's name a size up, the job title in amber, and a short review bar
+    // (XP to the next title) after it, so the climb is on screen the whole fight (README, HUD, Name line)
+    const plate = plates && plates[who] ? plates[who] : null;
+    let ns = L.name, rs = plate ? L.role + (L.band ? 1 : 3) : L.role, showRole = true, showBar = !!plate && plate.frac != null;
+    const PB = L.band ? 26 : 58, PBH = L.band ? 3 : 5, PGAP = L.band ? 5 : 8;   // the plate's review bar: width, height, gap before it
+    const plateW = (size, bar) => {
+      if (!plate) return measure(role, size, LABEL, 500);
+      const sep = plate.title ? measure(`  ${plate.title}`, size * 0.86, LABEL, 600) : 0;
+      return measure(plate.name, size, LABEL, 600) + sep + (bar ? PGAP + PB : 0);
+    };
+    if (cname && (L.band || plate)) {
+      // the band is narrow: a long name (WELLNESS COACH) gets smaller, and gives up its marker, before it runs into the pips.
+      // A profile plate does the same on the wide strip, leaving room for the arcade score after it (score())
+      const inner = (sim.horde ? measure(hordeText, L.info, LABEL, 600) + 8 : L.pipIn + (sim.winsNeeded || 2) * L.pipGap) + (!L.band && scoreOn && who === 0 ? 100 : 0);
+      const room = BAR_W - inner;
+      if (showBar && measure(cname, ns, LABEL, 600) + plateW(rs, true) + L.roleGap > room) showBar = false;
+      const nw = measure(cname, ns, LABEL, 600), rw = plateW(rs, showBar) + L.roleGap;
       if (nw + rw > room) { const k = Math.max(0.78, room / (nw + rw)); ns = Math.floor(ns * k * 2) / 2; rs = Math.floor(rs * k * 2) / 2; }
-      if (measure(cname, ns, LABEL, 600) + measure(role, rs, LABEL, 500) + L.roleGap > room) showRole = false;
+      if (measure(cname, ns, LABEL, 600) + plateW(rs, showBar) + L.roleGap > room) showRole = false;
     }
+    // the marker itself, starting at px and reading left to right whichever side it's on
+    const drawRole = (px, py, size) => {
+      if (!plate) { plainText(role, px, py, size, color, { align: 'left', weight: 500 }); return; }
+      let cx = px + plainText(plate.name, px, py, size, NEON.white, { align: 'left', weight: 600 });
+      if (plate.title) cx += plainText(`  ${plate.title}`, cx, py, size * 0.86, NEON.amber, { align: 'left', weight: 600 });
+      if (showBar) {
+        const bx = cx + PGAP, by = Math.round(py - PBH / 2);
+        ctx.fillStyle = 'rgba(4,1,10,0.94)'; ctx.fillRect(bx - 1.5, by - 1.5, PB + 3, PBH + 3);
+        ctx.fillStyle = 'rgba(255,176,46,0.22)'; ctx.fillRect(bx, by, PB, PBH);
+        ctx.fillStyle = NEON.amber; ctx.fillRect(bx, by, Math.round(PB * Math.max(0, Math.min(1, plate.frac))), PBH);
+      }
+    };
     if (cname) {
-      const cw = measure(cname, ns, LABEL, 600) + L.roleGap;
+      const cw = measure(cname, ns, LABEL, 600) + L.roleGap, rw = plateW(rs, showBar);
       plainText(cname, side === 0 ? x : x + BAR_W, ly, ns, u.color || color, { align: al });
-      if (showRole) plainText(role, side === 0 ? x + cw : x + BAR_W - cw, ly + (L.band ? 1 : 2), rs, color, { align: al, weight: 500 });
-      labelW[side] = cw + measure(role, rs, LABEL, 500);
+      if (showRole) drawRole(side === 0 ? x + cw : x + BAR_W - cw - rw, ly + (L.band ? 1 : 2), rs);
+      labelW[side] = cw + rw;
       if (!(band && band.compact && L.band)) hint(u, who, side, x, ly + L.hintDy, BAR_W);
-    } else labelW[side] = measure(role, L.name, LABEL, 600), plainText(role, side === 0 ? x : x + BAR_W, ly, L.name, color, { align: al });
+    } else {
+      const rw = plate ? plateW(L.name, showBar) : measure(role, L.name, LABEL, 600);
+      labelW[side] = rw;
+      if (plate) drawRole(side === 0 ? x : x + BAR_W - rw, ly, L.name);
+      else plainText(role, side === 0 ? x : x + BAR_W, ly, L.name, color, { align: al });
+    }
     if (sim.horde) {
       plainText(hordeText, side === 0 ? x + BAR_W : x, ly, L.info, NEON.amber, { align: side === 0 ? 'right' : 'left' });
     } else {
@@ -611,6 +642,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     layout = {};
     names = flow && flow.names ? flow.names : null;
     charNames = flow && flow.charNames ? flow.charNames : null;
+    plates = flow && flow.plates ? flow.plates : null;
+    scoreOn = !!flow && flow.score != null;
     ctx = frameCtx; dpr = frameDpr; L = WIDE; sw = width;
     layout.zoom = view.zoom;   // the flow maps the title's prompt slot onto its 16:9 box with this
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

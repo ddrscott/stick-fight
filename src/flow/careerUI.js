@@ -18,6 +18,8 @@
 //                          XP it paid (NEW HIRE apart), the bar to the next rank, and what a new rank unlocked
 //   ptoText(bank, back)    the menu's PTO line: WELCOME BACK: YOUR NEXT 3 MATCHES PAY DOUBLE XP ('' with none banked)
 //   ptoBlock()             that line as a block for the main menu (src/career/rules.js PTO); repaints with the career
+//   profileCard(p, act)    MAIN MENU's PROFILE button: the name, the job title, the review bar and the XP to the next
+//                          title, and SAVE MY PROFILE for a guest; { el, act }
 //   masteryChip(fighter)   character select's line: MASTERY 2 with five pips, NEW HIRE BONUS while it pays
 import { el, button } from './ui.js';
 import { career, last, onCareer, nudgeDue, nudgeShown, todayShifts, swapToday, mastery, pto } from '../career/store.js';
@@ -45,6 +47,24 @@ export function reviewBar(xp, cls = '') {
   box.append(head, bar);
   if (t.next) box.appendChild(el('div', 'cr-next', `NEXT: ${t.next}`));
   return box;
+}
+
+/** MAIN MENU's PROFILE button (README, Progression, On screen): who you are and how far up the ladder, big enough to
+ *  read across the room. p: the profile (src/net/profile.js). A guest's says SAVE MY PROFILE, the reason to sign up. */
+export function profileCard(p, act) {
+  injectStyle();
+  const c = career(), t = titleFor(c.xp);
+  const b = button('', act, 'fl-pcard');
+  const top = el('span', 'pc-top');
+  top.append(el('b', 'pc-name', p.name || 'NO NAME YET'), el('span', 'pc-title', t.title));
+  const bar = el('span', 'pc-bar'), fill = el('i');
+  fill.style.width = `${t.next ? Math.round((100 * t.into) / t.span) : 100}%`;
+  bar.appendChild(fill);
+  const xp = el('span', 'pc-xp', t.next ? `${fmt(t.into)} / ${fmt(t.span)} XP TO ${t.next}` : `TOP OF THE LADDER  ${fmt(c.xp)} XP`);
+  const tag = el('span', p.email ? 'pc-tag' : 'pc-tag pc-save', p.email ? 'PROFILE ›' : 'SAVE MY PROFILE ›');
+  b.el.append(top, bar, xp, tag);
+  b.el.setAttribute('aria-label', `PROFILE: ${p.name || 'NO NAME YET'}, ${t.title}`);
+  return b;
 }
 
 /** The latest award, as a panel for a result screen; null when the match paid nothing. compact: the lines in one
@@ -342,6 +362,19 @@ function injectStyle() {
   .sh-ticks i { display: block; width: max(7px, 1cqw); height: max(7px, 1cqw); border: 2px solid rgba(255,176,46,0.75); }
   .sh-ticks i.sh-on { background: #ffb02e; }
   .sh-modeswrap { display: flex; align-items: center; gap: 3cqw; }
+  .pc-col { display: flex; flex-direction: column; gap: 1.4cqh; }
+  /* MAIN MENU's profile card: square, the career's amber, nothing glows */
+  #flow .fl-btn.fl-pcard { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.5cqh 1.2cqw; width: 40cqw; min-width: 0;
+    padding: 1cqh 1.4cqw; text-align: left; border: 2px solid rgba(255,176,46,0.85); background: rgba(10,4,20,0.86); color: #fff4fd; box-shadow: none; }
+  #flow .fl-btn.fl-pcard.fl-focus, #flow .fl-btn.fl-pcard:focus-visible { background: rgba(255,176,46,0.16); border-color: #ffb02e; outline: 2px solid #ffb02e; outline-offset: 2px; }
+  .pc-top { display: flex; align-items: baseline; gap: 1.2cqw; min-width: 0; }
+  .pc-name { font: 400 2.6cqw/1 'Bungee', sans-serif; color: #fff4fd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pc-title { font: 600 2.4cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffc46b; white-space: nowrap; }
+  .pc-bar { grid-column: 1 / -1; display: block; height: max(6px, 0.9cqh); background: rgba(255,176,46,0.18); border: 1px solid rgba(255,176,46,0.6); }
+  .pc-bar i { display: block; height: 100%; background: #ffb02e; }
+  .pc-xp { font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #eadcff; }
+  .pc-tag { font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffc46b; white-space: nowrap; }
+  .pc-tag.pc-save { color: #0b0616; background: #ffb02e; padding: 0.3em 0.5em 0.15em; text-shadow: none; }
   .sh-menu .fl-btn { min-width: 0; margin-top: 0.4cqh; }
   .sh-menu { display: flex; flex-direction: column; gap: 0.7cqh; width: 40cqw; padding: 1cqh 1.4cqw; border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.82); }
   .sh-head, .sh-reshead { font: 600 1.8cqw/1 'Teko', sans-serif; letter-spacing: 0.16em; color: rgba(255,224,168,0.9); }
@@ -383,7 +416,8 @@ function injectStyle() {
     .cr-title { font-size: 3.6cqw; } .cr-rlabel, .cr-next { font-size: 2.8cqw; }
     .cr-chip { font-size: 3.4cqw; } .cr-chip span { font-size: 3cqw; }
     .fl-pcareer { width: 80cqw; }
-    .sh-modeswrap { flex-direction: column; gap: 1.6cqh; } .sh-menu { width: 86cqw; } .sh-head, .sh-reshead { font-size: 2.8cqw; } .sh-row, .sh-resrow { font-size: 3.2cqw; } .sh-row .sh-pay { font-size: 3cqw; }
+    .sh-modeswrap { flex-direction: column; gap: 1.6cqh; } #flow .fl-btn.fl-pcard { width: 86cqw; }
+    .pc-name { font-size: 4.4cqw; } .pc-title { font-size: 4cqw; } .pc-xp, .pc-tag { font-size: 3cqw; } .sh-menu { width: 86cqw; } .sh-head, .sh-reshead { font-size: 2.8cqw; } .sh-row, .sh-resrow { font-size: 3.2cqw; } .sh-row .sh-pay { font-size: 3cqw; }
     .pto-x, .pto-text { font-size: 3.2cqw; }
     .sh-foot { font-size: 2.4cqw; } .sh-ticks { font-size: 2.8cqw; } .sh-ticks i { width: max(8px, 1.8cqw); height: max(8px, 1.8cqw); }
     .sh-cards { flex-direction: column; width: 90cqw; } .sh-ctitle { font-size: 3.4cqw; } .sh-mech, .sh-cpay { font-size: 3cqw; } .sh-coach { font-size: 3cqw; }
