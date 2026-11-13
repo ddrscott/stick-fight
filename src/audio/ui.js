@@ -4,7 +4,7 @@
 //             tables, keyboard and gamepad (src/flow/controls.js), and the notes on dash, parry, getups and stairs
 //   AUDIO     SOUND, MUSIC, the TRACK playing, MUSIC VOLUME and EFFECTS VOLUME
 //   DISPLAY   GRAPHICS (src/gfxPrefs.js), and FULLSCREEN where the browser can do it (src/fullscreen.js)
-// with the credits and the privacy and house rules links along the bottom. One page, opened four ways: the gear in
+// with the credits and the privacy and house rules links at the foot of DISPLAY. One page, opened four ways: the gear in
 // the top-right corner on desktop (src/corner.js), the touch layer's gear (touch.js sends 'sf:settings'), and
 // SETTINGS on MAIN MENU and in the pause menu (src/flow/index.js calls open()). Opened over a fight you can pause, the
 // flow pauses it first ('sf:settings-open').
@@ -13,7 +13,9 @@
 // buttons and the screen's own ‹ chip and legend, and it owns every press until it closes, so nothing under it can
 // be reached. Its own ‹ chip in the top-left corner names where closing goes (‹ MAIN MENU, ‹ PAUSE MENU, ‹ TITLE:
 // the flow says, through place()), like every screen's back, and its legend says the same (ESC MAIN MENU). The page
-// is one size whatever the tab: the tab's rows scroll in the middle when they're taller than the screen.
+// is one size whatever the tab: the tab's rows scroll in the middle when they're taller than the screen, and then
+// the middle's bottom edge fades (src/scrollcue.js) under a ▼ MORE chip that scrolls it on, so a cut-off row never
+// reads as the end of the page.
 //
 // Every choice is the same row: its name and a line on what it does on the left, ‹ VALUE › on the right. A press on
 // the row or › steps it on, ‹ steps it back, and left and right do the same from the keys and the pad. A volume's
@@ -21,7 +23,7 @@
 //
 // Keys and the pad (key(), fed by the flow's menu input): up and down move a cursor (the tabs are its first row; past
 // the last row they scroll the page), left and right switch the tab or step a choice, confirm steps it on, back
-// closes. Escape always closes it and goes no further, so it never also resumes a paused game.
+// closes. Q and E (PageUp, PageDown) and the pad's LB and RB switch the tab from anywhere on the page. Escape always closes it and goes no further, so it never also resumes a paused game.
 //
 // touch.js cancels every touchmove on the page, so the volume bars are driven by pointer events, and the middle of
 // the page is a data-scroll box (touch.js) a finger can scroll.
@@ -35,6 +37,7 @@ import { bestOf, roundTime, stepBestOf, stepRoundTime, timeLabel } from '../flow
 import { botchEnabled, setBotchEnabled } from '../flow/techniques.js';                       // GAME: the botch switch
 import { controlsTable, legend, FIGHT, MENUS } from '../flow/controls.js';                   // CONTROLS: the tables, and the legend
 import { canFullscreen, isFullscreen, toggleFullscreen } from '../fullscreen.js';            // DISPLAY: FULLSCREEN, where it can work
+import { paintCue } from '../scrollcue.js';                                                  // the fade at the middle's edge
 
 const TABS = [['game', 'GAME'], ['controls', 'CONTROLS'], ['audio', 'AUDIO'], ['display', 'DISPLAY']];
 const CHEV = (d) => `<svg viewBox="0 0 18 18" aria-hidden="true"><path d="${d < 0 ? 'M11.5 2.5 L5 9 L11.5 15.5' : 'M6.5 2.5 L13 9 L6.5 15.5'}"/></svg>`;
@@ -73,6 +76,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
         <h2>SETTINGS</h2>
       </div>
       <div class="sf-tabs" role="tablist">${TABS.map(([k, n]) => `<button class="sf-tab" data-t="${k}" type="button" role="tab">${n}</button>`).join('')}</div>
+      <div class="sf-mid">
       <div class="sf-body" data-scroll="y">
         <div class="sf-page" data-p="game">
           ${opt('rounds', 'ROUNDS', 'ROUNDS TO WIN A MATCH')}
@@ -102,11 +106,14 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
           ${opt('gfx', 'GRAPHICS', 'LOWER RUNS SMOOTHER ON A SLOW DEVICE')}
           ${canFullscreen ? opt('fullscreen', 'FULLSCREEN', 'THE GAME FILLS THE SCREEN (F11 TOO)') : ''}
           <p class="sf-note sf-gfx-note"></p>
+          <h3 class="sf-h3">CREDITS</h3>
+          <p class="sf-credit">MUSIC MADE WITH <a href="https://strudel.cc" target="_blank" rel="noopener">STRUDEL</a> (<a href="https://codeberg.org/uzu/strudel" target="_blank" rel="noopener">AGPL-3.0</a>) &nbsp;·&nbsp; GAME <a href="https://github.com/ddrscott/stick-fight" target="_blank" rel="noopener">SOURCE</a>
+          <span class="sf-legal">&nbsp;·&nbsp; <a href="${rootUrl('privacy/').href}" target="_blank" rel="noopener">PRIVACY</a> &nbsp;·&nbsp; <a href="${rootUrl('terms/').href}" target="_blank" rel="noopener">HOUSE RULES</a></span></p>
         </div>
       </div>
+      <button class="sf-more" type="button" tabindex="-1" aria-label="Scroll down for more">${CHEV(1)}<span>MORE</span></button>
+      </div>
       <div class="sf-foot">
-        <p class="sf-credit">MUSIC MADE WITH <a href="https://strudel.cc" target="_blank" rel="noopener">STRUDEL</a> (<a href="https://codeberg.org/uzu/strudel" target="_blank" rel="noopener">AGPL-3.0</a>) &nbsp;·&nbsp; GAME <a href="https://github.com/ddrscott/stick-fight" target="_blank" rel="noopener">SOURCE</a>
-          <span class="sf-legal">&nbsp;·&nbsp; <a href="${rootUrl('privacy/').href}" target="_blank" rel="noopener">PRIVACY</a> &nbsp;·&nbsp; <a href="${rootUrl('terms/').href}" target="_blank" rel="noopener">HOUSE RULES</a></span></p>
         <div class="sf-legend"></div>
       </div>
     </div>`;
@@ -117,6 +124,25 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
   for (const t of ['touchstart', 'pointerdown', 'mousedown', 'click', 'wheel']) panel.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
 
   $('.sf-close').addEventListener('click', () => { actions.click('off'); close(); });
+  // ▼ MORE: shows while there's more of the tab below the edge; a press scrolls most of a screen on
+  const more = $('.sf-more');
+  const paintMore = () => { paintCue(body); more.classList.toggle('sf-show', body.classList.contains('sc-more')); };
+  body.addEventListener('scroll', paintMore, { passive: true });
+  // a finger that lands on the chip and drags scrolls the page like anywhere else on it (touch.js cancels the
+  // browser's own scroll outside a data-scroll box, so the chip moves the middle itself); a tap still scrolls on
+  let drag = null;
+  more.addEventListener('touchstart', (e) => { drag = { y: e.touches[0].clientY, top: body.scrollTop, moved: false }; }, { passive: true });
+  more.addEventListener('touchmove', (e) => {
+    if (!drag) return;
+    const dy = drag.y - e.touches[0].clientY;
+    if (Math.abs(dy) > 6) drag.moved = true;
+    if (drag.moved) body.scrollTop = drag.top + dy;
+  }, { passive: true });
+  more.addEventListener('click', () => {
+    const dragged = drag && drag.moved; drag = null;
+    if (dragged) return;
+    actions.click(); body.scrollBy({ top: body.clientHeight * 0.7, behavior: 'smooth' });
+  });
   $('.sf-tables').append(controlsTable(FIGHT, 'FIGHT'), controlsTable(MENUS, 'MENUS'));
 
   // CONTROLS: the touch layer's size, and a picture of it: a copy of the live layer in a box the screen's shape,
@@ -140,7 +166,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     if (n !== touchStep()) setTouchScale(TOUCH_STEPS[n].scale);
   };
   onTouchPref(() => { paintOpts(); requestAnimationFrame(paintPreview); });
-  window.addEventListener('resize', () => { if (open) requestAnimationFrame(paintPreview); });
+  window.addEventListener('resize', () => { if (open) requestAnimationFrame(() => { paintPreview(); paintMore(); }); });
 
   // GRAPHICS: AUTO (the adaptive tier, the default) or a fixed tier, which turns adaptation off. Under it, what AUTO
   // is drawing at right now (src/gfxPrefs.js; src/main.js applies the choice).
@@ -188,13 +214,14 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     size.textContent = touchFit.clamped ? `THIS SCREEN FITS ${Math.round(touchFit.scale * 100)}%` : touchPref().scale === TOUCH_DEFAULT ? 'THE STICK AND BUTTONS ON THIS SCREEN (NORMAL IS THE DEFAULT)' : 'THE STICK AND BUTTONS ON THIS SCREEN';
     const t = music.tracks[music.state.track];
     $('.sf-opt[data-o="track"] .sf-olabel').querySelector('small')?.remove();
-    const mood = music.state.loading ? 'LOADING…' : music.state.error ? 'MUSIC ERROR' : musicOn() && !isUnlocked() ? 'TAP OR PRESS A KEY TO START' : !musicOn() ? 'MUSIC IS OFF' : t ? `${t.bpm} BPM, NOW PLAYING` : '';
+    const mood = music.state.loading ? 'LOADING…' : music.state.error ? 'MUSIC ERROR' : musicOn() && !isUnlocked() ? (isTouch() ? 'PICK THE SONG. IT PLAYS AFTER YOUR FIRST TAP' : 'PICK THE SONG. IT PLAYS AFTER YOUR FIRST KEY') : !musicOn() ? 'MUSIC IS OFF' : t ? `${t.bpm} BPM, NOW PLAYING` : '';
     const ml = el('small', ''); ml.textContent = mood;
     $('.sf-opt[data-o="track"] .sf-olabel').appendChild(ml);
     $('.sf-opt[data-o="musicVolume"]').classList.toggle('sf-dim', !musicOn());
     $('.sf-opt[data-o="track"]').classList.toggle('sf-dim', !musicOn());
     $('.sf-opt[data-o="sfxVolume"]').classList.toggle('sf-dim', !settings.sound);
     gfxNote();
+    if (open) paintMore();
   }
   panel.querySelectorAll('.sf-opt').forEach((row) => {
     const k = /** @type {HTMLElement} */ (row).dataset.o;
@@ -230,6 +257,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     panel.querySelectorAll('.sf-page').forEach((p) => p.classList.toggle('sf-show', /** @type {HTMLElement} */ (p).dataset.p === t));
     body.scrollTop = 0;
     paintPreview();
+    requestAnimationFrame(paintMore);
   }
   panel.querySelectorAll('.sf-tab').forEach((b) => b.addEventListener('click', () => { showTab(/** @type {HTMLElement} */ (b).dataset.t, true); if (cursor) setCursor(navItems()[0]); }));
 
@@ -253,7 +281,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     $('.sf-backto').textContent = to;
     $('.sf-close').setAttribute('aria-label', `Close settings, back to ${to.toLowerCase()}`);
     const lg = $('.sf-legend'); lg.textContent = '';
-    lg.appendChild(legend([['move', 'PICK / CHANGE'], ['back', to]]));
+    lg.appendChild(legend([['move', 'PICK / CHANGE'], ['tab', 'TAB'], ['back', to]]));
     document.documentElement.classList.add('sf-up');
     panel.classList.add('sf-open');
     showTab(t || tab); update(); paintOpts(); meterLoop();
@@ -291,6 +319,10 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
   function key(k) {
     if (!open) return false;
     if (k === 'back' || k === 'escape' || k === 'select' || k === 'start' || k === 'pause') { actions.click('off'); close(); return true; }
+    if (k === 'prevtab' || k === 'nexttab') {   // Q E, LB RB: the next tab from anywhere, the cursor on its first row
+      const at = TABS.findIndex(([t]) => t === tab), to = TABS[(at + (k === 'nexttab' ? 1 : -1) + TABS.length) % TABS.length][0];
+      showTab(to, true); const n = navItems(); setCursor(n[1] || n[0]); return true;
+    }
     const its = navItems(), i = its.findIndex((it) => it.el === cursor);
     if (i < 0) { if (its.length && k !== 'moves' && k !== 'del') setCursor(its[0]); return true; }   // the first key only shows the cursor
     const it = its[i], d = k === 'down' || k === 'right' ? 1 : -1;
@@ -392,6 +424,7 @@ function injectStyle() {
   .sf-tab:hover { border-color: var(--cyan); color: var(--ink); }
   .sf-tab.sf-on { color: #0a0414; background: var(--cyan); border-color: var(--cyan); text-shadow: none; }
   /* the middle: this tab's rows, scrolling under a finger, the wheel or the keys when they're taller than the screen */
+  .sf-mid { position: relative; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
   .sf-body { flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y; overscroll-behavior: contain;
     border-top: 2px solid rgba(166,107,255,0.35); border-bottom: 2px solid rgba(166,107,255,0.35); padding: 0 2px; scrollbar-color: rgba(166,107,255,0.6) transparent; }
   .sf-page { display: none; padding-bottom: 10px; }
@@ -449,9 +482,17 @@ function injectStyle() {
   .sf-notes { margin: 8px 8px 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; font-size: var(--sub); line-height: 1.15; letter-spacing: 0.05em; }
   .sf-notes dt { color: var(--cyan); font-weight: 600; white-space: nowrap; }
   .sf-notes dd { margin: 0; color: rgba(255,244,253,0.8); }
-  /* the foot: the credits on the left, the keys on the right (none on a touch screen, where everything is tapped) */
-  .sf-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 34px; padding-top: 6px; }
-  .sf-credit { margin: 0; font-size: max(14px, calc(0.6vmin + 10px)); letter-spacing: 0.08em; color: rgba(255,244,253,0.65); }
+  /* ▼ MORE: over the faded bottom edge while there's more below, centered, a press scrolls on */
+  .sf-more { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: none; align-items: center; gap: 0.4em; height: 40px; padding: 0 1em 0 0.8em;
+    background: #0b0318; color: var(--cyan); border: 2px solid var(--cyan); border-radius: 0; font: 600 18px/1 'Teko', 'Arial Narrow', sans-serif !important; letter-spacing: 0.12em; text-shadow: ${PLAIN}; }
+  .sf-more.sf-show { display: flex; }
+  .sf-more svg { width: 0.9em; height: 0.9em; transform: rotate(90deg); fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: square; }
+  .sf-more span { padding-top: 0.14em; }
+  .sf-more:hover, .sf-more:active { background: var(--cyan); color: #0a0414; text-shadow: none; }
+  /* the foot: the keys, centered (none on a touch screen, where everything is tapped, so no foot at all there) */
+  .sf-foot { flex: none; display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 34px; padding-top: 6px; }
+  html.dev-touch .sf-foot { display: none; }
+  .sf-credit { margin: 8px 8px 0; font-size: var(--sub); line-height: 1.5; letter-spacing: 0.08em; color: rgba(255,244,253,0.65); }
   .sf-credit a { color: #4df3ff; text-decoration: none; border-bottom: 1px solid rgba(77,243,255,0.4); }
   .sf-legend .lg-bar { --lg-size: max(16px, calc(0.9vmin + 10px)); position: static; transform: none; gap: 1.6em; }
   /* a narrow screen (a phone held upright): the value goes under the name, and the notes stack */
@@ -461,9 +502,8 @@ function injectStyle() {
     .sf-val { flex: 1 1 100%; }
     .sf-val b { flex: 1; width: auto; max-width: none; }
     .sf-notes { grid-template-columns: 1fr; gap: 2px; } .sf-notes dd { margin-bottom: 8px; }
-    .sf-foot { justify-content: center; text-align: center; }
+    .sf-foot { display: none; }
     .sf-tab { font-size: 12px; letter-spacing: 0; padding: 0 2px; }
-    .sf-legend { display: none; }
   }
   /* a short screen (a phone held sideways): the label and its line share less height */
   @media (max-height: 460px) {

@@ -349,6 +349,14 @@ if (!ONLY) {
     let v = await page.evaluate(look);
     ok(!!v, `${T} F1 opens the MOVE LIST from the ${from}`);
     if (!v) continue;
+    // back is the top-left ‹ chip naming where closing goes, and the legend says the same (round 2 of [t55b8f])
+    const chip = await page.evaluate(() => { const c = document.querySelector('.ml-close'), r = c.getBoundingClientRect(); return { text: c.textContent.trim(), l: r.left, t: r.top, leg: document.querySelector('.ml-legend').textContent }; });
+    const where = from === 'pause menu' ? 'PAUSE MENU' : 'FIGHTERS';
+    ok(chip.text === where && chip.l < 60 && chip.t < 60 && chip.leg.includes(where), `${T} ${from}: the top-left chip says ‹ ${where}, and so does the legend`, `"${chip.text}" at ${Math.round(chip.l)},${Math.round(chip.t)}; legend "${chip.leg}"`);
+    await page.keyboard.press('KeyE'); await sleep(250);
+    const tabbed = await page.evaluate(() => [...document.querySelectorAll('.ml-tabbtn')].findIndex((b) => b.classList.contains('ml-on')));
+    ok(tabbed === 1, `${T} ${from}: E (RB on a pad) jumps to the next section`, `tab ${tabbed}`);
+    await page.keyboard.press('KeyQ'); await sleep(250); v = await page.evaluate(look);
     await page.mouse.move(...mid(v.list));
     await page.mouse.wheel(0, 300); await sleep(300);
     let a = await page.evaluate(look);

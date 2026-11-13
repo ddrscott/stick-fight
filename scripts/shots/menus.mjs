@@ -179,6 +179,13 @@ function audit({ upright, textMin, tapMin }) {
     if (e.scrollWidth > e.clientWidth + 2 && e.clientWidth > 0 && [...e.querySelectorAll('*')].some((k) => shown(k) && k.getBoundingClientRect().right > e.getBoundingClientRect().right + 2 && [...k.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && getComputedStyle(k).textOverflow !== 'ellipsis'))
       out.push(`SCROLLS SIDEWAYS ${name(e)} ${e.scrollWidth} in ${e.clientWidth}`);
   }
+  // a box that scrolls with rows hidden past its bottom edge must say so: src/scrollcue.js fades the edge (sc-more),
+  // so a cut-off list never reads as the end of the page (round 2 of [t55b8f]: SETTINGS showed no sign it scrolled)
+  for (const e of document.querySelectorAll('[data-scroll="y"]')) {
+    if (!shown(e) || e.clientHeight < 20) continue;
+    const room = e.scrollHeight - e.clientHeight;
+    if (room > 4 && e.scrollTop < room - 2 && !e.classList.contains('sc-more')) out.push(`NO SCROLL CUE ${name(e)} ${e.scrollHeight} in ${e.clientHeight}`);
+  }
   // is the blocker drawn over the item where they meet (an open panel covers the corner buttons, not the other way)
   function above(bl, n, c) {
     const st = document.elementsFromPoint((c.l + c.r) / 2, (c.t + c.b) / 2);
@@ -207,6 +214,8 @@ function audit({ upright, textMin, tapMin }) {
     if (A.n.contains(B.n) || B.n.contains(A.n)) continue;
     // the carousel's side cards sit under its arrows by design (README, Character select)
     if (A.n.closest('.fl-ring') && B.n.closest('.fl-ring')) continue;
+    // SETTINGS' ▼ MORE floats over the faded bottom edge of the page on purpose: what's under it scrolls up into view
+    if (A.n.closest('.sf-more') || B.n.closest('.sf-more')) continue;
     if ((A.n.matches('.fl-ringstep') && B.n.closest('.fl-ring')) || (B.n.matches('.fl-ringstep') && A.n.closest('.fl-ring'))) continue;
     const c = cut(A.a, B.a);
     // (a font's line box runs past its letters, so two lines of text may touch by a few px without the letters meeting)
@@ -498,17 +507,47 @@ for (const size of SIZES) {
   const tab = (t) => page.evaluate((x) => document.querySelector(`.sf-tab[data-t="${x}"]`).click(), t);
   await panel(); await shot('title-settings', 2500);
   for (const t of ['controls', 'audio', 'display']) { await tab(t); await shot(`settings-${t}`, 400); }
-  await tab('game'); await panel(); await sleep(400);
+  await tab('game');
+  // Q and E (the pad's LB and RB) switch the tab from anywhere on the page
+  {
+    const on = () => page.evaluate(() => document.querySelector('.sf-tab.sf-on').dataset.t);
+    await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('KeyE'); await sleep(100);
+    const a = await on(); await page.keyboard.press('KeyE'); await page.keyboard.press('KeyQ'); await page.keyboard.press('KeyQ'); await page.keyboard.press('KeyQ'); await sleep(100);
+    const b = await on();
+    if (a !== 'controls' || b !== 'display') report('settings-tabkeys', [`Q/E TABS: E went to ${a} (want controls), E Q Q Q to ${b} (want display)`]);
+    await tab('game');
+  }
+  await panel(); await sleep(400);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:homescreen')));
   if (await page.$('.sf-hs')) { await shot('title-howto', 600); await page.keyboard.press('Escape'); await page.evaluate(() => document.querySelectorAll('.sf-hs').forEach((n) => n.remove())); }
   await go('modeSelect'); await shot('modeSelect');
+  // MAIN MENU by the keys: down visits every row of the left column in order, one a press, and up comes back the same
+  // way, through whichever half of SUPPLY CLOSET / HIGH SCORES you went down by (round 2 of [t55b8f])
+  {
+    const lit = () => page.evaluate(() => { const ui = window.__flow.debug.ui; return ui.focus < 0 ? '' : (ui.items[ui.focus].el.firstChild.textContent || '').trim(); });
+    const walk = async (keys) => { const seen = []; for (const k of keys) { await page.keyboard.press(k); await sleep(60); seen.push(await lit()); } return seen.join(' > '); };
+    await page.evaluate(() => window.__flow.debug.ui.setFocus(0)); await sleep(100);
+    const want = [
+      [['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown'], 'VERSUS ONLINE > HORDE > TRAINING > SUPPLY CLOSET > SETTINGS'],
+      [['ArrowUp', 'ArrowUp', 'ArrowUp'], 'SUPPLY CLOSET > TRAINING > HORDE'],
+      [['ArrowDown', 'ArrowDown', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'ArrowUp'], 'TRAINING > SUPPLY CLOSET > HIGH SCORES > SETTINGS > HIGH SCORES > TRAINING'],
+    ];
+    for (const [keys, path] of want) { const got = await walk(keys); if (got !== path) report('modeSelect-keys', [`KEY WALK ${keys.join(' ')}: ${got} (want ${path})`]); }
+    await page.evaluate(() => window.__flow.debug.ui.setFocus(0));
+  }
   await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /HIGH SCORES/.test(i.el.textContent)); it && it.act(); }); await shot('highScores');
   await go('modeSelect');
   await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
   await shot('charSelect', 900);
   await page.keyboard.press('F1'); await shot('charSelect-movelist', 700); await page.keyboard.press('Escape'); await sleep(300);
   await page.evaluate(() => window.__flow.debug.pickChar(window.__flow.debug.sel.player));
-  if (await at('stageIntro', 5000)) await shot('stageIntro', 700);
+  if (await at('stageIntro', 5000)) {
+    await shot('stageIntro', 700);
+    // SETTINGS over the stage card holds it: no fight starts under the page (round 2 of [t55b8f])
+    await panel(); await sleep(4200);
+    const st = await state(); if (st !== 'stageIntro') report('stageIntro-settings', [`THE FLOW MOVED ON UNDER SETTINGS: ${st}`]);
+    await panel(); await sleep(300);
+  }
   await go('fighting'); await sleep(1500);
   await shot('fighting', 300);
   await page.keyboard.press('KeyP');

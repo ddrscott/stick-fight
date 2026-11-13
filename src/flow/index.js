@@ -368,6 +368,9 @@ export function createFlow(ctx) {
   /** before the sim steps; returns whether main.js should step the sim this frame */
   function update(ms) {
     if (state === 'off') return true;
+    // SETTINGS up over an offline screen: time stands still under it. No card, countdown or table runs out, no fight
+    // starts and the sim doesn't step (the menus' demo bout behind goes on). Online the room keeps its own clock.
+    if (panelOpen() && !ONLINE.has(state) && state !== 'watching') { idle = 0; return DEMO.has(state); }
     const dt = ms / 1000;
     t += dt; idle += ms;
     if (ml) idle = 0;   // reading the move list isn't idling
@@ -407,6 +410,7 @@ export function createFlow(ctx) {
     if (state === 'watching') { if (!watchOn() && (sim.round > 1 || sim.phase === 'match')) { demo(); return true; } return false; }
     if (DEMO.has(state)) {
       if (sim.round > 1 || sim.phase === 'match') {   // one round per demo bout
+        if (state === 'attract' && panelOpen()) return false;   // under SETTINGS the title stays the title (its chip says TITLE)
         if (state === 'attract') {   // the tables take turns: this device's arcade and horde, then a crew's (README, Crew rooms, High scores)
           const seq = attractTables(), pick = seq[hs.loop % seq.length];
           hs = { mode: pick.mode, crew: pick.crew || '', highlight: -1, postGame: false, loop: hs.loop + 1 }; go('highScores');
@@ -566,7 +570,7 @@ export function createFlow(ctx) {
   // the MOVE LIST for a fighter, over the pause menu or a pick screen; closing it hands the keys back
   function openMoves(c) {
     if (ml || !c) return;
-    ml = openMoveList({ char: c, click: ctx.click, onClose: () => { ml = null; if (menu) menu.swallow(); } });
+    ml = openMoveList({ char: c, click: ctx.click, backTo: state === 'paused' ? 'PAUSE MENU' : 'FIGHTERS', onClose: () => { ml = null; if (menu) menu.swallow(); } });
   }
   const myChar = () => (sim.units[0] && sim.units[0].char) || characterOr(sel.player);
   function pressStart() { if (state === 'attract') go('modeSelect'); }
@@ -785,7 +789,20 @@ export function createFlow(ctx) {
       wrap.append(list, col);
       root.appendChild(wrap);
       addNudge(root, items);
-      return { items, back: () => go('attract'), backTo: 'TITLE' };
+      // up and down walk the left column one row a press, like any list: TRAINING, SUPPLY CLOSET (the row's first
+      // half), SETTINGS, and back up the same way, through whichever half you came down by. (Geometry alone would jump
+      // from TRAINING straight to SETTINGS, which sits right under it.) Everything else is geometry.
+      const [train, closet, scores, settings] = [items[3], items[6], items[7], settingsPanel ? items[8] : null];
+      let half = closet;   // the half of the row SETTINGS goes back up to: the one you came down through
+      const to = (it) => { ui.setFocus(items.indexOf(it), true); return true; };
+      const move = (dir, _i, it) => {
+        if (dir === 'down' && it === train) return to(closet);
+        if (dir === 'down' && (it === closet || it === scores) && settings) { half = it; return to(settings); }
+        if (dir === 'up' && it === settings) return to(half);
+        if (dir === 'up' && (it === closet || it === scores)) return to(train);
+        return false;
+      };
+      return { items, back: () => go('attract'), backTo: 'TITLE', move };
     });
   }
   // The day's shifts in full (README, Progression, Daily shifts): a card each with what it teaches, a coaching line,
@@ -1247,7 +1264,7 @@ export function createFlow(ctx) {
       btnRow(root, [join]);
       items.push(join);
       joinBtn = join.el;
-      return { items, focus: joinCode.length === CODE_LEN ? items.length - 1 : 0, back: () => go('onlineMenu'), backTo: 'ONLINE', legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', 'BACK']] };
+      return { items, focus: joinCode.length === CODE_LEN ? items.length - 1 : 0, back: () => go('onlineMenu'), backTo: 'ONLINE', legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', 'ONLINE']] };
     });
     paintCode();
   }
@@ -1693,7 +1710,7 @@ export function createFlow(ctx) {
       const items = [...kb.items, ...row];
       // OK when the field already holds something that works (a name being changed), else A (or the first key)
       const a = kb.items.findIndex((k) => k.el.textContent === 'A');
-      return { items, focus: me.valid(me.value) ? items.indexOf(ok) : Math.max(0, a), back: o.back, backTo: o.backTo, legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', 'BACK']] };
+      return { items, focus: me.valid(me.value) ? items.indexOf(ok) : Math.max(0, a), back: o.back, backTo: o.backTo, legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', o.backTo || 'BACK']] };
     });
     tePaint();
   }
@@ -2343,14 +2360,14 @@ export function createFlow(ctx) {
       bonus: bonus.t > 0 ? bonus.text : '',
       names: mode === 'arcade' ? ['PLAYER 1', st.boss ? 'BOSS' : `STAGE ${st.n}`] : null,
       charNames: mode === 'arcade' ? [null, st.name] : null,   // the stage's name (a TEMP stands in for a character that isn't built yet)
-      // in a fight the only hint is the way to the menu (and the move list on a keyboard); a pad's is
-      // in the pause menu's SHOW CONTROLS
+      // in a fight the only hint is the way to the menu (and the move list on a keyboard); paused there's none, since the
+      // pause menu's own legend names the keys (two labels for Esc on one screen read as a contradiction)
       // the room's running tally for the fight HUD (src/combat/hud.js may draw it): from this side,
       // { you, rival, draw, roundsYou, roundsRival, games, n } where n is this match's number
       tally: state === 'onlineFighting' ? onlineTally() : null,
       // the profile on each bar, in place of YOU / P1 (README, HUD, Name line): { name, title, frac } or null
       plates: plates(),
-      hint: touch || state === 'watching' ? '' : state === 'onlineFighting' ? (pad ? `${startName()}  LEAVE` : 'F1  MOVES     ESC  LEAVE') : pad ? `${startName()}  PAUSE` : 'F1  MOVES     ESC  PAUSE',
+      hint: touch || state === 'watching' || state === 'paused' ? '' : state === 'onlineFighting' ? (pad ? `${startName()}  LEAVE` : 'F1  MOVES     ESC  LEAVE') : pad ? `${startName()}  PAUSE` : 'F1  MOVES     ESC  PAUSE',
     };
   }
   // the player's name, job title and review bar for the fight HUD, read at most twice a second (it's localStorage);

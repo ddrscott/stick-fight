@@ -5,11 +5,12 @@
 // and what each key means on which screen, is in src/flow/controls.js.
 //
 //   keyboard: arrows / WASD move, Enter or Space confirm, Escape (escape), Backspace (back), P (pause),
-//             F1 (moves: the MOVE LIST, src/flow/movelist.js)
+//             F1 (moves: the MOVE LIST, src/flow/movelist.js), Q / PageUp and E / PageDown (prevtab, nexttab:
+//             the tab to the left or right on a page with tabs, SETTINGS and the MOVE LIST)
 //   pad:      D-pad or left stick move, A confirm, B or Select back (Select is 'select', which the
 //             flow reads as back in menus and pause in a fight), Start (start), X (del: the
-//             keyboard screens' DEL), Y (moves: the MOVE LIST where a screen offers it). The bumpers and
-//             the triggers do nothing in menus.
+//             keyboard screens' DEL), Y (moves: the MOVE LIST where a screen offers it), LB and RB (prevtab,
+//             nexttab: a page's tabs, from anywhere on it, like any console game's L1/R1). The triggers do nothing.
 //
 // onText gets the keydown first on screens that take typing (initials, a room code); if it
 // returns true the key stops there (capture phase), so it neither moves the fighter (input.js)
@@ -24,8 +25,9 @@ import { setDevice, watchDevice } from './controls.js';
 const KEYS = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
   Enter: 'confirm', NumpadEnter: 'confirm', Space: 'confirm', Escape: 'escape', Backspace: 'back', KeyP: 'pause', F1: 'moves',
+  KeyQ: 'prevtab', PageUp: 'prevtab', KeyE: 'nexttab', PageDown: 'nexttab',
 };
-const PAD = { 0: 'confirm', 1: 'back', 2: 'del', 3: 'moves', 8: 'select', 9: 'start' };
+const PAD = { 0: 'confirm', 1: 'back', 2: 'del', 3: 'moves', 4: 'prevtab', 5: 'nexttab', 8: 'select', 9: 'start' };
 const DIRS = new Set(['up', 'down', 'left', 'right']);
 // a held pad direction: the press itself moves at once, the repeat starts after REPEAT_FIRST (longer than any
 // tap, so one tap is one step) and then steps every REPEAT_EVERY. (A held key repeats at the OS's own rate.)
@@ -44,7 +46,7 @@ export function createMenuInput({ onKey, onActivity, onText }) {
     if (onText && onText(e)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
     const k = KEYS[e.code];
     if (!k) return;
-    if (k === 'moves') e.preventDefault();   // F1 is the browser's help otherwise
+    if (k === 'moves' || e.code.startsWith('Page')) e.preventDefault();   // F1 is the browser's help otherwise
     if (e.repeat && !DIRS.has(k)) return;
     onKey(k, 'key');
   }, { capture: true });
