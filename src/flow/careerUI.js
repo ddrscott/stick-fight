@@ -83,13 +83,17 @@ export function earningsPanel(compact = false) {
       p.append(el('span', '', 'PROMOTED'), el('b', '', cur.promoted));
       box.appendChild(p);
     }
+    // two columns: what paid, and where it moved you; side by side on a short landscape stage, stacked elsewhere
+    const cols = el('div', 'cr-cols'), pay = el('div', 'cr-pay'), prog = el('div', 'cr-prog');
+    cols.append(pay, prog);
+    box.appendChild(cols);
     if (compact) {
       const row = el('div', 'cr-row');
       for (const l of cur.award.lines) {
         const daily = l.id === 'firstWin' || l.id === 'firstOnline' || l.id === 'shift' || l.id === 'pto', cap = l.id === 'cap';
         row.appendChild(el('span', daily ? 'cr-daily' : cap ? 'cr-cap' : '', `${lineText(l)} ${signed(l.sticks)}`));
       }
-      box.append(row, el('div', 'cr-sum', `EARNED ${signed(cur.award.sticks)} STICKS  ·  ${signed(cur.award.xp)} XP`));
+      pay.append(row, el('div', 'cr-sum', `EARNED ${signed(cur.award.sticks)} STICKS  ·  ${signed(cur.award.xp)} XP`));
     } else {
       const grid = el('div', 'cr-lines');
       grid.append(el('span', 'cr-h', 'EARNED'), el('span', 'cr-h cr-num', 'XP'), el('span', 'cr-h cr-num', 'STICKS'));
@@ -98,17 +102,17 @@ export function earningsPanel(compact = false) {
         grid.append(el('span', daily ? 'cr-daily' : cap ? 'cr-cap' : '', lineText(l)), el('span', 'cr-num', signed(l.xp)), el('span', 'cr-num cr-st', signed(l.sticks)));
       }
       grid.append(el('span', 'cr-tot', 'TOTAL'), el('span', 'cr-num cr-tot', signed(cur.award.xp)), el('span', 'cr-num cr-st cr-tot', signed(cur.award.sticks)));
-      box.appendChild(grid);
+      pay.appendChild(grid);
     }
-    if (cur.award.firstWin) box.appendChild(el('div', 'cr-note', "YOUR FIRST WIN TODAY PAYS EXTRA. IT'S BACK TOMORROW."));
-    else if (cur.award.firstOnline) box.appendChild(el('div', 'cr-note', 'YOUR FIRST ONLINE MATCH TODAY PAYS EXTRA.'));
-    if (cur.award.lines.some((l) => l.id === 'pto')) box.appendChild(el('div', 'cr-note', ptoPaid(cur.award.ptoLeft)));
-    if (cur.award.capped) box.appendChild(el('div', 'cr-note', 'ARCADE AND HORDE HAVE PAID ALL THEY CAN TODAY. ONLINE STILL PAYS.'));
-    box.appendChild(shiftTicks(cur.award.moved, compact));   // the day's shifts, the ones this match moved lit
-    if (cur.award.mastery) box.appendChild(masteryBlock(cur.award.mastery, compact));   // the fighter played (README, Fighter mastery)
+    if (cur.award.firstWin) pay.appendChild(el('div', 'cr-note', "YOUR FIRST WIN TODAY PAYS EXTRA. IT'S BACK TOMORROW."));
+    else if (cur.award.firstOnline) pay.appendChild(el('div', 'cr-note', 'YOUR FIRST ONLINE MATCH TODAY PAYS EXTRA.'));
+    if (cur.award.lines.some((l) => l.id === 'pto')) pay.appendChild(el('div', 'cr-note', ptoPaid(cur.award.ptoLeft)));
+    if (cur.award.capped) pay.appendChild(el('div', 'cr-note', 'ARCADE AND HORDE HAVE PAID ALL THEY CAN TODAY. ONLINE STILL PAYS.'));
+    prog.appendChild(shiftTicks(cur.award.moved, compact));   // the day's shifts, the ones this match moved lit
+    if (cur.award.mastery) prog.appendChild(masteryBlock(cur.award.mastery, compact));   // the fighter played (README, Fighter mastery)
     const c = career();
-    box.appendChild(reviewBar(c.xp));
-    box.appendChild(el('div', 'cr-wallet', `${fmt(c.sticks)} STICKS${cur.pending ? '  ·  SAVING…' : ''}`));
+    prog.appendChild(reviewBar(c.xp));
+    prog.appendChild(el('div', 'cr-wallet', `${fmt(c.sticks)} STICKS${cur.pending ? '  ·  SAVING…' : ''}`));
   };
   paint();
   // a signed-in player's award settles when the server answers: repaint while the panel is on screen
@@ -321,6 +325,7 @@ function injectStyle() {
   .cr-lines .cr-cap { color: rgba(214,190,255,0.7); }
   .cr-lines .cr-tot { border-top: 2px solid rgba(255,176,46,0.45); padding-top: 0.3cqh; color: #fff; }
   .cr-lines .cr-st.cr-tot { color: #ffc46b; }
+  .cr-cols, .cr-pay, .cr-prog { display: flex; flex-direction: column; align-items: stretch; gap: inherit; min-width: 0; }
   .cr-earn.cr-compact { padding: 0.6cqh 1.4cqw; gap: 0.5cqh; max-width: 70cqw; }
   .cr-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3cqh 1.6cqw; font: 600 2cqw/1.1 'Teko', sans-serif; letter-spacing: 0.08em; color: #eadcff; }
   .cr-row .cr-daily { color: #9dffc0; } .cr-row .cr-cap { color: rgba(214,190,255,0.7); }
@@ -405,6 +410,26 @@ function injectStyle() {
     font: 600 2cqw/1.2 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; color: #ffc46b; text-shadow: var(--plain); }
   .cr-chip span { color: #eadcff; font-size: 1.7cqw; }
   .cr-chip.cr-on { display: flex; }
+  /* a phone held sideways: the 16:9 stage is under 600 px tall, so 1cqw is about 7 px and the stacked panel's
+     small print came out at 10 px. The panel goes two columns wide (what paid | shifts, mastery, the review) so it
+     takes half the height, and no text is under 12 px. */
+  @container (min-aspect-ratio: 1/1) and (max-height: 600px) {
+    .cr-earn, .cr-earn.cr-compact { min-width: 0; width: 90cqw; max-width: none; gap: 0.6cqh; padding: 1cqh 1.6cqw; }
+    .cr-cols { flex-direction: row; gap: 3cqw; align-items: flex-start; }
+    .cr-pay, .cr-prog { flex: 1 1 0; gap: 0.8cqh; }
+    .cr-promo span { font-size: max(15px, 2.4cqw); } .cr-promo b { font-size: max(22px, 3.6cqw); }
+    .cr-lines { font-size: max(16px, 2.4cqw); row-gap: 0; } .cr-lines .cr-num { font-size: max(14px, 2cqw); } .cr-lines .cr-h { font-size: max(12px, 1.6cqw); }
+    .cr-row, .cr-sum { font-size: max(16px, 2.4cqw); } .cr-wallet { font-size: max(15px, 2.2cqw); }
+    .cr-note { font-size: max(13px, 1.8cqw); text-align: left; } .cr-compact .cr-note { text-align: center; }
+    .cr-pay > .cr-note:first-of-type { margin-top: 0.4cqh; }
+    .sh-res { border-top: 0; padding-top: 0; } .sh-rescompact { justify-content: flex-start; }
+    .sh-reshead { font-size: max(12px, 1.6cqw); } .sh-resrow { font-size: max(13px, 1.9cqw); } .sh-ticks { font-size: max(12px, 1.6cqw); }
+    .ms-head, .ms-unlock { font-size: max(14px, 2cqw); } .ms-next { font-size: max(12px, 1.6cqw); } .ms-chip { font-size: max(13px, 1.8cqw); }
+    .ms-up span { font-size: max(14px, 2.2cqw); } .ms-up b { font-size: max(18px, 3cqw); }
+    .cr-title { font-size: max(16px, 2.4cqw); } .cr-rlabel, .cr-next { font-size: max(12px, 1.6cqw); }
+    .cr-wallet { text-align: right; }
+    .ms-head { flex-wrap: wrap; row-gap: 0.4cqh; } .ms-head > * { white-space: nowrap; }
+  }
   /* held upright the stage is short: everything a size up so it stays readable */
   @container (max-aspect-ratio: 1/1) {
     .cr-earn { min-width: 76cqw; } .cr-nudge { max-width: 86cqw; font-size: 3.6cqw; } .cr-nudge .cr-nsub { font-size: 3cqw; }
