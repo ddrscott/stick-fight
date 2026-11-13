@@ -270,9 +270,9 @@ function injectStyle() {
   .ml-root * { box-sizing: border-box; }
   .ml-head { flex: none; display: flex; align-items: center; gap: 1.2em; flex-wrap: wrap; }
   .ml-title { display: flex; align-items: baseline; gap: 0.7em; min-width: 0; flex: 1 1 0; flex-wrap: wrap; }
-  .ml-kicker { font: 400 0.8em/1 'Bungee', 'Arial Black', sans-serif; color: var(--amber); letter-spacing: 0.06em; }
+  .ml-kicker { font: 400 max(12px, 0.8em)/1 'Bungee', 'Arial Black', sans-serif; color: var(--amber); letter-spacing: 0.06em; }
   .ml-name { margin: 0; font: 400 1.9em/1 'Bungee', 'Arial Black', sans-serif; color: color-mix(in srgb, var(--c) 45%, #fff); white-space: nowrap; }
-  .ml-tag { font-size: 0.9em; letter-spacing: 0.12em; color: rgba(230,214,255,0.75); }
+  .ml-tag { font-size: max(12px, 0.9em); letter-spacing: 0.12em; color: rgba(230,214,255,0.75); }
   .ml-tabs { flex: none; display: flex; gap: 0.4em; flex-wrap: wrap; touch-action: pan-x; overscroll-behavior: contain; }
   .ml-tabbtn, .ml-close { appearance: none; margin: 0; cursor: pointer; border-radius: 0; background: rgba(14,4,30,0.62); font: 600 1em/1 'Teko', sans-serif; letter-spacing: 0.1em;
     padding: 0.35em 0.7em 0.15em; min-height: 40px; }
@@ -288,10 +288,10 @@ function injectStyle() {
   .ml-cv { display: block; width: 100%; flex: 1 1 auto; min-height: 0; }
   .ml-cap { padding: 0.5em 0.8em 0.6em; border-top: 2px solid color-mix(in srgb, var(--c) 50%, transparent); display: flex; flex-direction: column; gap: 0.25em; min-height: 4.2em; }
   .ml-cap b { font: 400 1em/1.05 'Bungee', 'Arial Black', sans-serif; color: #fff; }
-  .ml-cap small { font-size: 0.75em; letter-spacing: 0.1em; color: rgba(214,190,255,0.7); }
+  .ml-cap small { font-size: max(12px, 0.75em); letter-spacing: 0.1em; color: rgba(214,190,255,0.7); }
   .ml-sec { margin-bottom: 1.2em; scroll-margin-top: 0.2em; }
   .ml-h { margin: 0 0 0.35em; font: 400 1.1em/1 'Bungee', 'Arial Black', sans-serif; color: var(--amber); letter-spacing: 0.04em; }
-  .ml-note { margin: 0 0 0.45em; font-size: 0.85em; letter-spacing: 0.08em; line-height: 1.1; color: rgba(214,190,255,0.8); }
+  .ml-note { margin: 0 0 0.45em; font-size: max(12px, 0.85em); letter-spacing: 0.08em; line-height: 1.1; color: rgba(214,190,255,0.8); }
   .ml-rule { margin: 0 0 0.45em; padding: 0.45em 0.7em 0.3em; border: 2px solid var(--pink); background: rgba(255,43,214,0.12); box-shadow: 0 0 0.6em rgba(255,43,214,0.35);
     font-size: 1em; letter-spacing: 0.08em; line-height: 1.1; color: #fff; }
   .ml-row { display: grid; grid-template-columns: 1fr auto; column-gap: 1em; row-gap: 0.1em; align-items: baseline; padding: 0.35em 0.6em 0.25em;
@@ -300,10 +300,10 @@ function injectStyle() {
   .ml-nm { display: flex; align-items: baseline; gap: 0.5em; flex-wrap: wrap; min-width: 0; }
   .ml-nm b { font-weight: 600; font-size: 1.1em; letter-spacing: 0.08em; color: #fff; }
   .ml-row.ml-cur .ml-nm b { color: color-mix(in srgb, var(--c) 35%, #fff); }
-  .ml-row small { grid-column: 1 / -1; font-size: 0.8em; letter-spacing: 0.07em; line-height: 1.1; color: rgba(214,190,255,0.72); text-transform: uppercase; }
+  .ml-row small { grid-column: 1 / -1; font-size: max(12px, 0.8em); letter-spacing: 0.07em; line-height: 1.1; color: rgba(214,190,255,0.72); text-transform: uppercase; }
   .ml-row.ml-off .ml-nm b, .ml-row.ml-off .ml-in { text-decoration: line-through; opacity: 0.5; }
   .ml-row.ml-hidden .ml-nm b { color: rgba(230,214,255,0.5); }
-  .ml-chip { font: normal 400 0.55em/1 'Bungee', sans-serif; padding: 0.35em 0.45em 0.2em; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(230,214,255,0.85); border: 1px solid rgba(166,107,255,0.6); }
+  .ml-chip { font: normal 400 max(12px, 0.55em)/1 'Bungee', sans-serif; padding: 0.35em 0.45em 0.2em; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(230,214,255,0.85); border: 1px solid rgba(166,107,255,0.6); }
   .ml-c-unique { color: var(--deep); text-shadow: none; background: var(--c); border-color: var(--c); }
   .ml-c-found { color: var(--deep); text-shadow: none; background: var(--lime); border-color: var(--lime); }
   .ml-c-launch, .ml-c-wallsplat, .ml-c-wallbounce, .ml-c-groundbounce { color: var(--pink); border-color: var(--pink); }

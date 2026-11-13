@@ -366,10 +366,6 @@ function injectStyle() {
   .fl-touchonly { display: none; } html.dev-touch .fl-touchonly { display: block; }
   .fl-newhi { color: #ffc2f3; }
   /* the controls screen: the fight table beside the menu table */
-  .fl-ctlrow { align-items: flex-start; gap: 3cqw; }
-  .fl-ctlcol { display: flex; flex-direction: column; gap: 2.4cqh; max-width: 34cqw; }
-  .fl-ctlnote { text-align: left; font-size: 1.6cqw; line-height: 1.15; }
-  .fl-controls .lg-table { padding: 1.2cqw 1.6cqw; border: 2px solid rgba(166,107,255,0.6); background: rgba(14,4,30,0.62); }
   .fl-title .lg-bar { bottom: 1.2cqh; }
   .fl-start { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); min-width: 0; white-space: nowrap; padding: 0.5cqw 3cqw 0; --c: var(--amber);
     font-family: 'Bungee', 'Arial Black', sans-serif; font-weight: 400; font-size: 2.5cqw; letter-spacing: 0.06em; }
@@ -449,8 +445,9 @@ function injectStyle() {
   /* ending credits */
   .fl-roll { position: relative; width: 70cqw; height: 46cqh; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); }
   .fl-roll div { position: absolute; left: 0; right: 0; top: 100%; display: flex; flex-direction: column; align-items: center; gap: 1.4cqh; animation: fl-roll 14s linear forwards; }
-  .fl-roll p { margin: 0; text-align: center; font-size: 2.5cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1.05; color: #eadcff; }
+  .fl-roll p { margin: 0; text-align: center; font-size: max(14px, 2.5cqw); font-weight: 600; letter-spacing: 0.12em; line-height: 1.05; color: #eadcff; }
   .fl-roll p b { display: block; font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 1.7cqw; color: var(--amber); letter-spacing: 0.06em; }
+  .fl-roll p b { font-size: max(13px, 1.7cqw); }
   @keyframes fl-roll { from { transform: translateY(0); } to { transform: translateY(calc(-100% - 46cqh)); } }
 
   /* character select (select.js): a grid of live rigs on the left, the focused one's sheet on the right */
@@ -525,15 +522,11 @@ function injectStyle() {
   /* pause: the menu beside the book of happy accidents (src/flow/techniques.js) */
   .fl-pauserow { align-items: flex-start; gap: 3cqw; }
   .fl-pause .fl-list .fl-btn { min-height: max(40px, 7.2cqh); }
-  .fl-tech.fl-ctlpanel { --lg-size: 1.6cqw; padding: 1.2cqw 1.8cqw; }
   /* the pause menu's right side: TECHNIQUES and CONTROLS as two tabs over the panel they switch */
   .fl-pside { width: 44cqw; display: flex; flex-direction: column; gap: 1cqh; }
   .fl-pside .fl-tech { width: auto; max-height: 58cqh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-  .fl-ptabs { justify-content: stretch; gap: 1cqw; }
-  .fl-btn.fl-ptab { flex: 1 1 0; --c: #c8ff3a; }
-  .fl-btn.fl-ptab:not(.fl-focus) { opacity: 0.7; box-shadow: none; }
-  .fl-btn.fl-ptab.fl-on:not(.fl-focus) { opacity: 1; background: color-mix(in srgb, var(--c) 20%, rgba(14,4,30,0.8)); color: #fff; }
   .fl-tech { --c: #c8ff3a; width: 44cqw; display: flex; flex-direction: column; gap: 0.7cqh; padding: 1cqw 1.4cqw; border: 2px solid color-mix(in srgb, var(--c) 60%, transparent); background: rgba(14,4,30,0.62); }
+  .fl-ptitle { font: 400 max(13px, 1.7cqw)/1 'Bungee', sans-serif; color: #c8ff3a; letter-spacing: 0.04em; padding: 0.4cqh 0 0.2cqh; }
   .fl-techhead { font: 400 1.8cqw/1 'Bungee', sans-serif; color: var(--c); letter-spacing: 0.04em; margin-bottom: 0.4cqh; }
   .fl-tech p { margin: 0; display: flex; flex-direction: column; line-height: 1; }
   .fl-tech b { font: 600 2cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: rgba(230,214,255,0.55); }
@@ -745,11 +738,8 @@ function injectStyle() {
   .fl-table { font-size: max(14px, 3.2cqw); } .fl-table .fl-note { font-size: max(12px, 2.2cqw); }
   .fl-table.fl-table5 { font-size: max(13px, 2.4cqw); } .fl-table5 .fl-note, .fl-table .fl-fighter { font-size: max(12px, 1.9cqw); }
   .fl-tech b { font-size: max(13px, 2cqw); } .fl-tech small { font-size: max(12px, 1.4cqw); line-height: 1.1; }
-  .fl-tech.fl-ctlpanel, .fl-controls .lg-table { --lg-size: max(12px, 1.6cqw); }
   #flow .lg-table .lg-pill { font-size: max(12px, 0.6em); } #flow .lg-table .lg-th.lg-col { font-size: max(12px, 0.7em); } #flow .lg-table .lg-th { font-size: max(12px, 0.85em); } #flow .lg-table .lg-b { font-size: max(12px, 0.82em); } #flow .lg-table .lg-kc .lg-key { font-size: max(12px, 0.9em); }
   /* CONTROLS: the two tables scroll in their box rather than shrinking the screen */
-  .fl-controls .fl-ctlrow { max-height: 72cqh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; }
-  .fl-ctlnote { font-size: max(12px, 1.6cqw); }
   .fl-colhead { font-size: max(12px, 1.7cqw); }
   .fl-tally { font-size: max(14px, 2.8cqw); }
   .fl-pal small { font-size: max(12px, 1.5cqw); } .fl-palnote { font-size: max(12px, 1.6cqw); }
@@ -760,8 +750,9 @@ function injectStyle() {
   /* MAIN MENU: the four modes, then everything else two by two */
   .fl-more { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2cqh 1cqw; }
   .fl-more .fl-btn { min-width: 0; padding-left: 1cqw; padding-right: 1cqw; white-space: nowrap; }
+  .fl-more .fl-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }   /* SETTINGS, the third of three, takes the row */
   #flow > .fl-up.fl-modes .fl-list .fl-more { grid-column: 1 / -1; gap: max(8px, 1.3cqh) 2.4cqw; }
-  #flow > .fl-up.fl-modes .fl-list .fl-more .fl-btn, #flow > .fl-up.fl-modes .fl-list .fl-more .fl-btn:last-child { grid-column: auto; min-height: 48px; font-size: max(15px, 4.4cqw); }
+  #flow > .fl-up.fl-modes .fl-list .fl-more .fl-btn { min-height: 48px; font-size: max(15px, 4.4cqw); }
   /* the upright select's swatch labels and the line under them, a thumb's read */
   #flow .fl-tall .fl-pal small { font-size: max(12px, 3.2cqw); } #flow .fl-tall .fl-palnote { font-size: max(13px, 3.4cqw); }
 
@@ -938,7 +929,17 @@ function injectStyle() {
   @container (max-height: 520px) {
     #flow .fl-wide .fl-moves small { display: none; }
     #flow .fl-wide { padding-top: 1.4cqh; gap: 1cqh; }
+    /* the palette's own line goes too: each swatch's tag already says IN USE, OWNED or its price, and the sheet then
+       fits a phone sideways without scrolling (it cut MAIN · IN USE in half at 844x390) */
+    #flow .fl-wide .fl-palnote { display: none; }
+    #flow .fl-wide .fl-info { gap: 0.8cqh; }
   }
+  @container (max-height: 400px) {
+    #flow .fl-wide .fl-info { gap: 0.4cqh; }
+    #flow .fl-wide .fl-stats { row-gap: 0.4cqh; }
+  }
+  /* the swatch's tag clear of its color bar: Teko sits high in its box, so it gets a line of its own height */
+  #flow .fl-select .fl-pal small { line-height: 1.2; padding-top: 0.15em; }
 
   /* ---- Held upright: every menu (.fl-up, set by show() above) -------------------------------------------------
      The menu leaves the 16:9 strip for the whole screen under the top buttons, like the character select. #flow is
@@ -975,7 +976,7 @@ function injectStyle() {
   #flow > .fl-up .lg-b { font-size: max(12px, 0.82em); }
   #flow > .fl-up .lg-th { font-size: max(12px, 0.85em); }
   /* the pause menu's and CONTROLS' rows are columns that hold a scrolling box: they don't wrap */
-  #flow > .fl-up > .fl-row.fl-pauserow, #flow > .fl-up > .fl-row.fl-ctlrow { flex-wrap: nowrap; justify-content: flex-start; }   /* (centered, an overflow would start above the top, out of reach) */
+  #flow > .fl-up > .fl-row.fl-pauserow { flex-wrap: nowrap; justify-content: flex-start; }   /* (centered, an overflow would start above the top, out of reach) */
   /* a box that scrolls under a finger (README, Controls, "What scrolls under a finger") */
   #flow > .fl-up [data-scroll="y"] { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; pointer-events: auto; scrollbar-width: none; min-height: 0; }
   #flow > .fl-up [data-scroll="y"]::-webkit-scrollbar { display: none; }
@@ -1140,19 +1141,13 @@ function injectStyle() {
   #flow > .fl-up.fl-pause .fl-list .fl-btn { min-height: max(52px, 6.4cqh); font-size: max(15px, 4.6cqw); padding-left: 1cqw; padding-right: 1cqw; white-space: normal; }
   #flow > .fl-up.fl-pause .fl-list .fl-btn small { font-size: max(12px, 3.2cqw); }
   #flow > .fl-up.fl-pause .fl-pside { display: flex; width: 100%; flex: 0 1 auto; min-height: 0; }
-  #flow > .fl-up.fl-pause .fl-ptab { min-height: 44px; font-size: max(14px, 4.2cqw); }
   #flow > .fl-up.fl-pause .fl-pside .fl-tech { max-height: none; }
   #flow > .fl-up.fl-pause .fl-tech { display: flex; width: 100%; flex: 0 1 auto; padding: 3cqw 3.6cqw; gap: 0.7em; }
-  #flow > .fl-up .fl-techhead { font-size: max(13px, 4.2cqw); }
+  #flow > .fl-up .fl-techhead, #flow > .fl-up .fl-ptitle { font-size: max(13px, 4.2cqw); }
   #flow > .fl-up .fl-tech b { font-size: max(15px, 4.6cqw); }
   #flow > .fl-up .fl-tech small { font-size: max(12px, 3.5cqw); line-height: 1.15; }
-  #flow > .fl-up .fl-tech.fl-ctlpanel { padding: 3cqw; }
 
   /* CONTROLS: the two tables and the notes in one column that scrolls */
-  #flow > .fl-up.fl-controls { justify-content: flex-start; }
-  #flow > .fl-up .fl-ctlrow { flex-direction: column; align-items: stretch; align-self: stretch; flex: 0 1 auto; gap: max(12px, 2cqh); }
-  #flow > .fl-up .fl-ctlcol { max-width: none; gap: max(12px, 2cqh); }
-  #flow > .fl-up .fl-ctlnote { font-size: max(12px, 3.6cqw); line-height: 1.25; }
   #flow > .fl-up .lg-table { --lg-size: max(15px, 4.2cqw); padding: 3cqw; column-gap: 0.9em; justify-content: start; }
   #flow > .fl-up .lg-table .lg-th.lg-col { font-size: max(12px, 0.7em); }
   /* three columns that share the phone's width: a long key or pad name wraps inside its cell */

@@ -464,14 +464,14 @@ function injectStyle() {
     .tc-top { flex-direction: column; right: max(0.5rem, env(safe-area-inset-right)); }
     .tc-top-hud .tc-top { top: var(--tc-top-y, var(--st)); }
     .tc-top-row .tc-top { flex-direction: row; }
+    /* on a menu there's no HUD strip to clear (the flow is on and it isn't a HUD screen): the buttons go back up to
+       the corner in a row, above the menu's right-hand panel (a column ran onto MAIN MENU's profile card at 667x375) */
+    html.flow-on:not(.fl-hud) .tc-top-hud .tc-top { top: var(--st); flex-direction: row; }
     .tc-mini { min-width: 0; width: ${u(D.miniW)}; padding: 0; font-size: ${u(0.625)}; justify-content: center; }
     .tc-cluster { flex-direction: row; align-items: flex-end; }
     .tc-small { flex-direction: column; }
     .tc-sm { width: ${u(D.guardW)}; height: ${u(D.guardH)}; border-radius: ${u(D.guardH / 2)}; }
-  }
-  /* the settings panel is open (src/audio/ui.js): the controls show behind it at their new size,
-     and outside a fight they're only a picture */
-  html.tc-preview:not(.fl-play) .tc-stickzone, html.tc-preview:not(.fl-play) .tc-cluster .tc-btn { pointer-events: none; }`;
+  }`;
   const s = document.createElement('style');
   s.id = 'touch-controls-style';
   s.textContent = css;

@@ -54,7 +54,7 @@ import { createUI, el, button } from './ui.js';
 import { techniques, botchEnabled, setBotchEnabled } from './techniques.js';
 import { roundTime, bestOf, cycleRoundTime, cycleBestOf, timeLabel } from './rules.js';
 import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './netApi.js';
-import { controlsTable, FIGHT, MENUS, startName } from './controls.js';
+import { startName } from './controls.js';
 import { profile, setName as saveName, guestName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut, deleteProfile } from '../net/profile.js';
 import { createCrew, createCrewRoom, cleanSlug, crewLink } from '../net/crew.js';
 import * as CS from '../net/crewScores.js';   // crew high scores: which runs post where (README, Crew rooms, High scores)
@@ -77,10 +77,10 @@ import { palettesFor } from '../career/palettes.js';   // the title's ticker of 
 // every legal move ('off' is always allowed: the gauntlet hooks can take over at any time)
 const TRANSITIONS = {
   off: ['attract', 'onlineJoin', 'onlineConnecting', 'charSelect', 'nameEntry', 'crewLobby', 'signInCode', 'watching'],
-  attract: ['modeSelect', 'highScores', 'controls'],
+  attract: ['modeSelect', 'highScores'],
   highScores: ['attract', 'modeSelect', 'ageCheck'],   // ageCheck: the save-your-sticks nudge after a game (README, Progression)
   controls: ['attract', 'modeSelect'],
-  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts', 'closet', 'profile', 'highScores', 'controls'],   // ageCheck: the save nudge; profile: the PROFILE card
+  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts', 'closet', 'profile', 'highScores'],   // ageCheck: the save nudge; profile: the PROFILE card
   shifts: ['modeSelect', 'attract'],   // the daily shifts (README, Progression, Daily shifts)
   closet: ['modeSelect', 'attract'],   // the Supply Closet (README, Progression, The Supply Closet)
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
@@ -137,7 +137,7 @@ export function playTime(secs) {
 }
 const CREW_KEEP = new Set(['crewLobby', 'crewLinking', 'onlineFighting', 'onlinePost', 'onlineSelect', 'onlineEnd']);
 // the demo runs (silent) behind these; highScores holds a fresh bout still behind the table
-const DEMO = new Set(['attract', 'controls', 'modeSelect', 'shifts', 'closet', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking']);
+const DEMO = new Set(['attract', 'modeSelect', 'shifts', 'closet', 'charSelect', 'onlineMenu', 'watchList', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking']);
 // the sim steps in these (plus onlineFighting, unless the net module steps it)
 const STEPS = new Set([...DEMO, 'fighting', 'roundEnd', 'result']);
 // the HUD draws in these; everything else is a menu over a dimmed scene, HUD off
@@ -169,7 +169,7 @@ const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
 
 // the music pool for each screen: menus get the title track, a match gets its mode's pool
 const ENDING_ROLL = 22;   // seconds the ending's roll takes to scroll by (the story and the credits); it moves on 3s after
-const MENU_MUSIC = new Set(['attract', 'highScores', 'controls', 'modeSelect', 'shifts', 'closet', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking', 'watchList']);
+const MENU_MUSIC = new Set(['attract', 'highScores', 'modeSelect', 'shifts', 'closet', 'charSelect', 'gameOver', 'enterInitials', 'ending', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineEnd', 'onlinePost', 'onlineSelect', ...TEXT, 'profile', 'ageCheck', 'crewLobby', 'crewLinking', 'watchList']);
 
 /** @param {FlowCtx} ctx */
 export function createFlow(ctx) {
@@ -185,7 +185,6 @@ export function createFlow(ctx) {
   let hs = { mode: 'arcade', highlight: -1, postGame: false, loop: 0, manual: false };
   let menu = null;   // createMenuInput's handle (swallow), made below
   let retryTo = null;   // onlineEnd's RETRY: the screen that failed before a match started (onlineHost, onlineConnecting)
-  let pauseView = 'tech';   // the pause menu's right panel: 'tech' (the happy accidents) or 'controls'
   let entry = null;
   let resultWin = false, clearBonus = 0;
   let endMsg = '', joinCode = '', netSession = 0;
@@ -218,6 +217,15 @@ export function createFlow(ctx) {
   const settingsPanel = ctx.panel || null;
   const panelOpen = () => !!(settingsPanel && settingsPanel.isOpen);
   window.addEventListener('sf:settings-closed', () => { if (menu) menu.swallow(); });
+  // SETTINGS is a page over everything: opened over a fight you can pause (the corner gear), the fight pauses first,
+  // and its ‹ chip names the screen closing goes back to
+  window.addEventListener('sf:settings-open', () => pause());
+  const SETTINGS_FROM = { attract: 'TITLE', modeSelect: 'MAIN MENU', paused: 'PAUSE MENU', fighting: 'FIGHT', roundEnd: 'FIGHT', result: 'FIGHT', onlineFighting: 'FIGHT', charSelect: 'FIGHTERS', onlineSelect: 'FIGHTERS', highScores: 'HIGH SCORES' };
+  if (settingsPanel) settingsPanel.place = () => {
+    if (SETTINGS_FROM[state]) return SETTINGS_FROM[state];
+    const h = document.querySelector('#flow .fl-h2, #flow .fl-h1');   // else the screen's own title
+    return h && h.textContent.trim().length <= 16 ? h.textContent.trim() : PLACE[state] || 'GAME';
+  };
 
   // ---- transitions ----------------------------------------------------------------------------
   function go(next) {
@@ -294,7 +302,6 @@ export function createFlow(ctx) {
       case 'off': ui.clear(); netReset(); mode = null; return;
       case 'attract': mode = null; if (ctx.sceneName() !== 'attract') demo(); return screenTitle();
       case 'highScores': demo(); return screenScores();
-      case 'controls': ensureDemo(); return screenControls();
       case 'modeSelect': mode = null; ensureDemo(); return screenModes();
       case 'shifts': ensureDemo(); return screenShifts();
       case 'closet': ensureDemo(); return screenCloset();
@@ -369,7 +376,7 @@ export function createFlow(ctx) {
       // the demo's KO card holds a beat longer
       if (sim.phase === 'ko' && !demoKO) { demoKO = true; sim.phaseTimer = 1.6; }
       // (never the crew lobby, the typing screens or sign-in: friends wait there, and a code takes a trip to the inbox)
-      if (idle > IDLE_MS && (state === 'watchList' || state === 'controls' || state === 'modeSelect' || state === 'shifts' || state === 'closet' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || (state === 'onlineEnd' && !crewMatch) || state === 'profile')) go('attract');
+      if (idle > IDLE_MS && (state === 'watchList' || state === 'modeSelect' || state === 'shifts' || state === 'closet' || state === 'charSelect' || state === 'onlineMenu' || state === 'onlineJoin' || (state === 'onlineEnd' && !crewMatch) || state === 'profile')) go('attract');
     }
     if ((state === 'charSelect' || state === 'onlineSelect') && selCtl) selCtl.tick(dt);
     if (BETWEEN.has(state)) paintBetween();   // the countdowns tick
@@ -565,7 +572,6 @@ export function createFlow(ctx) {
   function pressStart() { if (state === 'attract') go('modeSelect'); }
   let detourFrom = 'attract';   // HIGH SCORES and CONTROLS open from the title or MAIN MENU, and go back there
   function openScores() { detourFrom = state === 'modeSelect' ? 'modeSelect' : 'attract'; hs = { mode: 'arcade', highlight: -1, postGame: false, loop: hs.loop, manual: true }; go('highScores'); loadCrewTables(); }
-  function openControls() { detourFrom = state === 'modeSelect' ? 'modeSelect' : 'attract'; go('controls'); }
 
   // ---- input ------------------------------------------------------------------------------------------
   // One scheme for every screen (controls.js): directions move the focus, confirm (Enter, Space, A)
@@ -676,15 +682,14 @@ export function createFlow(ctx) {
   let titleUpdWatch = null;
   function screenTitle() {
     ui.show('fl-title', (root) => {
-      // START sits on the title card's prompt (frame() moves the group); HIGH SCORES and CONTROLS under it
+      // START sits on the title card's prompt (frame() moves the group). It's the one thing the title asks: HIGH SCORES,
+      // SETTINGS (with CONTROLS) and the rest are on MAIN MENU, one press in, and the gear in the corner opens SETTINGS
+      // from here too. INSTALL and UPDATE show under START when there's one to offer.
       const group = el('div', 'fl-titlegroup');
       const b = button('', pressStart, 'fl-start');
       // touch.js marks <html> after this first screen is built, so the label is picked by CSS
       b.el.append(el('span', 'fl-keys', 'PRESS START'), el('span', 'fl-touch', 'START'));
       const row = el('div', 'fl-row fl-titlerow');
-      const scores = button('HIGH SCORES', openScores, 'fl-mini');
-      const how = button('CONTROLS', openControls, 'fl-mini fl-violet');
-      row.append(scores.el, how.el);
       // INSTALL: the browser's own prompt, or on iPhone/iPad Safari the Add to Home Screen how-to (src/homescreen.js)
       const inst = (typeof window !== 'undefined' && window.__install) || null;
       let instBtn = null;
@@ -697,11 +702,12 @@ export function createFlow(ctx) {
       let updBtn = null;
       if (upd && upd.available) { updBtn = button('UPDATE', () => upd.apply(), 'fl-mini fl-pink'); row.appendChild(updBtn.el); }
       if (upd && !titleUpdWatch) titleUpdWatch = upd.onChange(() => { if (state === 'attract') screenTitle(); });
-      group.append(b.el, row);
+      group.append(b.el); if (row.children.length) group.appendChild(row);
       root.appendChild(group);
       startBtn = group;
       group.style.left = '50%'; group.style.top = '39%';
-      return { items: [b, scores, how, instBtn, updBtn].filter(Boolean), legend: [MOVE, SELECT, ['start', 'START']] };
+      const items = [b, instBtn, updBtn].filter(Boolean);
+      return { items, legend: [...(items.length > 1 ? [MOVE] : []), ['confirm', 'START']] };
     }, { veil: false });
   }
   function screenScores(focus = 0) {
@@ -750,26 +756,13 @@ export function createFlow(ctx) {
   }
   /** opening HIGH SCORES from the title: fetch the crews' tables, so the button to them shows */
   function loadCrewTables() { if (CS.recentCrews().length) CS.loadBoards().then(() => { if (state === 'highScores' && hs.manual && !hs.crew) screenScores(); }); }
-  function screenControls() {
-    ui.show('fl-controls', (root) => {
-      root.append(el('h1', 'fl-h2', 'CONTROLS'));
-      const row = el('div', 'fl-row fl-ctlrow');
-      row.dataset.scroll = 'y';
-      const right = el('div', 'fl-ctlcol');
-      right.append(controlsTable(MENUS, 'MENUS'), el('div', 'fl-small fl-ctlnote', 'ON A TOUCH SCREEN THE LEFT THUMB STEERS (FLICK IT TWICE THE SAME WAY TO DASH), THE BUTTONS STRIKE AND GUARD, AND MENUS ARE TAPPED. THE PAUSE MENU AND THE FIGHTER SELECT HAVE EVERY FIGHTER\'S FULL MOVE LIST (F1, OR Y ON A PAD); IN A FIGHT F1 SHOWS A QUICK STRIP.'),
-        el('div', 'fl-small fl-ctlnote', 'DASH: TAP TOWARD HIM TWICE, AND ANY BUTTON IN IT IS A DASH ATTACK; TAP AWAY TWICE TO HOP BACK (NO GUARD UNTIL IT ENDS). OUT OF A CROUCH, LET GO OF DOWN AND PRESS A BUTTON FOR A RISING ATTACK. PARRY: TAP TOWARD HIM JUST BEFORE A HIT LANDS (DOWN-FORWARD FOR A LOW). KNOCKED DOWN: UP STANDS, AWAY ROLLS BACK ON YOUR SIDE, TOWARD HIM ROLLS UNDER HIM IF HE IS CLOSE, A BUTTON STRIKES FROM THE FLOOR. OVER HIM ON THE FLOOR: DOWN + 4 STOMPS; A LOW THAT TOUCHES HIM HITS ONCE. JUGGLED: A BUTTON AT THE RIGHT MOMENT LANDS YOU ON YOUR FEET. STAIRS: WALK PAST THE FOOT TO GO UP; AT THE TOP, DOWN + TOWARD THE STEPS TO GO DOWN.'));
-      row.append(controlsTable(FIGHT, 'FIGHT'), right);
-      root.appendChild(row);
-      return { items: [], back: () => go(detourFrom), backTo: PLACE[detourFrom] };
-    });
-  }
   function screenModes() {
     ui.show('fl-modes', (root) => {
       root.append(el('h1', 'fl-h2', 'MAIN MENU'));
       const list = el('div', 'fl-list');
       const mk = (label, sub, act, cls = '') => { const b = button(label, act, cls); b.el.appendChild(el('small', '', sub)); list.appendChild(b.el); return b; };
-      // the four ways to play, then everything else in one row: the closet, the records, the controls and SETTINGS
-      // (the match rules, sound and graphics, one panel). Back to the title is the corner's chip.
+      // the four ways to play, then everything else in one row: the closet, the records and SETTINGS (the match rules,
+      // the controls, sound and graphics: one page). Back to the title is the corner's chip.
       const items = [
         mk('ARCADE', `${LADDER.length} STAGES UP THE BUILDING`, () => toSelect('arcade'), 'fl-pink'),
         mk('VERSUS ONLINE', 'PLAY A FRIEND', toOnline),
@@ -780,7 +773,6 @@ export function createFlow(ctx) {
       const small = (label, act) => { const b = button(label, act, 'fl-slim fl-violet'); more.appendChild(b.el); items.push(b); return b; };
       small('SUPPLY CLOSET', () => go('closet'));
       small('HIGH SCORES', openScores);
-      small('CONTROLS', openControls);
       if (settingsPanel) small('SETTINGS', () => settingsPanel.open({ keys: !ctx.touchUI() }));
       list.appendChild(more);
       // today's shifts beside the modes (README, Progression, Daily shifts); the button opens them in full
@@ -1071,31 +1063,20 @@ export function createFlow(ctx) {
       // so this list is only where to go: back to the fight, the moves, a restart, SETTINGS, out
       if (settingsPanel) {
         const set = button('SETTINGS', () => settingsPanel.open({ keys: !ctx.touchUI() }));
-        set.el.appendChild(el('small', '', 'RULES, SOUND, GRAPHICS'));
+        set.el.appendChild(el('small', '', 'RULES, CONTROLS, SOUND, GRAPHICS'));
         items.push(set);
       }
       items.push(button('MAIN MENU', mainMenu, 'fl-violet'));
       items.forEach(i => list.appendChild(i.el));
-      // beside it: the book of happy accidents, or the controls (keyboard and gamepad), under two tabs
+      // beside it: the book of happy accidents, found ones by name, the rest as ???, each with a hint (never the
+      // timing). The controls are in SETTINGS, CONTROLS (one place for them, not three).
       const side = el('div', 'fl-pside');
-      const tabs = el('div', 'fl-row fl-ptabs');
-      const tab = (v, label) => { const b = button(label, () => { if (pauseView !== v) { pauseView = v; paint(); } }, 'fl-mini fl-ptab'); b.view = v; tabs.appendChild(b.el); return b; };
-      const tTech = tab('tech', 'TECHNIQUES'), tCtl = tab('controls', 'CONTROLS');
       const panel = el('div', 'fl-tech');
       panel.dataset.scroll = 'y';   // held upright it's under the menu in what's left of the screen
-      const paint = () => {
-        for (const b of [tTech, tCtl]) b.el.classList.toggle('fl-on', b.view === pauseView);
-        panel.textContent = '';
-        panel.classList.toggle('fl-ctlpanel', pauseView === 'controls');
-        if (pauseView === 'controls') { panel.appendChild(controlsTable(FIGHT, 'FIGHT')); return; }
-        // the happy accidents: found ones by name, the rest as ???, each with a hint (never the timing)
-        const tech = techniques();
-        panel.appendChild(el('div', 'fl-techhead', `FOUND ${tech.filter(x => x.found).length} OF ${tech.length}`));
-        for (const x of tech) { const p = el('p', x.found ? 'fl-got' : ''); p.append(el('b', '', x.found ? `${x.name}  ${x.input}` : '???'), el('small', '', x.hint)); panel.appendChild(p); }
-      };
-      items.push(tTech, tCtl);
-      paint();
-      side.append(tabs, panel);
+      const tech = techniques();
+      side.appendChild(el('div', 'fl-ptitle', `TECHNIQUES  ·  FOUND ${tech.filter(x => x.found).length} OF ${tech.length}`));
+      for (const x of tech) { const p = el('p', x.found ? 'fl-got' : ''); p.append(el('b', '', x.found ? `${x.name}  ${x.input}` : '???'), el('small', '', x.hint)); panel.appendChild(p); }
+      side.appendChild(panel);
       const row = el('div', 'fl-row fl-pauserow'); row.append(list, side);
       root.appendChild(row);
       return { items, back: resume, legend: [MOVE, SELECT, ['moves', 'MOVE LIST'], ['back', 'RESUME'], ['start', 'RESUME']] };

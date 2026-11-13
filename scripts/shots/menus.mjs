@@ -10,14 +10,15 @@
 // crewLinking, the NO CREW AT THAT LINK notice; then the online menu, profile, name and sign-in screens, onlineHost
 // (its QR read back with jsQR from the screenshot), onlineJoin, onlineConnecting and NO ROOM WITH THAT CODE, a real
 // room with a rival page (onlineSelect, the LEAVE confirm, onlinePost, the rival leaving), the LIVE list and the
-// watch view; then the title, SETTINGS, mode select, character select, CONTROLS, high scores, an arcade run
+// watch view; then the title, SETTINGS (each tab), mode select, character select, high scores, an arcade run
 // (stage card, pause, pause panel, MOVE LIST, stage clear, continue, game over, initials, the ending) and the
 // home-screen how-to and the update pill. The crew and room screens need the Worker: a page URL whose ../api/
 // reaches it (Vite proxies it; SF_WORKER=http://127.0.0.1:<port> points the proxy at another port).
 //
 // For each screen it reports, and --check exits 1 on: anything a player reads or presses that is cut off by the
-// screen (or the stage, for screens that live in it), overlapping another, or under the top buttons, the HUD band
-// or the touch controls; and, held upright only, text under 12 CSS px and tap targets under 40 px tall. Lists that
+// screen (or the stage, for screens that live in it) or by its box at the side, running past a bordered box, in a
+// box that scrolls sideways, overlapping another, or under the top buttons, the HUD band or the touch controls; text
+// under 12 CSS px at every size; and, held upright only, tap targets under 40 px tall. Lists that
 // scroll (data-scroll) are judged by their box, not their rows. Pictures go to --out (default gauntlet/tmp/shots;
 // with --check, only when --out is given), named <size>-<nn>-<state>.png.
 import fs from 'node:fs';
@@ -110,6 +111,7 @@ function audit({ upright, textMin, tapMin }) {
     const all = [root, ...root.querySelectorAll('*')];
     for (const n of all) {
       if (n.closest('.lg-bar') && !document.documentElement.matches('.dev-key, .dev-pad')) continue;
+      if (n.closest('.sf-tcview')) continue;   // SETTINGS, CONTROLS: a scaled-down picture of the touch controls, not controls
       const press = n.matches('button, .fl-btn, .nf-btn, [role="button"], input, .fl-slot b') && !n.matches('.fl-off');
       const text = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
       if (!press && !text) continue;
@@ -154,10 +156,29 @@ function audit({ upright, textMin, tapMin }) {
           ta = { l: ta.l, r: ta.r, t: mid - half, b: mid + half };
         }
       }
+      // text that runs past the bordered box it sits in (a table wider than its panel), or a box that hides what it
+      // can't fit sideways with no ellipsis to say so (it would scroll sideways, which nothing here should)
+      if (ta && !n.closest('.fl-ring, .fl-roll, .sf-tcview')) {
+        for (let e = n.parentElement; e && e !== root.parentElement; e = e.parentElement) {
+          const o = getComputedStyle(e);
+          if (!(parseFloat(o.borderLeftWidth) > 0 && parseFloat(o.borderRightWidth) > 0)) continue;
+          const eb = R(e.getBoundingClientRect());
+          if (ta.l < eb.l - 1 || ta.r > eb.r + 1) out.push(`RUNS PAST ITS BOX ${name(n)} ${fmt(ta)} (in ${fmt(eb)})`);
+          break;
+        }
+      }
       items.push({ n, a: ta || a, box: box, press, text, scr, sc });
     }
   }
   const owners = new Set(items.map((i) => i.n));
+  // a box that scrolls sideways (or hides what runs past its side): every list here scrolls up and down only
+  for (const { root } of roots) for (const e of [root, ...root.querySelectorAll('*')]) {
+    if (!shown(e) || e.closest('.fl-ring, .fl-roll, .sf-tcview, .fl-ringdots, [data-scroll="x"]')) continue;   // (a strip made to scroll sideways, like the move list's tabs, is fine)
+    const o = getComputedStyle(e);
+    if (o.overflowX === 'visible' || o.textOverflow === 'ellipsis' || o.whiteSpace === 'nowrap' && o.textOverflow === 'ellipsis') continue;
+    if (e.scrollWidth > e.clientWidth + 2 && e.clientWidth > 0 && [...e.querySelectorAll('*')].some((k) => shown(k) && k.getBoundingClientRect().right > e.getBoundingClientRect().right + 2 && [...k.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && getComputedStyle(k).textOverflow !== 'ellipsis'))
+      out.push(`SCROLLS SIDEWAYS ${name(e)} ${e.scrollWidth} in ${e.clientWidth}`);
+  }
   // is the blocker drawn over the item where they meet (an open panel covers the corner buttons, not the other way)
   function above(bl, n, c) {
     const st = document.elementsFromPoint((c.l + c.r) / 2, (c.t + c.b) / 2);
@@ -169,12 +190,13 @@ function audit({ upright, textMin, tapMin }) {
     const chk = it.scr || a;
     if (chk.l < box.l - 1 || chk.t < box.t - 1 || chk.r > box.r + 1 || chk.b > box.b + 1) out.push(`CUT OFF ${name(n)} ${fmt(chk)} (in ${fmt(box)})`);
     for (const bl of blockers) if (!bl.n.contains(n) && area(cut(a, bl.a)) > 4 && above(bl.n, n, cut(a, bl.a))) out.push(`UNDER ${bl.n.id || bl.n.className.split(' ')[0]} ${name(n)} ${fmt(a)}`);
+    // the 12 px floor holds at every size: upright, sideways and on a desktop (README, Menus, "Text floors")
+    if (it.text && !n.closest('.sf-tcview')) {
+      const z = n.currentCSSZoom || 1;
+      const px = parseFloat(getComputedStyle(n).fontSize) * z;
+      if (px < textMin - 0.25) out.push(`TEXT ${px.toFixed(1)}px ${name(n)}`);
+    }
     if (upright) {
-      if (it.text) {
-        const z = n.currentCSSZoom || 1;
-        const px = parseFloat(getComputedStyle(n).fontSize) * z;
-        if (px < textMin - 0.25) out.push(`TEXT ${px.toFixed(1)}px ${name(n)}`);
-      }
       if (it.press && !it.n.matches('.fl-slot b') && (r => r.height < tapMin - 0.5)(n.getBoundingClientRect()) && !(n.parentElement && owners.has(n.parentElement) && n.parentElement.matches('button, .fl-btn')))
         out.push(`TAP ${Math.round(n.getBoundingClientRect().width)}x${Math.round(n.getBoundingClientRect().height)} ${name(n)}`);
     }
@@ -472,12 +494,15 @@ for (const size of SIZES) {
   await open(URL_, { 'stick-fight-player': player('SCOTT') });
   const panel = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:settings')));
   await shot('title');
-  await panel(); await shot('title-settings', 2500); await panel(); await sleep(400);
+  // SETTINGS, every tab (it's a page of its own: each tab is checked like a screen)
+  const tab = (t) => page.evaluate((x) => document.querySelector(`.sf-tab[data-t="${x}"]`).click(), t);
+  await panel(); await shot('title-settings', 2500);
+  for (const t of ['controls', 'audio', 'display']) { await tab(t); await shot(`settings-${t}`, 400); }
+  await tab('game'); await panel(); await sleep(400);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:homescreen')));
   if (await page.$('.sf-hs')) { await shot('title-howto', 600); await page.keyboard.press('Escape'); await page.evaluate(() => document.querySelectorAll('.sf-hs').forEach((n) => n.remove())); }
   await go('modeSelect'); await shot('modeSelect');
-  await go('attract', 'controls'); await shot('controls');
-  await go('attract'); await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /HIGH SCORES/.test(i.el.textContent)); it && it.act(); }); await shot('highScores');
+  await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /HIGH SCORES/.test(i.el.textContent)); it && it.act(); }); await shot('highScores');
   await go('modeSelect');
   await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
   await shot('charSelect', 900);
@@ -489,8 +514,6 @@ for (const size of SIZES) {
   await page.keyboard.press('KeyP');
   if (await at('paused', 3000)) {
     await shot('paused');
-    await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => i.view === 'controls'); it && it.act(); });
-    await shot('paused-controls', 300);
     await panel(); await shot('paused-settings', 2500); await panel(); await sleep(400);
     await page.keyboard.press('F1'); await shot('paused-movelist', 700); await page.keyboard.press('Escape'); await sleep(300);
     await page.keyboard.press('KeyP'); await at('fighting', 3000);

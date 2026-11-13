@@ -1,4 +1,4 @@
-// The corner buttons: pause, menu (opens the SETTINGS panel, src/audio/ui.js) and fullscreen
+// The corner buttons: pause, settings (a gear: opens the SETTINGS page, src/audio/ui.js) and fullscreen
 // (src/fullscreen.js). One set, one look, one order, top right on every screen:
 //
 //   touch     src/touch.js draws them in its own layer (.tc-top), scaled with the player's controls
@@ -21,8 +21,9 @@ export const MINI_FACE = 'rgba(10,3,22,0.88)', MINI_INK = 'color-mix(in srgb, va
 export const HUD_STRIP = 0.14;
 
 const svg = (body) => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">${body}</svg>`;
-/** three bars. With SOUND off (.sf-muted on the button) the bottom bar shortens and a small X takes its end. */
-export const MENU_ICON = svg('<path d="M2 3h12M2 7.5h12"/><path class="sf-bar" d="M2 12h12"/><path class="sf-x" d="M2 12h5M10.2 10.2l3.6 3.6M13.8 10.2l-3.6 3.6"/>');
+/** a gear: the way into SETTINGS everywhere (a hamburger reads as "menu", and this opens settings). With SOUND off
+ *  (.sf-muted on the button) a small X sits on its lower right and the button turns pink. */
+export const MENU_ICON = svg('<g class="sf-gear"><circle cx="8" cy="8" r="5.9" stroke-width="2.3" stroke-dasharray="2.32 2.32" stroke-linecap="butt"/><circle cx="8" cy="8" r="3.9" stroke-width="2"/></g><path class="sf-x" stroke-width="2" d="M10.6 10.6l4 4M14.6 10.6l-4 4"/>');
 export const PAUSE_ICON = svg('<path stroke-width="2.6" stroke-linecap="butt" d="M5.2 3v10M10.8 3v10"/>');
 
 const doc = typeof document !== 'undefined' ? document : null;
@@ -32,7 +33,7 @@ if (doc && !doc.getElementById('sf-corner-style')) {
   s.textContent = `
   /* the menu icon's muted cue, on the desktop button and the touch layer's */
   .sf-x { display: none; }
-  .sf-muted .sf-bar { display: none; } .sf-muted .sf-x { display: inline; }
+  .sf-muted .sf-gear { opacity: 0.55; } .sf-muted .sf-x { display: inline; }
   .sf-muted.sf-muted { --c: #ff2bd6; }
   /* the desktop row: under the HUD strip, so it never covers P2's bar, name or move line; on a menu with no
      HUD (the flow is on and the screen isn't one of its HUD screens) it's in the corner itself */
