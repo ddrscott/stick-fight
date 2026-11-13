@@ -126,7 +126,15 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
   $('.sf-close').addEventListener('click', () => { actions.click('off'); close(); });
   // ▼ MORE: shows while there's more of the tab below the edge; a press scrolls most of a screen on
   const more = $('.sf-more');
-  const paintMore = () => { paintCue(body); more.classList.toggle('sf-show', body.classList.contains('sc-more')); };
+  // the chip has a strip of its own under the rows (never over them), there whenever the tab is taller than the page,
+  // so the rows don't jump when it hides at the bottom; it shows only while there's more below
+  const mid = $('.sf-mid');
+  const paintMore = () => {
+    const strip = mid.classList.contains('sf-over') ? more.offsetHeight + 6 : 0;
+    const over = body.scrollHeight > body.clientHeight + strip + 2;
+    if (over !== mid.classList.contains('sf-over')) mid.classList.toggle('sf-over', over);
+    paintCue(body); more.classList.toggle('sf-show', body.classList.contains('sc-more'));
+  };
   body.addEventListener('scroll', paintMore, { passive: true });
   // a finger that lands on the chip and drags scrolls the page like anywhere else on it (touch.js cancels the
   // browser's own scroll outside a data-scroll box, so the chip moves the middle itself); a tap still scrolls on
@@ -482,10 +490,10 @@ function injectStyle() {
   .sf-notes { margin: 8px 8px 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; font-size: var(--sub); line-height: 1.15; letter-spacing: 0.05em; }
   .sf-notes dt { color: var(--cyan); font-weight: 600; white-space: nowrap; }
   .sf-notes dd { margin: 0; color: rgba(255,244,253,0.8); }
-  /* ▼ MORE: over the faded bottom edge while there's more below, centered, a press scrolls on */
-  .sf-more { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: none; align-items: center; gap: 0.4em; height: 40px; padding: 0 1em 0 0.8em;
+  /* ▼ MORE: in its own strip under the faded bottom edge while there's more below, centered, a press scrolls on */
+  .sf-more { flex: none; align-self: center; margin-top: 6px; display: none; visibility: hidden; align-items: center; gap: 0.4em; height: 40px; padding: 0 1em 0 0.8em;
     background: #0b0318; color: var(--cyan); border: 2px solid var(--cyan); border-radius: 0; font: 600 18px/1 'Teko', 'Arial Narrow', sans-serif !important; letter-spacing: 0.12em; text-shadow: ${PLAIN}; }
-  .sf-more.sf-show { display: flex; }
+  .sf-mid.sf-over .sf-more { display: flex; } .sf-more.sf-show { visibility: visible; }
   .sf-more svg { width: 0.9em; height: 0.9em; transform: rotate(90deg); fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: square; }
   .sf-more span { padding-top: 0.14em; }
   .sf-more:hover, .sf-more:active { background: var(--cyan); color: #0a0414; text-shadow: none; }

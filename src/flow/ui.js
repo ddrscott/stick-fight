@@ -95,34 +95,55 @@ export function createUI(onSound) {
     if (screen.classList.contains('fl-nofit')) { if (zoomNow !== 1) { zoomNow = 1; screen.style.zoom = ''; } return; }   // it fits itself (the upright select: its carousel takes what's left)
     const st = root.getBoundingClientRect();
     if (!st.width || !st.height) return;
-    let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
-    for (const n of screen.children) {
-      const cs = getComputedStyle(n);
-      if (cs.position === 'absolute' || cs.position === 'fixed' || cs.display === 'none') continue;
-      const r = n.getBoundingClientRect();
-      if (!r.width || !r.height) continue;
-      top = Math.min(top, r.top); bottom = Math.max(bottom, r.bottom); left = Math.min(left, r.left); right = Math.max(right, r.right);
-    }
-    if (bottom <= top) return;
+    // A screen with a box marked data-squeeze (the earnings panel on STAGE CLEAR, CONTINUE?, GAME OVER, the online
+    // result) never scrolls as a whole: that box scrolls instead, so the buttons under it and the legend stay on
+    // screen (a countdown's YES can't sit below the fold). Measure it at its full height first.
+    const sq = screen.querySelector('[data-squeeze]');
+    if (sq instanceof HTMLElement && (sq.style.maxHeight || sq.classList.contains('fl-two'))) { sq.style.maxHeight = ''; sq.classList.remove('fl-squeezed', 'fl-two'); if (sq.dataset.scroll === 'y') delete sq.dataset.scroll; }
+    // A screen is always measured as it lays out unscrolled. Measured scrolled, its scroll padding (the room under the
+    // corner bar) counted as content, so a screen that went to scrolling once stayed scrolling with its legend hidden even
+    // when it fit (round 3 of [t55b8f]: the character select at 1280x720). Where it was scrolled to is kept.
+    const was = screen.classList.contains('fl-scroll'), keep = was ? screen.scrollTop : 0;
+    if (was) screen.classList.remove('fl-scroll');
     const cs = getComputedStyle(screen);
     const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);   // measured zoomed, like the rest
+    const measure = () => {
+      let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+      for (const n of screen.children) {
+        const ns = getComputedStyle(n);
+        if (ns.position === 'absolute' || ns.position === 'fixed' || ns.display === 'none') continue;
+        const r = n.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        top = Math.min(top, r.top); bottom = Math.max(bottom, r.bottom); left = Math.min(left, r.left); right = Math.max(right, r.right);
+      }
+      return bottom <= top ? null : { h: (bottom - top + pad) / zoomNow, w: (right - left) / zoomNow };
+    };
+    let m = measure();
+    if (!m) return;
     // a sliver of air at the top and bottom; a full-screen upright menu has its padding for that, and a box in it
     // that scrolls takes up whatever is left, so it always fills the screen exactly
     const up = screen.classList.contains('fl-up');
     const edge = up ? -0.5 : st.height * 0.012;
-    const scrolled = screen.classList.contains('fl-scroll');
-    const h = (scrolled ? screen.scrollHeight : bottom - top + pad) / zoomNow, w = (right - left) / zoomNow;
     // Height zooms only so far: a phone (held upright, or sideways with a stage under SHORT px) not at all, a desktop
     // to MIN_ZOOM, so the small print stays 12 px and up. Past that the screen scrolls instead (.fl-scroll: top-aligned,
     // data-scroll so a finger moves it). Width still zooms.
     const floor = up || st.height < SHORT ? 1 : MIN_ZOOM;
+    // the squeezable box laid out wide first (the earnings panel's two columns, as on a phone sideways): a desktop has
+    // the width, and then nothing in it has to scroll at all
+    if (sq instanceof HTMLElement && !up && (st.height - 2 * edge) / m.h < floor - 0.005) { sq.classList.add('fl-two'); m = measure() || m; }
+    const { h, w } = m;
     const kH = (st.height - 2 * edge) / h, kW = st.width / w;
     const k = Math.max(0.3, Math.min(1, kW, Math.max(floor, kH)));
-    const scroll = kH < floor - 0.005;
-    if (scroll !== scrolled) {
-      screen.classList.toggle('fl-scroll', scroll);
-      if (scroll) screen.dataset.scroll = 'y'; else if (screen.dataset.scroll === 'y') delete screen.dataset.scroll;
+    let scroll = kH < floor - 0.005;
+    if (scroll && sq instanceof HTMLElement) {
+      // what's over, in the screen's own px at zoom k, comes off the box (which keeps at least 64px: a few lines and its fade)
+      const over = h - (st.height - 2 * edge) / k;
+      const box = sq.getBoundingClientRect().height / zoomNow;
+      const room = Math.floor(box - over - 2);
+      if (room >= 64) { sq.style.maxHeight = `${room}px`; sq.classList.add('fl-squeezed'); sq.dataset.scroll = 'y'; scroll = false; }
     }
+    screen.classList.toggle('fl-scroll', scroll);
+    if (scroll) { screen.dataset.scroll = 'y'; if (was && keep) screen.scrollTop = keep; } else if (screen.dataset.scroll === 'y') delete screen.dataset.scroll;
     const next = k > 0.995 ? 1 : Math.floor(k * 200) / 200;
     if (Math.abs(next - zoomNow) < 0.004) return;
     zoomNow = next;
@@ -354,6 +375,8 @@ function injectStyle() {
   #flow .fl-screen.fl-scroll::-webkit-scrollbar { display: none; }
   #flow .fl-screen.fl-scroll > * { flex-shrink: 0; }
   #flow .fl-screen.fl-scroll > .lg-bar { display: none; }
+  #flow .fl-squeezed { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; flex-shrink: 0; pointer-events: auto; }
+  #flow .fl-squeezed::-webkit-scrollbar { display: none; }
 
   /* title: the START button sits where the HUD's prompt would be (main.js positions the group per
      frame), HIGH SCORES and CONTROLS in a row under it */
@@ -521,6 +544,8 @@ function injectStyle() {
 
   /* pause: the menu beside the book of happy accidents (src/flow/techniques.js) */
   .fl-pauserow { align-items: flex-start; gap: 3cqw; }
+  /* a phone sideways with the top buttons in a column inside the stage (src/touch.js --tc-col): the menu clears it */
+  html.touch-ui.fl-hud #flow > .fl-pause:not(.fl-up) { padding-right: var(--tc-col, 0px); }
   .fl-pause .fl-list .fl-btn { min-height: max(40px, 7.2cqh); }
   /* the pause menu's right side: TECHNIQUES and CONTROLS as two tabs over the panel they switch */
   .fl-pside { width: 44cqw; display: flex; flex-direction: column; gap: 1cqh; }
@@ -886,7 +911,7 @@ function injectStyle() {
   /* The character select sideways and on a desktop (select.js, .fl-wide): the same carousel as upright, in the
      16:9 stage, with the sheet beside it and the roster strip under the cards. Every size has a px floor, so a
      phone held sideways (a stage about 390 px tall) reads at 12 px and up; the sheet scrolls if it has to. */
-  #flow .fl-wide { gap: 1.2cqh; padding-top: 2.4cqh; }
+  #flow .fl-wide { gap: 1.2cqh; padding-top: 2.4cqh; padding-bottom: calc(8cqh + 2px); }   /* the foot clears the key legend under it */
   #flow .fl-wide .fl-selrow { align-self: stretch; flex: 1 1 0; min-height: 0; padding: 0 3cqw; gap: 2cqw; }
   #flow .fl-wide .fl-ringcol { flex: 1.25 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1.4cqh; }
   #flow .fl-wide .fl-ring { margin: 0; max-height: none; min-height: 0; }

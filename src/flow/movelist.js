@@ -131,7 +131,7 @@ export function openMoveList(o) {
   pane.append(cv, cap);
   body.append(list, pane);
   root.append(head, tabs, body);
-  root.appendChild(legend([['move', 'MOVE'], ['confirm', 'REPLAY'], ['back', backTo]])).classList.add('ml-legend');
+  root.appendChild(legend([['move', 'MOVE'], ['tab', 'TAB'], ['confirm', 'REPLAY'], ['back', backTo]])).classList.add('ml-legend');
 
   const rows = [];   // { el, row, sec }
   const tabEls = [];

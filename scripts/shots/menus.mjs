@@ -208,14 +208,46 @@ function audit({ upright, textMin, tapMin }) {
         out.push(`TAP ${Math.round(n.getBoundingClientRect().width)}x${Math.round(n.getBoundingClientRect().height)} ${name(n)}`);
     }
   }
+  // what a screen asks is always in view (round 3 of [t55b8f]: STAGE CLEAR's NEXT STAGE and CONTINUE?'s YES sat below the
+  // fold of a screen that scrolled as a whole). Every button of the flow's screen that isn't a row of a list that scrolls
+  // in its own box has to be inside the view as the screen opens, and so does its legend when it has one: on every screen
+  // that decides what's next (a result, a countdown, the pause menu, the stage card, the online post-match); on the rest
+  // (a long MAIN MENU on a short phone, the closet) the button the screen opens on.
+  const ui = window.__flow && window.__flow.debug.ui;
+  if (ui && scr && !overlayUp) {
+    const view = cut(roots[0].box, screen);
+    const decides = scr.matches('.fl-clear, .fl-continue, .fl-gameover, .fl-ending, .fl-pause, .fl-stage, .fl-post, .fl-onlineend, .fl-initials') || !!scr.querySelector('[data-squeeze]');
+    for (const [k, it] of ui.items.entries()) {
+      if (!decides && k !== ui.focus) continue;
+      const e = it.el;
+      if (!shown(e) || e.offsetParent === null) continue;
+      const inner = e.parentElement && e.parentElement.closest('[data-scroll], .fl-ring');
+      if (inner && inner !== scr) continue;
+      const a = R(e.getBoundingClientRect());
+      if (!a.r || a.t < view.t - 1 || a.b > view.b + 1) out.push(`OUT OF VIEW ${name(e)} ${fmt(a)} (view ${fmt(view)})`);
+    }
+    const lg = scr.querySelector(':scope > .lg-bar');
+    if (lg && document.documentElement.matches('.dev-key, .dev-pad') && !shown(lg)) out.push('LEGEND HIDDEN (the screen scrolls as a whole)');
+  }
+  // a bordered box (a panel, a list's frame) under a corner button: its edge reads as cut (round 3: the pause screen's
+  // TECHNIQUES box under the fullscreen pill at 667x375)
+  for (const { root, overlay } of roots) {
+    if (overlay || overlayUp) continue;
+    for (const e of root.querySelectorAll('*')) {
+      if (!shown(e) || e.closest('.lg-bar, .sf-tcview')) continue;
+      const o = getComputedStyle(e);
+      if (!(parseFloat(o.borderTopWidth) > 0 && parseFloat(o.borderRightWidth) > 0 && parseFloat(o.borderLeftWidth) > 0)) continue;
+      const a = R(e.getBoundingClientRect());
+      if (!area(a)) continue;
+      for (const bl of blockers) if (!bl.n.contains(e) && bl.n.closest('.sf-corner, .tc-top') && area(cut(a, bl.a)) > 4) out.push(`BOX UNDER ${bl.n.className.split(' ')[0] || bl.n.tagName} ${name(e)} ${fmt(a)}`);
+    }
+  }
   // overlaps: two things a player reads or presses, neither inside the other, drawn over each other
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const A = items[i], B = items[j];
     if (A.n.contains(B.n) || B.n.contains(A.n)) continue;
     // the carousel's side cards sit under its arrows by design (README, Character select)
     if (A.n.closest('.fl-ring') && B.n.closest('.fl-ring')) continue;
-    // SETTINGS' ▼ MORE floats over the faded bottom edge of the page on purpose: what's under it scrolls up into view
-    if (A.n.closest('.sf-more') || B.n.closest('.sf-more')) continue;
     if ((A.n.matches('.fl-ringstep') && B.n.closest('.fl-ring')) || (B.n.matches('.fl-ringstep') && A.n.closest('.fl-ring'))) continue;
     const c = cut(A.a, B.a);
     // (a font's line box runs past its letters, so two lines of text may touch by a few px without the letters meeting)
@@ -572,12 +604,52 @@ for (const size of SIZES) {
     await until(async () => ['continue', 'fighting'].includes(await state()), 9000);
     await sleep(2600);
   }
-  if (await at('continue', 9000)) {
+  // each step says when it isn't reached (round 3 of [t55b8f]: the tour stopped at CONTINUE? without a word). The
+  // countdown is run out through the debug clock (it takes 16 s of wall clock headless), and GAME OVER's way on is
+  // pressed, so it's named by where it goes: SIGN THE TABLE (a score makes the table) or HIGH SCORES
+  const label0 = () => page.evaluate(() => { const ui = window.__flow.debug.ui; return ui.items[0] ? (ui.items[0].el.firstChild.textContent || '').trim() : ''; });
+  const step = async (s, ms = 6000) => { const ok = await at(s, ms); if (!ok) report(s, [`never got there (${await state()})`]); return ok; };
+  if (await step('continue', 9000)) {
     await shot('continue', 300);
-    if (await at('gameOver', 14000)) await shot('gameOver', 300);
-    if (await at('enterInitials', 9000)) { await shot('enterInitials'); await page.keyboard.press('Enter'); }
-    if (await at('highScores', 6000)) await shot('highScores-new');
-  } else report('continue', [`never got there (${await state()})`]);
+    await page.evaluate(() => { window.__flow.debug.t = 9.95; });
+    if (await step('gameOver')) {
+      await shot('gameOver', 300);
+      await sleep(600);
+      const way = await label0();
+      if (way !== 'SIGN THE TABLE') report('gameOver', [`WAY ON "${way}" (want SIGN THE TABLE: a first score makes the table)`]);
+      await page.evaluate(() => window.__flow.debug.ui.items[0].act());
+      if (await step('enterInitials')) { await shot('enterInitials'); await page.keyboard.press('Enter'); }
+      if (await step('highScores')) {
+        await shot('highScores-new');
+        if (await label0() !== 'TITLE') report('highScores-new', [`WAY ON "${await label0()}" (want TITLE)`]);
+      }
+    }
+  }
+  // the pause menu's run-ending choices ask first, NO lit, and Esc is NO
+  await go('attract', 'modeSelect');
+  await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
+  await sleep(500);
+  await page.evaluate(() => window.__flow.debug.pickChar(window.__flow.debug.sel.player));
+  if (await step('stageIntro')) {
+    await go('fighting'); await sleep(500);
+    await page.keyboard.press('Escape');
+    if (await step('paused', 3000)) {
+      const press = (re) => page.evaluate((src) => { const ui = window.__flow.debug.ui; const k = ui.items.findIndex((i) => new RegExp(src).test(i.el.textContent)); ui.setFocus(k); ui.activate(); }, re);
+      const asked = () => page.evaluate(() => ({ q: (document.querySelector('#flow .fl-ask .fl-h2') || {}).textContent || '', lit: window.__flow.debug.ui.items[window.__flow.debug.ui.focus]?.el.textContent || '' }));
+      await press('^MAIN MENU'); await sleep(200);
+      const a = await asked();
+      if (a.q !== 'QUIT TO MAIN MENU?' || a.lit !== 'NO') report('paused-quit', [`MAIN MENU ASKED "${a.q}" WITH "${a.lit}" LIT (want QUIT TO MAIN MENU? with NO)`]);
+      else await shot('paused-quit');
+      await page.keyboard.press('Escape'); await sleep(200);
+      const b = await asked(); const st = await state();
+      if (b.q || st !== 'paused' || !/^MAIN MENU/.test(b.lit)) report('paused-quit', [`ESC ON THE CONFIRM: ${st}, "${b.q}", cursor on "${b.lit}" (want PAUSED, on MAIN MENU)`]);
+      await press('^RESTART STAGE'); await sleep(200);
+      const c = await asked();
+      if (c.q !== 'RESTART STAGE?') report('paused-restart', [`RESTART STAGE ASKED "${c.q}"`]);
+      await page.keyboard.press('ArrowRight'); await page.keyboard.press('Enter'); await sleep(200);
+      if (await state() !== 'stageIntro') report('paused-restart', [`YES WENT TO ${await state()} (want stageIntro)`]);
+    }
+  }
   // the ending: the last stage cleared
   await go('attract', 'modeSelect');
   await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
@@ -586,10 +658,19 @@ for (const size of SIZES) {
   await at('stageIntro', 5000);
   await page.evaluate(() => { const d = window.__flow.debug; d.run.stage = d.run.ladder.length - 1; d.run.continues = 1; });   // (a continue: no secret stage)
   await go('fighting'); await sleep(600);
-  for (let i = 0; i < 6 && (await state()) !== 'stageClear'; i++) { await page.evaluate(() => window.__flow.debug.debugKO(0)); await sleep(3200); }
-  if (await at('stageClear', 9000)) {
+  for (let i = 0; i < 6 && (await state()) !== 'stageClear'; i++) {
+    await page.evaluate(() => window.__flow.debug.debugKO(0));
+    await until(async () => ['stageClear', 'fighting'].includes(await state()), 9000);
+    await sleep(2600);
+  }
+  if (await step('stageClear', 9000)) {
+    await sleep(600);
+    if (await label0() !== 'THE ENDING') report('stageClear-boss', [`WAY ON "${await label0()}" (want THE ENDING after the boss, with a continue used)`]);
     await page.evaluate(() => { const it = window.__flow.debug.ui.items[0]; it && it.act(); });
-    if (await at('ending', 6000)) await shot('ending', 4000); else report('ending', [`never got there (${await state()})`]);
+    if (await step('ending')) {
+      await shot('ending', 4000);
+      if (!/^(SIGN THE TABLE|HIGH SCORES)$/.test(await label0())) report('ending', [`WAY ON "${await label0()}"`]);
+    }
   }
   // the update pill on a menu: version.json says a newer build is out
   await page.route('**/version.json*', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ build: 'newer', at: '' }) }));

@@ -491,17 +491,20 @@ export function createFlow(ctx) {
     run.stage++; run.stageContinues = 0;
     go('stageIntro');
   }
+  // the initials go in when the run makes this device's table or one of its crews' (src/net/crewScores.js)
+  const signs = () => !!(entry && (S.rankFor(entry.mode, entry.score) >= 0 || CS.placeFor(entry.mode, entry.score)));
+  /** GAME OVER's and the ending's way on, named by where it goes */
+  const afterGameLabel = () => (signs() ? 'SIGN THE TABLE' : 'HIGH SCORES');
   function afterGame() {
     if (state !== 'gameOver' && state !== 'ending') return;
-    // the initials go in when the run makes this device's table or one of its crews' (src/net/crewScores.js)
-    if (entry && (S.rankFor(entry.mode, entry.score) >= 0 || CS.placeFor(entry.mode, entry.score))) { go('enterInitials'); return; }
+    if (signs()) { go('enterInitials'); return; }
     hs = { mode: entry ? entry.mode : 'arcade', highlight: -1, postGame: true, loop: hs.loop };
     go('highScores');
   }
   function pause() {
-    if (state === 'fighting' || state === 'roundEnd') { resumeTo = state; go('paused'); }
+    if (state === 'fighting' || state === 'roundEnd') { resumeTo = state; pauseAsk = null; go('paused'); }
   }
-  function resume() { if (state === 'paused') go(resumeTo); }
+  function resume() { pauseAsk = null; if (state === 'paused') go(resumeTo); }
   function mainMenu() { if (mode === 'online') netReset(); mode = null; go('modeSelect'); }
   function startArcade() { newRun('arcade'); run.ladder = buildLadder(sel.player, getCharacter); track('mode', ['arcade', sel.player]); go('stageIntro'); }
   /** the palette ids a scene draws: the player's for their fighter (README, Progression), the CPU or the dummy in its own */
@@ -601,7 +604,9 @@ export function createFlow(ctx) {
       if (k === 'up' || k === 'down' || k === 'left' || k === 'right') { ui.move(k); return; }
       switch (state) {
         case 'attract': if (k === 'start') { pressStart(); return; } break;
-        case 'paused': if (k === 'pause' || k === 'start' || k === 'escape' || k === 'back' || k === 'select') { resume(); return; } if (k === 'moves') { openMoves(myChar()); return; } break;
+        case 'paused':
+          if (pauseAsk) { if (k === 'pause' || k === 'escape' || k === 'back' || k === 'select') { cancelAsk(); return; } if (k === 'moves') return; break; }
+          if (k === 'pause' || k === 'start' || k === 'escape' || k === 'back' || k === 'select') { resume(); return; } if (k === 'moves') { openMoves(myChar()); return; } break;
         case 'charSelect': case 'onlineSelect': if (k === 'moves' && selCtl) { openMoves(selCtl.current); return; } break;
         case 'enterInitials': if (k === 'del') { cursorTo(slot - 1); return; } break;
         case 'onlineJoin': if (k === 'del') { typeCode('DEL'); return; } break;
@@ -735,10 +740,10 @@ export function createFlow(ctx) {
       // where a run just posted went, under this device's table
       const landed = !board && hs.posted && hs.posted.length ? hs.posted.map((p) => `${p.name} ${ORDINAL[p.rank]}`).join('  ·  ') : '';
       if (landed) root.appendChild(el('div', 'fl-small fl-crewpost', `ON THE CREW BOARDS: ${landed}`));
-      // after a game CONTINUE goes back to the title, as the cabinet always did; from the attract loop or
+      // after a game TITLE goes back to the title, as the cabinet always did; from the attract loop or
       // the title the table is a detour, so MAIN MENU leads
       // the table buttons first: from the title or MAIN MENU, back is the corner's chip
-      const items = hs.postGame ? [button('CONTINUE', () => go('attract'), 'fl-amber'), button('MAIN MENU', () => go('modeSelect'), 'fl-violet')] : [];
+      const items = hs.postGame ? [button('TITLE', () => go('attract'), 'fl-amber'), button('MAIN MENU', () => go('modeSelect'), 'fl-violet')] : [];
       const swap = items.length;
       items.push(button(hs.mode === 'arcade' ? 'HORDE TABLE' : 'ARCADE TABLE', () => {
         hs.mode = hs.mode === 'arcade' ? 'horde' : 'arcade'; hs.highlight = -1; hs.manual = true; screenScores(swap);
@@ -752,7 +757,7 @@ export function createFlow(ctx) {
       }
       btnRow(root, items, '17cqw');
       if (hs.postGame) addNudge(root, items);
-      // after a game CONTINUE is the way on (the cabinet's), so there's no chip; back still goes to the title
+      // after a game TITLE is the way on (the cabinet's), so there's no chip; back still goes to the title
       if (hs.postGame) return { items, focus, back: () => go('attract'), backTo: 'TITLE', chip: false };
       const from = hs.loop && !hs.manual ? 'attract' : detourFrom;
       return { items, focus, back: () => go(from), backTo: PLACE[from] };
@@ -906,7 +911,9 @@ export function createFlow(ctx) {
       root.appendChild(el('div', 'fl-label', last ? 'THE BUILDING IS YOURS' : `NEXT  ${ladder()[run.stage + 1].name}`));
       const earn = earningsPanel();   // what the stage paid (README, Progression)
       if (earn) root.appendChild(earn);
-      const items = btnRow(root, [button(last ? 'CONTINUE' : 'NEXT STAGE', () => { if (t > 0.5) nextStage(); }, 'fl-amber'), mainMenuBtn(0.5)]);
+      // the button says where it goes: the next stage, or after the boss the ending (or, unannounced, the floor above)
+      const upstairs = last && mode === 'arcade' && !!secretStage(ladder(), run.continues, sel.player, getCharacter);
+      const items = btnRow(root, [button(last && !upstairs ? 'THE ENDING' : 'NEXT STAGE', () => { if (t > 0.5) nextStage(); }, 'fl-amber'), mainMenuBtn(0.5)]);
       return { items, legend: [MOVE, SELECT] };
     });
   }
@@ -936,10 +943,10 @@ export function createFlow(ctx) {
       else tl.append(el('span', '', 'REACHED'), el('span', '', `STAGE ${ladder()[run.stage].n}`));
       tl.append(el('span', '', 'FINAL SCORE'), el('span', '', S.fmt(run.score)));
       root.appendChild(tl);
-      if (entry && S.rankFor(entry.mode, entry.score) >= 0) root.appendChild(el('div', 'fl-label fl-newhi', 'NEW HIGH SCORE  ·  CONTINUE TO SIGN IT'));
+      if (entry && S.rankFor(entry.mode, entry.score) >= 0) root.appendChild(el('div', 'fl-label fl-newhi', 'NEW HIGH SCORE'));
       const earn = earningsPanel(true);   // what the run (or the last stage) paid
       if (earn) root.appendChild(earn);
-      const items = btnRow(root, [button('CONTINUE', () => { if (t > 0.8) afterGame(); }, 'fl-amber'), mainMenuBtn(0.8)]);
+      const items = btnRow(root, [button(afterGameLabel(), () => { if (t > 0.8) afterGame(); }, 'fl-amber'), mainMenuBtn(0.8)]);
       return { items, legend: [MOVE, SELECT] };
     });
   }
@@ -1059,11 +1066,26 @@ export function createFlow(ctx) {
       for (const [h, p] of lines) { const q = el('p'); q.append(el('b', '', h), document.createTextNode(p)); inner.appendChild(q); }
       inner.style.animationDuration = `${ENDING_ROLL}s`;
       roll.appendChild(inner); root.appendChild(roll);
-      const items = btnRow(root, [button('CONTINUE', () => { if (t > 1.2) afterGame(); }, 'fl-amber'), mainMenuBtn(1.2)]);
+      const items = btnRow(root, [button(afterGameLabel(), () => { if (t > 1.2) afterGame(); }, 'fl-amber'), mainMenuBtn(1.2)]);
       return { items, legend: [MOVE, SELECT] };
     });
   }
+  // RESTART STAGE, RESTART RUN and MAIN MENU throw the run away, so each asks first, the way the online LEAVE does:
+  // the question over NO and YES, NO lit, and back (Esc, B) is NO. pauseAsk is the one being asked.
+  let pauseAsk = null;
+  function askPause(q, sub, act, from) { pauseAsk = { q, sub, act, from }; screenPause(); }
+  function screenPauseAsk() {
+    const a = pauseAsk;
+    ui.show('fl-pause fl-ask', (root) => {
+      root.append(el('h1', 'fl-h2', a.q), el('div', 'fl-label', a.sub));
+      const no = button('NO', cancelAsk, 'fl-pink'), yes = button('YES', () => { pauseAsk = null; a.act(); }, 'fl-violet');
+      btnRow(root, [no, yes], '18cqw');
+      return { items: [no, yes], focus: 0, back: cancelAsk, backTo: 'PAUSE MENU', chip: false, legend: [MOVE, SELECT, ['back', 'NO']] };
+    });
+  }
+  function cancelAsk() { const from = pauseAsk ? pauseAsk.from : 0; pauseAsk = null; if (state === 'paused') { screenPause(); ui.setFocus(from); } }
   function screenPause() {
+    if (pauseAsk) { screenPauseAsk(); return; }
     ui.show('fl-pause', (root) => {
       root.append(el('h1', 'fl-h2', 'PAUSED'));
       if (mode === 'arcade') root.appendChild(el('div', 'fl-label', `STAGE ${ladder()[run.stage].n}  ·  ${ladder()[run.stage].name}  ·  ${S.fmt(run.score)}`));
@@ -1073,8 +1095,8 @@ export function createFlow(ctx) {
       const movesBtn = button('MOVE LIST', () => openMoves(myChar()));
       movesBtn.el.appendChild(el('small', '', 'EVERY MOVE, STRING AND INPUT'));
       items.push(movesBtn);
-      if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
-      if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); hordeScene(); go('fighting'); }));
+      if (mode === 'arcade') { const k = items.length; items.push(button('RESTART STAGE', () => askPause('RESTART STAGE?', `THE SCORE GOES BACK TO ${S.fmt(run.stageStart)}`, () => { run.score = run.stageStart; go('stageIntro'); }, k))); }
+      if (mode === 'horde') { const k = items.length; items.push(button('RESTART RUN', () => askPause('RESTART RUN?', `THIS RUN ENDS ON FLOOR ${run.floors + 1}`, () => { newRun('horde'); hordeScene(); go('fighting'); }, k))); }
       if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [lookOf(sel.player), ''] }); go('fighting'); }));
       // the match rules and the botch switch live in SETTINGS now, with sound and graphics (one panel, src/audio/ui.js),
       // so this list is only where to go: back to the fight, the moves, a restart, SETTINGS, out
@@ -1083,7 +1105,7 @@ export function createFlow(ctx) {
         set.el.appendChild(el('small', '', 'RULES, CONTROLS, SOUND, GRAPHICS'));
         items.push(set);
       }
-      items.push(button('MAIN MENU', mainMenu, 'fl-violet'));
+      { const k = items.length; items.push(button('MAIN MENU', () => (mode === 'training' ? mainMenu() : askPause('QUIT TO MAIN MENU?', 'THE RUN ENDS HERE, AND ITS SCORE IS NOT SAVED', mainMenu, k)), 'fl-violet')); }
       items.forEach(i => list.appendChild(i.el));
       // beside it: the book of happy accidents, found ones by name, the rest as ???, each with a hint (never the
       // timing). The controls are in SETTINGS, CONTROLS (one place for them, not three).
@@ -2448,7 +2470,7 @@ export function createFlow(ctx) {
     get on() { return state !== 'off'; },
     /** the sim's demo audio gate: the demo runs behind these states */
     get demo() { return DEMO.has(state) || state === 'highScores'; },
-    debug: { history, run, sel, closet: closetSt, go, debugKO, ui, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, scores: S,
+    debug: { history, run, sel, closet: closetSt, go, debugKO, ui, setNet, getNet, LADDER, pickChar, get mode() { return mode; }, get t() { return t; }, set t(v) { t = v; }, scores: S,
       // crew high scores (scripts/crew/lobby.mjs): the run's end as the flow does it, the tables the attract loop turns through
       crewScores: CS, startArcade, startHorde, startTraining, decide, afterGame, attractTables, get hs() { return hs; }, get crewView() { return crewView; } },
   };

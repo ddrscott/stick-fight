@@ -194,6 +194,12 @@ function init() {
     root.classList.toggle('tc-top-hud', mode !== '');
     root.classList.toggle('tc-top-row', mode === 'hud row');
     if (mode) root.style.setProperty('--tc-top-y', `${Math.round(topY)}px`); else root.style.removeProperty('--tc-top-y');
+    // a column of top buttons under the HUD strip stands inside the stage's right edge: how far in, so a menu over the
+    // fight (the pause screen's TECHNIQUES box) keeps clear of it (src/flow/ui.js, --tc-col)
+    if (mode === 'hud' && !sq) {
+      const stageW = Math.min(vw, vh * 16 / 9), gutter = (vw - stageW) / 2;
+      de.style.setProperty('--tc-col', `${Math.max(0, Math.ceil(Math.max(0.5 * rem, env('right')) + D.miniW * scale * rem - gutter + 8))}px`);
+    } else de.style.removeProperty('--tc-col');
     setTouchFit(scale, want);
   }
 

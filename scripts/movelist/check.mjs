@@ -178,7 +178,8 @@ for (const [w, h, label] of ONLY ? [] : [[844, 390, 'phone sideways'], [390, 844
   const f1 = (await page.evaluate(look)).top; await sleep(700);
   const f2 = (await page.evaluate(look)).top;
   ok(f2 > b.top + v.list.h * 0.5 + 20 || f2 > f1 + 5, `${T} a flick carries on with momentum`, `finger moved ${Math.round(v.list.h * 0.5)} px, list moved ${Math.round(f2 - b.top)}`);
-  // a tap selects
+  // a tap selects (once the flick has come to rest: a tap during the glide catches the list, as on a phone)
+  for (let i = 0, last = -1; i < 30; i++) { const t = (await page.evaluate(look)).top; if (Math.abs(t - last) < 0.5) break; last = t; await sleep(100); }
   a = await page.evaluate(look);
   const target = await page.evaluate(() => { const l = document.querySelector('.ml-list').getBoundingClientRect(); const rows = [...document.querySelectorAll('.ml-row')]; const k = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return b.top > l.top + 20 && b.bottom < l.bottom - 20 && !r.classList.contains('ml-cur'); }); const b = rows[k].getBoundingClientRect(); return { k, x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
   await page.touchscreen.tap(target.x, target.y); await sleep(300);

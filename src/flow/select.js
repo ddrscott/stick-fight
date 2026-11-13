@@ -245,7 +245,10 @@ export function openSelect(ui, o) {
     views = []; cards = new Map(); statBars = []; moveRows = []; bigChar = null; big = null; showing = false;
     ring = null; grid = null; countEl = null; drag = null; placedAt = NaN; dots = [];
     pos = target = cur;
-    const layout = tall ? 'fl-carousel fl-tall fl-nofit' : carousel ? 'fl-carousel fl-wide' : '';
+    // sideways the carousel's row takes what's left of the height (flex), so the screen is always exactly full: ui.js's
+    // fit() would read that as too tall, zoom it down, find it full again, and end up scrolling it with the legend
+    // hidden (round 3 of [t55b8f]). It sizes itself, like the upright one.
+    const layout = tall ? 'fl-carousel fl-tall fl-nofit' : carousel ? 'fl-carousel fl-wide fl-nofit' : '';
     screenEl = ui.show(`fl-select ${layout} ${o.cls || ''}`, (root) => {
       root.append(el('h1', 'fl-h2', o.title), el('div', 'fl-label', o.sub));
       if (o.status) root.appendChild(o.status);
