@@ -66,10 +66,11 @@ import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';  
 import { rootUrl } from '../root.js';
 import { createTicker } from '../ticker.js';
 import { closetBody } from './closet.js';   // the Supply Closet (README, Progression)
-import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip } from './careerUI.js';   // career and sticks (README, Progression)
+import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip, profileCard } from './careerUI.js';   // career and sticks (README, Progression)
 import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery, fromCrewGoal } from '../career/store.js';
 import { goalText } from '../career/crewgoal.js';   // crew goals (README, Crew rooms, Crew goals)
 import { masteryPalette } from '../career/palettes.js';
+import { titleFor } from '../career/rules.js';
 import { earlyRank } from '../career/mastery.js';
 import { palettesFor } from '../career/palettes.js';   // the title's ticker of game-wide stats (README, Analytics, The title's ticker)
 
@@ -79,7 +80,7 @@ const TRANSITIONS = {
   attract: ['modeSelect', 'highScores', 'controls'],
   highScores: ['attract', 'modeSelect', 'ageCheck'],   // ageCheck: the save-your-sticks nudge after a game (README, Progression)
   controls: ['attract', 'modeSelect'],
-  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts', 'closet'],   // ageCheck: the save nudge
+  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts', 'closet', 'profile'],   // ageCheck: the save nudge; profile: the PROFILE card
   shifts: ['modeSelect', 'attract'],   // the daily shifts (README, Progression, Daily shifts)
   closet: ['modeSelect', 'attract'],   // the Supply Closet (README, Progression, The Supply Closet)
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
@@ -773,10 +774,13 @@ export function createFlow(ctx) {
       const back = button('BACK', () => go('attract'), 'fl-violet fl-slim');
       list.appendChild(back.el); items.push(back);
       // today's shifts beside the modes (README, Progression, Daily shifts); the button opens them in full
-      const wrap = el('div', 'sh-modeswrap'), panel = shiftsBlock();
+      const wrap = el('div', 'sh-modeswrap'), panel = shiftsBlock(), col = el('div', 'pc-col');
       const open = button('SHIFTS: HOW TO + SWAP', () => go('shifts'), 'fl-amber fl-slim');
-      panel.appendChild(open.el); items.splice(4, 0, open);
-      wrap.append(list, panel);
+      // the profile on top of the right column: the name, title and review bar, into PROFILE (README, Progression, On screen)
+      const card = profileCard(profile(), () => { profileFrom = 'modeSelect'; go('profile'); });
+      panel.appendChild(open.el); items.splice(4, 0, card, open);
+      col.append(card.el, panel);
+      wrap.append(list, col);
       root.appendChild(wrap);
       addNudge(root, items);
       return { items, back: () => go('attract') };
@@ -1169,7 +1173,7 @@ export function createFlow(ctx) {
       fetchLive().then((rows) => { const sm = watch.el.querySelector('small'); if (sm && rows && rows.length) sm.textContent = `${rows.length} LIVE NOW`; });
       cols.append(left, right);
       root.appendChild(cols);
-      const prof = button('PROFILE', () => go('profile'), 'fl-mini');
+      const prof = button('PROFILE', () => { profileFrom = 'onlineMenu'; go('profile'); }, 'fl-mini');
       const main = button('MAIN MENU', () => go('modeSelect'), 'fl-violet fl-mini');
       const row = el('div', 'fl-row fl-orow'); row.append(prof.el, main.el); root.appendChild(row);
       const items = [...crews, create, joinCrew, host, join, watch, prof, main];
@@ -1779,6 +1783,7 @@ export function createFlow(ctx) {
 
   // the profile: the name, and SAVE MY PROFILE (an email keeps it on any device) or SIGN OUT
   let profileMsg = '', signOutArmed = false, deleteArmed = false, deleting = false;
+  let profileFrom = 'onlineMenu';   // where PROFILE's BACK goes: the menu it was opened from
   function screenProfile() {
     const p = profile();
     signOutArmed = false; deleteArmed = false;
@@ -1800,8 +1805,8 @@ export function createFlow(ctx) {
           signOut().then(() => { resetCareer(); profileMsg = 'SIGNED OUT: THIS DEVICE STARTS FRESH'; if (state === 'profile') { askName(() => go('profile'), () => go('onlineMenu')); } });
         }, 'fl-amber')
         : button('SAVE MY PROFILE', () => go('ageCheck'), 'fl-amber');
-      const back = button('BACK', () => go('onlineMenu'), 'fl-violet');
-      const items = btnRow(root, [name, acct, back, mainMenuBtn()], '17cqw');
+      const back = button('BACK', () => go(profileFrom), 'fl-violet');
+      const items = btnRow(root, profileFrom === 'modeSelect' ? [name, acct, back] : [name, acct, back, mainMenuBtn()], '17cqw');
       // DELETE MY PROFILE (README, Privacy and terms, Deleting a profile): press again to confirm, like SIGN OUT.
       // The account, its sessions and its crew records go; high score initials stay; this device starts fresh.
       if (p.email) {
@@ -1826,7 +1831,7 @@ export function createFlow(ctx) {
       }
       const note = root.appendChild(el('div', 'fl-small fl-delnote', ''));
       root.appendChild(legalLinks(p.email ? 'WHAT WE KEEP:' : ''));
-      return { items, focus: p.email ? 0 : 1, back: () => go('onlineMenu') };
+      return { items, focus: p.email ? 0 : 1, back: () => go(profileFrom) };
     });
     profileMsg = '';
   }
@@ -2362,8 +2367,29 @@ export function createFlow(ctx) {
       // the room's running tally for the fight HUD (src/combat/hud.js may draw it): from this side,
       // { you, rival, draw, roundsYou, roundsRival, games, n } where n is this match's number
       tally: state === 'onlineFighting' ? onlineTally() : null,
+      // the profile on each bar, in place of YOU / P1 (README, HUD, Name line): { name, title, frac } or null
+      plates: plates(),
       hint: touch || state === 'watching' ? '' : state === 'onlineFighting' ? (pad ? `${startName()}  LEAVE` : 'F1  MOVES     ESC  LEAVE') : pad ? `${startName()}  PAUSE` : 'F1  MOVES     ESC  PAUSE',
     };
+  }
+  // the player's name, job title and review bar for the fight HUD, read at most twice a second (it's localStorage);
+  // online the rival's side shows the name and title from their ready message
+  let plateMemo = { at: -1e9, mine: null };
+  function plates() {
+    const online = state === 'onlineFighting';
+    if (!online && mode !== 'arcade' && mode !== 'horde' && mode !== 'training') return null;
+    const now = performance.now();
+    if (now - plateMemo.at > 500) {
+      const c = careerNow(), t = titleFor(c.xp);
+      plateMemo = { at: now, mine: { name: profile().name || 'YOU', title: t.title, frac: t.next ? t.into / t.span : 1 } };
+    }
+    if (!online) return [plateMemo.mine, null];
+    const v = view();
+    if (!v) return null;
+    const out = [null, null];
+    out[v.me] = plateMemo.mine;
+    out[1 - v.me] = { name: v.rivalName || (crewMatch && crewMatch.rival && crewMatch.rival.name) || 'RIVAL', title: v.rivalName ? v.rivalTitle || '' : '', frac: null };
+    return out;
   }
   function onlineTally() { const v = view(); return v && v.n ? { ...v.tally, n: v.n } : null; }
   /** after the HUD drew: the START button follows the title card's prompt slot, and fades the same way */

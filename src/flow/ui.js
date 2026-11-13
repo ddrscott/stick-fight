@@ -748,6 +748,7 @@ function injectStyle() {
   /* shorter still (an SE with Safari's bars showing): the sheet keeps the name and the bars; the moves are a tap away in MOVE LIST */
   @container (max-height: 600px) {
     #flow .fl-tall .fl-moves, #flow .fl-tall .fl-tagline { display: none; }
+    #flow .fl-modes .fl-btn small { font-size: max(13px, 1.7cqw); }   /* a phone held sideways: MAIN MENU's lines under each mode stay readable */
   }
   /* the same steps by measure (select.js fitTall): whatever the breakpoints left in, if the footer still runs off
      the bottom (the online pick screen's extra lines, a phone's bars), the screen takes the next step */

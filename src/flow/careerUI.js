@@ -18,6 +18,8 @@
 //                          XP it paid (NEW HIRE apart), the bar to the next rank, and what a new rank unlocked
 //   ptoText(bank, back)    the menu's PTO line: WELCOME BACK: YOUR NEXT 3 MATCHES PAY DOUBLE XP ('' with none banked)
 //   ptoBlock()             that line as a block for the main menu (src/career/rules.js PTO); repaints with the career
+//   profileCard(p, act)    MAIN MENU's PROFILE button: the name, the job title, the review bar and the XP to the next
+//                          title, and SAVE MY PROFILE for a guest; { el, act }
 //   masteryChip(fighter)   character select's line: MASTERY 2 with five pips, NEW HIRE BONUS while it pays
 import { el, button } from './ui.js';
 import { career, last, onCareer, nudgeDue, nudgeShown, todayShifts, swapToday, mastery, pto } from '../career/store.js';
@@ -47,6 +49,24 @@ export function reviewBar(xp, cls = '') {
   return box;
 }
 
+/** MAIN MENU's PROFILE button (README, Progression, On screen): who you are and how far up the ladder, big enough to
+ *  read across the room. p: the profile (src/net/profile.js). A guest's says SAVE MY PROFILE, the reason to sign up. */
+export function profileCard(p, act) {
+  injectStyle();
+  const c = career(), t = titleFor(c.xp);
+  const b = button('', act, 'fl-pcard');
+  const top = el('span', 'pc-top');
+  top.append(el('b', 'pc-name', p.name || 'NO NAME YET'), el('span', 'pc-title', t.title));
+  const bar = el('span', 'pc-bar'), fill = el('i');
+  fill.style.width = `${t.next ? Math.round((100 * t.into) / t.span) : 100}%`;
+  bar.appendChild(fill);
+  const xp = el('span', 'pc-xp', t.next ? `${fmt(t.into)} / ${fmt(t.span)} XP TO ${t.next}` : `TOP OF THE LADDER  ${fmt(c.xp)} XP`);
+  const tag = el('span', p.email ? 'pc-tag' : 'pc-tag pc-save', p.email ? 'PROFILE ›' : 'SAVE MY PROFILE ›');
+  b.el.append(top, bar, xp, tag);
+  b.el.setAttribute('aria-label', `PROFILE: ${p.name || 'NO NAME YET'}, ${t.title}`);
+  return b;
+}
+
 /** The latest award, as a panel for a result screen; null when the match paid nothing. compact: the lines in one
  *  wrapping row (a screen with a lot on it already: CONTINUE?, the online post-match screen). */
 export function earningsPanel(compact = false) {
@@ -63,13 +83,17 @@ export function earningsPanel(compact = false) {
       p.append(el('span', '', 'PROMOTED'), el('b', '', cur.promoted));
       box.appendChild(p);
     }
+    // two columns: what paid, and where it moved you; side by side on a short landscape stage, stacked elsewhere
+    const cols = el('div', 'cr-cols'), pay = el('div', 'cr-pay'), prog = el('div', 'cr-prog');
+    cols.append(pay, prog);
+    box.appendChild(cols);
     if (compact) {
       const row = el('div', 'cr-row');
       for (const l of cur.award.lines) {
         const daily = l.id === 'firstWin' || l.id === 'firstOnline' || l.id === 'shift' || l.id === 'pto', cap = l.id === 'cap';
         row.appendChild(el('span', daily ? 'cr-daily' : cap ? 'cr-cap' : '', `${lineText(l)} ${signed(l.sticks)}`));
       }
-      box.append(row, el('div', 'cr-sum', `EARNED ${signed(cur.award.sticks)} STICKS  ·  ${signed(cur.award.xp)} XP`));
+      pay.append(row, el('div', 'cr-sum', `EARNED ${signed(cur.award.sticks)} STICKS  ·  ${signed(cur.award.xp)} XP`));
     } else {
       const grid = el('div', 'cr-lines');
       grid.append(el('span', 'cr-h', 'EARNED'), el('span', 'cr-h cr-num', 'XP'), el('span', 'cr-h cr-num', 'STICKS'));
@@ -78,17 +102,17 @@ export function earningsPanel(compact = false) {
         grid.append(el('span', daily ? 'cr-daily' : cap ? 'cr-cap' : '', lineText(l)), el('span', 'cr-num', signed(l.xp)), el('span', 'cr-num cr-st', signed(l.sticks)));
       }
       grid.append(el('span', 'cr-tot', 'TOTAL'), el('span', 'cr-num cr-tot', signed(cur.award.xp)), el('span', 'cr-num cr-st cr-tot', signed(cur.award.sticks)));
-      box.appendChild(grid);
+      pay.appendChild(grid);
     }
-    if (cur.award.firstWin) box.appendChild(el('div', 'cr-note', "YOUR FIRST WIN TODAY PAYS EXTRA. IT'S BACK TOMORROW."));
-    else if (cur.award.firstOnline) box.appendChild(el('div', 'cr-note', 'YOUR FIRST ONLINE MATCH TODAY PAYS EXTRA.'));
-    if (cur.award.lines.some((l) => l.id === 'pto')) box.appendChild(el('div', 'cr-note', ptoPaid(cur.award.ptoLeft)));
-    if (cur.award.capped) box.appendChild(el('div', 'cr-note', 'ARCADE AND HORDE HAVE PAID ALL THEY CAN TODAY. ONLINE STILL PAYS.'));
-    box.appendChild(shiftTicks(cur.award.moved, compact));   // the day's shifts, the ones this match moved lit
-    if (cur.award.mastery) box.appendChild(masteryBlock(cur.award.mastery, compact));   // the fighter played (README, Fighter mastery)
+    if (cur.award.firstWin) pay.appendChild(el('div', 'cr-note', "YOUR FIRST WIN TODAY PAYS EXTRA. IT'S BACK TOMORROW."));
+    else if (cur.award.firstOnline) pay.appendChild(el('div', 'cr-note', 'YOUR FIRST ONLINE MATCH TODAY PAYS EXTRA.'));
+    if (cur.award.lines.some((l) => l.id === 'pto')) pay.appendChild(el('div', 'cr-note', ptoPaid(cur.award.ptoLeft)));
+    if (cur.award.capped) pay.appendChild(el('div', 'cr-note', 'ARCADE AND HORDE HAVE PAID ALL THEY CAN TODAY. ONLINE STILL PAYS.'));
+    prog.appendChild(shiftTicks(cur.award.moved, compact));   // the day's shifts, the ones this match moved lit
+    if (cur.award.mastery) prog.appendChild(masteryBlock(cur.award.mastery, compact));   // the fighter played (README, Fighter mastery)
     const c = career();
-    box.appendChild(reviewBar(c.xp));
-    box.appendChild(el('div', 'cr-wallet', `${fmt(c.sticks)} STICKS${cur.pending ? '  ·  SAVING…' : ''}`));
+    prog.appendChild(reviewBar(c.xp));
+    prog.appendChild(el('div', 'cr-wallet', `${fmt(c.sticks)} STICKS${cur.pending ? '  ·  SAVING…' : ''}`));
   };
   paint();
   // a signed-in player's award settles when the server answers: repaint while the panel is on screen
@@ -301,6 +325,7 @@ function injectStyle() {
   .cr-lines .cr-cap { color: rgba(214,190,255,0.7); }
   .cr-lines .cr-tot { border-top: 2px solid rgba(255,176,46,0.45); padding-top: 0.3cqh; color: #fff; }
   .cr-lines .cr-st.cr-tot { color: #ffc46b; }
+  .cr-cols, .cr-pay, .cr-prog { display: flex; flex-direction: column; align-items: stretch; gap: inherit; min-width: 0; }
   .cr-earn.cr-compact { padding: 0.6cqh 1.4cqw; gap: 0.5cqh; max-width: 70cqw; }
   .cr-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3cqh 1.6cqw; font: 600 2cqw/1.1 'Teko', sans-serif; letter-spacing: 0.08em; color: #eadcff; }
   .cr-row .cr-daily { color: #9dffc0; } .cr-row .cr-cap { color: rgba(214,190,255,0.7); }
@@ -342,6 +367,19 @@ function injectStyle() {
   .sh-ticks i { display: block; width: max(7px, 1cqw); height: max(7px, 1cqw); border: 2px solid rgba(255,176,46,0.75); }
   .sh-ticks i.sh-on { background: #ffb02e; }
   .sh-modeswrap { display: flex; align-items: center; gap: 3cqw; }
+  .pc-col { display: flex; flex-direction: column; gap: 1.4cqh; }
+  /* MAIN MENU's profile card: square, the career's amber, nothing glows */
+  #flow .fl-btn.fl-pcard { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.5cqh 1.2cqw; width: 40cqw; min-width: 0;
+    padding: 1cqh 1.4cqw; text-align: left; border: 2px solid rgba(255,176,46,0.85); background: rgba(10,4,20,0.86); color: #fff4fd; box-shadow: none; }
+  #flow .fl-btn.fl-pcard.fl-focus, #flow .fl-btn.fl-pcard:focus-visible { background: rgba(255,176,46,0.16); border-color: #ffb02e; outline: 2px solid #ffb02e; outline-offset: 2px; }
+  .pc-top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 1.2cqw; min-width: 0; }   /* the whole width: SAVE MY PROFILE sizes column 2 */
+  .pc-name { font: 400 2.6cqw/1 'Bungee', sans-serif; color: #fff4fd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pc-title { font: 600 2.4cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffc46b; white-space: nowrap; }
+  .pc-bar { grid-column: 1 / -1; display: block; height: max(6px, 0.9cqh); background: rgba(255,176,46,0.18); border: 1px solid rgba(255,176,46,0.6); }
+  .pc-bar i { display: block; height: 100%; background: #ffb02e; }
+  .pc-xp { font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #eadcff; }
+  .pc-tag { font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffc46b; white-space: nowrap; }
+  .pc-tag.pc-save { color: #0b0616; background: #ffb02e; padding: 0.3em 0.5em 0.15em; text-shadow: none; }
   .sh-menu .fl-btn { min-width: 0; margin-top: 0.4cqh; }
   .sh-menu { display: flex; flex-direction: column; gap: 0.7cqh; width: 40cqw; padding: 1cqh 1.4cqw; border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.82); }
   .sh-head, .sh-reshead { font: 600 1.8cqw/1 'Teko', sans-serif; letter-spacing: 0.16em; color: rgba(255,224,168,0.9); }
@@ -372,22 +410,50 @@ function injectStyle() {
     font: 600 2cqw/1.2 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; color: #ffc46b; text-shadow: var(--plain); }
   .cr-chip span { color: #eadcff; font-size: 1.7cqw; }
   .cr-chip.cr-on { display: flex; }
-  /* held upright the stage is short: everything a size up so it stays readable */
+  /* a phone held sideways: the 16:9 stage is under 600 px tall, so 1cqw is about 7 px and the stacked panel's
+     small print came out at 10 px. The panel goes two columns wide (what paid | shifts, mastery, the review) so it
+     takes half the height, and no text is under 12 px. */
+  @container (min-aspect-ratio: 1/1) and (max-height: 600px) {
+    .cr-earn, .cr-earn.cr-compact { min-width: 0; width: 90cqw; max-width: none; gap: 0.6cqh; padding: 1cqh 1.6cqw; }
+    .cr-cols { flex-direction: row; gap: 3cqw; align-items: flex-start; }
+    .cr-pay, .cr-prog { flex: 1 1 0; gap: 0.8cqh; }
+    .cr-promo span { font-size: max(15px, 2.4cqw); } .cr-promo b { font-size: max(22px, 3.6cqw); }
+    .cr-lines { font-size: max(16px, 2.4cqw); row-gap: 0; } .cr-lines .cr-num { font-size: max(14px, 2cqw); } .cr-lines .cr-h { font-size: max(12px, 1.6cqw); }
+    .cr-row, .cr-sum { font-size: max(16px, 2.4cqw); } .cr-wallet { font-size: max(15px, 2.2cqw); }
+    .cr-note { font-size: max(13px, 1.8cqw); text-align: left; } .cr-compact .cr-note { text-align: center; }
+    .cr-pay > .cr-note:first-of-type { margin-top: 0.4cqh; }
+    .sh-res { border-top: 0; padding-top: 0; } .sh-rescompact { justify-content: flex-start; }
+    .sh-reshead { font-size: max(12px, 1.6cqw); } .sh-resrow { font-size: max(13px, 1.9cqw); } .sh-ticks { font-size: max(12px, 1.6cqw); }
+    .ms-head, .ms-unlock { font-size: max(14px, 2cqw); } .ms-next { font-size: max(12px, 1.6cqw); } .ms-chip { font-size: max(13px, 1.8cqw); }
+    .ms-up span { font-size: max(14px, 2.2cqw); } .ms-up b { font-size: max(18px, 3cqw); }
+    .cr-title { font-size: max(16px, 2.4cqw); } .cr-rlabel, .cr-next { font-size: max(12px, 1.6cqw); }
+    .cr-wallet { text-align: right; }
+    .ms-head { flex-wrap: wrap; row-gap: 0.4cqh; } .ms-head > * { white-space: nowrap; }
+    /* MAIN MENU's profile card and shifts, the corner chip and the sign-up nudge get the same floors */
+    .pc-name { font-size: max(17px, 2.6cqw); } .pc-title { font-size: max(16px, 2.4cqw); } .pc-xp, .pc-tag { font-size: max(13px, 1.6cqw); }
+    .sh-head { font-size: max(13px, 1.8cqw); } .sh-row { font-size: max(14px, 2cqw); } .sh-row .sh-pay { font-size: max(13px, 1.8cqw); } .sh-foot { font-size: max(12px, 1.4cqw); }
+    .pto-x, .pto-text { font-size: max(14px, 2cqw); }
+    .cr-chip { font-size: max(14px, 2cqw); } .cr-chip span { font-size: max(13px, 1.7cqw); }
+    .cr-nudge { font-size: max(15px, 2.2cqw); } .cr-nudge .cr-nsub { font-size: max(13px, 1.8cqw); }
+  }
+  /* held upright the stage is narrow: everything a size up, and on a phone (about 390 px wide, so 1cqw is 4 px)
+     every size has a pixel floor so nothing is under 13 px */
   @container (max-aspect-ratio: 1/1) {
-    .cr-earn { min-width: 76cqw; } .cr-nudge { max-width: 86cqw; font-size: 3.6cqw; } .cr-nudge .cr-nsub { font-size: 3cqw; }
-    .cr-lines { font-size: 3.4cqw; } .cr-lines .cr-num { font-size: 3cqw; } .cr-lines .cr-h { font-size: 2.6cqw; }
-    .cr-promo span { font-size: 3.4cqw; } .cr-promo b { font-size: 5cqw; }
-    .cr-row { font-size: 3.2cqw; } .cr-sum, .cr-wallet { font-size: 3.4cqw; } .cr-note { font-size: 2.9cqw; }
-    .ms-head, .ms-unlock { font-size: 3.2cqw; } .ms-next { font-size: 2.8cqw; } .ms-up span { font-size: 3.4cqw; } .ms-up b { font-size: 4.6cqw; }
-    .ms-chip { font-size: 3.2cqw; }
-    .cr-title { font-size: 3.6cqw; } .cr-rlabel, .cr-next { font-size: 2.8cqw; }
-    .cr-chip { font-size: 3.4cqw; } .cr-chip span { font-size: 3cqw; }
+    .cr-earn { min-width: 76cqw; } .cr-nudge { max-width: 86cqw; font-size: max(16px, 3.6cqw); } .cr-nudge .cr-nsub { font-size: max(15px, 3cqw); }
+    .cr-lines { font-size: max(16px, 3.4cqw); } .cr-lines .cr-num { font-size: max(15px, 3cqw); } .cr-lines .cr-h { font-size: max(13px, 2.6cqw); }
+    .cr-promo span { font-size: max(16px, 3.4cqw); } .cr-promo b { font-size: max(18px, 5cqw); }
+    .cr-row { font-size: max(16px, 3.2cqw); } .cr-sum, .cr-wallet { font-size: max(16px, 3.4cqw); } .cr-note { font-size: max(13px, 2.9cqw); }
+    .ms-head, .ms-unlock { font-size: max(16px, 3.2cqw); } .ms-next { font-size: max(13px, 2.8cqw); } .ms-up span { font-size: max(16px, 3.4cqw); } .ms-up b { font-size: max(18px, 4.6cqw); }
+    .ms-chip { font-size: max(16px, 3.2cqw); }
+    .cr-title { font-size: max(16px, 3.6cqw); } .cr-rlabel, .cr-next { font-size: max(13px, 2.8cqw); }
+    .cr-chip { font-size: max(16px, 3.4cqw); } .cr-chip span { font-size: max(15px, 3cqw); }
     .fl-pcareer { width: 80cqw; }
-    .sh-modeswrap { flex-direction: column; gap: 1.6cqh; } .sh-menu { width: 86cqw; } .sh-head, .sh-reshead { font-size: 2.8cqw; } .sh-row, .sh-resrow { font-size: 3.2cqw; } .sh-row .sh-pay { font-size: 3cqw; }
-    .pto-x, .pto-text { font-size: 3.2cqw; }
-    .sh-foot { font-size: 2.4cqw; } .sh-ticks { font-size: 2.8cqw; } .sh-ticks i { width: max(8px, 1.8cqw); height: max(8px, 1.8cqw); }
-    .sh-cards { flex-direction: column; width: 90cqw; } .sh-ctitle { font-size: 3.4cqw; } .sh-mech, .sh-cpay { font-size: 3cqw; } .sh-coach { font-size: 3cqw; }
-    .sh-cbtns { flex-direction: row; } .sh-cbtns .fl-btn { flex: 1; font-size: 3.4cqw; }
+    .sh-modeswrap { flex-direction: column; gap: 1.6cqh; } #flow .fl-btn.fl-pcard { width: 86cqw; }
+    .pc-name { font-size: max(18px, 4.4cqw); } .pc-title { font-size: max(16px, 4cqw); } .pc-xp, .pc-tag { font-size: max(15px, 3cqw); } .sh-menu { width: 86cqw; } .sh-head, .sh-reshead { font-size: max(13px, 2.8cqw); } .sh-row, .sh-resrow { font-size: max(16px, 3.2cqw); } .sh-row .sh-pay { font-size: max(15px, 3cqw); }
+    .pto-x, .pto-text { font-size: max(16px, 3.2cqw); }
+    .sh-foot { font-size: max(13px, 2.4cqw); } .sh-ticks { font-size: max(13px, 2.8cqw); } .sh-ticks i { width: max(8px, 1.8cqw); height: max(8px, 1.8cqw); }
+    .sh-cards { flex-direction: column; width: 90cqw; } .sh-ctitle { font-size: max(16px, 3.4cqw); } .sh-mech, .sh-cpay { font-size: max(15px, 3cqw); } .sh-coach { font-size: max(15px, 3cqw); }
+    .sh-cbtns { flex-direction: row; } .sh-cbtns .fl-btn { flex: 1; font-size: max(16px, 3.4cqw); }
   }
   `;
   const st = document.createElement('style'); st.id = 'career-style'; st.textContent = css;
