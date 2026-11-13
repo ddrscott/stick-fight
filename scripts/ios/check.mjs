@@ -73,7 +73,7 @@ for (const size of SIZES) {
   ok(v.dvh, `${T} the stage is sized by dvh`);
   ok(v.stage.t >= -0.5 && v.stage.b <= v.vh + 0.5 && v.stage.l >= -0.5 && v.stage.r <= v.vw + 0.5, `${T} the whole stage is on screen`);
   ok(v.pill, `${T} the full-screen pill is there`);
-  for (const s of ['attract', 'modeSelect', 'highScores', 'controls', 'onlineMenu']) {
+  for (const s of ['attract', 'modeSelect', 'highScores', 'onlineMenu']) {
     if (s !== 'attract') { await go(s); await sleep(500); }
     v = await page.evaluate(look);
     ok(!!v.tip === !size.noTip, `${T} ${s}: the callout ${size.noTip ? 'stays away (no room)' : 'shows'}`);

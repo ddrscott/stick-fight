@@ -1,17 +1,17 @@
 // The character select screen (the flow's charSelect state): a grid of the registered roster, each
 // card a live idle rig in the character's neon, and a sheet for the focused one: a bigger rig that
 // shows off a unique move now and then, the name and tagline, stat bars and the unique move list.
-// Keys and the pad move the cursor by geometry (ui.js); Enter, Space or A on a card picks it, and so
-// does the PICK button. A tap focuses a card and a second tap picks it, so a stray touch never starts
-// a fight. B, Esc, Backspace, Select or the BACK button go back. MOVE LIST (the button, F1 or pad Y; the flow
-// reads the key) opens the highlighted fighter's full move list (src/flow/movelist.js) over the screen.
+// Enter, Space or A picks the fighter in the middle, and so does the PICK button. B, Esc, Backspace, Select or the
+// corner's ‹ chip go back (ui.js). MOVE LIST (the button, F1 or pad Y; the flow reads the key) opens the
+// highlighted fighter's full move list (src/flow/movelist.js) over the screen.
 //
-// The roster is a ring: left and right wrap from the last fighter to the first and back, in both layouts.
-// Sideways and on a desktop it's the grid (it scrolls once the roster outgrows three rows). Held upright
-// (src/square.js) the screen leaves the 16:9 box and takes the whole phone: a carousel of the cards, the
-// focused one big in the middle with its neighbours shrinking off both edges, the sheet under it. A swipe
-// spins it (a flick carries on), ‹ and › step it, a tap on a side card brings it to the middle and a tap on
-// the middle one picks. Turn the phone with the screen up and it's rebuilt in the other layout, same cursor.
+// One layout everywhere (2026-11-13): a carousel of the cards, the focused one big in the middle with its
+// neighbours shrinking off both edges, and the sheet. A swipe or a mouse drag spins it (a flick carries on), the
+// wheel, ‹ and › step it, a tap or click on a side card brings it to the middle and one on the middle card picks.
+// The roster is a ring: left and right wrap from the last fighter to the first. Held upright (src/square.js) the
+// screen leaves the 16:9 box and takes the whole phone, with the sheet under the carousel (.fl-tall). Sideways and
+// on a desktop the sheet sits beside it (.fl-wide), with a strip of the roster under the cards to jump straight to
+// one. Turn the phone with the screen up and it's rebuilt in the other layout, same cursor. (o.grid: the old grid.)
 
 import { el, button } from './ui.js';
 import { techniqueCount } from './techniques.js';
@@ -131,6 +131,8 @@ export function openSelect(ui, o) {
   let palBtns = [], palNote = null, palFor = null;   // the palette strip (o.palettes): its buttons, the line under it, whose it shows
   let mastEl = null;   // fighter mastery's line under the tagline (o.mastery)
   let tall = false;
+  const carousel = !o.grid;   // every select is the carousel; the grid stays for o.grid
+  let dots = [];   // the roster strip under a wide carousel: one per fighter
   // the carousel: pos is the ring's position in cards (fractional while it slides; not wrapped), target where it's going
   let pos = cur, target = cur, drag = null;
 
@@ -149,13 +151,14 @@ export function openSelect(ui, o) {
     const list = (c.moveList || []).slice(0, moveRows.length);
     moveRows.forEach((r, i) => {
       const m = list[i];
-      if (tall) r.p.style.visibility = m ? '' : 'hidden';   // upright an empty row keeps its room, so the carousel above never changes size
-      r.p.style.display = m || tall ? '' : 'none';
+      if (carousel) r.p.style.visibility = m ? '' : 'hidden';   // an empty row keeps its room, so the carousel never changes size
+      r.p.style.display = m || carousel ? '' : 'none';
       if (m) { r.name.textContent = m.name; r.input.textContent = m.input; r.note.textContent = m.note || ''; }
     });
     if (countEl) countEl.textContent = `${roster.indexOf(c) + 1} / ${n}`;
+    dots.forEach((d, i) => d.classList.toggle('fl-on', roster[i] === c));
     if (big && showing) { big.rig.x = 0; big.rig.play('idle'); }   // the one it left stops mid-move
-    if (tall) {
+    if (carousel) {
       big = views[roster.indexOf(c)];
       big.rig.x = 0; big.rig.play('idle');
     } else {
@@ -165,7 +168,7 @@ export function openSelect(ui, o) {
     }
     bigChar = c; bigT = 0; showing = false;
     paintPals(c);
-    if (!tall) big.draw(0);
+    if (!carousel) big.draw(0);
   }
 
   // ---- palettes (o.palettes): the swatches for the fighter under the cursor -----------------------------------
@@ -176,7 +179,7 @@ export function openSelect(ui, o) {
     const look = p && p.id ? p : null;
     const v = views[roster.indexOf(c)];
     if (v) v.recolor(look);
-    const b = tall ? v : bigs.get(c.id);
+    const b = carousel ? v : bigs.get(c.id);
     if (b && b !== v) b.recolor(look);
   }
   function paintPals(c, note = '') {
@@ -215,7 +218,7 @@ export function openSelect(ui, o) {
   // the carousel's cards where pos puts them (every frame it moves; nothing while it sits still)
   let placedAt = NaN;
   function place(force = false) {
-    if (!tall || !ring || (!force && pos === placedAt)) return;
+    if (!ring || (!force && pos === placedAt)) return;
     placedAt = pos;
     const w = ring.clientHeight * 0.7;   // a card's width: CSS makes it 0.7 of the ring's height
     views.forEach((v, i) => {
@@ -240,19 +243,23 @@ export function openSelect(ui, o) {
   function build() {
     tall = !!square.on;
     views = []; cards = new Map(); statBars = []; moveRows = []; bigChar = null; big = null; showing = false;
-    ring = null; grid = null; countEl = null; drag = null; placedAt = NaN;
+    ring = null; grid = null; countEl = null; drag = null; placedAt = NaN; dots = [];
     pos = target = cur;
-    screenEl = ui.show(`fl-select ${tall ? 'fl-tall fl-nofit' : ''} ${o.cls || ''}`, (root) => {
+    // sideways the carousel's row takes what's left of the height (flex), so the screen is always exactly full: ui.js's
+    // fit() would read that as too tall, zoom it down, find it full again, and end up scrolling it with the legend
+    // hidden (round 3 of [t55b8f]). It sizes itself, like the upright one.
+    const layout = tall ? 'fl-carousel fl-tall fl-nofit' : carousel ? 'fl-carousel fl-wide fl-nofit' : '';
+    screenEl = ui.show(`fl-select ${layout} ${o.cls || ''}`, (root) => {
       root.append(el('h1', 'fl-h2', o.title), el('div', 'fl-label', o.sub));
       if (o.status) root.appendChild(o.status);
       const row = el('div', 'fl-selrow');
       const items = [];
       // tall cards (a bigger canvas: the middle one is most of the screen's width) or the grid's
-      const cw = tall ? 220 : 160, chh = tall ? 290 : 200, cz = tall ? 1.5 : 1.08;
-      const deck = el('div', tall ? 'fl-ring' : 'fl-grid');
-      if (tall) ring = deck; else grid = deck;
+      const cw = carousel ? 220 : 160, chh = carousel ? 290 : 200, cz = carousel ? 1.5 : 1.08;
+      const deck = el('div', carousel ? 'fl-ring' : 'fl-grid');
+      if (carousel) ring = deck; else grid = deck;
       // past 18 fighters the grid holds three rows and scrolls under a finger, the wheel and the cursor (data-scroll: src/touch.js lets it)
-      if (!tall && n > 18) { deck.classList.add('fl-gridscroll'); deck.dataset.scroll = 'y'; }
+      if (!carousel && n > 18) { deck.classList.add('fl-gridscroll'); deck.dataset.scroll = 'y'; }
       roster.forEach((c) => {
         const b = button('', () => o.onPick(c.id), 'fl-card');
         b.el.style.setProperty('--c', c.color);
@@ -263,18 +270,18 @@ export function openSelect(ui, o) {
         deck.appendChild(b.el);
         cards.set(c.id, b.el);
         const look = o.palettes ? (o.palettes.list(c).find((p) => o.palettes.state(c, p).using) || null) : null;
-        const v = rigView(cv, c, cz, tall ? 12 : GLOW, look && look.id ? look : null); v.lead = GLOW_EVERY * views.length / n;
+        const v = rigView(cv, c, cz, carousel ? 12 : GLOW, look && look.id ? look : null); v.lead = GLOW_EVERY * views.length / n;
         if (look && look.id) b.el.style.setProperty('--c', look.body);
         v.card = b.el; v.hidden = false;
         views.push(v);
-        items.push({ ...b, focusFirst: true, manual: tall, char: c });
+        items.push({ ...b, focusFirst: true, manual: carousel, char: c });
       });
       detail = el('div', 'fl-detail');
       const info = el('div', 'fl-info');
       nameEl = el('h1', 'fl-cname'); tagEl = el('div', 'fl-tagline'); statsEl = el('div', 'fl-stats'); movesEl = el('div', 'fl-moves');
       for (const [label] of STATS) { const i = el('i'); statBars.push(i); statsEl.append(el('span', '', label), i); }
       // sideways the sheet has a fixed height: with the palette strip under it, the move list shows three rows
-      for (let k = 0; k < (o.palettes && !tall ? 3 : 4); k++) {
+      for (let k = 0; k < (o.palettes && !carousel ? 3 : 4); k++) {
         const r = { p: el('p'), name: el('b'), input: el('em'), note: el('small') };
         r.p.append(r.name, r.input, r.note); r.p.style.display = 'none';
         moveRows.push(r); movesEl.appendChild(r.p);
@@ -294,7 +301,7 @@ export function openSelect(ui, o) {
         palNote = el('div', 'fl-palnote');
         info.append(strip, palNote);
       }
-      if (tall) {
+      if (carousel) {
         // ‹ and › on the carousel's edges, over the cards hanging off them: plain buttons, not stops for the D-pad
         // (left and right already spin it). The count (3 / 18) sits in the sheet's corner.
         const step = (d, cls) => { const s = el('button', `fl-ringstep ${cls}`); s.type = 'button';
@@ -304,7 +311,22 @@ export function openSelect(ui, o) {
         deck.append(step(-1, 'fl-prev'), step(1, 'fl-next'));
         countEl = el('span', 'fl-ringcount');
         detail.append(info, countEl);
-        root.append(deck, detail);
+        if (tall) root.append(deck, detail);
+        else {
+          // wide: the carousel and, under it, the whole roster as a strip of marks in each fighter's color, to jump
+          // straight to one with a click or a tap (the D-pad has left and right). The sheet beside them.
+          const col = el('div', 'fl-ringcol'), strip = el('div', 'fl-ringdots');
+          roster.forEach((c, i) => {
+            const d = el('button', 'fl-dot'); d.type = 'button';
+            d.style.setProperty('--c', c.color); d.setAttribute('aria-label', c.name.toLowerCase());
+            d.addEventListener('mousedown', (e) => e.preventDefault());
+            d.addEventListener('click', (e) => { e.preventDefault(); focusIdx(i); });
+            strip.appendChild(d); dots.push(d);
+          });
+          col.append(deck, strip);
+          row.append(col, detail);
+          root.appendChild(row);
+        }
         wireRing(deck);
       } else {
         bigCanvas = document.createElement('canvas'); bigCanvas.width = 210; bigCanvas.height = 540; bigCanvas.className = 'fl-big';
@@ -314,19 +336,20 @@ export function openSelect(ui, o) {
       }
       const foot = el('div', 'fl-selfoot');
       const pick = button(o.pickLabel || 'PICK', () => { const it = ui.items[ui.focus]; const c = it && it.char ? it.char : bigChar; if (c) o.onPick(c.id); }, 'fl-pink');
-      const back = button(o.backLabel || 'BACK', o.onBack, 'fl-violet');
+      // back is the corner's ‹ chip (o.backTo names it); online it's a named button (LEAVE ROOM, BACK TO CREW) instead
+      const back = o.backLabel ? button(o.backLabel, o.onBack, 'fl-violet') : null;
       const tc = techniqueCount();   // the happy accidents found on this browser (src/flow/techniques.js)
       // the keys and buttons are in the footer legend (ui.js); touch gets the one thing it can't guess
       const extra = [...(o.extra || [])];
       const moves = o.onMoves ? button('MOVE LIST', () => { if (bigChar) o.onMoves(bigChar); }, 'fl-amber') : null;
       if (moves) extra.unshift(moves);
-      foot.append(back.el, pick.el, ...extra.map((x) => x.el));
-      const hints = [el('div', 'fl-small fl-touchonly', tall ? 'SWIPE  ·  TAP THE MIDDLE TO PICK' : 'TAP A FIGHTER, TAP AGAIN TO PICK'),
+      foot.append(...(back ? [back.el] : []), pick.el, ...extra.map((x) => x.el));
+      const hints = [el('div', 'fl-small fl-touchonly', carousel ? 'SWIPE  ·  TAP THE MIDDLE TO PICK' : 'TAP A FIGHTER, TAP AGAIN TO PICK'),
         el('div', 'fl-small fl-found', `TECHNIQUES FOUND ${tc.found}/${tc.total}`)];
       if (tall) { root.appendChild(foot); const h = el('div', 'fl-selhints'); h.append(...hints); root.appendChild(h); }
       else { foot.append(...hints); root.appendChild(foot); }
-      items.push(back, pick, ...extra, ...palBtns);
-      return { items, focus: cur, back: o.onBackKey || o.onBack, move: arrows,
+      items.push(...(back ? [back] : []), pick, ...extra, ...palBtns);
+      return { items, focus: cur, back: o.onBackKey || o.onBack, backTo: back ? '' : (o.backTo || 'MAIN MENU'), move: arrows,
         onFocus: (k, it) => {
           // a swatch under the cursor: the sheet's rig tries it on, and the line says what it is
           if (it && it.palIdx != null && bigChar) { const p = looks(bigChar)[it.palIdx]; if (p) { showLook(bigChar, p); if (palNote) palNote.textContent = palLine(bigChar, p); } return; }
@@ -337,7 +360,7 @@ export function openSelect(ui, o) {
           if (grid) it.el.scrollIntoView({ block: 'nearest' });   // a roster past three rows: the grid scrolls to the cursor
           if (o.onHover) o.onHover(it.char.id);
         },
-        legend: o.legend || [['move'], ['confirm', 'PICK'], ...(o.onMoves ? [['moves', 'MOVE LIST']] : []), ['back', 'BACK']] };
+        legend: o.legend || [['move'], ['confirm', 'PICK'], ...(o.onMoves ? [['moves', 'MOVE LIST']] : []), ['back', o.backTo || 'MAIN MENU']] };
     });
     paint(roster[cur]);
     place(true);
@@ -382,24 +405,34 @@ export function openSelect(ui, o) {
   if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (tall && ui.screen === screenEl) fitTall(); });
 
   // Left and right go round the ring: on a card they step through the roster in order and wrap from the last
-  // fighter to the first. Upright, down from the carousel goes to PICK and up from the footer comes back to
-  // the card in the middle (the cards off to the sides are out of reach of geometry). Anything else: geometry.
+  // fighter to the first. Down from the carousel goes to the looks (the one in use), or PICK without them; up from
+  // the looks or the footer comes back to the card in the middle (the cards off to the sides are out of reach of
+  // geometry), the footer stopping at the looks first. Anything else: geometry.
+  const palIn = () => { const it = ui.items.findIndex((x) => x.palIdx != null && x.el.classList.contains('fl-palon') && x.el.style.display !== 'none'); return it; };
   function arrows(dir, k, it) {
+    if (carousel && it && it.char && dir === 'down') {
+      const pl = palIn(), p = ui.items.findIndex((x) => x.el.classList.contains('fl-pink'));
+      if (pl >= 0) ui.setFocus(pl, true); else if (p >= 0) ui.setFocus(p, true);
+      return true;
+    }
+    if (carousel && it && !it.char && dir === 'up') {
+      if (it.palIdx == null) { const pl = palIn(); if (pl >= 0) { ui.setFocus(pl, true); return true; } }
+      focusIdx(cur); return true;
+    }
+    if (carousel && it && it.palIdx != null && dir === 'down') { const p = ui.items.findIndex((x) => x.el.classList.contains('fl-pink')); if (p >= 0) ui.setFocus(p, true); return true; }
     if (it && it.char) {
       const i = roster.indexOf(it.char);
       if (dir === 'left' || dir === 'right') {
-        if (tall || !grid) { focusIdx(i + (dir === 'left' ? -1 : 1)); return true; }
+        if (carousel || !grid) { focusIdx(i + (dir === 'left' ? -1 : 1)); return true; }
         // the grid: a step within the row is geometry's; off either end of a row it goes on to the next fighter, round the ring
         const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').length || 1;
         const edge = dir === 'left' ? i % cols === 0 : (i % cols === cols - 1 || i === n - 1);
         if (edge) { focusIdx(i + (dir === 'left' ? -1 : 1)); return true; }
         return false;
       }
-      if (tall && dir === 'down') { const p = ui.items.findIndex((x) => x.el.classList.contains('fl-pink')); if (p >= 0) ui.setFocus(p, true); return true; }
-      if (tall && dir === 'up') return true;
+      if (carousel && dir === 'up') return true;
       return false;
     }
-    if (tall && dir === 'up') { focusIdx(cur); return true; }
     return false;
   }
 
@@ -442,6 +475,14 @@ export function openSelect(ui, o) {
       focusIdx(target, true);
       target = pos + wrapOff(cur - pos, n);
     };
+    // the mouse wheel (or a trackpad's swipe) steps it one card a notch
+    let wheelAt = 0;
+    deck.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 4 || e.timeStamp - wheelAt < 140) return;
+      wheelAt = e.timeStamp; focusIdx(cur + (d > 0 ? 1 : -1));
+    }, { passive: false });
     deck.addEventListener('pointerup', (e) => end(e, false));
     deck.addEventListener('pointercancel', (e) => end(e, true));
   }
@@ -461,7 +502,7 @@ export function openSelect(ui, o) {
     },
     /** per frame: the cards breathe, the big rig throws one of its unique moves every few seconds, the carousel slides */
     tick(dt) {
-      if (tall && !drag && pos !== target) {
+      if (ring && !drag && pos !== target) {
         const d = target - pos;
         pos = Math.abs(d) < 0.002 ? target : pos + d * Math.min(1, dt * 16);
         if (Math.abs(target) > 4 * n) { const w = Math.floor(target / n) * n; target -= w; pos -= w; }   // keep the numbers small
@@ -482,7 +523,7 @@ export function openSelect(ui, o) {
       if (!showing && bigT > 2.2 && own.length && !drag) {
         try { big.rig.play(own[showN++ % own.length]); showing = true; } catch { showing = false; bigT = 0; }
       } else if (showing && big.rig.current.done) { big.rig.x = 0; big.rig.play('idle'); showing = false; bigT = 0; }
-      if (!tall) big.draw(dt);
+      if (!carousel) big.draw(dt);
     },
   };
 

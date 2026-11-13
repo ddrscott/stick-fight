@@ -11,7 +11,7 @@
 //
 // Keys: up and down move the highlight and bring it into view, left and right jump a section, confirm replays the
 // preview, back (Esc, Backspace, B, Select), Start, F1 or Y close it. Touch and mouse: tap a row, tap a section
-// tab, CLOSE closes, and the list scrolls: a finger drag (natively, with momentum; the list and the tabs carry
+// tab, the ‹ chip in the top-left corner (‹ PAUSE MENU, ‹ FIGHTERS) closes, and the list scrolls: a finger drag (natively, with momentum; the list and the tabs carry
 // data-scroll, which is what exempts them from touch.js cancelling every touchmove on the page), the wheel or
 // trackpad anywhere over the overlay, or the scrollbar. Scrolling never moves the highlight. Inputs show as the HUD writes them (→ toward, ← away, ↓), with the buttons as numbers on a
 // keyboard and as the pad's own face buttons once a pad is in use (controls.js's glyphs).
@@ -59,7 +59,7 @@ export function inputGlyphs(s) {
 }
 
 /**
- * @param {{ char: any, onClose: () => void, click?: (kind?: string) => void }} o
+ * @param {{ char: any, onClose: () => void, click?: (kind?: string) => void, backTo?: string }} o  backTo: where closing goes, by name
  */
 export function openMoveList(o) {
   injectStyle();
@@ -87,11 +87,16 @@ export function openMoveList(o) {
   const head = el('div', 'ml-head');
   const title = el('div', 'ml-title');
   title.append(el('span', 'ml-kicker', 'MOVE LIST'), el('h1', 'ml-name', c.name), el('span', 'ml-tag', c.tagline));
-  const close = el('button', 'ml-close', 'CLOSE'); close.type = 'button';
+  // back is the corner's ‹ chip naming where closing goes (‹ PAUSE MENU, ‹ FIGHTERS), like every screen's and SETTINGS'
+  const backTo = o.backTo || 'BACK';
+  const close = el('button', 'ml-close'); close.type = 'button';
+  close.innerHTML = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M11.5 2.5 L5 9 L11.5 15.5"/></svg>';
+  close.appendChild(el('span', '', backTo));
+  close.setAttribute('aria-label', `Close the move list, back to ${backTo.toLowerCase()}`);
   close.addEventListener('click', (e) => { e.preventDefault(); shut(); });
   const tabs = el('div', 'ml-tabs');
   tabs.dataset.scroll = 'x';   // touch.js leaves a drag here to the browser (upright, where the tabs overflow)
-  head.append(title, close);
+  head.append(close, title);
   const body = el('div', 'ml-body');
   const list = el('div', 'ml-list');
   list.dataset.scroll = 'y';   // and here: the list's own native scrolling
@@ -126,7 +131,7 @@ export function openMoveList(o) {
   pane.append(cv, cap);
   body.append(list, pane);
   root.append(head, tabs, body);
-  root.appendChild(legend([['move', 'MOVE'], ['confirm', 'REPLAY'], ['back', 'CLOSE']])).classList.add('ml-legend');
+  root.appendChild(legend([['move', 'MOVE'], ['tab', 'TAB'], ['confirm', 'REPLAY'], ['back', backTo]])).classList.add('ml-legend');
 
   const rows = [];   // { el, row, sec }
   const tabEls = [];
@@ -245,8 +250,8 @@ export function openMoveList(o) {
       if (k === 'up') select(cur - 1);
       else if (k === 'down') select(cur + 1);
       // from the lit tab: the highlight's section, or the one scrolled to by hand
-      else if (k === 'left') jump(Math.max(0, lit - 1));
-      else if (k === 'right') jump(Math.min(sections.length - 1, lit + 1));
+      else if (k === 'left' || k === 'prevtab') jump(Math.max(0, lit - 1));   // Q E, LB RB: the tabs, like SETTINGS'
+      else if (k === 'right' || k === 'nexttab') jump(Math.min(sections.length - 1, lit + 1));
       else if (k === 'confirm') replay();
       else if (k === 'back' || k === 'escape' || k === 'select' || k === 'start' || k === 'moves' || k === 'pause') shut();
     },
@@ -270,15 +275,20 @@ function injectStyle() {
   .ml-root * { box-sizing: border-box; }
   .ml-head { flex: none; display: flex; align-items: center; gap: 1.2em; flex-wrap: wrap; }
   .ml-title { display: flex; align-items: baseline; gap: 0.7em; min-width: 0; flex: 1 1 0; flex-wrap: wrap; }
-  .ml-kicker { font: 400 0.8em/1 'Bungee', 'Arial Black', sans-serif; color: var(--amber); letter-spacing: 0.06em; }
+  .ml-kicker { font: 400 max(12px, 0.8em)/1 'Bungee', 'Arial Black', sans-serif; color: var(--amber); letter-spacing: 0.06em; }
   .ml-name { margin: 0; font: 400 1.9em/1 'Bungee', 'Arial Black', sans-serif; color: color-mix(in srgb, var(--c) 45%, #fff); white-space: nowrap; }
-  .ml-tag { font-size: 0.9em; letter-spacing: 0.12em; color: rgba(230,214,255,0.75); }
+  .ml-tag { font-size: max(12px, 0.9em); letter-spacing: 0.12em; color: rgba(230,214,255,0.75); }
   .ml-tabs { flex: none; display: flex; gap: 0.4em; flex-wrap: wrap; touch-action: pan-x; overscroll-behavior: contain; }
   .ml-tabbtn, .ml-close { appearance: none; margin: 0; cursor: pointer; border-radius: 0; background: rgba(14,4,30,0.62); font: 600 1em/1 'Teko', sans-serif; letter-spacing: 0.1em;
     padding: 0.35em 0.7em 0.15em; min-height: 40px; }
   .ml-tabbtn { border: 2px solid rgba(166,107,255,0.55); color: rgba(230,214,255,0.8); }
   .ml-tabbtn.ml-on { border-color: var(--c); color: var(--deep); text-shadow: none; background: var(--c); box-shadow: 0 0 0.6em var(--c); }
-  .ml-close { border: 2px solid var(--pink); color: color-mix(in srgb, var(--pink) 70%, #fff); box-shadow: 0 0 0.5em rgba(255,43,214,0.4); min-width: 6em; }
+  /* the ‹ chip, top-left: the same as every screen's back (src/flow/ui.js .fl-backchip) and SETTINGS' */
+  .ml-close { flex: none; align-self: flex-start; display: flex; align-items: center; gap: 0.45em; padding: 0 0.9em 0 0.55em; height: clamp(40px, 6.4vmin, 50px);
+    border: 2px solid var(--violet); background: rgba(10,4,20,0.82); color: color-mix(in srgb, var(--violet) 45%, #fff); font-size: clamp(16px, calc(1.2vmin + 9px), 22px); }
+  .ml-close span { padding-top: 0.14em; white-space: nowrap; }
+  .ml-close svg { width: 0.85em; height: 0.85em; flex: none; fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: square; }
+  .ml-close:hover, .ml-close:active { background: var(--violet); color: var(--deep); text-shadow: none; }
   .ml-close:focus, .ml-tabbtn:focus { outline: none; }
   .ml-body { flex: 1 1 auto; min-height: 0; display: flex; gap: 1em; }
   .ml-list { flex: 1 1 auto; min-width: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 0.5em 3em 0;
@@ -288,10 +298,10 @@ function injectStyle() {
   .ml-cv { display: block; width: 100%; flex: 1 1 auto; min-height: 0; }
   .ml-cap { padding: 0.5em 0.8em 0.6em; border-top: 2px solid color-mix(in srgb, var(--c) 50%, transparent); display: flex; flex-direction: column; gap: 0.25em; min-height: 4.2em; }
   .ml-cap b { font: 400 1em/1.05 'Bungee', 'Arial Black', sans-serif; color: #fff; }
-  .ml-cap small { font-size: 0.75em; letter-spacing: 0.1em; color: rgba(214,190,255,0.7); }
+  .ml-cap small { font-size: max(12px, 0.75em); letter-spacing: 0.1em; color: rgba(214,190,255,0.7); }
   .ml-sec { margin-bottom: 1.2em; scroll-margin-top: 0.2em; }
   .ml-h { margin: 0 0 0.35em; font: 400 1.1em/1 'Bungee', 'Arial Black', sans-serif; color: var(--amber); letter-spacing: 0.04em; }
-  .ml-note { margin: 0 0 0.45em; font-size: 0.85em; letter-spacing: 0.08em; line-height: 1.1; color: rgba(214,190,255,0.8); }
+  .ml-note { margin: 0 0 0.45em; font-size: max(12px, 0.85em); letter-spacing: 0.08em; line-height: 1.1; color: rgba(214,190,255,0.8); }
   .ml-rule { margin: 0 0 0.45em; padding: 0.45em 0.7em 0.3em; border: 2px solid var(--pink); background: rgba(255,43,214,0.12); box-shadow: 0 0 0.6em rgba(255,43,214,0.35);
     font-size: 1em; letter-spacing: 0.08em; line-height: 1.1; color: #fff; }
   .ml-row { display: grid; grid-template-columns: 1fr auto; column-gap: 1em; row-gap: 0.1em; align-items: baseline; padding: 0.35em 0.6em 0.25em;
@@ -300,10 +310,10 @@ function injectStyle() {
   .ml-nm { display: flex; align-items: baseline; gap: 0.5em; flex-wrap: wrap; min-width: 0; }
   .ml-nm b { font-weight: 600; font-size: 1.1em; letter-spacing: 0.08em; color: #fff; }
   .ml-row.ml-cur .ml-nm b { color: color-mix(in srgb, var(--c) 35%, #fff); }
-  .ml-row small { grid-column: 1 / -1; font-size: 0.8em; letter-spacing: 0.07em; line-height: 1.1; color: rgba(214,190,255,0.72); text-transform: uppercase; }
+  .ml-row small { grid-column: 1 / -1; font-size: max(12px, 0.8em); letter-spacing: 0.07em; line-height: 1.1; color: rgba(214,190,255,0.72); text-transform: uppercase; }
   .ml-row.ml-off .ml-nm b, .ml-row.ml-off .ml-in { text-decoration: line-through; opacity: 0.5; }
   .ml-row.ml-hidden .ml-nm b { color: rgba(230,214,255,0.5); }
-  .ml-chip { font: normal 400 0.55em/1 'Bungee', sans-serif; padding: 0.35em 0.45em 0.2em; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(230,214,255,0.85); border: 1px solid rgba(166,107,255,0.6); }
+  .ml-chip { font: normal 400 max(12px, 0.55em)/1 'Bungee', sans-serif; padding: 0.35em 0.45em 0.2em; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(230,214,255,0.85); border: 1px solid rgba(166,107,255,0.6); }
   .ml-c-unique { color: var(--deep); text-shadow: none; background: var(--c); border-color: var(--c); }
   .ml-c-found { color: var(--deep); text-shadow: none; background: var(--lime); border-color: var(--lime); }
   .ml-c-launch, .ml-c-wallsplat, .ml-c-wallbounce, .ml-c-groundbounce { color: var(--pink); border-color: var(--pink); }

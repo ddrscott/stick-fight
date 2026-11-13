@@ -27,6 +27,7 @@ import { botchEnabled, discover, techniques } from './flow/techniques.js';
 import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
 import { ACCIDENTS } from './combat/botch.js';
 import { perf, perfOverlay } from './perf.js';
+import { watchScrollCues } from './scrollcue.js';   // every scrolling box fades at the edge with more past it
 import { reportMatch as careerReport, fromRoom as careerFromRoom, look as careerLook, career, syncCareer } from './career/store.js';   // XP, sticks, palettes and mastery (README, Progression)
 import { palette } from './career/palettes.js';
 import { createBook, sendLeftovers } from './bookkeeping.js';   // match bookkeeping: one result per finished match (README, Analytics)
@@ -271,6 +272,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) book.
 sendLeftovers();
 syncCareer();   // signed in: the account's career (a guest's progress merges in the first time); signed out: nothing to fetch
 gameAudio.attach(sim);   // audio
+watchScrollCues();
 // online: net.host()/join(code)/openLobby(); a match runs as the 'online' scene, stepped by online.advance
 // endMatch goes to the flow (its VERSUS ONLINE end screen) when the flow is running, and only
 // falls back to the demo for a ?scene= page; online.js's own "rival left" panel is closed in favor of it

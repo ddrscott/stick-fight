@@ -32,7 +32,7 @@
 
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 
-/** @typedef {'move'|'confirm'|'back'|'start'|'del'|'type'|'moves'} Action */
+/** @typedef {'move'|'confirm'|'back'|'start'|'del'|'type'|'moves'|'tab'} Action */
 
 // ---- the device in use ------------------------------------------------------------------------------
 // <html> carries dev-key, dev-pad or dev-touch (and pad-ps for a PlayStation pad), so legends switch
@@ -75,8 +75,8 @@ export const FACE = {
   2: { x: 'X', ps: '□', c: '#3d8dff', pc: '#ff6bd5' },
   3: { x: 'Y', ps: '△', c: '#ffd23d', pc: '#3ddcb0' },
 };
-export const PILL = { start: { x: 'START', ps: 'OPTIONS' }, select: { x: 'SELECT', ps: 'SHARE' } };
-const KEY = { move: 'ARROWS', confirm: 'ENTER', back: 'ESC', del: 'BACKSPACE', type: 'A-Z', moves: 'F1' };
+export const PILL = { start: { x: 'START', ps: 'OPTIONS' }, select: { x: 'SELECT', ps: 'SHARE' }, lb: { x: 'LB', ps: 'L1' }, rb: { x: 'RB', ps: 'R1' } };
+const KEY = { move: 'ARROWS', confirm: 'ENTER', back: 'ESC', del: 'BACKSPACE', type: 'A-Z', moves: 'F1', tab: 'Q E' };
 const PAD = { confirm: 0, back: 1, del: 2, moves: 3 };
 
 function span(cls, text) { const s = document.createElement('span'); s.className = cls; if (text != null) s.textContent = text; return s; }
@@ -113,11 +113,12 @@ export function legend(entries) {
   const bar = span('lg-bar');
   for (const [action, label] of entries) {
     const it = span('lg-i');
-    const k = KEY[action], p = action === 'move' ? 'dpad' : action === 'start' ? 'start' : PAD[action];
+    const k = KEY[action], p = action === 'move' ? 'dpad' : action === 'start' ? 'start' : action === 'tab' ? 'bumpers' : PAD[action];
     if (k) it.appendChild(span('lg-k')).appendChild(keyGlyph(k)); else it.classList.add('lg-nokey');
     if (p != null) {
       const w = it.appendChild(span('lg-p'));
-      w.appendChild(p === 'dpad' ? dpadGlyph() : p === 'start' ? pillGlyph('start') : faceGlyph(p));
+      if (p === 'bumpers') w.append(pillGlyph('lb'), pillGlyph('rb'));   // the tabs: the shoulder buttons
+      else w.appendChild(p === 'dpad' ? dpadGlyph() : p === 'start' ? pillGlyph('start') : faceGlyph(p));
     } else it.classList.add('lg-nopad');
     it.appendChild(span('lg-t', label || (action === 'move' ? 'MOVE' : action.toUpperCase())));
     bar.appendChild(it);
@@ -145,6 +146,7 @@ export const MENUS = [
   ['MOVE', 'ARROWS / WASD', 'D-PAD / STICK'],
   ['SELECT', 'ENTER / SPACE', 0],
   ['BACK', 'ESC / BACKSPACE', 1],
+  ['SWITCH TAB', 'Q / E', 'LB / RB'],
 ];
 /** a two-column table, keyboard and gamepad, the gamepad column in glyphs */
 export function controlsTable(rows, title) {

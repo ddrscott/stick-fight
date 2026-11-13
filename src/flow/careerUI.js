@@ -74,6 +74,7 @@ export function earningsPanel(compact = false) {
   const a = last();
   if (!a || !a.award || !a.award.lines.length || Date.now() - a.at > 10 * 60 * 1000) return null;
   const box = el('div', compact ? 'cr-earn cr-compact' : 'cr-earn');
+  box.dataset.squeeze = '';   // on a short screen the panel scrolls, never the buttons under it (src/flow/ui.js fit)
   const paint = () => {
     const cur = last();
     if (!cur) return;
@@ -343,7 +344,7 @@ function injectStyle() {
   .ms-pips i { display: block; width: max(7px, 0.9cqw); height: max(7px, 0.9cqw); border: 2px solid #ffb02e; }
   .ms-pips i.ms-on { background: #ffb02e; }
   .ms-chip { display: flex; align-items: center; gap: 0.8cqw; font: 600 1.7cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffe0a8; }
-  .ms-chip .ms-hire { color: #0b0616; background: #9dffc0; padding: 0.15em 0.4em; }
+  .ms-chip .ms-hire { color: #0b0616; background: #9dffc0; padding: 0.15em 0.4em; text-shadow: none; }   /* dark on mint: the dark outline would smear it */
   .cr-review { display: flex; flex-direction: column; gap: 0.4cqh; }
   .cr-rhead { display: flex; justify-content: space-between; align-items: baseline; gap: 2cqw; }
   .cr-title { font: 400 2.2cqw/1 'Bungee', sans-serif; color: #fff4d6; }
@@ -403,6 +404,7 @@ function injectStyle() {
   .sh-cpay { font: 600 1.7cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #ffc46b; }
   .sh-done .sh-cpay { color: #9dffc0; }
   .sh-cbtns { display: flex; flex-direction: column; gap: 0.8cqh; }
+  .sh-ctitle { font-size: max(15px, 1.9cqw); } .sh-mech, .sh-cpay { font-size: max(12px, 1.7cqw); } .sh-coach { font-size: max(13px, 1.8cqw); }   /* px floors: a phone held sideways */
   .sh-cbtns .fl-btn { min-width: 0; font-size: 2.2cqw; }
   /* the menus' counter: top right, under the corner buttons' row, plain text */
   .cr-chip { position: absolute; z-index: 4; left: 1.2cqw; top: 1.2cqh; display: none; align-items: baseline; gap: 1cqw; padding: 0.3cqh 1cqw 0;
@@ -436,6 +438,13 @@ function injectStyle() {
     .cr-chip { font-size: max(14px, 2cqw); } .cr-chip span { font-size: max(13px, 1.7cqw); }
     .cr-nudge { font-size: max(15px, 2.2cqw); } .cr-nudge .cr-nsub { font-size: max(13px, 1.8cqw); }
   }
+  /* too tall for the screen (src/flow/ui.js fit adds .fl-two before it would scroll the panel): the same two columns on
+     any wide stage, a desktop included, so the buttons under it stay on screen with nothing hidden */
+  .cr-earn.fl-two { min-width: 0; width: min(90cqw, 1100px); max-width: none; }
+  .cr-earn.fl-two .cr-cols { flex-direction: row; gap: 3cqw; align-items: flex-start; }
+  .cr-earn.fl-two .cr-pay, .cr-earn.fl-two .cr-prog { flex: 1 1 0; }
+  .cr-earn.fl-two .ms-head { flex-wrap: wrap; row-gap: 0.4cqh; } .cr-earn.fl-two .ms-head > * { white-space: nowrap; }
+  .cr-earn.fl-two .sh-res { border-top: 0; padding-top: 0; }
   /* held upright the stage is narrow: everything a size up, and on a phone (about 390 px wide, so 1cqw is 4 px)
      every size has a pixel floor so nothing is under 13 px */
   @container (max-aspect-ratio: 1/1) {

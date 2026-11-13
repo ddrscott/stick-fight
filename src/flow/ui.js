@@ -13,10 +13,18 @@
 // geometry (the nearest item in that direction), so lists, button rows and the keypad all navigate
 // the same way; the mouse moves it by hovering, and a click or a tap activates the item.
 //
-// Every screen that waits on the player has at least two real buttons, opens with the focus on its
-// primary action, and gets a footer legend (src/flow/controls.js) of what each control does there,
-// in the glyphs of the device in use. An item with disabled() true is drawn dim, and the focus,
-// the D-pad and the mouse skip it.
+// Every screen that waits on the player opens with the focus on its primary action and gets a footer
+// legend (src/flow/controls.js) of what each control does there, in the glyphs of the device in use. An
+// item with disabled() true is drawn dim, and the focus, the D-pad and the mouse skip it.
+//
+// Going back is one thing everywhere (README, Arcade flow, "Back and the corner"): a screen that has a
+// screen above it says where that is (backTo: 'MAIN MENU'), and show() puts a ‹ MAIN MENU chip in the top
+// left corner, in the bar the sticks counter shares, and names it in the legend (ESC MAIN MENU). There is
+// never a BACK button in a screen's body. Leaving something in progress (a run, a room, a pending
+// connection) is a named button instead (RESUME, LEAVE ROOM, CANCEL), with no chip.
+//
+// A screen that's taller than a short stage (a phone held sideways) scrolls rather than shrinking its text:
+// fit() only zooms a big stage, or to fit the width.
 
 import { legend } from './controls.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
@@ -35,6 +43,14 @@ export function createUI(onSound) {
   const stage = document.getElementById('stage') || document.body;
   const root = el('div'); root.id = 'flow';
   stage.appendChild(root);
+  // the top-left bar: the screen's ‹ back chip, then the sticks counter (src/flow/careerUI.js puts it here)
+  const bar = el('div', 'fl-bar'), backSlot = el('div', 'fl-backslot');
+  bar.appendChild(backSlot);
+  root.appendChild(bar);
+  // the NEW VERSION pill (src/update.js) docks in the bar too, after the chip, where the counter was: on its own it
+  // sat top-left upright and bottom-left sideways, over the chip or over a menu's last row
+  const dock = () => { const pill = document.querySelector('body > .up-pill'); if (pill) { bar.appendChild(pill); fit(); } };
+  if (typeof MutationObserver !== 'undefined') new MutationObserver(dock).observe(document.body, { childList: true });
   // the desktop pause button: first in the corner row, shown by CSS only in a fight you can pause
   // (a touch screen has its own in the touch layer, which sends 'sf:pause')
   const pauseBtn = cornerButton('sf-pause', 'Pause', 1, PAUSE_ICON);
@@ -48,6 +64,7 @@ export function createUI(onSound) {
   let moveFn = null;
   let token = 0;
   let veiled = false;   // the screen up is a menu over a dimmed scene (the title and the watch view aren't)
+  let backTo = '';      // where back goes, by name (the chip and the legend say it)
 
   // Held upright (html.sq, src/square.js) the 16:9 box is a strip about 390 by 219, a quarter of the phone. So every
   // menu leaves it for the whole screen, under the top buttons, with its own phone-sized layout (.fl-up, the
@@ -71,35 +88,88 @@ export function createUI(onSound) {
   // What the screen holds (its in-flow children; the legend and anything else positioned is left out)
   // against the stage less the legend's room. zoom scales px and container units alike, so one pass is exact.
   let zoomNow = 1;
+  const SHORT = 520, MIN_ZOOM = 0.85;
   function fit() {
+    tight();
     if (!screen) return;
     if (screen.classList.contains('fl-nofit')) { if (zoomNow !== 1) { zoomNow = 1; screen.style.zoom = ''; } return; }   // it fits itself (the upright select: its carousel takes what's left)
     const st = root.getBoundingClientRect();
     if (!st.width || !st.height) return;
-    let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
-    for (const n of screen.children) {
-      const cs = getComputedStyle(n);
-      if (cs.position === 'absolute' || cs.position === 'fixed' || cs.display === 'none') continue;
-      const r = n.getBoundingClientRect();
-      if (!r.width || !r.height) continue;
-      top = Math.min(top, r.top); bottom = Math.max(bottom, r.bottom); left = Math.min(left, r.left); right = Math.max(right, r.right);
-    }
-    if (bottom <= top) return;
+    // A screen with a box marked data-squeeze (the earnings panel on STAGE CLEAR, CONTINUE?, GAME OVER, the online
+    // result) never scrolls as a whole: that box scrolls instead, so the buttons under it and the legend stay on
+    // screen (a countdown's YES can't sit below the fold). Measure it at its full height first.
+    const sq = screen.querySelector('[data-squeeze]');
+    if (sq instanceof HTMLElement && (sq.style.maxHeight || sq.classList.contains('fl-two'))) { sq.style.maxHeight = ''; sq.classList.remove('fl-squeezed', 'fl-two'); if (sq.dataset.scroll === 'y') delete sq.dataset.scroll; }
+    // A screen is always measured as it lays out unscrolled. Measured scrolled, its scroll padding (the room under the
+    // corner bar) counted as content, so a screen that went to scrolling once stayed scrolling with its legend hidden even
+    // when it fit (round 3 of [t55b8f]: the character select at 1280x720). Where it was scrolled to is kept.
+    const was = screen.classList.contains('fl-scroll'), keep = was ? screen.scrollTop : 0;
+    if (was) screen.classList.remove('fl-scroll');
     const cs = getComputedStyle(screen);
     const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);   // measured zoomed, like the rest
+    const measure = () => {
+      let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+      for (const n of screen.children) {
+        const ns = getComputedStyle(n);
+        if (ns.position === 'absolute' || ns.position === 'fixed' || ns.display === 'none') continue;
+        const r = n.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        top = Math.min(top, r.top); bottom = Math.max(bottom, r.bottom); left = Math.min(left, r.left); right = Math.max(right, r.right);
+      }
+      return bottom <= top ? null : { h: (bottom - top + pad) / zoomNow, w: (right - left) / zoomNow };
+    };
+    let m = measure();
+    if (!m) return;
     // a sliver of air at the top and bottom; a full-screen upright menu has its padding for that, and a box in it
     // that scrolls takes up whatever is left, so it always fills the screen exactly
-    const edge = screen.classList.contains('fl-up') ? -0.5 : st.height * 0.012;
-    const h = (bottom - top + pad) / zoomNow, w = (right - left) / zoomNow;
-    const k = Math.max(0.3, Math.min(1, (st.height - 2 * edge) / h, st.width / w));
+    const up = screen.classList.contains('fl-up');
+    const edge = up ? -0.5 : st.height * 0.012;
+    // Height zooms only so far: a phone (held upright, or sideways with a stage under SHORT px) not at all, a desktop
+    // to MIN_ZOOM, so the small print stays 12 px and up. Past that the screen scrolls instead (.fl-scroll: top-aligned,
+    // data-scroll so a finger moves it). Width still zooms.
+    const floor = up || st.height < SHORT ? 1 : MIN_ZOOM;
+    // the squeezable box laid out wide first (the earnings panel's two columns, as on a phone sideways): a desktop has
+    // the width, and then nothing in it has to scroll at all
+    if (sq instanceof HTMLElement && !up && (st.height - 2 * edge) / m.h < floor - 0.005) { sq.classList.add('fl-two'); m = measure() || m; }
+    const { h, w } = m;
+    const kH = (st.height - 2 * edge) / h, kW = st.width / w;
+    const k = Math.max(0.3, Math.min(1, kW, Math.max(floor, kH)));
+    let scroll = kH < floor - 0.005;
+    if (scroll && sq instanceof HTMLElement) {
+      // what's over, in the screen's own px at zoom k, comes off the box (which keeps at least 64px: a few lines and its fade)
+      const over = h - (st.height - 2 * edge) / k;
+      const box = sq.getBoundingClientRect().height / zoomNow;
+      const room = Math.floor(box - over - 2);
+      if (room >= 64) { sq.style.maxHeight = `${room}px`; sq.classList.add('fl-squeezed'); sq.dataset.scroll = 'y'; scroll = false; }
+    }
+    screen.classList.toggle('fl-scroll', scroll);
+    if (scroll) { screen.dataset.scroll = 'y'; if (was && keep) screen.scrollTop = keep; } else if (screen.dataset.scroll === 'y') delete screen.dataset.scroll;
     const next = k > 0.995 ? 1 : Math.floor(k * 200) / 200;
     if (Math.abs(next - zoomNow) < 0.004) return;
     zoomNow = next;
     screen.style.zoom = next === 1 ? '' : String(next);
   }
+  // the bar's chip and the sticks counter side by side, unless together they'd run into the corner buttons on
+  // the right (a long chip on a phone held upright): then the counter steps aside (.fl-tight hides it)
+  function tight() {
+    bar.classList.remove('fl-tight', 'fl-tight1');
+    if (!backSlot.firstChild) return;
+    if (crowded()) bar.classList.add('fl-tight1');   // first the counter drops the title (the profile card has it)
+    if (crowded()) bar.classList.add('fl-tight');    // then it steps aside altogether
+  }
+  function crowded() {
+    let right = window.innerWidth;
+    for (const n of document.querySelectorAll('.sf-top > button, .tc-top > *')) { const r = n.getBoundingClientRect(); if (r.width && r.left < right) right = r.left; }
+    const b = bar.getBoundingClientRect();
+    // or into the screen's title (a long one, SELECT FIGHTER, on a desktop): the chip is what matters here
+    const h = screen && screen.querySelector(':scope > .fl-h1, :scope > .fl-h2, :scope > .fl-h3');
+    const hr = h ? h.getBoundingClientRect() : null;
+    const hits = hr && hr.width && b.bottom > hr.top && b.top < hr.bottom && b.right > hr.left - 8;
+    return b.right > right - 8 || hits;
+  }
   // a screen's content changes under it (the pause menu's right panel, a lobby filling up, a font arriving)
   const watch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => fit()) : null;
-  if (watch) watch.observe(root);
+  if (watch) { watch.observe(root); watch.observe(bar); }   // the bar: the counter showing after the screen did
   window.addEventListener('resize', fit);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit).catch(() => {});
   function setFocus(i, sound = false) {
@@ -128,6 +198,9 @@ export function createUI(onSound) {
     const out = build(s) || {};
     items = out.items || [];
     backFn = out.back || null;
+    backTo = backFn && out.backTo ? out.backTo : '';
+    backSlot.textContent = '';
+    if (backTo && out.chip !== false) backSlot.appendChild(backChip(backTo, () => { if (my === token) back(); }));
     focusFn = out.onFocus || null;   // the screen follows the cursor (the character select's detail panel)
     moveFn = out.move || null;       // the screen's own arrows first (the character select's wrap-around), else geometry
     let tapped = -1;   // the focusFirst item this touch just focused: its click is the end of that tap, not a second one
@@ -150,15 +223,17 @@ export function createUI(onSound) {
       it.el.addEventListener('pointerenter', (e) => { if ((e).pointerType === 'mouse' && my === token && !off(k)) setFocus(k); });
     });
     // the legend: the screen's own, or move / select / back from what it has
-    const lg = out.legend !== undefined ? out.legend
-      : [...(items.length > 1 ? [['move']] : []), ...(items.length ? [['confirm', 'SELECT']] : []), ...(backFn ? [['back', 'BACK']] : [])];
+    let lg = out.legend !== undefined ? out.legend
+      : [...(items.length > 1 ? [['move']] : []), ...(items.length ? [['confirm', 'SELECT']] : []), ...(backFn ? [['back', backTo || 'BACK']] : [])];
+    if (backTo && lg) lg = lg.map((x) => (x[0] === 'back' && x[1] === 'BACK' ? ['back', backTo] : x));   // the key says where it goes too
     if (lg && lg.length) s.appendChild(legend(lg));
     focus = -1;
     zoomNow = 1;
     if (watch) for (const n of s.children) watch.observe(n);
     fit();
     refresh();
-    setFocus(out.focus || 0);
+    if (out.focus === -1) focus = -1;   // nothing lit until a direction is pressed (the age question: no answer hinted)
+    else setFocus(out.focus || 0);
     return s;
   }
   /** redraw the disabled state (and move the focus off an item that just turned off) */
@@ -169,7 +244,8 @@ export function createUI(onSound) {
   function clear() {
     token++;
     if (screen) { if (watch) for (const n of screen.children) watch.unobserve(n); screen.remove(); }
-    screen = null; items = []; focus = -1; backFn = null; focusFn = null; moveFn = null; veiled = false;
+    screen = null; items = []; focus = -1; backFn = null; focusFn = null; moveFn = null; veiled = false; backTo = '';
+    backSlot.textContent = '';
   }
   function activate() {
     const it = items[focus];
@@ -205,11 +281,24 @@ export function createUI(onSound) {
     if (best >= 0) setFocus(best, true);
   }
   return {
-    root, pauseBtn, show, clear, activate, back, move, setFocus, refresh, fit,
+    root, bar, pauseBtn, show, clear, activate, back, move, setFocus, refresh, fit,
+    get backTo() { return backTo; },
     get screen() { return screen; },
     get focus() { return focus; },
     get items() { return items; },
   };
+}
+
+/** the corner's ‹ chip: where back goes, by name. A click or a tap runs the screen's back; the keys and the pad
+ *  reach it through back itself (Esc, B), so it isn't one of the screen's items */
+function backChip(label, act) {
+  const c = el('button', 'fl-backchip'); c.type = 'button';
+  c.innerHTML = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M11.5 2.5 L5 9 L11.5 15.5"/></svg>';
+  c.appendChild(el('span', '', label));
+  c.setAttribute('aria-label', `Back to ${label.toLowerCase()}`);
+  c.addEventListener('mousedown', (e) => e.preventDefault());
+  c.addEventListener('click', (e) => { e.preventDefault(); act(); });
+  return c;
 }
 
 /** a menu button */
@@ -239,19 +328,19 @@ function injectStyle() {
   .fl-h2 { --c: var(--cyan); font-size: 4.2cqw; color: #d8fdff; text-shadow: 0 0 0.4cqw var(--c), 0 0 1.4cqw var(--c); }
   .fl-h3 { font-size: 2.6cqw; color: #ffd98f; }
   #flow .fl-read { text-shadow: var(--plain); }
-  .fl-label { font-size: 2.5cqw; font-weight: 600; letter-spacing: 0.14em; line-height: 1; color: rgba(230,214,255,0.86); text-align: center; }
-  .fl-small { font-size: 1.9cqw; font-weight: 500; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-align: center; line-height: 1.1; }
+  .fl-label { font-size: max(13px, 2.5cqw); font-weight: 600; letter-spacing: 0.14em; line-height: 1; color: rgba(230,214,255,0.86); text-align: center; }
+  .fl-small { font-size: max(12px, 1.9cqw); font-weight: 500; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-align: center; line-height: 1.1; }
   .fl-rule { width: 34cqw; height: 0; border-top: 2px solid var(--amber); box-shadow: 0 0 1cqw var(--amber); opacity: 0.8; }
   .fl-list { display: flex; flex-direction: column; align-items: stretch; gap: 1.4cqh; }
   .fl-row { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 2cqw; }
   .fl-btn { --c: var(--cyan); pointer-events: auto; appearance: none; margin: 0; cursor: pointer;
     min-width: 30cqw; min-height: max(44px, 8cqh); padding: 0.4cqw 2.4cqw 0;
     background: rgba(14,4,30,0.62); border: 2px solid var(--c); border-radius: 0; color: color-mix(in srgb, var(--c) 70%, #fff);
-    font: 600 3.3cqw/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em;
+    font: 600 max(15px, 3.3cqw)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em;
     text-shadow: var(--plain);   /* a <button> doesn't inherit text-shadow from #flow (the browser's own sheet resets it), so say it here */
     box-shadow: 0 0 0.8cqw color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 0.8cqw color-mix(in srgb, var(--c) 25%, transparent);
     display: flex; flex-direction: column; align-items: center; justify-content: center; transition: background 80ms, color 80ms, transform 60ms; }
-  .fl-btn small { display: block; font-size: 1.7cqw; letter-spacing: 0.12em; font-weight: 500; opacity: 0.8; margin-top: -0.2cqw; }
+  .fl-btn small { display: block; font-size: max(12px, 1.7cqw); letter-spacing: 0.12em; font-weight: 500; opacity: 0.8; margin-top: -0.2cqw; }
   /* the cursor lands at once: an item taking the focus doesn't fade in (only the press squeeze eases), the one losing it fades out */
   .fl-btn.fl-focus { transition: transform 60ms; background: var(--c); color: var(--deep); text-shadow: none; box-shadow: 0 0 1.6cqw var(--c), 0 0 3.2cqw color-mix(in srgb, var(--c) 45%, transparent); }
   .fl-btn.fl-focus small { opacity: 0.85; }
@@ -262,6 +351,33 @@ function injectStyle() {
   /* DELETE MY PROFILE: red, a size down, on its own row so nobody hits it on the way to BACK */
   .fl-red { --c: #ff4d5e; } .fl-btn.fl-quiet { font-size: 2.6cqw; min-height: max(40px, 6.5cqh); }
 
+  /* The top-left bar (README, Arcade flow, "Back and the corner"): the ‹ chip naming where back goes, then the
+     sticks counter. Square corners, plain text, the same height as each other. */
+  .fl-bar { position: absolute; left: 1.2cqw; top: 1.4cqh; z-index: 6; display: flex; align-items: stretch; gap: 1cqw; pointer-events: none;
+    --barh: max(38px, 6.4cqh); }
+  .fl-backslot:empty { display: none; }
+  .fl-backchip { --c: var(--violet); pointer-events: auto; appearance: none; margin: 0; cursor: pointer; height: var(--barh); box-sizing: border-box;
+    display: flex; align-items: center; gap: 0.45em; padding: 0 0.9em 0 0.55em; border: 2px solid var(--c); border-radius: 0;
+    background: rgba(10,4,20,0.82); color: color-mix(in srgb, var(--c) 45%, #fff); text-shadow: var(--plain);
+    font: 600 max(15px, 2.3cqw)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; transition: background 80ms, color 80ms; }
+  .fl-backchip span { padding-top: 0.14em; white-space: nowrap; }
+  .fl-backchip svg { width: 0.85em; height: 0.85em; flex: none; fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: square; }
+  .fl-backchip:hover, .fl-backchip:active { background: var(--c); color: var(--deep); text-shadow: none; }
+  .fl-backchip:focus { outline: none; }
+  .fl-bar .cr-chip { position: static; height: var(--barh); box-sizing: border-box; align-items: center; }
+  .fl-bar.fl-tight .cr-chip { display: none; } .fl-bar.fl-tight1 .cr-chip span { display: none; }
+  #flow .fl-bar .up-pill { position: static; transform: none; height: var(--barh); min-height: 0; box-sizing: border-box; pointer-events: auto; font-size: max(15px, 2.2cqw); white-space: nowrap; }
+  #flow .fl-bar:has(.up-pill:not([hidden])) .cr-chip { display: none; }
+  #flow .fl-bar.fl-tight1 .up-pill b { display: none; }
+  /* a screen taller than a short stage scrolls (fit() above): from the top, under the bar */
+  #flow .fl-screen.fl-scroll { justify-content: flex-start; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; }
+  #flow .fl-screen.fl-scroll:not(.fl-up) { padding-top: calc(1.4cqh + max(38px, 6.4cqh) + 1.2cqh); padding-bottom: 2cqh; }
+  #flow .fl-screen.fl-scroll::-webkit-scrollbar { display: none; }
+  #flow .fl-screen.fl-scroll > * { flex-shrink: 0; }
+  #flow .fl-screen.fl-scroll > .lg-bar { display: none; }
+  #flow .fl-squeezed { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; flex-shrink: 0; pointer-events: auto; }
+  #flow .fl-squeezed::-webkit-scrollbar { display: none; }
+
   /* title: the START button sits where the HUD's prompt would be (main.js positions the group per
      frame), HIGH SCORES and CONTROLS in a row under it */
   .fl-title { pointer-events: none; }
@@ -269,14 +385,10 @@ function injectStyle() {
   .fl-titlerow { position: absolute; left: 0; top: 5.4cqh; transform: translateX(-50%); gap: 1.2cqw; }
   html.touch-ui:not(.pad-ui) .fl-titlerow { top: 7.4cqh; }
   .fl-mini { min-width: 0; min-height: max(36px, 6cqh); padding: 0.4cqw 1.6cqw 0; font-size: 2.1cqw; white-space: nowrap; }
-  .fl-slim { min-height: max(40px, 6.4cqh); font-size: 2.6cqw; }
+  .fl-slim { min-height: max(40px, 6.4cqh); font-size: max(14px, 2.6cqw); }
   .fl-touchonly { display: none; } html.dev-touch .fl-touchonly { display: block; }
   .fl-newhi { color: #ffc2f3; }
   /* the controls screen: the fight table beside the menu table */
-  .fl-ctlrow { align-items: flex-start; gap: 3cqw; }
-  .fl-ctlcol { display: flex; flex-direction: column; gap: 2.4cqh; max-width: 34cqw; }
-  .fl-ctlnote { text-align: left; font-size: 1.6cqw; line-height: 1.15; }
-  .fl-controls .lg-table { padding: 1.2cqw 1.6cqw; border: 2px solid rgba(166,107,255,0.6); background: rgba(14,4,30,0.62); }
   .fl-title .lg-bar { bottom: 1.2cqh; }
   .fl-start { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); min-width: 0; white-space: nowrap; padding: 0.5cqw 3cqw 0; --c: var(--amber);
     font-family: 'Bungee', 'Arial Black', sans-serif; font-weight: 400; font-size: 2.5cqw; letter-spacing: 0.06em; }
@@ -356,8 +468,9 @@ function injectStyle() {
   /* ending credits */
   .fl-roll { position: relative; width: 70cqw; height: 46cqh; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); }
   .fl-roll div { position: absolute; left: 0; right: 0; top: 100%; display: flex; flex-direction: column; align-items: center; gap: 1.4cqh; animation: fl-roll 14s linear forwards; }
-  .fl-roll p { margin: 0; text-align: center; font-size: 2.5cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1.05; color: #eadcff; }
+  .fl-roll p { margin: 0; text-align: center; font-size: max(14px, 2.5cqw); font-weight: 600; letter-spacing: 0.12em; line-height: 1.05; color: #eadcff; }
   .fl-roll p b { display: block; font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 1.7cqw; color: var(--amber); letter-spacing: 0.06em; }
+  .fl-roll p b { font-size: max(13px, 1.7cqw); }
   @keyframes fl-roll { from { transform: translateY(0); } to { transform: translateY(calc(-100% - 46cqh)); } }
 
   /* character select (select.js): a grid of live rigs on the left, the focused one's sheet on the right */
@@ -431,9 +544,14 @@ function injectStyle() {
 
   /* pause: the menu beside the book of happy accidents (src/flow/techniques.js) */
   .fl-pauserow { align-items: flex-start; gap: 3cqw; }
+  /* a phone sideways with the top buttons in a column inside the stage (src/touch.js --tc-col): the menu clears it */
+  html.touch-ui.fl-hud #flow > .fl-pause:not(.fl-up) { padding-right: var(--tc-col, 0px); }
   .fl-pause .fl-list .fl-btn { min-height: max(40px, 7.2cqh); }
-  .fl-tech.fl-ctlpanel { --lg-size: 1.6cqw; padding: 1.2cqw 1.8cqw; }
+  /* the pause menu's right side: TECHNIQUES and CONTROLS as two tabs over the panel they switch */
+  .fl-pside { width: 44cqw; display: flex; flex-direction: column; gap: 1cqh; }
+  .fl-pside .fl-tech { width: auto; max-height: 58cqh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
   .fl-tech { --c: #c8ff3a; width: 44cqw; display: flex; flex-direction: column; gap: 0.7cqh; padding: 1cqw 1.4cqw; border: 2px solid color-mix(in srgb, var(--c) 60%, transparent); background: rgba(14,4,30,0.62); }
+  .fl-ptitle { font: 400 max(13px, 1.7cqw)/1 'Bungee', sans-serif; color: #c8ff3a; letter-spacing: 0.04em; padding: 0.4cqh 0 0.2cqh; }
   .fl-techhead { font: 400 1.8cqw/1 'Bungee', sans-serif; color: var(--c); letter-spacing: 0.04em; margin-bottom: 0.4cqh; }
   .fl-tech p { margin: 0; display: flex; flex-direction: column; line-height: 1; }
   .fl-tech b { font: 600 2cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: rgba(230,214,255,0.55); }
@@ -554,6 +672,12 @@ function injectStyle() {
   .fl-crew .fl-link { font-size: 1.8cqw; }
   .fl-crewbody { align-items: flex-start; gap: 1.6cqw; margin-top: 0.6cqh; }
   .fl-crewleft { width: 52cqw; display: flex; flex-direction: column; gap: 1.4cqh; }
+  /* a phone held sideways: the crew list scrolls in its own box under the tabs and the goal, so the lobby fits the stage
+     at full size instead of shrinking (README, Arcade flow, Small stages) */
+  @container (min-aspect-ratio: 1/1) and (max-height: 520px) {
+    #flow .fl-crew:not(.fl-up) .fl-crewleft { max-height: calc(100cqh - 30cqh - 6.5cqh); min-height: 0; }
+    #flow .fl-crew:not(.fl-up) .fl-standings { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; }
+  }
   .fl-crewright { width: 24cqw; }
   .fl-crewbody > .fl-qr { --qr: 18cqw; }   /* the crew link's QR code, a third column */
   .fl-standings { display: grid; grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw 11cqw; column-gap: 0.8cqw; row-gap: 0.5cqh; align-items: baseline;
@@ -588,7 +712,7 @@ function injectStyle() {
   #flow .fl-uponly { display: none; }   /* the lobby's upright-only buttons (your name, INVITE); .fl-sideonly is the reverse */
   /* the lobby's views (paintLobby): the tabs over the table, then the standings, a crew high score table, or the stats */
   .fl-crewtabs { grid-column: 1 / -1; display: flex; gap: 0.6cqw; margin-bottom: 0.5cqh; }
-  .fl-crewtab { flex: 1; min-width: 0; min-height: 0; padding: 0.5cqw 0 0.2cqw; font-size: 1.4cqw; letter-spacing: 0.06em; }
+  .fl-crewtab { flex: 1; min-width: 0; min-height: 0; padding: 0.5cqw 0 0.2cqw; font-size: max(12px, 1.4cqw); letter-spacing: 0.06em; }
   .fl-crewtab.fl-on { color: var(--deep); background: var(--amber); border-color: var(--amber); text-shadow: none; }
   .fl-standings.fl-v-arcade, .fl-standings.fl-v-horde { grid-template-columns: 2.2cqw minmax(0, 0.6fr) max-content minmax(0, 1fr) max-content max-content; row-gap: 0.35cqh; }
   .fl-standings .fl-sinit { letter-spacing: 0.18em; }
@@ -633,6 +757,30 @@ function injectStyle() {
   /* A narrow stage: a phone held upright, where the stage is about 390 by 219. A column of seven or nine
      44px buttons can't fit that, so the long menus go wide instead of tall, and the small print grows
      enough to read. fit() (above) zooms out whatever is still too tall. */
+  /* Text floors (2026-11-13): sizes are container units, so on a phone held sideways (a stage about 390 px tall,
+     1cqw about 7 px) the small print came out at 8 to 10 px. Every size a player reads has a px floor here; on a
+     desktop the cqw side is bigger, so nothing there moves. A screen that grows past a short stage scrolls (fit()). */
+  .fl-table { font-size: max(14px, 3.2cqw); } .fl-table .fl-note { font-size: max(12px, 2.2cqw); }
+  .fl-table.fl-table5 { font-size: max(13px, 2.4cqw); } .fl-table5 .fl-note, .fl-table .fl-fighter { font-size: max(12px, 1.9cqw); }
+  .fl-tech b { font-size: max(13px, 2cqw); } .fl-tech small { font-size: max(12px, 1.4cqw); line-height: 1.1; }
+  #flow .lg-table .lg-pill { font-size: max(12px, 0.6em); } #flow .lg-table .lg-th.lg-col { font-size: max(12px, 0.7em); } #flow .lg-table .lg-th { font-size: max(12px, 0.85em); } #flow .lg-table .lg-b { font-size: max(12px, 0.82em); } #flow .lg-table .lg-kc .lg-key { font-size: max(12px, 0.9em); }
+  /* CONTROLS: the two tables scroll in their box rather than shrinking the screen */
+  .fl-colhead { font-size: max(12px, 1.7cqw); }
+  .fl-tally { font-size: max(14px, 2.8cqw); }
+  .fl-pal small { font-size: max(12px, 1.5cqw); } .fl-palnote { font-size: max(12px, 1.6cqw); }
+  .fl-cname { font-size: max(18px, 3.1cqw); } .fl-tagline { font-size: max(13px, 1.8cqw); }
+  .fl-stats span { font-size: max(12px, 1.7cqw); }
+  .fl-moves b, .fl-moves em { font-size: max(13px, 2cqw); } .fl-moves small { font-size: max(12px, 1.55cqw); }
+  .fl-pips i { font-size: max(12px, 1.6cqw); }
+  /* MAIN MENU: the four modes, then everything else two by two */
+  .fl-more { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2cqh 1cqw; }
+  .fl-more .fl-btn { min-width: 0; padding-left: 1cqw; padding-right: 1cqw; white-space: nowrap; }
+  .fl-more .fl-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }   /* SETTINGS, the third of three, takes the row */
+  #flow > .fl-up.fl-modes .fl-list .fl-more { grid-column: 1 / -1; gap: max(8px, 1.3cqh) 2.4cqw; }
+  #flow > .fl-up.fl-modes .fl-list .fl-more .fl-btn { min-height: 48px; font-size: max(15px, 4.4cqw); }
+  /* the upright select's swatch labels and the line under them, a thumb's read */
+  #flow .fl-tall .fl-pal small { font-size: max(12px, 3.2cqw); } #flow .fl-tall .fl-palnote { font-size: max(13px, 3.4cqw); }
+
   @container (max-width: 520px) {
     .fl-screen { gap: 1.2cqh; }
     .fl-veil { padding-bottom: 0; }   /* the legend is for keys and a pad; here it sits over the bottom edge when one is in use */
@@ -645,7 +793,7 @@ function injectStyle() {
     .fl-modes .fl-list .fl-btn:last-child { grid-column: 1 / -1; min-height: 32px; }
     /* pause: the menu three across. The right panel (techniques, controls) and the button that swaps it need
        the room a sideways stage has, so upright they stay hidden. */
-    .fl-pause .fl-tech, .fl-pause .fl-viewbtn { display: none; }
+    .fl-pause .fl-tech, .fl-pause .fl-pside { display: none; }
     .fl-pause .fl-list { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.6cqh 1.4cqw; width: 96cqw; }
     .fl-pause .fl-list .fl-btn { min-width: 0; padding-left: 0.6cqw; padding-right: 0.6cqw; font-size: 3.3cqw; white-space: nowrap; }
     .fl-pause .fl-list .fl-btn small { font-size: 2cqw; }
@@ -691,13 +839,13 @@ function injectStyle() {
   #flow .fl-tall .fl-label { font-size: 3.5cqw; line-height: 1.1; }
   #flow .fl-tall .fl-selstatus { flex-direction: column; align-items: center; gap: 0.5cqh; font-size: 3.8cqw; min-height: 0; }
   #flow .fl-ring { position: relative; align-self: stretch; margin: 0 -4cqw; flex: 1 1 0; min-height: 120px; max-height: 400px; overflow: hidden; touch-action: none; pointer-events: auto; }
-  #flow .fl-tall .fl-card { position: absolute; left: 50%; top: 0; height: 100%; width: auto; aspect-ratio: 0.7; translate: -50% 0; padding: 0 0 1.2cqh;
+  #flow .fl-carousel .fl-card { position: absolute; left: 50%; top: 0; height: 100%; width: auto; aspect-ratio: 0.7; translate: -50% 0; padding: 0 0 1.2cqh;
     transition: background 80ms, border-color 80ms; transform-origin: 50% 50%; will-change: transform;
     background: #0c0419; }   /* solid: the cards behind the middle one don't show through it */
-  #flow .fl-tall .fl-card.fl-focus { background: color-mix(in srgb, var(--c) 24%, #0e041e); }
+  #flow .fl-carousel .fl-card.fl-focus { background: color-mix(in srgb, var(--c) 24%, #0e041e); }
   #flow .fl-tall .fl-card b { font-size: 6cqw; letter-spacing: 0.06em; }
   #flow .fl-tall .fl-card b.fl-long { font-size: 4.8cqw; line-height: 0.9; padding: 0 1cqw; }
-  #flow .fl-tall .fl-card.fl-focus { box-shadow: 0 0 0 1px color-mix(in srgb, #fff 55%, var(--c)), 0 0 4cqw var(--c), inset 0 0 4cqw color-mix(in srgb, var(--c) 50%, transparent); }
+  #flow .fl-carousel .fl-card.fl-focus { box-shadow: 0 0 0 1px color-mix(in srgb, #fff 55%, var(--c)), 0 0 4cqw var(--c), inset 0 0 4cqw color-mix(in srgb, var(--c) 50%, transparent); }
   #flow .fl-tall .fl-card .fl-tag, #flow .fl-tall.fl-netpick .fl-card.fl-focus::before { font-size: 3.4cqw; padding: 1cqw 1.4cqw 0.6cqw; top: 1cqh; }
   #flow .fl-tall .fl-card .fl-tag { right: 1.4cqw; }
   #flow .fl-tall.fl-netpick .fl-card.fl-focus::before { left: 1.4cqw; }
@@ -760,6 +908,64 @@ function injectStyle() {
   #flow .fl-tall.fl-fit2 .fl-moves, #flow .fl-tall.fl-fit2 .fl-tagline { display: none; }
   #flow .fl-tall.fl-fit3 .fl-selhints { display: none; }
 
+  /* The character select sideways and on a desktop (select.js, .fl-wide): the same carousel as upright, in the
+     16:9 stage, with the sheet beside it and the roster strip under the cards. Every size has a px floor, so a
+     phone held sideways (a stage about 390 px tall) reads at 12 px and up; the sheet scrolls if it has to. */
+  #flow .fl-wide { gap: 1.2cqh; padding-top: 2.4cqh; padding-bottom: calc(8cqh + 2px); }   /* the foot clears the key legend under it */
+  #flow .fl-wide .fl-selrow { align-self: stretch; flex: 1 1 0; min-height: 0; padding: 0 3cqw; gap: 2cqw; }
+  #flow .fl-wide .fl-ringcol { flex: 1.25 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1.4cqh; }
+  #flow .fl-wide .fl-ring { margin: 0; max-height: none; min-height: 0; }
+  #flow .fl-wide .fl-card b { font-size: max(15px, 2.4cqw); letter-spacing: 0.06em; }
+  #flow .fl-wide .fl-card b.fl-long { font-size: max(13px, 2cqw); line-height: 0.9; padding: 0 0.6cqw; }
+  #flow .fl-wide .fl-card .fl-mrank { font-size: max(12px, 1.6cqw); top: 1cqh; right: 0.8cqw; }
+  #flow .fl-wide .fl-card .fl-tag, #flow .fl-wide.fl-netpick .fl-card.fl-focus::before { font-size: max(12px, 1.4cqw); padding: 0.5cqw 0.7cqw 0.3cqw; top: 1cqh; }
+  #flow .fl-wide.fl-netpick .fl-card.fl-focus .fl-tag { top: calc(2cqh + max(16px, 2.4cqw)); }
+  #flow .fl-wide .fl-ringstep.fl-prev { left: 0.6cqw; } #flow .fl-wide .fl-ringstep.fl-next { right: 0.6cqw; }
+  .fl-ringdots { display: flex; justify-content: center; gap: max(4px, 0.5cqw); flex: none; }
+  .fl-dot { --c: var(--violet); pointer-events: auto; appearance: none; margin: 0; padding: 0; cursor: pointer; width: max(14px, 1.6cqw); height: max(14px, 1.6cqw);
+    border: 2px solid color-mix(in srgb, var(--c) 70%, transparent); border-radius: 0; background: transparent; transition: transform 80ms; }
+  .fl-dot:hover { background: color-mix(in srgb, var(--c) 45%, transparent); }
+  .fl-dot.fl-on { background: var(--c); border-color: #fff; transform: scale(1.25); }
+  .fl-dot:focus { outline: none; }
+  #flow .fl-wide .fl-detail { flex: 1 1 0; width: auto; height: auto; min-height: 0; display: block; position: relative; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+    padding: 1.6cqh 1.6cqw; }
+  #flow .fl-wide .fl-detail::-webkit-scrollbar { display: none; }
+  #flow .fl-wide .fl-info { gap: 1cqh; }
+  #flow .fl-wide .fl-cname { font-size: max(20px, 3.4cqw); padding-right: 7cqw; overflow: hidden; text-overflow: ellipsis; }
+  #flow .fl-wide .fl-cname.fl-long { font-size: max(17px, 2.7cqw); }
+  #flow .fl-wide .fl-tagline { font-size: max(13px, 1.9cqw); }
+  #flow .fl-select.fl-wide .fl-mastery { position: static; }
+  #flow .fl-select.fl-wide .fl-mastery .ms-chip { max-width: none; flex-wrap: wrap; font-size: max(13px, 1.8cqw); }
+  #flow .fl-wide .fl-stats { grid-template-columns: auto 1fr auto 1fr; column-gap: 1.2cqw; row-gap: 0.8cqh; }
+  #flow .fl-wide .fl-stats span { font-size: max(12px, 1.6cqw); }
+  #flow .fl-wide .fl-stats i { min-height: 7px; }
+  #flow .fl-wide .fl-moves b, #flow .fl-wide .fl-moves em { font-size: max(14px, 2cqw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #flow .fl-wide .fl-moves small { font-size: max(12px, 1.5cqw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #flow .fl-select.fl-wide .fl-btn.fl-pal { min-height: max(40px, 6.4cqh); }
+  #flow .fl-select.fl-wide .fl-pal small { font-size: max(12px, 1.4cqw); }
+  #flow .fl-wide .fl-palnote { font-size: max(13px, 1.7cqw); }
+  #flow .fl-wide .fl-ringcount { top: 1.6cqh; right: 1.6cqw; font-size: max(14px, 2cqw); }
+  #flow .fl-wide .fl-selfoot { flex: none; }
+  #flow .fl-wide .fl-selfoot .fl-btn { min-width: 18cqw; }
+  #flow .fl-wide .fl-small { font-size: max(12px, 1.7cqw); }
+  #flow .fl-wide .fl-h2 { font-size: max(22px, 3.6cqw); }
+  #flow .fl-wide .fl-label { font-size: max(13px, 2cqw); }
+  /* a phone held sideways: the moves' notes go (MOVE LIST has them), the title and subtitle share less room */
+  @container (max-height: 520px) {
+    #flow .fl-wide .fl-moves small { display: none; }
+    #flow .fl-wide { padding-top: 1.4cqh; gap: 1cqh; }
+    /* the palette's own line goes too: each swatch's tag already says IN USE, OWNED or its price, and the sheet then
+       fits a phone sideways without scrolling (it cut MAIN · IN USE in half at 844x390) */
+    #flow .fl-wide .fl-palnote { display: none; }
+    #flow .fl-wide .fl-info { gap: 0.8cqh; }
+  }
+  @container (max-height: 400px) {
+    #flow .fl-wide .fl-info { gap: 0.4cqh; }
+    #flow .fl-wide .fl-stats { row-gap: 0.4cqh; }
+  }
+  /* the swatch's tag clear of its color bar: Teko sits high in its box, so it gets a line of its own height */
+  #flow .fl-select .fl-pal small { line-height: 1.2; padding-top: 0.15em; }
+
   /* ---- Held upright: every menu (.fl-up, set by show() above) -------------------------------------------------
      The menu leaves the 16:9 strip for the whole screen under the top buttons, like the character select. #flow is
      the container, so 1cqw is about 4 px here (a hundredth of the phone's width) and 1cqh about 8. Body text is
@@ -767,6 +973,9 @@ function injectStyle() {
      panel, CONTROLS) scroll by finger inside their own box (data-scroll, README, Controls). These rules all start
      with #flow > .fl-up, so they outrank both the stage layout above and the narrow-stage @container rules. */
   html.sq #flow:has(> .fl-up) { position: fixed; inset: 0; z-index: 19; }
+  /* the bar, held upright: in the strip beside the corner buttons, a thumb's size */
+  html.sq #flow:has(> .fl-up) > .fl-bar, html.sq #flow:has(> .fl-tall) > .fl-bar { left: max(8px, env(safe-area-inset-left)); top: var(--st, 8px); gap: 8px; --barh: 44px; }
+  html.sq #flow:has(> .fl-up) .fl-backchip, html.sq #flow:has(> .fl-tall) .fl-backchip { font-size: max(16px, 4.4cqw); }
   html.sq:has(#flow > .fl-up) .tc-stickzone, html.sq:has(#flow > .fl-up) .tc-cluster { display: none; }
   html.sq #flow > .fl-up.fl-veil { background: radial-gradient(ellipse at 50% 30%, rgba(26,8,54,0.96), rgba(5,1,12,0.985) 72%); }
   html.sq #flow > .fl-up.fl-veil::before { display: none; }
@@ -792,7 +1001,7 @@ function injectStyle() {
   #flow > .fl-up .lg-b { font-size: max(12px, 0.82em); }
   #flow > .fl-up .lg-th { font-size: max(12px, 0.85em); }
   /* the pause menu's and CONTROLS' rows are columns that hold a scrolling box: they don't wrap */
-  #flow > .fl-up > .fl-row.fl-pauserow, #flow > .fl-up > .fl-row.fl-ctlrow { flex-wrap: nowrap; justify-content: flex-start; }   /* (centered, an overflow would start above the top, out of reach) */
+  #flow > .fl-up > .fl-row.fl-pauserow { flex-wrap: nowrap; justify-content: flex-start; }   /* (centered, an overflow would start above the top, out of reach) */
   /* a box that scrolls under a finger (README, Controls, "What scrolls under a finger") */
   #flow > .fl-up [data-scroll="y"] { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; pointer-events: auto; scrollbar-width: none; min-height: 0; }
   #flow > .fl-up [data-scroll="y"]::-webkit-scrollbar { display: none; }
@@ -872,6 +1081,7 @@ function injectStyle() {
   #flow > .fl-up.fl-crew .fl-crewpair { grid-area: c; align-self: start; gap: 2.4cqw; }
   #flow > .fl-up.fl-crew .fl-crewpair + .fl-crewpair { grid-area: x; }
   #flow > .fl-up.fl-crew .fl-invite { display: flex; flex-direction: row; gap: 2cqw; }
+  #flow > .fl-up.fl-crew .fl-crewpair.fl-uponly { display: flex; } #flow > .fl-up.fl-crew .fl-crewpair.fl-uponly .fl-btn { flex: 1 1 0; }
   #flow > .fl-up.fl-crew .fl-invite .fl-icon { width: 1.05em; height: 1.05em; margin-top: -0.2em; flex: none; }
   #flow > .fl-up.fl-crew .fl-crewpair .fl-btn { min-height: 44px; font-size: max(14px, 4.2cqw); letter-spacing: 0.06em; }
   #flow > .fl-up.fl-crew .fl-crewbody > .fl-qr { grid-area: q; --qr: clamp(150px, min(72cqw, calc(100cqh - 340px)), 300px); justify-self: center; }
@@ -955,18 +1165,14 @@ function injectStyle() {
   #flow > .fl-up.fl-pause .fl-list { display: grid; grid-template-columns: 1fr 1fr; gap: max(8px, 1.1cqh) 2.4cqw; width: 100%; flex: none; }
   #flow > .fl-up.fl-pause .fl-list .fl-btn { min-height: max(52px, 6.4cqh); font-size: max(15px, 4.6cqw); padding-left: 1cqw; padding-right: 1cqw; white-space: normal; }
   #flow > .fl-up.fl-pause .fl-list .fl-btn small { font-size: max(12px, 3.2cqw); }
-  #flow > .fl-up.fl-pause .fl-viewbtn { display: flex; }
+  #flow > .fl-up.fl-pause .fl-pside { display: flex; width: 100%; flex: 0 1 auto; min-height: 0; }
+  #flow > .fl-up.fl-pause .fl-pside .fl-tech { max-height: none; }
   #flow > .fl-up.fl-pause .fl-tech { display: flex; width: 100%; flex: 0 1 auto; padding: 3cqw 3.6cqw; gap: 0.7em; }
-  #flow > .fl-up .fl-techhead { font-size: max(13px, 4.2cqw); }
+  #flow > .fl-up .fl-techhead, #flow > .fl-up .fl-ptitle { font-size: max(13px, 4.2cqw); }
   #flow > .fl-up .fl-tech b { font-size: max(15px, 4.6cqw); }
   #flow > .fl-up .fl-tech small { font-size: max(12px, 3.5cqw); line-height: 1.15; }
-  #flow > .fl-up .fl-tech.fl-ctlpanel { padding: 3cqw; }
 
   /* CONTROLS: the two tables and the notes in one column that scrolls */
-  #flow > .fl-up.fl-controls { justify-content: flex-start; }
-  #flow > .fl-up .fl-ctlrow { flex-direction: column; align-items: stretch; align-self: stretch; flex: 0 1 auto; gap: max(12px, 2cqh); }
-  #flow > .fl-up .fl-ctlcol { max-width: none; gap: max(12px, 2cqh); }
-  #flow > .fl-up .fl-ctlnote { font-size: max(12px, 3.6cqw); line-height: 1.25; }
   #flow > .fl-up .lg-table { --lg-size: max(15px, 4.2cqw); padding: 3cqw; column-gap: 0.9em; justify-content: start; }
   #flow > .fl-up .lg-table .lg-th.lg-col { font-size: max(12px, 0.7em); }
   /* three columns that share the phone's width: a long key or pad name wraps inside its cell */

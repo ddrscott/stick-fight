@@ -82,6 +82,7 @@ export function closetBody(o) {
   const list = itemsFor(ch.id, extras), rank = ranks[ch.id] || 0;
   const wearing = equipped(ch.id), on = kit(ch.id);
   const shelf = el('div', 'cl-shelf');
+  shelf.dataset.scroll = 'y';   // sideways and on a desktop the shelf scrolls in its own box, so the tabs and the head stay put
   const per = done.per[ch.id];
   const title = el('div', 'cl-stitle');
   title.append(el('b', '', ch.name), el('span', '', `${per.have} OF ${per.total} COLLECTED${rank ? `  ·  MASTERY ${rank}` : ''}`));
@@ -162,6 +163,7 @@ function injectStyle() {
   #flow .cl-tab .cl-tcount { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 1.3cqw; color: rgba(234,220,255,0.8); }
   #flow .cl-tab.cl-full .cl-tcount { color: #9dffc0; }
   #flow .cl-tab.cl-on { border-color: #ffb02e; background: rgba(255,176,46,0.16); }
+  #flow .fl-screen:not(.fl-up) .cl-shelf { max-height: 60cqh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; }
   .cl-shelf { display: flex; flex-direction: column; gap: 0.6cqh; padding: 1cqh 1.4cqw; border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.85); }
   .cl-stitle { display: flex; align-items: baseline; gap: 1.6cqw; }
   .cl-stitle b { font: 400 2.4cqw/1 'Bungee', sans-serif; color: #fff4d6; }
@@ -169,7 +171,7 @@ function injectStyle() {
   .cl-cards { display: flex; gap: 1.2cqw; }
   #flow .cl-card { flex: 1 1 0; min-width: 0; min-height: 0; padding: 0.6cqh 0.6cqw 0.4cqh; display: flex; flex-direction: column; align-items: center; gap: 0.3cqh;
     border-radius: 0; border: 2px solid rgba(214,190,255,0.35); background: rgba(4,1,10,0.6); }
-  #flow .cl-card canvas { position: static; inset: auto; width: auto; height: 22cqh; display: block; flex: none; }   /* not #stage canvas's full-bleed layer */
+  #flow .cl-card canvas { position: static; inset: auto; width: auto; height: 17cqh; display: block; flex: none; }   /* not #stage canvas's full-bleed layer */
   #flow .cl-card .cl-text { display: flex; flex-direction: column; align-items: center; gap: 0.3cqh; text-align: center; }
   #flow .cl-card .cl-name { font: 400 1.6cqw/1.1 'Bungee', sans-serif; color: #fff4d6; }
   #flow .cl-card .cl-how { font: 600 1.6cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #ffc46b; }
@@ -183,6 +185,10 @@ function injectStyle() {
   .cl-note { min-height: 1.2em; color: #fff4d6; }
   /* held upright: the tabs wrap three to a row and scroll, the cards go two to a row */
   #flow > .fl-up .cl-body { width: 100%; gap: max(6px, 1cqh); }
+  /* px floors: a phone held sideways has a stage about 390 px tall (1cqw about 7 px) */
+  .cl-head { font-size: max(13px, 2.2cqw); } #flow .cl-tab { font-size: max(12px, 1.5cqw); } #flow .cl-tab .cl-tcount { font-size: max(12px, 1.3cqw); }
+  .cl-stitle b { font-size: max(15px, 2.4cqw); } .cl-stitle span, .cl-kind { font-size: max(12px, 1.8cqw); }
+  #flow .cl-card .cl-name { font-size: max(12px, 1.6cqw); } #flow .cl-card .cl-how { font-size: max(12px, 1.6cqw); }
   #flow > .fl-up .cl-head { font-size: max(13px, 4cqw); flex-wrap: wrap; gap: 0.4em 1em; }
   #flow > .fl-up .cl-tabs { grid-template-columns: repeat(3, 1fr); max-height: 25vh; overflow-y: auto; gap: 6px; }
   #flow > .fl-up .cl-tab { font-size: max(13px, 3.8cqw); min-height: 44px; }
@@ -195,7 +201,7 @@ function injectStyle() {
   #flow > .fl-up .cl-card { flex-direction: row; justify-content: flex-start; gap: 2cqw; padding: 4px 2cqw; min-height: 64px; }
   #flow > .fl-up .cl-card canvas { height: max(56px, 7vh); }
   #flow > .fl-up .cl-card .cl-text { align-items: flex-start; text-align: left; min-width: 0; }
-  #flow > .fl-up .cl-card .cl-name { font-size: max(11px, 3.2cqw); }
+  #flow > .fl-up .cl-card .cl-name { font-size: max(12px, 3.2cqw); }
   #flow > .fl-up .cl-card .cl-how { font-size: max(12px, 3.4cqw); }
   `;
   const st = document.createElement('style'); st.id = 'closet-style'; st.textContent = css;

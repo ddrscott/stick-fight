@@ -735,7 +735,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     const cls = typeof document !== 'undefined' ? document.documentElement.classList : null;
     const padUI = !!cls && cls.contains('pad-ui');
     const touchUI = !!cls && cls.contains('touch-ui') && !padUI;   // a pad hides the touch buttons, so the hints come back
-    if (!touchUI && !help) {
+    if (!touchUI && !help && !paused) {   // paused, the pause menu's own legend names the keys
       // the hint sits in the bottom corner, and steps aside for a fighter
       let hintText = flow ? flow.hint : padUI ? 'R3  HORDE     START  PAUSE' : 'F1  MOVES     G  HORDE';
       if (hintText && !padUI && cls.contains('fs-ok')) hintText += '     F11  FULLSCREEN';   // src/fullscreen.js: only where F11 can do it

@@ -137,10 +137,10 @@ try {
         const vis = (n) => !!n && n.getBoundingClientRect().width > 0;
         const btns = [...document.querySelectorAll('#flow .fl-crew .fl-btn')].filter(vis).map((b) => b.textContent.trim());
         const list = document.querySelector('#flow .fl-standings').getBoundingClientRect().height;
-        return { btns, list, h: innerHeight, qr: vis(document.querySelector('#flow .fl-qrtile')), link: vis(document.querySelector('#flow .fl-crew .fl-link')), me: (document.querySelector('#flow .fl-crewme') || {}).textContent || '' };
+        return { btns, chip: (document.querySelector('.fl-backchip') || {}).textContent || '', list, h: innerHeight, qr: vis(document.querySelector('#flow .fl-qrtile')), link: vis(document.querySelector('#flow .fl-crew .fl-link')), me: (document.querySelector('#flow .fl-crewme') || {}).textContent || '' };
       });
       check('upright: no QR code or link until INVITE', !up.qr && !up.link, JSON.stringify(up));
-      check('upright: the only way out is MAIN MENU', up.btns.includes('MAIN MENU') && !up.btns.includes('ONLINE MENU'), up.btns.join(', '));
+      check('upright: the only way out is the corner\'s ‹ MAIN MENU', up.chip === 'MAIN MENU' && !up.btns.includes('ONLINE MENU') && !up.btns.includes('BACK'), `${up.chip} | ${up.btns.join(', ')}`);
       check('upright: the crew list gets at least half the screen', up.list >= up.h / 2, `${Math.round(up.list)} of ${up.h} px`);
       check('upright: a handed-out name says SET YOUR NAME', /SET YOUR NAME/.test(up.me), up.me);
       // the list is who's here and who's ready: rank, name, W, L, and a READY / PLAYING chip that always shows whole

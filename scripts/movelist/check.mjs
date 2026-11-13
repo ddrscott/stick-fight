@@ -178,7 +178,8 @@ for (const [w, h, label] of ONLY ? [] : [[844, 390, 'phone sideways'], [390, 844
   const f1 = (await page.evaluate(look)).top; await sleep(700);
   const f2 = (await page.evaluate(look)).top;
   ok(f2 > b.top + v.list.h * 0.5 + 20 || f2 > f1 + 5, `${T} a flick carries on with momentum`, `finger moved ${Math.round(v.list.h * 0.5)} px, list moved ${Math.round(f2 - b.top)}`);
-  // a tap selects
+  // a tap selects (once the flick has come to rest: a tap during the glide catches the list, as on a phone)
+  for (let i = 0, last = -1; i < 30; i++) { const t = (await page.evaluate(look)).top; if (Math.abs(t - last) < 0.5) break; last = t; await sleep(100); }
   a = await page.evaluate(look);
   const target = await page.evaluate(() => { const l = document.querySelector('.ml-list').getBoundingClientRect(); const rows = [...document.querySelectorAll('.ml-row')]; const k = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return b.top > l.top + 20 && b.bottom < l.bottom - 20 && !r.classList.contains('ml-cur'); }); const b = rows[k].getBoundingClientRect(); return { k, x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
   await page.touchscreen.tap(target.x, target.y); await sleep(300);
@@ -244,25 +245,26 @@ for (const [w, h, label] of ONLY ? [] : [[844, 390, 'phone sideways'], [390, 844
     await page.touchscreen.tap(cl[0], cl[1]); await sleep(400);
   }
 
-  // ---- the SETTINGS panel ----
+  // ---- SETTINGS: a full-screen page; its middle scrolls by finger, and a volume bar still drags ----
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:settings'))); await sleep(700);
-  const sp = () => page.evaluate(() => { const p = document.querySelector('.sf-panel'), r = p.getBoundingClientRect(), rail = p.querySelector('.sf-rail').getBoundingClientRect(); return { top: p.scrollTop, max: p.scrollHeight - p.clientHeight, box: { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }, rail: { l: rail.left, t: rail.top, w: rail.width, h: rail.height, b: rail.bottom, r: rail.right }, vh: innerHeight, vol: p.querySelector('.sf-slider .sf-val, .sf-slider output, .sf-slider b') ? p.querySelector('.sf-slider').textContent.replace(/\s+/g, ' ') : '' }; });
+  await page.evaluate(() => document.querySelector('.sf-tab[data-t="controls"]').click()); await sleep(400);
+  const sp = () => page.evaluate(() => { const p = document.querySelector('.sf-panel'), r = p.getBoundingClientRect(), m = p.querySelector('.sf-body'), mr = m.getBoundingClientRect(); return { top: m.scrollTop, max: m.scrollHeight - m.clientHeight, page: { l: r.left, t: r.top, r: r.right, b: r.bottom }, box: { l: mr.left, t: mr.top, w: mr.width, h: mr.height, b: mr.bottom }, vw: innerWidth, vh: innerHeight, state: window.__flow.state }; });
   let s = await sp();
-  ok(s.box.t >= -1 && s.box.b <= s.vh + 1, `${T} the SETTINGS panel is inside the screen`, `${Math.round(s.box.t)} to ${Math.round(s.box.b)} of ${s.vh}`);
+  ok(s.page.l <= 0.5 && s.page.t <= 0.5 && s.page.r >= s.vw - 0.5 && s.page.b >= s.vh - 0.5, `${T} SETTINGS covers the whole screen`, `${Math.round(s.page.l)},${Math.round(s.page.t)} to ${Math.round(s.page.r)},${Math.round(s.page.b)}`);
+  ok(s.state === 'paused', `${T} the game stays paused under it`);
   if (s.max > 2) {
-    await page.drag(s.box.l + 7, s.box.t + s.box.h * 0.85, 0, -s.box.h * 0.6);
+    await page.drag(s.box.l + s.box.w * 0.5, s.box.t + s.box.h * 0.85, 0, -s.box.h * 0.6);
     const s2 = await sp();
-    ok(s2.top > 2, `${T} SETTINGS is taller than the screen, and a drag scrolls it`, `${Math.round(s.max)} px hidden, scrollTop ${Math.round(s2.top)}`);
+    ok(s2.top > 2, `${T} CONTROLS is taller than the screen, and a drag scrolls it`, `${Math.round(s.max)} px hidden, scrollTop ${Math.round(s2.top)}`);
     await shot('settings-scrolled');
-    await page.drag(s.box.l + s.box.w * 0.5, s.box.t + s.box.h * 0.3, 0, s.box.h * 0.6);
-  } else ok(true, `${T} SETTINGS fits, nothing to scroll`, `${Math.round(s.box.h)} px tall`);
-  // a slider is still a slider: a sideways drag on its rail moves the value and not the panel
-  s = await sp();
-  if (s.rail.t > s.box.t && s.rail.b < s.box.b) {
-    await page.drag(s.rail.l + s.rail.w * 0.5, s.rail.t + s.rail.h / 2, -s.rail.w * 0.3, 0); const t1 = (await sp()).vol;
-    await page.drag(s.rail.l + s.rail.w * 0.2, s.rail.t + s.rail.h / 2, s.rail.w * 0.5, 0); const s3 = await sp();
-    ok(t1 !== s3.vol && Math.abs(s3.top - s.top) < 2, `${T} a slider still drags, and doesn't scroll the panel`, `${t1.trim().slice(0, 30)} / ${s3.vol.trim().slice(0, 30)}`);
-  }
+  } else ok(true, `${T} CONTROLS fits, nothing to scroll`);
+  // a volume bar is still a slider: a sideways drag on it moves the level and not the page
+  await page.evaluate(() => document.querySelector('.sf-tab[data-t="audio"]').click()); await sleep(300);
+  const bar = await page.evaluate(() => { const r = document.querySelector('.sf-opt[data-o="sfxVolume"] .sf-bar').getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
+  const lvl = () => page.evaluate(() => document.querySelector('.sf-opt[data-o="sfxVolume"] .sf-num').textContent);
+  const lv0 = await lvl(), top0 = (await sp()).top;
+  await page.drag(bar.l + bar.w * 0.8, bar.t + bar.h / 2, -bar.w * 0.6, 0);
+  ok(await lvl() !== lv0 && Math.abs((await sp()).top - top0) < 2, `${T} a volume bar drags, and doesn't scroll the page`, `${lv0} to ${await lvl()}`);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:settings'))); await sleep(300);
   await ctx.close();
 }
@@ -273,13 +275,14 @@ if (!ONLY) {
   const { ctx, page } = await open(w, h, true);
   await page.evaluate(() => window.__flow.debug.go('modeSelect')); await sleep(400);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:settings'))); await sleep(700);
-  const sp = () => page.evaluate(() => { const p = document.querySelector('.sf-panel'), r = p.getBoundingClientRect(), c = p.querySelector('.sf-close').getBoundingClientRect(), kids = [...p.children], end = kids[kids.length - 1].getBoundingClientRect(); return { top: p.scrollTop, max: p.scrollHeight - p.clientHeight, box: { l: r.left, t: r.top, w: r.width, h: r.height, b: r.bottom }, end: end.bottom, close: [c.left + c.width / 2, c.top + c.height / 2], still: [scrollX, scrollY, document.scrollingElement.scrollTop].join(',') }; });
+  await page.evaluate(() => document.querySelector('.sf-tab[data-t="audio"]').click()); await sleep(300);
+  const sp = () => page.evaluate(() => { const m = document.querySelector('.sf-panel .sf-body'), r = m.getBoundingClientRect(), page = [...m.querySelectorAll('.sf-page.sf-show > *')], end = page[page.length - 1].getBoundingClientRect(); return { top: m.scrollTop, max: m.scrollHeight - m.clientHeight, box: { l: r.left, t: r.top, w: r.width, h: r.height, b: r.bottom }, end: end.bottom, still: [scrollX, scrollY, document.scrollingElement.scrollTop].join(',') }; });
   let s = await sp();
-  ok(s.max > 20, `${T} SETTINGS is taller than the screen`, `${Math.round(s.max)} px hidden`);
-  // down the panel's left edge, clear of the sliders (a drag that starts on a slider is the slider's)
-  for (let i = 0; i < 6; i++) await page.drag(s.box.l + 7, s.box.t + s.box.h * 0.8, 0, -s.box.h * 0.6);
+  ok(s.max > 20, `${T} AUDIO is taller than what's left of the screen`, `${Math.round(s.max)} px hidden`);
+  // down the rows' left side, clear of the volume bars (a drag that starts on one is the bar's)
+  for (let i = 0; i < 6; i++) await page.drag(s.box.l + 20, s.box.t + s.box.h * 0.8, 0, -s.box.h * 0.6);
   const s2 = await sp();
-  ok(s2.top >= s2.max - 1 && s2.end <= s2.box.b + 1, `${T} a finger drag scrolls it to its last line`, `scrollTop ${Math.round(s2.top)} of ${Math.round(s2.max)}`);
+  ok(s2.top >= s2.max - 1 && s2.end <= s2.box.b + 12, `${T} a finger drag scrolls it to its last line`, `scrollTop ${Math.round(s2.top)} of ${Math.round(s2.max)}`);
   ok(s2.still === '0,0,0', `${T} and the page under it stays put`);
   if (OUT) await page.screenshot({ path: path.join(OUT, `${w}x${h}-settings-bottom.png`) });
   await ctx.close();
@@ -347,6 +350,14 @@ if (!ONLY) {
     let v = await page.evaluate(look);
     ok(!!v, `${T} F1 opens the MOVE LIST from the ${from}`);
     if (!v) continue;
+    // back is the top-left ‹ chip naming where closing goes, and the legend says the same (round 2 of [t55b8f])
+    const chip = await page.evaluate(() => { const c = document.querySelector('.ml-close'), r = c.getBoundingClientRect(); return { text: c.textContent.trim(), l: r.left, t: r.top, leg: document.querySelector('.ml-legend').textContent }; });
+    const where = from === 'pause menu' ? 'PAUSE MENU' : 'FIGHTERS';
+    ok(chip.text === where && chip.l < 60 && chip.t < 60 && chip.leg.includes(where), `${T} ${from}: the top-left chip says ‹ ${where}, and so does the legend`, `"${chip.text}" at ${Math.round(chip.l)},${Math.round(chip.t)}; legend "${chip.leg}"`);
+    await page.keyboard.press('KeyE'); await sleep(250);
+    const tabbed = await page.evaluate(() => [...document.querySelectorAll('.ml-tabbtn')].findIndex((b) => b.classList.contains('ml-on')));
+    ok(tabbed === 1, `${T} ${from}: E (RB on a pad) jumps to the next section`, `tab ${tabbed}`);
+    await page.keyboard.press('KeyQ'); await sleep(250); v = await page.evaluate(look);
     await page.mouse.move(...mid(v.list));
     await page.mouse.wheel(0, 300); await sleep(300);
     let a = await page.evaluate(look);

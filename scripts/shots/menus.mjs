@@ -10,14 +10,15 @@
 // crewLinking, the NO CREW AT THAT LINK notice; then the online menu, profile, name and sign-in screens, onlineHost
 // (its QR read back with jsQR from the screenshot), onlineJoin, onlineConnecting and NO ROOM WITH THAT CODE, a real
 // room with a rival page (onlineSelect, the LEAVE confirm, onlinePost, the rival leaving), the LIVE list and the
-// watch view; then the title, SETTINGS, mode select, character select, CONTROLS, high scores, an arcade run
+// watch view; then the title, SETTINGS (each tab), mode select, character select, high scores, an arcade run
 // (stage card, pause, pause panel, MOVE LIST, stage clear, continue, game over, initials, the ending) and the
 // home-screen how-to and the update pill. The crew and room screens need the Worker: a page URL whose ../api/
 // reaches it (Vite proxies it; SF_WORKER=http://127.0.0.1:<port> points the proxy at another port).
 //
 // For each screen it reports, and --check exits 1 on: anything a player reads or presses that is cut off by the
-// screen (or the stage, for screens that live in it), overlapping another, or under the top buttons, the HUD band
-// or the touch controls; and, held upright only, text under 12 CSS px and tap targets under 40 px tall. Lists that
+// screen (or the stage, for screens that live in it) or by its box at the side, running past a bordered box, in a
+// box that scrolls sideways, overlapping another, or under the top buttons, the HUD band or the touch controls; text
+// under 12 CSS px at every size; and, held upright only, tap targets under 40 px tall. Lists that
 // scroll (data-scroll) are judged by their box, not their rows. Pictures go to --out (default gauntlet/tmp/shots;
 // with --check, only when --out is given), named <size>-<nn>-<state>.png.
 import fs from 'node:fs';
@@ -110,6 +111,7 @@ function audit({ upright, textMin, tapMin }) {
     const all = [root, ...root.querySelectorAll('*')];
     for (const n of all) {
       if (n.closest('.lg-bar') && !document.documentElement.matches('.dev-key, .dev-pad')) continue;
+      if (n.closest('.sf-tcview')) continue;   // SETTINGS, CONTROLS: a scaled-down picture of the touch controls, not controls
       const press = n.matches('button, .fl-btn, .nf-btn, [role="button"], input, .fl-slot b') && !n.matches('.fl-off');
       const text = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
       if (!press && !text) continue;
@@ -154,10 +156,36 @@ function audit({ upright, textMin, tapMin }) {
           ta = { l: ta.l, r: ta.r, t: mid - half, b: mid + half };
         }
       }
+      // text that runs past the bordered box it sits in (a table wider than its panel), or a box that hides what it
+      // can't fit sideways with no ellipsis to say so (it would scroll sideways, which nothing here should)
+      if (ta && !n.closest('.fl-ring, .fl-roll, .sf-tcview')) {
+        for (let e = n.parentElement; e && e !== root.parentElement; e = e.parentElement) {
+          const o = getComputedStyle(e);
+          if (!(parseFloat(o.borderLeftWidth) > 0 && parseFloat(o.borderRightWidth) > 0)) continue;
+          const eb = R(e.getBoundingClientRect());
+          if (ta.l < eb.l - 1 || ta.r > eb.r + 1) out.push(`RUNS PAST ITS BOX ${name(n)} ${fmt(ta)} (in ${fmt(eb)})`);
+          break;
+        }
+      }
       items.push({ n, a: ta || a, box: box, press, text, scr, sc });
     }
   }
   const owners = new Set(items.map((i) => i.n));
+  // a box that scrolls sideways (or hides what runs past its side): every list here scrolls up and down only
+  for (const { root } of roots) for (const e of [root, ...root.querySelectorAll('*')]) {
+    if (!shown(e) || e.closest('.fl-ring, .fl-roll, .sf-tcview, .fl-ringdots, [data-scroll="x"]')) continue;   // (a strip made to scroll sideways, like the move list's tabs, is fine)
+    const o = getComputedStyle(e);
+    if (o.overflowX === 'visible' || o.textOverflow === 'ellipsis' || o.whiteSpace === 'nowrap' && o.textOverflow === 'ellipsis') continue;
+    if (e.scrollWidth > e.clientWidth + 2 && e.clientWidth > 0 && [...e.querySelectorAll('*')].some((k) => shown(k) && k.getBoundingClientRect().right > e.getBoundingClientRect().right + 2 && [...k.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && getComputedStyle(k).textOverflow !== 'ellipsis'))
+      out.push(`SCROLLS SIDEWAYS ${name(e)} ${e.scrollWidth} in ${e.clientWidth}`);
+  }
+  // a box that scrolls with rows hidden past its bottom edge must say so: src/scrollcue.js fades the edge (sc-more),
+  // so a cut-off list never reads as the end of the page (round 2 of [t55b8f]: SETTINGS showed no sign it scrolled)
+  for (const e of document.querySelectorAll('[data-scroll="y"]')) {
+    if (!shown(e) || e.clientHeight < 20) continue;
+    const room = e.scrollHeight - e.clientHeight;
+    if (room > 4 && e.scrollTop < room - 2 && !e.classList.contains('sc-more')) out.push(`NO SCROLL CUE ${name(e)} ${e.scrollHeight} in ${e.clientHeight}`);
+  }
   // is the blocker drawn over the item where they meet (an open panel covers the corner buttons, not the other way)
   function above(bl, n, c) {
     const st = document.elementsFromPoint((c.l + c.r) / 2, (c.t + c.b) / 2);
@@ -169,14 +197,49 @@ function audit({ upright, textMin, tapMin }) {
     const chk = it.scr || a;
     if (chk.l < box.l - 1 || chk.t < box.t - 1 || chk.r > box.r + 1 || chk.b > box.b + 1) out.push(`CUT OFF ${name(n)} ${fmt(chk)} (in ${fmt(box)})`);
     for (const bl of blockers) if (!bl.n.contains(n) && area(cut(a, bl.a)) > 4 && above(bl.n, n, cut(a, bl.a))) out.push(`UNDER ${bl.n.id || bl.n.className.split(' ')[0]} ${name(n)} ${fmt(a)}`);
+    // the 12 px floor holds at every size: upright, sideways and on a desktop (README, Menus, "Text floors")
+    if (it.text && !n.closest('.sf-tcview')) {
+      const z = n.currentCSSZoom || 1;
+      const px = parseFloat(getComputedStyle(n).fontSize) * z;
+      if (px < textMin - 0.25) out.push(`TEXT ${px.toFixed(1)}px ${name(n)}`);
+    }
     if (upright) {
-      if (it.text) {
-        const z = n.currentCSSZoom || 1;
-        const px = parseFloat(getComputedStyle(n).fontSize) * z;
-        if (px < textMin - 0.25) out.push(`TEXT ${px.toFixed(1)}px ${name(n)}`);
-      }
       if (it.press && !it.n.matches('.fl-slot b') && (r => r.height < tapMin - 0.5)(n.getBoundingClientRect()) && !(n.parentElement && owners.has(n.parentElement) && n.parentElement.matches('button, .fl-btn')))
         out.push(`TAP ${Math.round(n.getBoundingClientRect().width)}x${Math.round(n.getBoundingClientRect().height)} ${name(n)}`);
+    }
+  }
+  // what a screen asks is always in view (round 3 of [t55b8f]: STAGE CLEAR's NEXT STAGE and CONTINUE?'s YES sat below the
+  // fold of a screen that scrolled as a whole). Every button of the flow's screen that isn't a row of a list that scrolls
+  // in its own box has to be inside the view as the screen opens, and so does its legend when it has one: on every screen
+  // that decides what's next (a result, a countdown, the pause menu, the stage card, the online post-match); on the rest
+  // (a long MAIN MENU on a short phone, the closet) the button the screen opens on.
+  const ui = window.__flow && window.__flow.debug.ui;
+  if (ui && scr && !overlayUp) {
+    const view = cut(roots[0].box, screen);
+    const decides = scr.matches('.fl-clear, .fl-continue, .fl-gameover, .fl-ending, .fl-pause, .fl-stage, .fl-post, .fl-onlineend, .fl-initials') || !!scr.querySelector('[data-squeeze]');
+    for (const [k, it] of ui.items.entries()) {
+      if (!decides && k !== ui.focus) continue;
+      const e = it.el;
+      if (!shown(e) || e.offsetParent === null) continue;
+      const inner = e.parentElement && e.parentElement.closest('[data-scroll], .fl-ring');
+      if (inner && inner !== scr) continue;
+      const a = R(e.getBoundingClientRect());
+      if (!a.r || a.t < view.t - 1 || a.b > view.b + 1) out.push(`OUT OF VIEW ${name(e)} ${fmt(a)} (view ${fmt(view)})`);
+    }
+    const lg = scr.querySelector(':scope > .lg-bar');
+    if (lg && document.documentElement.matches('.dev-key, .dev-pad') && !shown(lg)) out.push('LEGEND HIDDEN (the screen scrolls as a whole)');
+  }
+  // a bordered box (a panel, a list's frame) under a corner button: its edge reads as cut (round 3: the pause screen's
+  // TECHNIQUES box under the fullscreen pill at 667x375)
+  for (const { root, overlay } of roots) {
+    if (overlay || overlayUp) continue;
+    for (const e of root.querySelectorAll('*')) {
+      if (!shown(e) || e.closest('.lg-bar, .sf-tcview')) continue;
+      const o = getComputedStyle(e);
+      if (!(parseFloat(o.borderTopWidth) > 0 && parseFloat(o.borderRightWidth) > 0 && parseFloat(o.borderLeftWidth) > 0)) continue;
+      const a = R(e.getBoundingClientRect());
+      if (!area(a)) continue;
+      for (const bl of blockers) if (!bl.n.contains(e) && bl.n.closest('.sf-corner, .tc-top') && area(cut(a, bl.a)) > 4) out.push(`BOX UNDER ${bl.n.className.split(' ')[0] || bl.n.tagName} ${name(e)} ${fmt(a)}`);
     }
   }
   // overlaps: two things a player reads or presses, neither inside the other, drawn over each other
@@ -472,25 +535,56 @@ for (const size of SIZES) {
   await open(URL_, { 'stick-fight-player': player('SCOTT') });
   const panel = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:settings')));
   await shot('title');
-  await panel(); await shot('title-settings', 2500); await panel(); await sleep(400);
+  // SETTINGS, every tab (it's a page of its own: each tab is checked like a screen)
+  const tab = (t) => page.evaluate((x) => document.querySelector(`.sf-tab[data-t="${x}"]`).click(), t);
+  await panel(); await shot('title-settings', 2500);
+  for (const t of ['controls', 'audio', 'display']) { await tab(t); await shot(`settings-${t}`, 400); }
+  await tab('game');
+  // Q and E (the pad's LB and RB) switch the tab from anywhere on the page
+  {
+    const on = () => page.evaluate(() => document.querySelector('.sf-tab.sf-on').dataset.t);
+    await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('KeyE'); await sleep(100);
+    const a = await on(); await page.keyboard.press('KeyE'); await page.keyboard.press('KeyQ'); await page.keyboard.press('KeyQ'); await page.keyboard.press('KeyQ'); await sleep(100);
+    const b = await on();
+    if (a !== 'controls' || b !== 'display') report('settings-tabkeys', [`Q/E TABS: E went to ${a} (want controls), E Q Q Q to ${b} (want display)`]);
+    await tab('game');
+  }
+  await panel(); await sleep(400);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:homescreen')));
   if (await page.$('.sf-hs')) { await shot('title-howto', 600); await page.keyboard.press('Escape'); await page.evaluate(() => document.querySelectorAll('.sf-hs').forEach((n) => n.remove())); }
   await go('modeSelect'); await shot('modeSelect');
-  await go('attract', 'controls'); await shot('controls');
-  await go('attract'); await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /HIGH SCORES/.test(i.el.textContent)); it && it.act(); }); await shot('highScores');
+  // MAIN MENU by the keys: down visits every row of the left column in order, one a press, and up comes back the same
+  // way, through whichever half of SUPPLY CLOSET / HIGH SCORES you went down by (round 2 of [t55b8f])
+  {
+    const lit = () => page.evaluate(() => { const ui = window.__flow.debug.ui; return ui.focus < 0 ? '' : (ui.items[ui.focus].el.firstChild.textContent || '').trim(); });
+    const walk = async (keys) => { const seen = []; for (const k of keys) { await page.keyboard.press(k); await sleep(60); seen.push(await lit()); } return seen.join(' > '); };
+    await page.evaluate(() => window.__flow.debug.ui.setFocus(0)); await sleep(100);
+    const want = [
+      [['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown'], 'VERSUS ONLINE > HORDE > TRAINING > SUPPLY CLOSET > SETTINGS'],
+      [['ArrowUp', 'ArrowUp', 'ArrowUp'], 'SUPPLY CLOSET > TRAINING > HORDE'],
+      [['ArrowDown', 'ArrowDown', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'ArrowUp'], 'TRAINING > SUPPLY CLOSET > HIGH SCORES > SETTINGS > HIGH SCORES > TRAINING'],
+    ];
+    for (const [keys, path] of want) { const got = await walk(keys); if (got !== path) report('modeSelect-keys', [`KEY WALK ${keys.join(' ')}: ${got} (want ${path})`]); }
+    await page.evaluate(() => window.__flow.debug.ui.setFocus(0));
+  }
+  await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /HIGH SCORES/.test(i.el.textContent)); it && it.act(); }); await shot('highScores');
   await go('modeSelect');
   await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
   await shot('charSelect', 900);
   await page.keyboard.press('F1'); await shot('charSelect-movelist', 700); await page.keyboard.press('Escape'); await sleep(300);
   await page.evaluate(() => window.__flow.debug.pickChar(window.__flow.debug.sel.player));
-  if (await at('stageIntro', 5000)) await shot('stageIntro', 700);
+  if (await at('stageIntro', 5000)) {
+    await shot('stageIntro', 700);
+    // SETTINGS over the stage card holds it: no fight starts under the page (round 2 of [t55b8f])
+    await panel(); await sleep(4200);
+    const st = await state(); if (st !== 'stageIntro') report('stageIntro-settings', [`THE FLOW MOVED ON UNDER SETTINGS: ${st}`]);
+    await panel(); await sleep(300);
+  }
   await go('fighting'); await sleep(1500);
   await shot('fighting', 300);
   await page.keyboard.press('KeyP');
   if (await at('paused', 3000)) {
     await shot('paused');
-    await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /SHOW CONTROLS|SHOW TECHNIQUES/.test(i.el.textContent)); it && it.act(); });
-    await shot('paused-controls', 300);
     await panel(); await shot('paused-settings', 2500); await panel(); await sleep(400);
     await page.keyboard.press('F1'); await shot('paused-movelist', 700); await page.keyboard.press('Escape'); await sleep(300);
     await page.keyboard.press('KeyP'); await at('fighting', 3000);
@@ -510,12 +604,52 @@ for (const size of SIZES) {
     await until(async () => ['continue', 'fighting'].includes(await state()), 9000);
     await sleep(2600);
   }
-  if (await at('continue', 9000)) {
+  // each step says when it isn't reached (round 3 of [t55b8f]: the tour stopped at CONTINUE? without a word). The
+  // countdown is run out through the debug clock (it takes 16 s of wall clock headless), and GAME OVER's way on is
+  // pressed, so it's named by where it goes: SIGN THE TABLE (a score makes the table) or HIGH SCORES
+  const label0 = () => page.evaluate(() => { const ui = window.__flow.debug.ui; return ui.items[0] ? (ui.items[0].el.firstChild.textContent || '').trim() : ''; });
+  const step = async (s, ms = 6000) => { const ok = await at(s, ms); if (!ok) report(s, [`never got there (${await state()})`]); return ok; };
+  if (await step('continue', 9000)) {
     await shot('continue', 300);
-    if (await at('gameOver', 14000)) await shot('gameOver', 300);
-    if (await at('enterInitials', 9000)) { await shot('enterInitials'); await page.keyboard.press('Enter'); }
-    if (await at('highScores', 6000)) await shot('highScores-new');
-  } else report('continue', [`never got there (${await state()})`]);
+    await page.evaluate(() => { window.__flow.debug.t = 9.95; });
+    if (await step('gameOver')) {
+      await shot('gameOver', 300);
+      await sleep(600);
+      const way = await label0();
+      if (way !== 'SIGN THE TABLE') report('gameOver', [`WAY ON "${way}" (want SIGN THE TABLE: a first score makes the table)`]);
+      await page.evaluate(() => window.__flow.debug.ui.items[0].act());
+      if (await step('enterInitials')) { await shot('enterInitials'); await page.keyboard.press('Enter'); }
+      if (await step('highScores')) {
+        await shot('highScores-new');
+        if (await label0() !== 'TITLE') report('highScores-new', [`WAY ON "${await label0()}" (want TITLE)`]);
+      }
+    }
+  }
+  // the pause menu's run-ending choices ask first, NO lit, and Esc is NO
+  await go('attract', 'modeSelect');
+  await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
+  await sleep(500);
+  await page.evaluate(() => window.__flow.debug.pickChar(window.__flow.debug.sel.player));
+  if (await step('stageIntro')) {
+    await go('fighting'); await sleep(500);
+    await page.keyboard.press('Escape');
+    if (await step('paused', 3000)) {
+      const press = (re) => page.evaluate((src) => { const ui = window.__flow.debug.ui; const k = ui.items.findIndex((i) => new RegExp(src).test(i.el.textContent)); ui.setFocus(k); ui.activate(); }, re);
+      const asked = () => page.evaluate(() => ({ q: (document.querySelector('#flow .fl-ask .fl-h2') || {}).textContent || '', lit: window.__flow.debug.ui.items[window.__flow.debug.ui.focus]?.el.textContent || '' }));
+      await press('^MAIN MENU'); await sleep(200);
+      const a = await asked();
+      if (a.q !== 'QUIT TO MAIN MENU?' || a.lit !== 'NO') report('paused-quit', [`MAIN MENU ASKED "${a.q}" WITH "${a.lit}" LIT (want QUIT TO MAIN MENU? with NO)`]);
+      else await shot('paused-quit');
+      await page.keyboard.press('Escape'); await sleep(200);
+      const b = await asked(); const st = await state();
+      if (b.q || st !== 'paused' || !/^MAIN MENU/.test(b.lit)) report('paused-quit', [`ESC ON THE CONFIRM: ${st}, "${b.q}", cursor on "${b.lit}" (want PAUSED, on MAIN MENU)`]);
+      await press('^RESTART STAGE'); await sleep(200);
+      const c = await asked();
+      if (c.q !== 'RESTART STAGE?') report('paused-restart', [`RESTART STAGE ASKED "${c.q}"`]);
+      await page.keyboard.press('ArrowRight'); await page.keyboard.press('Enter'); await sleep(200);
+      if (await state() !== 'stageIntro') report('paused-restart', [`YES WENT TO ${await state()} (want stageIntro)`]);
+    }
+  }
   // the ending: the last stage cleared
   await go('attract', 'modeSelect');
   await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
@@ -524,10 +658,19 @@ for (const size of SIZES) {
   await at('stageIntro', 5000);
   await page.evaluate(() => { const d = window.__flow.debug; d.run.stage = d.run.ladder.length - 1; d.run.continues = 1; });   // (a continue: no secret stage)
   await go('fighting'); await sleep(600);
-  for (let i = 0; i < 6 && (await state()) !== 'stageClear'; i++) { await page.evaluate(() => window.__flow.debug.debugKO(0)); await sleep(3200); }
-  if (await at('stageClear', 9000)) {
+  for (let i = 0; i < 6 && (await state()) !== 'stageClear'; i++) {
+    await page.evaluate(() => window.__flow.debug.debugKO(0));
+    await until(async () => ['stageClear', 'fighting'].includes(await state()), 9000);
+    await sleep(2600);
+  }
+  if (await step('stageClear', 9000)) {
+    await sleep(600);
+    if (await label0() !== 'THE ENDING') report('stageClear-boss', [`WAY ON "${await label0()}" (want THE ENDING after the boss, with a continue used)`]);
     await page.evaluate(() => { const it = window.__flow.debug.ui.items[0]; it && it.act(); });
-    if (await at('ending', 6000)) await shot('ending', 4000); else report('ending', [`never got there (${await state()})`]);
+    if (await step('ending')) {
+      await shot('ending', 4000);
+      if (!/^(SIGN THE TABLE|HIGH SCORES)$/.test(await label0())) report('ending', [`WAY ON "${await label0()}"`]);
+    }
   }
   // the update pill on a menu: version.json says a newer build is out
   await page.route('**/version.json*', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ build: 'newer', at: '' }) }));

@@ -8,11 +8,12 @@
 //   the screen takes the whole phone and everything on it is inside the viewport; the cards and the sheet are
 //   a readable size; a slow drag of one card's width moves one card and picks nothing; a flick carries on past
 //   the finger; a tap on a side card brings it to the middle and picks nothing; › and ‹ step one and wrap all
-//   the way round; ← on the first fighter goes to the last and → on the last to the first; ↓ goes to PICK and
-//   ↑ comes back; a tap on the middle card picks it; turning the phone rebuilds the screen with the same
+//   the way round; ← on the first fighter goes to the last and → on the last to the first; ↓ goes to the look in
+//   use, then PICK, and ↑ comes back the same way; a tap on the middle card picks it; turning the phone rebuilds the screen with the same
 //   fighter under the cursor, both ways.
-// Sideways (844x390) and desktop (1280x720): the grid as before, with ← on the first fighter going to the last,
-//   → on the last going to the first, and → inside a row still the card beside it.
+// Sideways (844x390) and desktop (1280x720): the same carousel (.fl-wide) with the sheet beside it, ← on the first
+//   fighter going to the last and → on the last to the first, ↓ to the look in use and on to PICK, ↑ back to the
+//   middle card, the roster strip under it jumping to a fighter, and (desktop) the wheel stepping it.
 // With --online <the local Worker's play/ address> (npm run build && npm run dev:worker first), a host on a
 //   desktop and a guest on an upright phone in a real room: the rival's tag on the guest's carousel, a swipe
 //   onto it, the host seeing the guest's cursor, and a tap on the middle card locking it in.
@@ -153,7 +154,11 @@ for (const [w, h] of [[390, 844], [412, 915], [375, 667], [395, 700], [412, 640]
   await page.key('ArrowRight');
   ok(await at() === 0, `${tag} → on the last goes to the first (${await page.who()})`);
   await page.key('ArrowDown');
-  ok(await page.focused() === 'PICK', `${tag} ↓ goes to PICK (${await page.focused()})`);
+  ok(/IN USE/.test(await page.focused()), `${tag} ↓ goes to the look in use (${await page.focused()})`);
+  await page.key('ArrowDown');
+  ok(await page.focused() === 'PICK', `${tag} ↓ again goes to PICK (${await page.focused()})`);
+  await page.key('ArrowUp');
+  ok(/IN USE/.test(await page.focused()), `${tag} ↑ stops at the looks`);
   await page.key('ArrowUp');
   ok(await page.focused() === 'card' && await at() === 0, `${tag} ↑ comes back to the middle card`);
 
@@ -161,12 +166,12 @@ for (const [w, h] of [[390, 844], [412, 915], [375, 667], [395, 700], [412, 640]
   await page.evaluate(() => window.__flow.debug.ui.setFocus(1)); await sleep(3200);
   await page.shot('showcase');
 
-  // a phone turned with the screen up: the same fighter, in the grid, and back
+  // a phone turned with the screen up: the same fighter, in the sideways carousel, and back
   await page.evaluate(() => window.__flow.debug.ui.setFocus(5)); await sleep(500);
   const before = await page.who();
   await page.setViewportSize({ width: h, height: w }); await sleep(900);
-  const side = await page.evaluate(() => ({ tall: !!document.querySelector('#flow .fl-tall'), grid: !!document.querySelector('#flow .fl-grid') }));
-  ok(!side.tall && side.grid && await page.who() === before, `${tag} turned sideways: the grid, still on ${before} (${await page.who()})`);
+  const side = await page.evaluate(() => ({ tall: !!document.querySelector('#flow .fl-tall'), wide: !!document.querySelector('#flow .fl-wide .fl-ring') }));
+  ok(!side.tall && side.wide && await page.who() === before, `${tag} turned sideways: the carousel beside the sheet, still on ${before} (${await page.who()})`);
   await page.setViewportSize({ width: w, height: h }); await sleep(900);
   ok(await page.evaluate(() => !!document.querySelector('#flow .fl-tall')) && await page.who() === before, `${tag} turned back: the carousel, still on ${before}`);
 
@@ -182,7 +187,7 @@ for (const [w, h, touch] of [[844, 390, true], [1280, 720, false]]) {
   const tag = `[${w}x${h}]`;
   const { ctx, page } = await open(w, h, touch);
   await page.toSelect();
-  ok(await page.evaluate(() => !document.querySelector('#flow .fl-tall') && !!document.querySelector('#flow .fl-grid')), `${tag} sideways: the grid`);
+  ok(await page.evaluate(() => !document.querySelector('#flow .fl-tall') && !!document.querySelector('#flow .fl-wide .fl-ring') && !document.querySelector('#flow .fl-grid')), `${tag} sideways: the carousel, sheet beside it`);
   const names = await page.roster();
   const n = names.length;
   const at = async () => names.indexOf(await page.who());
@@ -191,14 +196,35 @@ for (const [w, h, touch] of [[844, 390, true], [1280, 720, false]]) {
   await page.key('ArrowRight');
   ok(await at() === 0, `${tag} → on the last goes to the first (${await page.who()})`);
   await page.key('ArrowRight');
-  ok(await at() === 1, `${tag} → inside a row is the card beside it (${await page.who()})`);
-  const cols = await page.evaluate(() => getComputedStyle(document.querySelector('#flow .fl-grid')).gridTemplateColumns.split(' ').length);
-  await page.evaluate((k) => window.__flow.debug.ui.setFocus(k), cols - 1); await sleep(300);
-  await page.key('ArrowRight');
-  ok(await at() === cols, `${tag} → off the end of a row goes on to the next row's first (${await page.who()})`);
+  ok(await at() === 1, `${tag} → is the next fighter (${await page.who()})`);
   await page.key('ArrowDown');
-  ok(await at() === 2 * cols, `${tag} ↓ is still the card under it (${await page.who()})`);
-  await page.shot('grid');
+  ok(/IN USE/.test(await page.evaluate(() => window.__flow.debug.ui.items[window.__flow.debug.ui.focus].el.textContent)), `${tag} ↓ goes to the look in use`);
+  await page.key('ArrowDown');
+  ok(await page.focused() === 'PICK', `${tag} ↓ again goes to PICK (${await page.focused()})`);
+  await page.key('ArrowUp'); await page.key('ArrowUp');
+  ok(await page.focused() === 'card' && await at() === 1, `${tag} ↑ comes back to the middle card`);
+  // the strip under the carousel: a press on a mark jumps straight to that fighter
+  await page.evaluate(() => document.querySelectorAll('#flow .fl-dot')[7].click()); await sleep(400);
+  ok(await at() === 7, `${tag} the roster strip jumps to a fighter (${await page.who()})`);
+  // everything on screen, nothing under 12 px
+  const fit = await page.evaluate(() => {
+    let min = 99, out = 0;
+    for (const n of document.querySelectorAll('#flow .fl-select *')) {
+      if (!n.offsetParent || ![...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) continue;
+      if (n.closest('.fl-ring') || getComputedStyle(n).visibility === 'hidden') continue;   // the cards off the ring's edges are clipped by it
+      const r = n.getBoundingClientRect(); if (!r.width) continue;
+      min = Math.min(min, parseFloat(getComputedStyle(n).fontSize) * (n.currentCSSZoom || 1));
+      if (r.right > innerWidth + 1 || r.bottom > innerHeight + 1) out++;
+    }
+    return { min, out };
+  });
+  ok(fit.min >= 12 && fit.out === 0, `${tag} nothing off screen and no text under 12 px (smallest ${fit.min.toFixed(1)} px, ${fit.out} off)`);
+  if (!touch) {
+    const r = await box(page, '#flow .fl-ring');
+    await page.mouse.move(r.x, r.y); await page.mouse.wheel(0, 120); await sleep(400);
+    ok(await at() === 8, `${tag} the wheel steps it (${await page.who()})`);
+  }
+  await page.shot('wide');
   await ctx.close();
 }
 

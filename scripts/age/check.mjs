@@ -5,7 +5,7 @@
 //   node scripts/age/check.mjs [http://127.0.0.1:8787/] [--shots dir]
 //
 // UNDER 13 must never reach the email field: not from PROFILE's SAVE MY PROFILE, not from the name screen's
-// SIGN IN, not after BACK and trying again, not after a reload, and never a request to auth/start. 13 OR
+// SIGN IN, not after going back and trying again, not after a reload, and never a request to auth/start. 13 OR
 // OLDER goes on to the email, the code and a saved profile as before. Exit code 1 on any failure.
 import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 import fs from 'node:fs';
@@ -22,6 +22,9 @@ const until = async (fn, ms = 20000, every = 100) => { const t0 = Date.now(); fo
 
 const browsers = [];
 async function page(init = {}, size = { width: 1280, height: 720 }, touch = false) {
+  // each block opens its own browser and is done with the one before: close those, or every earlier page keeps its
+  // 8 ms pump running and, on a busy machine, the later blocks' clicks time out
+  while (browsers.length) await browsers.pop().close().catch(() => {});
   const b = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--mute-audio'] });
   browsers.push(b);
   const ctx = await b.newContext(touch ? { viewport: size, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport: size });
@@ -68,9 +71,9 @@ try {
       const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
       return { same: a.className.replace(/\bfl-focus\b/, '').trim() === b.className.replace(/\bfl-focus\b/, '').trim(), w: Math.round(ra.width) === Math.round(rb.width), h: Math.round(ra.height) === Math.round(rb.height),
         color: getComputedStyle(a).color === getComputedStyle(b).color && getComputedStyle(a).borderColor === getComputedStyle(b).borderColor,
-        focus: (document.querySelector('#flow .fl-focus') || {}).textContent || '' };
+        focus: (document.querySelector('#flow .fl-focus') || {}).textContent || '', chip: (document.querySelector('.fl-backchip') || {}).textContent || '' };
     });
-    check(`${label}: the two answers look the same (class, size, color) and the focus starts on BACK`, look.same && look.w && look.h && look.color && look.focus === 'BACK', JSON.stringify(look));
+    check(`${label}: the two answers look the same (class, size, color), neither is lit, and back is the corner's ‹ PROFILE`, look.same && look.w && look.h && look.color && look.focus === '' && look.chip === 'PROFILE', JSON.stringify(look));
     await legal(p, `${label} age question`);
     await shot(p, `${label}-age-question`);
     await click(p, 'UNDER 13');
@@ -126,7 +129,7 @@ try {
     await click(p, 'CREATE');
     check('a blocked crew name is turned away before it reaches the server', (await state(p)) === 'crewCreate' && /PICK ANOTHER NAME/.test(await text(p)));
     await shot(p, 'crew-create-filter');
-    await click(p, 'BACK');
+    await p.locator('.fl-backchip').click({ timeout: 8000, force: true }); await sleep(250);   // the corner's ‹ ONLINE
     await click(p, 'JOIN A CREW');
     await legal(p, 'crew join');
     check('no page errors', p.errors.length === 0, p.errors.join(' | '));
