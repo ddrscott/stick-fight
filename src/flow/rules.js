@@ -24,3 +24,6 @@ export function cycleBestOf() { const v = BEST_OF[(BEST_OF.indexOf(bestOf()) + 1
 /** round wins a match needs for a best of n */
 export const winsFor = (n) => Math.floor(n / 2) + 1;
 export const timeLabel = (s) => (s ? `${s}S` : 'NO LIMIT');
+/** step one choice either way (d: -1 or 1), wrapping, and remember it: the SETTINGS panel's ‹ › (src/audio/ui.js) */
+export function stepBestOf(d) { const i = BEST_OF.indexOf(bestOf()), v = BEST_OF[(i + d + BEST_OF.length) % BEST_OF.length]; write(ROUNDS_KEY, v); return v; }
+export function stepRoundTime(d) { const i = ROUND_TIMES.indexOf(roundTime()), v = ROUND_TIMES[(i + d + ROUND_TIMES.length) % ROUND_TIMES.length]; write(TIME_KEY, v); return v; }

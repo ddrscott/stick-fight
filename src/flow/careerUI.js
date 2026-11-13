@@ -403,6 +403,7 @@ function injectStyle() {
   .sh-cpay { font: 600 1.7cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #ffc46b; }
   .sh-done .sh-cpay { color: #9dffc0; }
   .sh-cbtns { display: flex; flex-direction: column; gap: 0.8cqh; }
+  .sh-ctitle { font-size: max(15px, 1.9cqw); } .sh-mech, .sh-cpay { font-size: max(12px, 1.7cqw); } .sh-coach { font-size: max(13px, 1.8cqw); }   /* px floors: a phone held sideways */
   .sh-cbtns .fl-btn { min-width: 0; font-size: 2.2cqw; }
   /* the menus' counter: top right, under the corner buttons' row, plain text */
   .cr-chip { position: absolute; z-index: 4; left: 1.2cqw; top: 1.2cqh; display: none; align-items: baseline; gap: 1cqw; padding: 0.3cqh 1cqw 0;

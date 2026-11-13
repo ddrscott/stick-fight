@@ -80,7 +80,7 @@ const TRANSITIONS = {
   attract: ['modeSelect', 'highScores', 'controls'],
   highScores: ['attract', 'modeSelect', 'ageCheck'],   // ageCheck: the save-your-sticks nudge after a game (README, Progression)
   controls: ['attract', 'modeSelect'],
-  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts', 'closet', 'profile'],   // ageCheck: the save nudge; profile: the PROFILE card
+  modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts', 'closet', 'profile', 'highScores', 'controls'],   // ageCheck: the save nudge; profile: the PROFILE card
   shifts: ['modeSelect', 'attract'],   // the daily shifts (README, Progression, Daily shifts)
   closet: ['modeSelect', 'attract'],   // the Supply Closet (README, Progression, The Supply Closet)
   charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
@@ -96,7 +96,7 @@ const TRANSITIONS = {
   paused: ['fighting', 'roundEnd', 'stageIntro', 'attract', 'modeSelect'],
   onlineMenu: ['modeSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract', 'profile', 'crewCreate', 'crewJoin', 'crewLobby', 'nameEntry', 'watchList'],
   // spectators (src/net/watch.js): the LIVE list, and the watch view
-  watchList: ['watching', 'onlineMenu', 'modeSelect', 'attract'],
+  watchList: ['watching', 'onlineMenu', 'modeSelect', 'attract', 'onlineHost'],
   watching: ['watchList', 'onlineMenu', 'modeSelect', 'attract'],
   onlineHost: ['onlineMenu', 'onlineSelect', 'onlineFighting', 'onlineEnd', 'modeSelect'],
   onlineJoin: ['onlineMenu', 'onlineConnecting', 'attract'],
@@ -207,7 +207,7 @@ export function createFlow(ctx) {
   const history = [];
   const ui = createUI((k) => { if (ctx.click) ctx.click(k); });
   const ticker = createTicker();
-  const counter = createCounter(ui.root);
+  const counter = createCounter(ui.bar);   // in the top-left bar, beside the ‹ chip
   // turning the phone: the crew lobby lists the whole crew upright and the top seven sideways (paintLobby)
   onSquare(() => { if (state === 'crewLobby') paintLobby(); });
   // the pause button: the desktop corner row's (a click) and the touch layer's (src/touch.js sends 'sf:pause')
@@ -504,14 +504,14 @@ export function createFlow(ctx) {
   // VERSUS ONLINE goes straight to the online menu: you get into a room first, and both pick there
   // (onlineSelect). The first time online, a name first (other players see it); it's remembered after that
   function toOnline() {
-    if (!profile().name) { askName(() => go('onlineMenu'), () => go('modeSelect')); return; }
+    if (!profile().name) { askName(() => go('onlineMenu'), () => go('modeSelect'), 'MAIN MENU'); return; }
     go('onlineMenu');
   }
   function screenSelect() {
     const dummy = sel.step === 'dummy';
     const sub = { arcade: `ARCADE  ·  ${LADDER.length} STAGES UP THE BUILDING`, horde: 'HORDE  ·  FLOOR BY FLOOR', training: 'TRAINING  ·  STEP 1 OF 2' }[sel.mode] || '';
     selCtl = openSelect(ui, { title: dummy ? 'PICK YOUR DUMMY' : 'SELECT FIGHTER', sub: dummy ? 'TRAINING  ·  STEP 2 OF 2  ·  WHO TAKES THE HITS' : sub,
-      roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack, onMoves: openMoves,
+      roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack, backTo: dummy ? 'FIGHTER' : 'MAIN MENU', onMoves: openMoves,
       palettes: dummy ? undefined : palettePicker(), ...(dummy ? {} : masteryOpts) });
   }
   /** The character select's palette strip (README, Progression): MAIN and each palette for the fighter under the cursor.
@@ -563,7 +563,9 @@ export function createFlow(ctx) {
   }
   const myChar = () => (sim.units[0] && sim.units[0].char) || characterOr(sel.player);
   function pressStart() { if (state === 'attract') go('modeSelect'); }
-  function openScores() { hs = { mode: 'arcade', highlight: -1, postGame: false, loop: hs.loop, manual: true }; go('highScores'); loadCrewTables(); }
+  let detourFrom = 'attract';   // HIGH SCORES and CONTROLS open from the title or MAIN MENU, and go back there
+  function openScores() { detourFrom = state === 'modeSelect' ? 'modeSelect' : 'attract'; hs = { mode: 'arcade', highlight: -1, postGame: false, loop: hs.loop, manual: true }; go('highScores'); loadCrewTables(); }
+  function openControls() { detourFrom = state === 'modeSelect' ? 'modeSelect' : 'attract'; go('controls'); }
 
   // ---- input ------------------------------------------------------------------------------------------
   // One scheme for every screen (controls.js): directions move the focus, confirm (Enter, Space, A)
@@ -667,6 +669,8 @@ export function createFlow(ctx) {
     set(link);
     return { el: box, set };
   }
+  /** what each screen a chip goes back to is called (its title, or what the player calls it) */
+  const PLACE = { attract: 'TITLE', modeSelect: 'MAIN MENU', onlineMenu: 'ONLINE', profile: 'PROFILE', crewLobby: 'CREW', watchList: 'LIVE LIST', onlineJoin: 'JOIN', charSelect: 'FIGHTERS' };
   const mainMenuBtn = (guard = 0) => button('MAIN MENU', () => { if (t >= guard) mainMenu(); }, 'fl-violet');
   let startBtn = null;
   let titleUpdWatch = null;
@@ -679,7 +683,7 @@ export function createFlow(ctx) {
       b.el.append(el('span', 'fl-keys', 'PRESS START'), el('span', 'fl-touch', 'START'));
       const row = el('div', 'fl-row fl-titlerow');
       const scores = button('HIGH SCORES', openScores, 'fl-mini');
-      const how = button('CONTROLS', () => go('controls'), 'fl-mini fl-violet');
+      const how = button('CONTROLS', openControls, 'fl-mini fl-violet');
       row.append(scores.el, how.el);
       // INSTALL: the browser's own prompt, or on iPhone/iPad Safari the Add to Home Screen how-to (src/homescreen.js)
       const inst = (typeof window !== 'undefined' && window.__install) || null;
@@ -723,22 +727,25 @@ export function createFlow(ctx) {
       if (landed) root.appendChild(el('div', 'fl-small fl-crewpost', `ON THE CREW BOARDS: ${landed}`));
       // after a game CONTINUE goes back to the title, as the cabinet always did; from the attract loop or
       // the title the table is a detour, so MAIN MENU leads
-      const items = hs.postGame
-        ? [button('CONTINUE', () => go('attract'), 'fl-amber'), button('MAIN MENU', () => go('modeSelect'), 'fl-violet')]
-        : [button('MAIN MENU', () => go('modeSelect'), 'fl-amber'), button('TITLE', () => go('attract'), 'fl-violet')];
+      // the table buttons first: from the title or MAIN MENU, back is the corner's chip
+      const items = hs.postGame ? [button('CONTINUE', () => go('attract'), 'fl-amber'), button('MAIN MENU', () => go('modeSelect'), 'fl-violet')] : [];
+      const swap = items.length;
       items.push(button(hs.mode === 'arcade' ? 'HORDE TABLE' : 'ARCADE TABLE', () => {
-        hs.mode = hs.mode === 'arcade' ? 'horde' : 'arcade'; hs.highlight = -1; hs.manual = true; screenScores(2);
-      }));
+        hs.mode = hs.mode === 'arcade' ? 'horde' : 'arcade'; hs.highlight = -1; hs.manual = true; screenScores(swap);
+      }, hs.postGame ? '' : 'fl-amber'));
       // this device's tables, then each crew's in turn
       const sources = ['', ...CS.boards().map((b) => b.slug)];
       if (sources.length > 1) {
         const next = sources[(sources.indexOf(hs.crew || '') + 1) % sources.length];
         const nb = next && CS.boards().find((b) => b.slug === next);
-        items.push(button(nb ? nb.name : 'THIS DEVICE', () => { hs.crew = next; hs.highlight = -1; hs.manual = true; screenScores(3); }, 'fl-crewsrc'));
+        items.push(button(nb ? nb.name : 'THIS DEVICE', () => { hs.crew = next; hs.highlight = -1; hs.manual = true; screenScores(swap + 1); }, 'fl-crewsrc'));
       }
       btnRow(root, items, '17cqw');
       if (hs.postGame) addNudge(root, items);
-      return { items, focus, back: () => go('attract'), legend: [MOVE, SELECT, ['back', 'TITLE']] };
+      // after a game CONTINUE is the way on (the cabinet's), so there's no chip; back still goes to the title
+      if (hs.postGame) return { items, focus, back: () => go('attract'), backTo: 'TITLE', chip: false };
+      const from = hs.loop && !hs.manual ? 'attract' : detourFrom;
+      return { items, focus, back: () => go(from), backTo: PLACE[from] };
     });
   }
   /** opening HIGH SCORES from the title: fetch the crews' tables, so the button to them shows */
@@ -753,26 +760,29 @@ export function createFlow(ctx) {
         el('div', 'fl-small fl-ctlnote', 'DASH: TAP TOWARD HIM TWICE, AND ANY BUTTON IN IT IS A DASH ATTACK; TAP AWAY TWICE TO HOP BACK (NO GUARD UNTIL IT ENDS). OUT OF A CROUCH, LET GO OF DOWN AND PRESS A BUTTON FOR A RISING ATTACK. PARRY: TAP TOWARD HIM JUST BEFORE A HIT LANDS (DOWN-FORWARD FOR A LOW). KNOCKED DOWN: UP STANDS, AWAY ROLLS BACK ON YOUR SIDE, TOWARD HIM ROLLS UNDER HIM IF HE IS CLOSE, A BUTTON STRIKES FROM THE FLOOR. OVER HIM ON THE FLOOR: DOWN + 4 STOMPS; A LOW THAT TOUCHES HIM HITS ONCE. JUGGLED: A BUTTON AT THE RIGHT MOMENT LANDS YOU ON YOUR FEET. STAIRS: WALK PAST THE FOOT TO GO UP; AT THE TOP, DOWN + TOWARD THE STEPS TO GO DOWN.'));
       row.append(controlsTable(FIGHT, 'FIGHT'), right);
       root.appendChild(row);
-      const items = btnRow(root, [button('MAIN MENU', () => go('modeSelect'), 'fl-pink'), button('BACK', () => go('attract'), 'fl-violet')]);
-      return { items, back: () => go('attract') };
+      return { items: [], back: () => go(detourFrom), backTo: PLACE[detourFrom] };
     });
   }
   function screenModes() {
     ui.show('fl-modes', (root) => {
-      root.append(el('h1', 'fl-h2', 'SELECT MODE'));
+      root.append(el('h1', 'fl-h2', 'MAIN MENU'));
       const list = el('div', 'fl-list');
       const mk = (label, sub, act, cls = '') => { const b = button(label, act, cls); b.el.appendChild(el('small', '', sub)); list.appendChild(b.el); return b; };
+      // the four ways to play, then everything else in one row: the closet, the records, the controls and SETTINGS
+      // (the match rules, sound and graphics, one panel). Back to the title is the corner's chip.
       const items = [
         mk('ARCADE', `${LADDER.length} STAGES UP THE BUILDING`, () => toSelect('arcade'), 'fl-pink'),
         mk('VERSUS ONLINE', 'PLAY A FRIEND', toOnline),
         mk('HORDE', 'FLOOR BY FLOOR, AS MANY AS YOU CAN', () => toSelect('horde'), 'fl-amber'),
         mk('TRAINING', 'A DUMMY THAT NEVER HITS BACK', () => toSelect('training'), 'fl-violet'),
       ];
-      for (const b of rulesButtons('fl-slim')) { list.appendChild(b.el); items.push(b); }
-      const closet = button('SUPPLY CLOSET', () => go('closet'), 'fl-slim');
-      list.appendChild(closet.el); items.push(closet);
-      const back = button('BACK', () => go('attract'), 'fl-violet fl-slim');
-      list.appendChild(back.el); items.push(back);
+      const more = el('div', 'fl-more');
+      const small = (label, act) => { const b = button(label, act, 'fl-slim fl-violet'); more.appendChild(b.el); items.push(b); return b; };
+      small('SUPPLY CLOSET', () => go('closet'));
+      small('HIGH SCORES', openScores);
+      small('CONTROLS', openControls);
+      if (settingsPanel) small('SETTINGS', () => settingsPanel.open({ keys: !ctx.touchUI() }));
+      list.appendChild(more);
       // today's shifts beside the modes (README, Progression, Daily shifts); the button opens them in full
       const wrap = el('div', 'sh-modeswrap'), panel = shiftsBlock(), col = el('div', 'pc-col');
       const open = button('SHIFTS: HOW TO + SWAP', () => go('shifts'), 'fl-amber fl-slim');
@@ -783,7 +793,7 @@ export function createFlow(ctx) {
       wrap.append(list, col);
       root.appendChild(wrap);
       addNudge(root, items);
-      return { items, back: () => go('attract') };
+      return { items, back: () => go('attract'), backTo: 'TITLE' };
     });
   }
   // The day's shifts in full (README, Progression, Daily shifts): a card each with what it teaches, a coaching line,
@@ -796,9 +806,7 @@ export function createFlow(ctx) {
       root.appendChild(body.el);
       const note = el('div', 'fl-small', msg || (body.swapUsed ? 'YOU USED TODAY\'S SWAP.' : 'ONE SWAP A DAY, ON A SHIFT THAT ISN\'T DONE.'));
       root.appendChild(note);
-      const back = button('BACK', () => go('modeSelect'), 'fl-violet');
-      const items = [...body.items, ...btnRow(root, [back], '20cqw')];
-      return { items, back: () => go('modeSelect'), legend: [MOVE, SELECT, ['back', 'BACK']] };
+      return { items: body.items, back: () => go('modeSelect'), backTo: 'MAIN MENU' };
     });
     paint();
   }
@@ -819,8 +827,7 @@ export function createFlow(ctx) {
         note: (m) => { msg = m; note.textContent = m; },
       });
       root.append(body.el, note);
-      const items = [...body.items, ...btnRow(root, [button('BACK', () => go('modeSelect'), 'fl-violet')], '20cqw')];
-      return { items, focus: body.focus, back: () => go('modeSelect'), legend: [MOVE, SELECT, ['back', 'BACK']] };
+      return { items: body.items, focus: body.focus, back: () => go('modeSelect'), backTo: 'MAIN MENU' };
     });
     paint(`f:${closetSt.fighter}`);
   }
@@ -1060,38 +1067,36 @@ export function createFlow(ctx) {
       if (mode === 'arcade') items.push(button('RESTART STAGE', () => { run.score = run.stageStart; go('stageIntro'); }));
       if (mode === 'horde') items.push(button('RESTART RUN', () => { newRun('horde'); hordeScene(); go('fighting'); }));
       if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [lookOf(sel.player), ''] }); go('fighting'); }));
-      // botches on or off (src/combat/botch.js): remembered, and it takes effect from the next fight (online
-      // the host's setting rides the start message; online never pauses anyway)
-      const label = () => `BOTCHES: ${botchEnabled() ? 'ON' : 'OFF'}`;
-      const sw = button(label(), () => { setBotchEnabled(!botchEnabled()); sw.el.firstChild.textContent = label(); }, 'fl-amber');
-      sw.el.appendChild(el('small', '', 'FROM THE NEXT FIGHT'));
-      items.push(sw);
-      if (mode !== 'horde') items.push(...rulesButtons('fl-amber', 'FROM THE NEXT FIGHT'));   // horde has no rounds and no clock
-      // the right panel: the book of happy accidents, or the controls (keyboard and gamepad)
+      // the match rules and the botch switch live in SETTINGS now, with sound and graphics (one panel, src/audio/ui.js),
+      // so this list is only where to go: back to the fight, the moves, a restart, SETTINGS, out
+      if (settingsPanel) {
+        const set = button('SETTINGS', () => settingsPanel.open({ keys: !ctx.touchUI() }));
+        set.el.appendChild(el('small', '', 'RULES, SOUND, GRAPHICS'));
+        items.push(set);
+      }
+      items.push(button('MAIN MENU', mainMenu, 'fl-violet'));
+      items.forEach(i => list.appendChild(i.el));
+      // beside it: the book of happy accidents, or the controls (keyboard and gamepad), under two tabs
+      const side = el('div', 'fl-pside');
+      const tabs = el('div', 'fl-row fl-ptabs');
+      const tab = (v, label) => { const b = button(label, () => { if (pauseView !== v) { pauseView = v; paint(); } }, 'fl-mini fl-ptab'); b.view = v; tabs.appendChild(b.el); return b; };
+      const tTech = tab('tech', 'TECHNIQUES'), tCtl = tab('controls', 'CONTROLS');
       const panel = el('div', 'fl-tech');
       panel.dataset.scroll = 'y';   // held upright it's under the menu in what's left of the screen
-      const view = button('', () => { pauseView = pauseView === 'tech' ? 'controls' : 'tech'; paint(); }, 'fl-viewbtn');
       const paint = () => {
-        view.el.textContent = pauseView === 'tech' ? 'SHOW CONTROLS' : 'SHOW TECHNIQUES';
+        for (const b of [tTech, tCtl]) b.el.classList.toggle('fl-on', b.view === pauseView);
         panel.textContent = '';
         panel.classList.toggle('fl-ctlpanel', pauseView === 'controls');
         if (pauseView === 'controls') { panel.appendChild(controlsTable(FIGHT, 'FIGHT')); return; }
         // the happy accidents: found ones by name, the rest as ???, each with a hint (never the timing)
         const tech = techniques();
-        panel.appendChild(el('div', 'fl-techhead', `TECHNIQUES FOUND ${tech.filter(x => x.found).length}/${tech.length}`));
+        panel.appendChild(el('div', 'fl-techhead', `FOUND ${tech.filter(x => x.found).length} OF ${tech.length}`));
         for (const x of tech) { const p = el('p', x.found ? 'fl-got' : ''); p.append(el('b', '', x.found ? `${x.name}  ${x.input}` : '???'), el('small', '', x.hint)); panel.appendChild(p); }
       };
-      // the one SETTINGS panel (sound, music and, on a touch screen, the size of the controls), over this menu;
-      // closing it comes back here with the focus still on this item
-      if (settingsPanel) {
-        const set = button('SETTINGS', () => settingsPanel.open({ keys: true }));
-        set.el.appendChild(el('small', '', ctx.touchUI() ? 'SOUND, MUSIC, CONTROL SIZE' : 'SOUND AND MUSIC'));
-        items.push(set);
-      }
-      items.push(view, button('MAIN MENU', mainMenu, 'fl-violet'));
-      items.forEach(i => list.appendChild(i.el));
+      items.push(tTech, tCtl);
       paint();
-      const row = el('div', 'fl-row fl-pauserow'); row.append(list, panel);
+      side.append(tabs, panel);
+      const row = el('div', 'fl-row fl-pauserow'); row.append(list, side);
       root.appendChild(row);
       return { items, back: resume, legend: [MOVE, SELECT, ['moves', 'MOVE LIST'], ['back', 'RESUME'], ['start', 'RESUME']] };
     });
@@ -1173,12 +1178,11 @@ export function createFlow(ctx) {
       fetchLive().then((rows) => { const sm = watch.el.querySelector('small'); if (sm && rows && rows.length) sm.textContent = `${rows.length} LIVE NOW`; });
       cols.append(left, right);
       root.appendChild(cols);
-      const prof = button('PROFILE', () => { profileFrom = 'onlineMenu'; go('profile'); }, 'fl-mini');
-      const main = button('MAIN MENU', () => go('modeSelect'), 'fl-violet fl-mini');
-      const row = el('div', 'fl-row fl-orow'); row.append(prof.el, main.el); root.appendChild(row);
-      const items = [...crews, create, joinCrew, host, join, watch, prof, main];
+      const prof = button('PROFILE', () => { profileFrom = 'onlineMenu'; go('profile'); }, 'fl-mini fl-violet');
+      const row = el('div', 'fl-row fl-orow'); row.append(prof.el); root.appendChild(row);
+      const items = [...crews, create, joinCrew, host, join, watch, prof];
       // a crew to go back to is the likeliest press; otherwise HOST A GAME, as before
-      return { items, focus: crews.length ? 0 : items.indexOf(host), back: () => go('modeSelect') };
+      return { items, focus: crews.length ? 0 : items.indexOf(host), back: () => go('modeSelect'), backTo: 'MAIN MENU' };
     });
     // who's signed in on this browser (a session from another visit, or one that ended): repaint if it changed
     const shown = ui.screen;
@@ -1257,12 +1261,12 @@ export function createFlow(ctx) {
       const items = [];
       const kb = keyboard((ch) => CODE_ALPHABET.includes(ch), typeCode, [{ label: 'DEL', act: () => typeCode('DEL'), cls: 'fl-violet' }]);
       root.appendChild(kb.el); items.push(...kb.items);
-      const join = button('JOIN', tryJoin, 'fl-pink'), back = button('BACK', () => go('onlineMenu'), 'fl-violet');
+      const join = button('JOIN', tryJoin, 'fl-pink');
       join.disabled = () => joinCode.length !== CODE_LEN;   // dim, and the focus skips it, until the code is whole
-      btnRow(root, [join, back]);
-      items.push(join, back);
+      btnRow(root, [join]);
+      items.push(join);
       joinBtn = join.el;
-      return { items, focus: joinCode.length === CODE_LEN ? items.length - 2 : 0, back: () => go('onlineMenu'), legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', 'BACK']] };
+      return { items, focus: joinCode.length === CODE_LEN ? items.length - 1 : 0, back: () => go('onlineMenu'), backTo: 'ONLINE', legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', 'BACK']] };
     });
     paintCode();
   }
@@ -1367,11 +1371,10 @@ export function createFlow(ctx) {
       }
       if (rows && !rows.length) root.appendChild(el('div', 'fl-small', 'HOST A GAME AND YOUR MATCH SHOWS UP HERE  ·  CREW MATCHES STAY PRIVATE'));
       root.appendChild(list);
-      const back = button('ONLINE MENU', () => go('onlineMenu'), rows && rows.length ? 'fl-violet' : 'fl-pink');
-      const row = btnRow(root, [back, mainMenuBtn()], '18cqw');
-      items.push(...row);
+      // nobody fighting: HOST A GAME is the way to get on this list
+      if (rows && !rows.length) items.push(...btnRow(root, [button('HOST A GAME', () => { if (getNet().available) go('onlineHost'); }, 'fl-pink')], '22cqw'));
       const at = items.findIndex((it) => it.code && it.code === focused);
-      return { items, focus: at >= 0 ? at : 0, back: () => go('onlineMenu') };
+      return { items, focus: at >= 0 ? at : 0, back: () => go('onlineMenu'), backTo: 'ONLINE' };
     });
   }
   // -- the watch view --
@@ -1704,13 +1707,12 @@ export function createFlow(ctx) {
       const ok = button(o.okLabel || 'OK', teSubmit, 'fl-pink');
       ok.disabled = () => me.busy || !me.valid(me.value);
       me.okBtn = ok;
-      const back = button(o.backLabel || 'BACK', o.back, 'fl-violet');
-      const row = [ok, ...(o.more || []), back];
+      const row = [ok, ...(o.more || [])];   // back is the corner's ‹ chip (o.backTo names it), never a button here
       btnRow(root, row, '19cqw');
       const items = [...kb.items, ...row];
       // OK when the field already holds something that works (a name being changed), else A (or the first key)
       const a = kb.items.findIndex((k) => k.el.textContent === 'A');
-      return { items, focus: me.valid(me.value) ? items.indexOf(ok) : Math.max(0, a), back: o.back, legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', 'BACK']] };
+      return { items, focus: me.valid(me.value) ? items.indexOf(ok) : Math.max(0, a), back: o.back, backTo: o.backTo, legend: [['type', 'TYPE'], MOVE, SELECT, ['del', 'DEL'], ['back', 'BACK']] };
     });
     tePaint();
   }
@@ -1751,8 +1753,8 @@ export function createFlow(ctx) {
   });
 
   // the display name: asked for the first time a player goes online, changed from the profile screen
-  let nameThen = null, nameBack = null;
-  function askName(then, back) { nameThen = then; nameBack = back; go('nameEntry'); }
+  let nameThen = null, nameBack = null, nameBackTo = '';
+  function askName(then, back, backTo = '') { nameThen = then; nameBack = back; nameBackTo = backTo; go('nameEntry'); }
   function screenName() {
     const p = profile();
     textScreen('fl-name', {
@@ -1767,7 +1769,7 @@ export function createFlow(ctx) {
       valid: (v) => !!cleanName(v),
       okLabel: 'OK',
       // a returning player on a new device signs in instead (the name comes back with the profile)
-      more: p.name || p.email ? [] : [button('SIGN IN', () => { signInReturn = { then: nameThen, back: nameBack }; nameThen = null; nameBack = null; go('ageCheck'); }, 'fl-amber')],
+      more: p.name || p.email ? [] : [button('SIGN IN', () => { signInReturn = { then: nameThen, back: nameBack, backTo: nameBackTo }; nameThen = null; nameBack = null; go('ageCheck'); }, 'fl-amber')],
       submit: (v) => {
         if (blockedName(v)) { teSay(`${PICK_ANOTHER}: THAT ONE ISN'T ALLOWED`); return; }   // the name filter (src/namefilter.js)
         saveName(v);
@@ -1778,12 +1780,13 @@ export function createFlow(ctx) {
         if (then) then(); else go('profile');
       },
       back: () => { const b = nameBack; nameThen = null; nameBack = null; if (b) b(); else go(profile().name ? 'profile' : 'onlineMenu'); },
+      backTo: nameBackTo || (profile().name ? 'PROFILE' : 'ONLINE'),
     });
   }
 
   // the profile: the name, and SAVE MY PROFILE (an email keeps it on any device) or SIGN OUT
   let profileMsg = '', signOutArmed = false, deleteArmed = false, deleting = false;
-  let profileFrom = 'onlineMenu';   // where PROFILE's BACK goes: the menu it was opened from
+  let profileFrom = 'onlineMenu';   // where PROFILE's back goes: the menu it was opened from
   function screenProfile() {
     const p = profile();
     signOutArmed = false; deleteArmed = false;
@@ -1798,15 +1801,14 @@ export function createFlow(ctx) {
       root.appendChild(el('div', 'fl-small', p.email
         ? 'SIGN IN WITH THIS EMAIL ON ANOTHER DEVICE TO PLAY AS YOU THERE'
         : 'SAVE IT WITH YOUR EMAIL TO KEEP YOUR NAME, CREWS, RECORDS, TITLE AND STICKS ON ANY DEVICE. THE EMAIL IS ONLY FOR SIGN-IN CODES, AND NOBODY ELSE SEES IT'));
-      const name = button('CHANGE NAME', () => askName(null, () => go('profile')), 'fl-pink');
+      const name = button('CHANGE NAME', () => askName(null, () => go('profile'), 'PROFILE'), 'fl-pink');
       const acct = p.email
         ? button('SIGN OUT', () => {
           if (!signOutArmed) { signOutArmed = true; acct.el.textContent = 'SIGN OUT? PRESS AGAIN'; return; }
-          signOut().then(() => { resetCareer(); profileMsg = 'SIGNED OUT: THIS DEVICE STARTS FRESH'; if (state === 'profile') { askName(() => go('profile'), () => go('onlineMenu')); } });
+          signOut().then(() => { resetCareer(); profileMsg = 'SIGNED OUT: THIS DEVICE STARTS FRESH'; if (state === 'profile') { askName(() => go('profile'), () => go('onlineMenu'), 'ONLINE'); } });
         }, 'fl-amber')
         : button('SAVE MY PROFILE', () => go('ageCheck'), 'fl-amber');
-      const back = button('BACK', () => go(profileFrom), 'fl-violet');
-      const items = btnRow(root, profileFrom === 'modeSelect' ? [name, acct, back] : [name, acct, back, mainMenuBtn()], '17cqw');
+      const items = btnRow(root, [name, acct], '17cqw');
       // DELETE MY PROFILE (README, Privacy and terms, Deleting a profile): press again to confirm, like SIGN OUT.
       // The account, its sessions and its crew records go; high score initials stay; this device starts fresh.
       if (p.email) {
@@ -1824,14 +1826,14 @@ export function createFlow(ctx) {
             if (r.error) { deleteArmed = false; del.el.textContent = 'DELETE MY PROFILE'; note.textContent = r.error === 'busy' ? 'SERVER BUSY: TRY AGAIN SHORTLY' : r.error === 'signed-out' ? 'SIGNED OUT ALREADY: SIGN IN AGAIN TO DELETE IT' : "CAN'T REACH THE SERVER: NOTHING WAS DELETED"; return; }
             resetCareer();
             profileMsg = 'PROFILE DELETED: THIS DEVICE STARTS FRESH';
-            if (state === 'profile') askName(() => go('profile'), () => go('onlineMenu'));
+            if (state === 'profile') askName(() => go('profile'), () => go('onlineMenu'), 'ONLINE');
           });
         }, 'fl-red fl-quiet');
         items.push(...btnRow(root, [del], '30cqw'));
       }
       const note = root.appendChild(el('div', 'fl-small fl-delnote', ''));
       root.appendChild(legalLinks(p.email ? 'WHAT WE KEEP:' : ''));
-      return { items, focus: p.email ? 0 : 1, back: () => go(profileFrom) };
+      return { items, focus: p.email ? 0 : 1, back: () => go(profileFrom), backTo: PLACE[profileFrom] };
     });
     profileMsg = '';
   }
@@ -1839,7 +1841,8 @@ export function createFlow(ctx) {
   // sign-in: the email, then the code (or the email's link, which lands on the code screen filled in)
   let signIn = { email: '', dev: '', code: '', auto: false };
   let signInReturn = null;   // signing in from the first name screen: where to go after (and back to)
-  const signInBack = () => { if (signInReturn) { const r = signInReturn; signInReturn = null; askName(r.then, r.back); } else go('profile'); };
+  const signInBack = () => { if (signInReturn) { const r = signInReturn; signInReturn = null; askName(r.then, r.back, r.backTo); } else go('profile'); };
+  const signInBackTo = () => (signInReturn ? 'NAME' : 'PROFILE');   // where the sign-in screens' back goes, by name
   const SIGNIN_ERRORS = {
     'bad-email': "THAT DOESN'T LOOK LIKE AN EMAIL", cooldown: 'A CODE WAS JUST SENT: WAIT 30 SECONDS FOR ANOTHER',
     'too-many': 'TOO MANY TRIES: WAIT AN HOUR AND TRY AGAIN', busy: 'SERVER BUSY: TRY AGAIN SHORTLY', 'send-failed': "COULDN'T SEND THE EMAIL: TRY AGAIN IN A MINUTE",
@@ -1863,7 +1866,7 @@ export function createFlow(ctx) {
         const ok = button('OK', signInBack, 'fl-pink');
         const items = btnRow(root, [ok, mainMenuBtn()], '18cqw');
         root.appendChild(legalLinks('FOR PARENTS:'));
-        return { items, back: signInBack };
+        return { items, back: signInBack, backTo: signInBackTo() };
       }
       root.append(el('div', 'fl-label', 'FIRST: HOW OLD ARE YOU?'));
       const pick = (isKid) => () => {
@@ -1872,12 +1875,11 @@ export function createFlow(ctx) {
       };
       const young = button('UNDER 13', pick(true), 'fl-age-a');
       const old = button('13 OR OLDER', pick(false), 'fl-age-a');
-      const back = button('BACK', signInBack, 'fl-violet');
       const items = btnRow(root, [young, old], '22cqw');
       for (const b of items) b.el.style.width = '24cqw';   // the same size, whichever label is longer
-      btnRow(root, [back], '16cqw');
       root.appendChild(legalLinks());
-      return { items: [...items, back], focus: 2, back: signInBack };
+      // back is the corner's chip; neither answer is lit until a direction is pressed, so nothing hints at one
+      return { items, focus: -1, back: signInBack, backTo: signInBackTo() };
     });
   }
   function screenSignInEmail() {
@@ -1898,7 +1900,7 @@ export function createFlow(ctx) {
         signIn = { email: v, dev: r.devCode || '', code: '', auto: false };
         go('signInCode');
       },
-      back: signInBack,
+      back: signInBack, backTo: signInBackTo(),
     });
   }
   function screenSignInCode() {
@@ -1935,11 +1937,11 @@ export function createFlow(ctx) {
         profileMsg = r.restored ? `WELCOME BACK${p.name ? `, ${p.name}` : ''}: PROFILE RESTORED` : 'PROFILE SAVED';
         signIn = { email: '', dev: '', code: '', auto: false };
         const r2 = signInReturn; signInReturn = null;
-        if (!p.name) askName(r2 ? r2.then : () => go('profile'), r2 ? r2.back : () => go('profile'));
+        if (!p.name) askName(r2 ? r2.then : () => go('profile'), r2 ? r2.back : () => go('profile'), r2 ? r2.backTo : 'PROFILE');
         else if (r2 && r2.then) r2.then();   // back on the way (a crew link, the online menu)
         else go('profile');
       },
-      back: signInBack,
+      back: signInBack, backTo: signInBackTo(),
     });
     signIn.auto = false;
     if (auto && te && te.valid(te.value)) teSubmit();   // the email's link: one press already made
@@ -1988,7 +1990,7 @@ export function createFlow(ctx) {
     crewSlug = slug; crewFail = '';
     const from = state;
     if (from === 'off') guestName();   // straight from a link: nothing to type first (a name is handed out)
-    if (!profile().name) { askName(() => go('crewLobby'), () => go('onlineMenu')); return; }
+    if (!profile().name) { askName(() => go('crewLobby'), () => go('onlineMenu'), 'ONLINE'); return; }
     go('crewLobby');
   }
   /** the address bar: the crew's clean link while you're in it, play/ once you've left (so a reload doesn't pull you back in) */
@@ -2067,7 +2069,7 @@ export function createFlow(ctx) {
         rememberCrew(r.slug, r.name);
         openCrew(r.slug);
       },
-      back: () => go('onlineMenu'),
+      back: () => go('onlineMenu'), backTo: 'ONLINE',
     });
   }
   function screenCrewJoin() {
@@ -2082,7 +2084,7 @@ export function createFlow(ctx) {
       paste: (s) => cleanSlug(s) || String(s).toLowerCase().replace(/[^a-z0-9-]/g, ''),
       okLabel: 'JOIN',
       submit: (v) => openCrew(cleanSlug(v)),
-      back: () => go('onlineMenu'),
+      back: () => go('onlineMenu'), backTo: 'ONLINE',
     });
   }
 
@@ -2133,27 +2135,25 @@ export function createFlow(ctx) {
         const share = button('SHARE', () => { navigator.share({ title: 'Neon Stick Fight', text: `Our crew room: ${title.textContent}`, url: link }).catch(() => {}); }, 'fl-mini');
         pair.appendChild(share.el); items.push(share);
       }
-      const leave = button('ONLINE MENU', () => go('onlineMenu'), 'fl-violet fl-mini fl-sideonly');
-      const main = button('MAIN MENU', () => go('modeSelect'), 'fl-violet fl-mini');
       // Held upright (README, Crew rooms, The lobby held upright) the lobby is for whoever just opened the link:
-      // who's here and PLAY. The link and its QR code wait behind INVITE, so sharing is something you choose to do,
-      // and the only way out is MAIN MENU (the online menu is one step from there).
+      // who's here and PLAY. The link and its QR code wait behind INVITE, so sharing is something you choose to do.
+      // The way out is the corner's ‹ MAIN MENU, held either way (the online menu is one step from there).
       const invite = button('', () => crewShare(!crewSharing), 'fl-mini fl-uponly fl-invite');
       invite.el.append(shareIcon(), el('span', 'fl-invlabel', 'INVITE'));
-      const pair2 = el('div', 'fl-row fl-crewpair'); pair2.append(invite.el, leave.el, main.el);
+      const pair2 = el('div', 'fl-row fl-crewpair fl-uponly'); pair2.append(invite.el);
       btns.append(pair, pair2);
       // your name, and the way to change it, where a first-timer can see it (a name handed out by the link is marked auto)
-      const you = button('', () => askName(() => go('crewLobby'), () => go('crewLobby')), 'fl-mini fl-uponly fl-crewme');
+      const you = button('', () => askName(() => go('crewLobby'), () => go('crewLobby'), 'CREW'), 'fl-mini fl-uponly fl-crewme');
       you.el.append(el('span', 'fl-mename', `YOU'RE ${me.name || '???'}`), el('b', 'fl-meedit', me.auto ? 'SET YOUR NAME' : 'EDIT'));
       root.insertBefore(you.el, linkEl);
       items.splice(1, 0, you);
-      items.push(invite, leave, main, ...tabBtns);
+      items.push(invite, ...tabBtns);
       right.appendChild(btns);
       body.append(left, right, qrBox(link).el);   // the crew's link again, for a camera
       root.appendChild(body);
       lob = { root, title, table, tabs, recent, status, play, invite, noteUntil: crewNote ? performance.now() + 5000 : 0 };
       root.classList.toggle('fl-sharing', crewSharing);
-      return { items, focus: 0, back: () => { if (crewSharing && root.classList.contains('fl-up')) crewShare(false); else go('modeSelect'); }, legend: [MOVE, SELECT, ['back', 'MAIN MENU']] };
+      return { items, focus: 0, back: () => { if (crewSharing && root.classList.contains('fl-up')) crewShare(false); else go('modeSelect'); }, backTo: 'MAIN MENU' };
     });
     crewShare(crewSharing);
     paintLobby();

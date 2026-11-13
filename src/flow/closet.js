@@ -183,6 +183,10 @@ function injectStyle() {
   .cl-note { min-height: 1.2em; color: #fff4d6; }
   /* held upright: the tabs wrap three to a row and scroll, the cards go two to a row */
   #flow > .fl-up .cl-body { width: 100%; gap: max(6px, 1cqh); }
+  /* px floors: a phone held sideways has a stage about 390 px tall (1cqw about 7 px) */
+  .cl-head { font-size: max(13px, 2.2cqw); } #flow .cl-tab { font-size: max(12px, 1.5cqw); } #flow .cl-tab .cl-tcount { font-size: max(12px, 1.3cqw); }
+  .cl-stitle b { font-size: max(15px, 2.4cqw); } .cl-stitle span, .cl-kind { font-size: max(12px, 1.8cqw); }
+  #flow .cl-card .cl-name { font-size: max(12px, 1.6cqw); } #flow .cl-card .cl-how { font-size: max(12px, 1.6cqw); }
   #flow > .fl-up .cl-head { font-size: max(13px, 4cqw); flex-wrap: wrap; gap: 0.4em 1em; }
   #flow > .fl-up .cl-tabs { grid-template-columns: repeat(3, 1fr); max-height: 25vh; overflow-y: auto; gap: 6px; }
   #flow > .fl-up .cl-tab { font-size: max(13px, 3.8cqw); min-height: 44px; }
@@ -195,7 +199,7 @@ function injectStyle() {
   #flow > .fl-up .cl-card { flex-direction: row; justify-content: flex-start; gap: 2cqw; padding: 4px 2cqw; min-height: 64px; }
   #flow > .fl-up .cl-card canvas { height: max(56px, 7vh); }
   #flow > .fl-up .cl-card .cl-text { align-items: flex-start; text-align: left; min-width: 0; }
-  #flow > .fl-up .cl-card .cl-name { font-size: max(11px, 3.2cqw); }
+  #flow > .fl-up .cl-card .cl-name { font-size: max(12px, 3.2cqw); }
   #flow > .fl-up .cl-card .cl-how { font-size: max(12px, 3.4cqw); }
   `;
   const st = document.createElement('style'); st.id = 'closet-style'; st.textContent = css;
