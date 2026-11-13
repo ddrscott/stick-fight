@@ -134,8 +134,8 @@ try {
     await p.evaluate(() => { window.__flow.debug.closet.extras = null; window.__flow.debug.closet.ranks = null; });
 
     // 4b. character select sees the closet's pick
-    await press('#flow .fl-btn:has-text("BACK")');
-    check(`${label}: BACK goes to MAIN MENU`, (await until(async () => (await state(p)) === 'modeSelect', 3000)) === true);
+    await press('.fl-backchip');
+    check(`${label}: the corner's ‹ MAIN MENU goes to MAIN MENU`, (await until(async () => (await state(p)) === 'modeSelect', 3000)) === true);
     await p.evaluate((f) => { window.__flow.debug.sel.player = f; }, F);
     await press('#flow .fl-btn:has-text("ARCADE")');
     await until(async () => (await state(p)) === 'charSelect'); await sleep(600);

@@ -47,6 +47,10 @@ export function createUI(onSound) {
   const bar = el('div', 'fl-bar'), backSlot = el('div', 'fl-backslot');
   bar.appendChild(backSlot);
   root.appendChild(bar);
+  // the NEW VERSION pill (src/update.js) docks in the bar too, after the chip, where the counter was: on its own it
+  // sat top-left upright and bottom-left sideways, over the chip or over a menu's last row
+  const dock = () => { const pill = document.querySelector('body > .up-pill'); if (pill) { bar.appendChild(pill); fit(); } };
+  if (typeof MutationObserver !== 'undefined') new MutationObserver(dock).observe(document.body, { childList: true });
   // the desktop pause button: first in the corner row, shown by CSS only in a fight you can pause
   // (a touch screen has its own in the touch layer, which sends 'sf:pause')
   const pauseBtn = cornerButton('sf-pause', 'Pause', 1, PAUSE_ICON);
@@ -303,19 +307,19 @@ function injectStyle() {
   .fl-h2 { --c: var(--cyan); font-size: 4.2cqw; color: #d8fdff; text-shadow: 0 0 0.4cqw var(--c), 0 0 1.4cqw var(--c); }
   .fl-h3 { font-size: 2.6cqw; color: #ffd98f; }
   #flow .fl-read { text-shadow: var(--plain); }
-  .fl-label { font-size: 2.5cqw; font-weight: 600; letter-spacing: 0.14em; line-height: 1; color: rgba(230,214,255,0.86); text-align: center; }
-  .fl-small { font-size: 1.9cqw; font-weight: 500; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-align: center; line-height: 1.1; }
+  .fl-label { font-size: max(13px, 2.5cqw); font-weight: 600; letter-spacing: 0.14em; line-height: 1; color: rgba(230,214,255,0.86); text-align: center; }
+  .fl-small { font-size: max(12px, 1.9cqw); font-weight: 500; letter-spacing: 0.12em; color: rgba(214,190,255,0.7); text-align: center; line-height: 1.1; }
   .fl-rule { width: 34cqw; height: 0; border-top: 2px solid var(--amber); box-shadow: 0 0 1cqw var(--amber); opacity: 0.8; }
   .fl-list { display: flex; flex-direction: column; align-items: stretch; gap: 1.4cqh; }
   .fl-row { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 2cqw; }
   .fl-btn { --c: var(--cyan); pointer-events: auto; appearance: none; margin: 0; cursor: pointer;
     min-width: 30cqw; min-height: max(44px, 8cqh); padding: 0.4cqw 2.4cqw 0;
     background: rgba(14,4,30,0.62); border: 2px solid var(--c); border-radius: 0; color: color-mix(in srgb, var(--c) 70%, #fff);
-    font: 600 3.3cqw/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em;
+    font: 600 max(15px, 3.3cqw)/1 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em;
     text-shadow: var(--plain);   /* a <button> doesn't inherit text-shadow from #flow (the browser's own sheet resets it), so say it here */
     box-shadow: 0 0 0.8cqw color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 0.8cqw color-mix(in srgb, var(--c) 25%, transparent);
     display: flex; flex-direction: column; align-items: center; justify-content: center; transition: background 80ms, color 80ms, transform 60ms; }
-  .fl-btn small { display: block; font-size: 1.7cqw; letter-spacing: 0.12em; font-weight: 500; opacity: 0.8; margin-top: -0.2cqw; }
+  .fl-btn small { display: block; font-size: max(12px, 1.7cqw); letter-spacing: 0.12em; font-weight: 500; opacity: 0.8; margin-top: -0.2cqw; }
   /* the cursor lands at once: an item taking the focus doesn't fade in (only the press squeeze eases), the one losing it fades out */
   .fl-btn.fl-focus { transition: transform 60ms; background: var(--c); color: var(--deep); text-shadow: none; box-shadow: 0 0 1.6cqw var(--c), 0 0 3.2cqw color-mix(in srgb, var(--c) 45%, transparent); }
   .fl-btn.fl-focus small { opacity: 0.85; }
@@ -341,6 +345,9 @@ function injectStyle() {
   .fl-backchip:focus { outline: none; }
   .fl-bar .cr-chip { position: static; height: var(--barh); box-sizing: border-box; align-items: center; }
   .fl-bar.fl-tight .cr-chip { display: none; } .fl-bar.fl-tight1 .cr-chip span { display: none; }
+  #flow .fl-bar .up-pill { position: static; transform: none; height: var(--barh); min-height: 0; box-sizing: border-box; pointer-events: auto; font-size: max(15px, 2.2cqw); white-space: nowrap; }
+  #flow .fl-bar:has(.up-pill:not([hidden])) .cr-chip { display: none; }
+  #flow .fl-bar.fl-tight1 .up-pill b { display: none; }
   /* a screen taller than a short stage scrolls (fit() above): from the top, under the bar */
   #flow .fl-screen.fl-scroll { justify-content: flex-start; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; }
   #flow .fl-screen.fl-scroll:not(.fl-up) { padding-top: calc(1.4cqh + max(38px, 6.4cqh) + 1.2cqh); padding-bottom: 2cqh; }
@@ -355,7 +362,7 @@ function injectStyle() {
   .fl-titlerow { position: absolute; left: 0; top: 5.4cqh; transform: translateX(-50%); gap: 1.2cqw; }
   html.touch-ui:not(.pad-ui) .fl-titlerow { top: 7.4cqh; }
   .fl-mini { min-width: 0; min-height: max(36px, 6cqh); padding: 0.4cqw 1.6cqw 0; font-size: 2.1cqw; white-space: nowrap; }
-  .fl-slim { min-height: max(40px, 6.4cqh); font-size: 2.6cqw; }
+  .fl-slim { min-height: max(40px, 6.4cqh); font-size: max(14px, 2.6cqw); }
   .fl-touchonly { display: none; } html.dev-touch .fl-touchonly { display: block; }
   .fl-newhi { color: #ffc2f3; }
   /* the controls screen: the fight table beside the menu table */
@@ -647,6 +654,12 @@ function injectStyle() {
   .fl-crew .fl-link { font-size: 1.8cqw; }
   .fl-crewbody { align-items: flex-start; gap: 1.6cqw; margin-top: 0.6cqh; }
   .fl-crewleft { width: 52cqw; display: flex; flex-direction: column; gap: 1.4cqh; }
+  /* a phone held sideways: the crew list scrolls in its own box under the tabs and the goal, so the lobby fits the stage
+     at full size instead of shrinking (README, Arcade flow, Small stages) */
+  @container (min-aspect-ratio: 1/1) and (max-height: 520px) {
+    #flow .fl-crew:not(.fl-up) .fl-crewleft { max-height: calc(100cqh - 30cqh - 6.5cqh); min-height: 0; }
+    #flow .fl-crew:not(.fl-up) .fl-standings { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; }
+  }
   .fl-crewright { width: 24cqw; }
   .fl-crewbody > .fl-qr { --qr: 18cqw; }   /* the crew link's QR code, a third column */
   .fl-standings { display: grid; grid-template-columns: 2.2cqw 1fr 3cqw 3cqw 3cqw 5cqw 11cqw; column-gap: 0.8cqw; row-gap: 0.5cqh; align-items: baseline;
@@ -681,7 +694,7 @@ function injectStyle() {
   #flow .fl-uponly { display: none; }   /* the lobby's upright-only buttons (your name, INVITE); .fl-sideonly is the reverse */
   /* the lobby's views (paintLobby): the tabs over the table, then the standings, a crew high score table, or the stats */
   .fl-crewtabs { grid-column: 1 / -1; display: flex; gap: 0.6cqw; margin-bottom: 0.5cqh; }
-  .fl-crewtab { flex: 1; min-width: 0; min-height: 0; padding: 0.5cqw 0 0.2cqw; font-size: 1.4cqw; letter-spacing: 0.06em; }
+  .fl-crewtab { flex: 1; min-width: 0; min-height: 0; padding: 0.5cqw 0 0.2cqw; font-size: max(12px, 1.4cqw); letter-spacing: 0.06em; }
   .fl-crewtab.fl-on { color: var(--deep); background: var(--amber); border-color: var(--amber); text-shadow: none; }
   .fl-standings.fl-v-arcade, .fl-standings.fl-v-horde { grid-template-columns: 2.2cqw minmax(0, 0.6fr) max-content minmax(0, 1fr) max-content max-content; row-gap: 0.35cqh; }
   .fl-standings .fl-sinit { letter-spacing: 0.18em; }
@@ -729,11 +742,6 @@ function injectStyle() {
   /* Text floors (2026-11-13): sizes are container units, so on a phone held sideways (a stage about 390 px tall,
      1cqw about 7 px) the small print came out at 8 to 10 px. Every size a player reads has a px floor here; on a
      desktop the cqw side is bigger, so nothing there moves. A screen that grows past a short stage scrolls (fit()). */
-  .fl-label { font-size: max(13px, 2.5cqw); }
-  .fl-small { font-size: max(12px, 1.9cqw); }
-  .fl-btn { font-size: max(15px, 3.3cqw); }
-  .fl-btn small { font-size: max(12px, 1.7cqw); }
-  .fl-btn.fl-slim { font-size: max(14px, 2.6cqw); }
   .fl-table { font-size: max(14px, 3.2cqw); } .fl-table .fl-note { font-size: max(12px, 2.2cqw); }
   .fl-table.fl-table5 { font-size: max(13px, 2.4cqw); } .fl-table5 .fl-note, .fl-table .fl-fighter { font-size: max(12px, 1.9cqw); }
   .fl-tech b { font-size: max(13px, 2cqw); } .fl-tech small { font-size: max(12px, 1.4cqw); line-height: 1.1; }

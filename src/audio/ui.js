@@ -309,7 +309,7 @@ function el(tag, cls, attrs = {}) {
 function injectStyle() {
   if (document.getElementById('sf-sound-style')) return;
   const css = `
-  .sf-panel, .sf-hint { --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff; --ink: #fff4fd; --face: rgba(10,3,22,0.94); }
+  .sf-panel, .sf-hint { --pink: #ff2bd6; --cyan: #2ef2ff; --amber: #ffb02e; --violet: #a66bff; --ink: #fff4fd; --face: rgba(10,3,22,0.985); }
   .sf-locked { animation: sf-pulse 1.1s ease-in-out infinite; }
   @keyframes sf-pulse { 50% { box-shadow: 0 0 18px var(--amber, #ffb02e), 0 0 4px var(--amber, #ffb02e); } }
   /* in the corner row (src/corner.js), to the left of its buttons */

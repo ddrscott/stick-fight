@@ -489,7 +489,7 @@ for (const size of SIZES) {
   await page.keyboard.press('KeyP');
   if (await at('paused', 3000)) {
     await shot('paused');
-    await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /SHOW CONTROLS|SHOW TECHNIQUES/.test(i.el.textContent)); it && it.act(); });
+    await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => i.view === 'controls'); it && it.act(); });
     await shot('paused-controls', 300);
     await panel(); await shot('paused-settings', 2500); await panel(); await sleep(400);
     await page.keyboard.press('F1'); await shot('paused-movelist', 700); await page.keyboard.press('Escape'); await sleep(300);
