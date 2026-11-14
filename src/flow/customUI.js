@@ -164,7 +164,7 @@ function injectStyle() {
   .ce-shelf { display: flex; flex-direction: column; gap: 0.6cqh; }
   .ce-sub { font: 600 1.5cqw/1.15 'Teko', sans-serif; letter-spacing: 0.08em; color: rgba(234,220,255,0.8); }
   .ce-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2cqw; }
-  #flow .ce-slot { min-width: 0; min-height: 0; padding: 0.6cqh 1cqw; display: flex; flex-direction: row; align-items: center; gap: 1.2cqw; text-align: left;
+  #flow .ce-slot { min-width: 0; min-height: max-content; padding: 0.6cqh 1cqw; display: flex; flex-direction: row; align-items: center; gap: 1.2cqw; text-align: left;
     border-radius: 0; border: 2px solid rgba(214,190,255,0.35); background: rgba(4,1,10,0.7); }
   #flow .ce-slot.ce-full { border-color: #ffb02e; }
   #flow .ce-slot canvas, #flow .ce-card canvas { position: static; inset: auto; width: auto; display: block; flex: none; }
@@ -178,13 +178,13 @@ function injectStyle() {
   .ce-phead { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; flex-wrap: wrap; }
   .ce-phead b { font: 400 2.4cqw/1 'Bungee', sans-serif; color: #fff4d6; }
   .ce-phead span { font: 600 2cqw/1 'Teko', sans-serif; letter-spacing: 0.1em; color: #ffc46b; }
-  .ce-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.8cqh 0.8cqw; padding: 1cqh 1cqw; border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.85);
+  .ce-grid { display: grid; grid-template-columns: repeat(6, 1fr); grid-auto-rows: max-content; align-content: start; gap: 0.8cqh 0.8cqw; padding: 1cqh 1cqw; border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.85);
     max-height: 62cqh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; }
-  #flow .ce-card { min-width: 0; min-height: 0; padding: 0.5cqh 0.4cqw 0.4cqh; display: flex; flex-direction: column; align-items: center; gap: 0.3cqh; text-align: center;
+  #flow .ce-card { min-width: 0; min-height: max-content; letter-spacing: 0.04em; padding: 0.5cqh 0.4cqw 0.6cqh; display: flex; flex-direction: column; align-items: center; gap: 0.3cqh; text-align: center;
     border-radius: 0; border: 2px solid rgba(214,190,255,0.35); background: rgba(4,1,10,0.6); }
   #flow .ce-card canvas { height: 11cqh; }
   #flow .ce-card .ce-text { align-items: center; }
-  #flow .ce-card .ce-name { font-size: 1.35cqw; }
+  #flow .ce-card .ce-name { font-size: 1.3cqw; letter-spacing: 0.02em; }
   #flow .ce-card .ce-how { color: #ffc46b; }
   #flow .ce-card.ce-in { border-color: #9dffc0; }
   #flow .ce-card.ce-in .ce-how { color: #9dffc0; }
@@ -194,10 +194,10 @@ function injectStyle() {
   .ce-line b { color: #ffb02e; font-weight: 600; }
   /* px floors (a phone sideways has a stage about 390 px tall) */
   .ce-sub, #flow .ce-how, #flow .ce-from { font-size: max(12px, 1.5cqw); }
-  #flow .ce-key { font-size: max(12px, 1.6cqw); } #flow .ce-name { font-size: max(13px, 1.8cqw); } #flow .ce-card .ce-name { font-size: max(12px, 1.35cqw); }
+  #flow .ce-key { font-size: max(12px, 1.6cqw); } #flow .ce-name { font-size: max(13px, 1.8cqw); } #flow .ce-card .ce-name { font-size: max(12px, 1.3cqw); }
   .ce-phead b { font-size: max(15px, 2.4cqw); } .ce-phead span { font-size: max(13px, 2cqw); } .ce-line { font-size: max(13px, 1.7cqw); }
   /* short sideways phones: fewer, wider cards */
-  @media (max-height: 520px) { .ce-grid { grid-template-columns: repeat(5, 1fr); max-height: 56cqh; } #flow .ce-card canvas { height: 13cqh; } }
+  @media (max-height: 520px) { .ce-grid { grid-template-columns: repeat(4, 1fr); max-height: 56cqh; } #flow .ce-card canvas { height: 13cqh; } }
   /* held upright: two to a row, the figure beside the words */
   #flow > .fl-up .ce-page { width: 100%; }
   #flow > .fl-up .ce-sub { font-size: max(12px, 3.3cqw); }
@@ -211,7 +211,8 @@ function injectStyle() {
   #flow > .fl-up .ce-card { flex-direction: row; justify-content: flex-start; gap: 2cqw; padding: 4px 2cqw; text-align: left; }
   #flow > .fl-up .ce-card canvas { height: max(56px, 7vh); }
   #flow > .fl-up .ce-card .ce-text { align-items: flex-start; }
-  #flow > .fl-up .ce-card .ce-name { font-size: max(12px, 3.2cqw); }
+  #flow > .fl-up .ce-card .ce-name { font-size: max(12px, 3cqw); overflow-wrap: anywhere; }
+  #flow > .fl-up .ce-card .ce-text { flex: 1 1 0; }
   #flow > .fl-up .ce-line { font-size: max(13px, 3.4cqw); flex-wrap: wrap; }
   `;
   const st = document.createElement('style'); st.id = 'custom-style'; st.textContent = css;

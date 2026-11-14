@@ -1363,6 +1363,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // a wake-up strike: there's no standing body to tangle, so a press thrown into it is just lost (the last
     // BOTCH_GRACE steps of its stand-up still buffer, like any recovery)
     if (fd.wake) return u.phase === 'recovery' && stepsLeft(u) <= BOTCH_GRACE ? null : 'lost';
+    // holding a grab: the throw plays out whatever he presses, so a press there is lost too (a botch would let go of a
+    // body that's still held: the grab invariant, src/combat/invariants.js)
+    if (sim.units.some((o) => o.state === 'grabbed' && o.grabbedBy === u.id)) return 'lost';
     if (!u.grounded && fd.air) {
       if (u.hitConfirmed || u.phase === 'recovery' || u.rig.current.done || !FRAME_DATA[e.attack] || !FRAME_DATA[e.attack].air) return null;
       const toFloor = u.vy > 0 ? (floorUnder(u) - u.y) / u.vy * 120 : Infinity;
@@ -2268,7 +2271,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (sim.stepCount - (u.tumbleAt || -99) > 6) { u.tumbleAt = sim.stepCount; onEvent({ type: 'stairTumble', x: hx, y: ev.y, strength: st, unit: u }); note({ type: 'stairTumble', def: u.id }); }
       }
       else if (ev.type === 'bounce' && u.rag) {
-        u.ragLanded = false; u.groundBounce = false; u.juggle = true; u.airHits = Math.max(u.airHits, JUGGLE_MAX - 1);
+        // a juggle only for a body that can still be hit: a KO'd one bounces too, but 'ko' doesn't own the flag (STATE_OWNS)
+        u.ragLanded = false; u.groundBounce = false; u.juggle = u.state === 'knockdown'; u.airHits = Math.max(u.airHits, JUGGLE_MAX - 1);
         callout('GROUND BOUNCE', u.comboBy, 'trick'); u.launchStep = sim.stepCount;
         onEvent({ type: 'thud', x: u.x, y: u.ragFloor, dir: u.facing, strength: 0.9 });
       }

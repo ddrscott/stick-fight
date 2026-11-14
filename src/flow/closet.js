@@ -125,6 +125,8 @@ export function closetBody(o) {
   if (ce.focus >= 0) focus = items.length + ce.focus;
   items.push(...ce.items);
   shelf.appendChild(ce.el);
+  // back from a slot's page: the shelf (its own scroll box) shows that slot, not its top
+  if (ce.focus >= 0 && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { const it = ce.items[ce.focus].el; if (it.isConnected) shelf.scrollTop += it.getBoundingClientRect().bottom - shelf.getBoundingClientRect().bottom + 12; });
   // stat upgrades: after the looks, their own section with its own count (the COLLECTED numbers are cosmetics only)
   const ups = upgradeShelf({ fighter: ch, focusKey: o.focusKey, repaint: o.repaint, note: o.note });
   if (ups.focus >= 0) focus = items.length + ups.focus;

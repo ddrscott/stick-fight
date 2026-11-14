@@ -3,7 +3,8 @@
 // flags they own). Node, no browser.
 //   npm run netsim:invariants                 (node scripts/netsim/invariants.mjs [--steps 6000] [--seeds 11,22,33])
 //   node scripts/netsim/invariants.mjs --durations    also print the longest each state lasted (for STUCK_STEPS)
-// Every character, in versus (against a different character each seed, on short bars so rounds and matches turn over)
+// Every character, in versus (against a different character each seed, on short bars so rounds and matches turn over; on the
+// second seed both fighters carry two random borrowed moves, the custom employee)
 // and in horde (as the hero against CPU goons), for each seed in a fixed list, the CPUs at a mix of difficulties.
 // src/combat/invariants.js checks after every tick. The first violation stops the run and prints the run, the seed,
 // the step, the unit and the last sim.log entries, and the script exits 1.
@@ -17,6 +18,8 @@ const { createCombat } = await import(root + '/src/combat/sim.js');
 const { EMPTY_INPUT } = await import(root + '/src/combat/input.js');
 const { roster } = await import(root + '/src/characters/index.js');
 const { createInvariants } = await import(root + '/src/combat/invariants.js');
+const { movesFor } = await import(root + '/src/career/moves.js');
+const { mulberry32 } = await import(root + '/src/combat/rng.js');
 
 const argv = process.argv.slice(2), opt = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const STEPS = +opt('steps', 6000), SEEDS = opt('seeds', '11,22,33').split(',').map(Number), DURATIONS = argv.includes('--durations');
@@ -30,12 +33,14 @@ for (const horde of [false, true]) for (let si = 0; si < SEEDS.length; si++) for
   const fighters = [createFighter({ x: sp[0].x, y: sp[0].y, facing: 1 }), createFighter({ x: sp[1].x, y: sp[1].y, facing: -1 })];
   let sim; const makeRig = (c) => { const g = sim.units[0]; return createFighter({ color: c, x: g.x, y: g.y, facing: -1 }); };
   sim = createCombat({ fighters, arena, input: { snapshot: () => EMPTY_INPUT }, onEvent() {}, makeRig, moves: MOVES, moveData: MOVE_DATA });
-  sim.setCharacters(pair);
+  // the second seed's runs give both fighters two random borrowed moves (the custom employee, README Characters)
+  const lr = mulberry32(seed * 7 + i), lend = (f) => { const pool = movesFor(f).map((m) => m.id); return { moves: [pool.splice(Math.floor(lr() * pool.length), 1)[0], pool[Math.floor(lr() * pool.length)]] }; };
+  sim.setCharacters(pair, [], [], si === 1 ? [lend(pair[0]), lend(pair[1])] : []);
   const d = DIFF[si % DIFF.length];
   sim.setAI(0, d); sim.setAI(1, 0.9);
   sim.roundTime = 30;
   sim.resetMatch({ seed, startHealth: 40, fresh: true, horde: horde ? { goonHealth: 20, goonDifficulty: 0.7 } : null });
-  const check = createInvariants(sim), run = `${horde ? 'horde' : 'versus'} ${pair.join(' v ')} seed ${seed} (CPU ${d} v 0.9)`;
+  const check = createInvariants(sim), run = `${horde ? 'horde' : 'versus'} ${pair.join(' v ')} seed ${seed} (CPU ${d} v 0.9)${si === 1 ? ` slots ${sim.units[0].loadout} / ${sim.units[1].loadout}` : ''}`;
   const at = new Map();
   for (let t = 0; t < STEPS; t++) {
     sim.tick(); steps++;
