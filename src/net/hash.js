@@ -11,6 +11,7 @@ const UNIT_FIELDS = [
   'home', 'rollT', 'otgHit',   // the sides a body on the floor rises on, a roll's progress, the knockdown's ground hit used
   'dashDir', 'dashT', 'tapDir', 'tapAt', 'tapN', 'crouchEnd', 'lowStance',   // a dash and how far in, the double tap's count, the rise out of a crouch
   'clashUntil', 'tradeUntil', 'tradeLimb',   // a clash's bounce back, and the limbs left out of the solid bodies while they're in each other
+  'maxHealth', 'upHp', 'upDmg', 'upRegen', 'upWalk',   // stat upgrades (the EVEN room rule): both pages must have put the same on both fighters
 ];
 
 const f64 = new Float64Array(1);

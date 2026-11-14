@@ -52,7 +52,7 @@ import * as S from './scores.js';
 import { createMenuInput } from './menuInput.js';
 import { createUI, el, button } from './ui.js';
 import { techniques, botchEnabled, setBotchEnabled } from './techniques.js';
-import { roundTime, bestOf, cycleRoundTime, cycleBestOf, timeLabel } from './rules.js';
+import { roundTime, bestOf, cycleRoundTime, cycleBestOf, timeLabel, versusUpgrades, stepVersusUpgrades, upgradesLabel, upgradesNote } from './rules.js';
 import { getNet, setNet, cleanCode, roomLink, CODE_ALPHABET, CODE_LEN } from './netApi.js';
 import { startName } from './controls.js';
 import { profile, setName as saveName, guestName, cleanName, rememberCrew, syncProfile, startSignIn, verifySignIn, signOut, deleteProfile } from '../net/profile.js';
@@ -66,8 +66,9 @@ import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';  
 import { rootUrl } from '../root.js';
 import { createTicker } from '../ticker.js';
 import { closetBody } from './closet.js';   // the Supply Closet (README, Progression)
-import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip, profileCard } from './careerUI.js';   // career and sticks (README, Progression)
-import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery, fromCrewGoal } from '../career/store.js';
+import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip, profileCard } from './careerUI.js';
+import { upTag, UP_KEY, upgradesLine } from './upgradesUI.js';   // stat upgrades (README, Progression, Stat upgrades)   // career and sticks (README, Progression)
+import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery, fromCrewGoal, boost as boostOf } from '../career/store.js';
 import { goalText } from '../career/crewgoal.js';   // crew goals (README, Crew rooms, Crew goals)
 import { masteryPalette } from '../career/palettes.js';
 import { titleFor } from '../career/rules.js';
@@ -178,7 +179,7 @@ export function createFlow(ctx) {
   let t = 0;   // seconds in this state (flow time: advances with the game's frames)
   let idle = 0;   // ms since the last key, touch, click or pad input
   let mode = null;
-  const run = { stage: 0, score: 0, stageStart: 0, continues: 0, stageContinues: 0, floors: 0, goons: 0 };
+  const run = { up: false, stage: 0, score: 0, stageStart: 0, continues: 0, stageContinues: 0, floors: 0, goons: 0 };
   let bonus = { text: '', t: 0 };
   let resumeTo = 'fighting';
   let demoKO = false;
@@ -357,7 +358,7 @@ export function createFlow(ctx) {
     return seq;
   }
   function ensureDemo() { if (ctx.sceneName() !== 'attract') demo(); }
-  function newRun(m) { mode = m; run.stage = 0; run.score = 0; run.stageStart = 0; run.continues = 0; run.stageContinues = 0; run.floors = 0; run.goons = 0; bonus = { text: '', t: 0 }; }
+  function newRun(m) { mode = m; run.up = false; run.stage = 0; run.score = 0; run.stageStart = 0; run.continues = 0; run.stageContinues = 0; run.floors = 0; run.goons = 0; bonus = { text: '', t: 0 }; }
   function add(points, label = '') {
     if (!points) return;
     run.score += Math.round(points);
@@ -471,7 +472,7 @@ export function createFlow(ctx) {
     // horde: the sim only ends a run with the hero down (its rules: no clock, a goon's KO never ends it)
     if (mode === 'horde' && r.reason !== 'heroDown') console.warn(`[flow] a horde run ended without the hero down (${r.reason}): scored as game over`);
     if (mode === 'horde') {
-      entry = { mode: 'horde', score: run.score, note: `${run.floors} FLOOR${run.floors === 1 ? '' : 'S'}`, char: sel.player, reach: run.floors };
+      entry = { mode: 'horde', score: run.score, note: `${run.floors} FLOOR${run.floors === 1 ? '' : 'S'}`, char: sel.player, reach: run.floors, up: !!run.up };
       track('horde_end', [sel.player], run.floors);
       go('gameOver');
     } else if (resultWin) {
@@ -486,7 +487,7 @@ export function createFlow(ctx) {
     // the boss down without a continue: THE CEO is waiting upstairs (a secret seventh stage, src/flow/ladder.js)
     const secret = run.stage >= ladder().length - 1 && mode === 'arcade' && secretStage(ladder(), run.continues, sel.player, getCharacter);
     if (secret) run.ladder = [...ladder(), secret];
-    if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR', char: sel.player, reach: ladder().length, clear: true }; track('arcade_end', [sel.player, 'clear'], ladder().length); go('ending'); return; }
+    if (run.stage >= ladder().length - 1) { entry = { mode: 'arcade', score: run.score, note: 'ALL CLEAR', char: sel.player, reach: ladder().length, clear: true, up: !!run.up }; track('arcade_end', [sel.player, 'clear'], ladder().length); go('ending'); return; }
     track('stage', [sel.player], run.stage + 2);   // reached the next stage
     run.stage++; run.stageContinues = 0;
     go('stageIntro');
@@ -510,9 +511,12 @@ export function createFlow(ctx) {
   /** the palette ids a scene draws: the player's for their fighter (README, Progression), the CPU or the dummy in its own */
   const palOf = (id) => { const p = equipped(id); return p ? p.id : ''; };
   const lookOf = (id) => look(id);   // the palette plus fighter mastery's pose and taunt, for the scene (src/main.js looksFor)
-  function hordeScene() { ctx.scene('horde', { chars: [sel.player, TEMP_ID], pals: [lookOf(sel.player), ''] }); if (ctx.book) ctx.book.begin({ mode: 'horde', local: 0 }); }   // the run is one entry in the books
+  /** the player's stat upgrades for this fight (README, Progression, Stat upgrades): arcade, horde and training only.
+   *  A run fought with any is marked UP on the score tables (run.up). */
+  const boostsOf = (id) => { const b = boostOf(id); if (b) run.up = true; return [b, null]; };
+  function hordeScene() { ctx.scene('horde', { chars: [sel.player, TEMP_ID], pals: [lookOf(sel.player), ''], boosts: boostsOf(sel.player) }); if (ctx.book) ctx.book.begin({ mode: 'horde', local: 0 }); }   // the run is one entry in the books
   function startHorde() { newRun('horde'); track('mode', ['horde', sel.player]); hordeScene(); go('fighting'); }
-  function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [lookOf(sel.player), ''] }); go('fighting'); }
+  function startTraining() { newRun('training'); track('mode', ['training', sel.player]); ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [lookOf(sel.player), ''], boosts: boostsOf(sel.player) }); go('fighting'); }
   // ---- character select --------------------------------------------------------------------------------
   function toSelect(m) { sel.mode = m; sel.step = 'player'; go('charSelect'); }
   // VERSUS ONLINE goes straight to the online menu: you get into a room first, and both pick there
@@ -526,13 +530,15 @@ export function createFlow(ctx) {
     const sub = { arcade: `ARCADE  ·  ${LADDER.length} STAGES UP THE BUILDING`, horde: 'HORDE  ·  FLOOR BY FLOOR', training: 'TRAINING  ·  STEP 1 OF 2' }[sel.mode] || '';
     selCtl = openSelect(ui, { title: dummy ? 'PICK YOUR DUMMY' : 'SELECT FIGHTER', sub: dummy ? 'TRAINING  ·  STEP 2 OF 2  ·  WHO TAKES THE HITS' : sub,
       roster: roster(), initial: dummy ? sel.dummy : sel.player, touch: ctx.touchUI(), pad: ctx.padUI(), onPick: pickChar, onBack: selBack, backTo: dummy ? 'FIGHTER' : 'MAIN MENU', onMoves: openMoves,
-      palettes: dummy ? undefined : palettePicker(), ...(dummy ? {} : masteryOpts) });
+      palettes: dummy ? undefined : palettePicker(), ...(dummy ? {} : soloOpts) });
   }
   /** The character select's palette strip (README, Progression): MAIN and each palette for the fighter under the cursor.
    *  A press on an owned one fights in it; on a locked one the first press asks and the second buys it with sticks.
    *  changed: online, the pick goes out again so the rival sees the new look. */
   // fighter mastery on the select screens (README, Progression, Fighter mastery): the rank on each card and under the tagline
   const masteryOpts = { mastery: (id) => masteryChip(id), rank: (id) => mastery(id).rank };
+  // arcade, horde and training also show the fighter's stat upgrades under it (they apply there; never online)
+  const soloOpts = { ...masteryOpts, mastery: (id) => { const f = document.createElement('div'); f.append(masteryChip(id), upgradesLine(id)); return f; } };
   function palettePicker(changed = () => {}) {
     let armed = '';
     return {
@@ -735,12 +741,15 @@ export function createFlow(ctx) {
       tb.dataset.scroll = 'y';
       rows.forEach((r, i) => {
         const cls = i === hs.highlight ? ' fl-new' : '';
-        tb.append(el('span', 'fl-rank' + cls, `${i + 1}`), el('span', cls, withTitle(board ? r.initials : r.name, r.title || '')), el('span', 'fl-score' + cls, S.fmt(r.score)));
+        const nm = el('span', cls, withTitle(board ? r.initials : r.name, r.title || ''));
+        if (r.up) nm.appendChild(upTag());   // set with stat upgrades: the same table, marked
+        tb.append(el('span', 'fl-rank' + cls, `${i + 1}`), nm, el('span', 'fl-score' + cls, S.fmt(r.score)));
         if (board) { const f = el('span', 'fl-fighter' + cls, characterOr(r.char).name); f.style.setProperty('--fc', characterOr(r.char).color); tb.appendChild(f); }
         tb.appendChild(el('span', 'fl-note' + cls, board ? CS.rowNote(hs.mode, r) : r.note));
       });
       if (board && !rows.length) tb.appendChild(el('span', 'fl-note fl-empty', 'NO SCORES YET'));
       root.appendChild(tb);
+      if (rows.some((r) => r.up)) root.appendChild(el('div', 'fl-small up-key', UP_KEY));
       // where a run just posted went, under this device's table
       const landed = !board && hs.posted && hs.posted.length ? hs.posted.map((p) => `${p.name} ${ORDINAL[p.rank]}`).join('  ·  ') : '';
       if (landed) root.appendChild(el('div', 'fl-small fl-crewpost', `ON THE CREW BOARDS: ${landed}`));
@@ -834,7 +843,7 @@ export function createFlow(ctx) {
   function screenCloset() {
     const r = roster();
     if (!r.some((c) => c.id === closetSt.fighter)) closetSt.fighter = (r.find((c) => c.id === sel.player) || r[0]).id;
-    let msg = 'LOCKED ITEMS SAY HOW TO GET THEM. PRESS ONE TO PUT IT ON OR TO BUY IT.';
+    let msg = 'LOCKED ITEMS SAY HOW TO GET THEM. PRESS ONE TO PUT IT ON OR TO BUY IT. STAT UPGRADES ARE AT THE BOTTOM OF EACH SHELF.';
     const paint = (focusKey = '') => ui.show('fl-closet', (root) => {
       root.append(el('h1', 'fl-h2', 'SUPPLY CLOSET'));
       const note = el('div', 'fl-small cl-note', msg);
@@ -877,7 +886,7 @@ export function createFlow(ctx) {
     for (const u of sim.units) hp.delete(u);
     // each continue on this stage eases its CPU (src/flow/ladder.js retryDifficulty)
     const level = retryDifficulty(st.difficulty, run.stageContinues);
-    ctx.scene('arcade', { stage: { ...st, difficulty: level }, chars: [sel.player, st.char || TEMP_ID], pals: [lookOf(sel.player), ''] });
+    ctx.scene('arcade', { stage: { ...st, difficulty: level }, chars: [sel.player, st.char || TEMP_ID], pals: [lookOf(sel.player), ''], boosts: boostsOf(sel.player) });
     if (ctx.book) ctx.book.begin({ mode: 'arcade', level, stage: st.n, local: 0 });   // the books: one match per stage fought
     ui.show('fl-stage', (root) => {
       root.append(el('div', 'fl-label', st.boss ? 'FINAL STAGE' : `STAGE ${st.n} OF ${ladder().length}`));
@@ -939,7 +948,7 @@ export function createFlow(ctx) {
   function tickContinue() { if (countEl) { const n = String(Math.max(0, Math.ceil(10 - t - 0.0001))); if (countEl.textContent !== n) countEl.textContent = n; } }
   function screenGameOver() {
     if (CS.recentCrews().length) CS.loadBoards();   // the crews' tables, so the initials screen knows if this run makes one
-    if (mode === 'arcade') { entry = { mode: 'arcade', score: run.score, note: `STAGE ${ladder()[run.stage].n}`, char: sel.player, reach: ladder()[run.stage].n }; track('arcade_end', [sel.player, 'over'], ladder()[run.stage].n); }
+    if (mode === 'arcade') { entry = { mode: 'arcade', score: run.score, note: `STAGE ${ladder()[run.stage].n}`, char: sel.player, reach: ladder()[run.stage].n, up: !!run.up }; track('arcade_end', [sel.player, 'over'], ladder()[run.stage].n); }
     ui.show('fl-gameover', (root) => {
       root.append(el('h1', 'fl-h1', 'GAME OVER'));
       const tl = el('div', 'fl-tally');
@@ -1015,11 +1024,11 @@ export function createFlow(ctx) {
       initials = ['A', 'A', 'A'];
     }
     const name = initials.join('');
-    const rank = S.rankFor(entry.mode, entry.score) >= 0 ? S.addScore(entry.mode, { name, score: entry.score, note: entry.note, title: careerNow().title }) : -1;
+    const rank = S.rankFor(entry.mode, entry.score) >= 0 ? S.addScore(entry.mode, { name, score: entry.score, note: entry.note, title: careerNow().title, ...(entry.up ? { up: true } : {}) }) : -1;
     // a run that only made a crew's table shows that table; the rest show this device's
     const crewPlace = rank < 0 ? CS.placeFor(entry.mode, entry.score) : null;
     hs = { mode: entry.mode, highlight: rank, postGame: true, loop: hs.loop, manual: false, crew: crewPlace ? crewPlace.slug : '', posted: [] };
-    const run = entry.char ? { kind: entry.mode, initials: name, score: entry.score, char: entry.char, reach: entry.reach | 0, clear: !!entry.clear, title: careerNow().title } : null;
+    const run = entry.char ? { kind: entry.mode, initials: name, score: entry.score, char: entry.char, reach: entry.reach | 0, clear: !!entry.clear, title: careerNow().title, up: !!entry.up } : null;
     entry = null;
     go('highScores');
     // post it to the crews (README, Crew rooms, High scores), then show where it landed
@@ -1101,7 +1110,7 @@ export function createFlow(ctx) {
       items.push(movesBtn);
       if (mode === 'arcade') { const k = items.length; items.push(button('RESTART STAGE', () => askPause('RESTART STAGE?', `THE SCORE GOES BACK TO ${S.fmt(run.stageStart)}`, () => { run.score = run.stageStart; go('stageIntro'); }, k))); }
       if (mode === 'horde') { const k = items.length; items.push(button('RESTART RUN', () => askPause('RESTART RUN?', `THIS RUN ENDS ON FLOOR ${run.floors + 1}`, () => { newRun('horde'); hordeScene(); go('fighting'); }, k))); }
-      if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [lookOf(sel.player), ''] }); go('fighting'); }));
+      if (mode === 'training') items.push(button('RESET', () => { ctx.scene('dummy', { chars: [sel.player, sel.dummy], pals: [lookOf(sel.player), ''], boosts: boostsOf(sel.player) }); go('fighting'); }));
       // the match rules and the botch switch live in SETTINGS now, with sound and graphics (one panel, src/audio/ui.js),
       // so this list is only where to go: back to the fight, the moves, a restart, SETTINGS, out
       if (settingsPanel) {
@@ -1257,6 +1266,11 @@ export function createFlow(ctx) {
       items.push(button('CANCEL', () => go('onlineMenu'), 'fl-violet'), mainMenuBtn());
       btnRow(root, items, '17cqw');
       if (net0.setWatchable) { root.appendChild(spec.el); items.push(spec); }
+      // the room rule for stat upgrades (README, Progression, Stat upgrades): OFF, or EVEN for both fully upgraded.
+      // The same setting as SETTINGS, GAME; it rides the start message, so a change counts from the next match
+      const upLabel = () => `${upgradesLabel(versusUpgrades())}  ·  ${upgradesNote(versusUpgrades())}`;
+      const upr = button(upLabel(), () => { stepVersusUpgrades(); upr.el.textContent = upLabel(); }, 'fl-mini fl-violet fl-spec fl-uprule');
+      root.appendChild(upr.el); items.push(upr);
       return { items, back: () => go('onlineMenu') };
     });
     const fallback = ui.focus;   // COPY LINK is dim until the room opens, so the focus starts on CANCEL
@@ -1521,7 +1535,8 @@ export function createFlow(ctx) {
       root.appendChild(el('div', 'fl-label', `MATCH ${v.n}  ·  ${nameOf(L.chars[v.me])} VS ${nameOf(L.chars[1 - v.me])}  ·  ROUNDS ${L.wins[v.me]}–${L.wins[1 - v.me]}`));
       post.setEl = scoreLine(root, v);
       post.subEl = el('div', 'fl-small', '');
-      root.appendChild(post.subEl);
+      post.ruleEl = el('div', 'fl-small fl-uprule-line', '');   // the room rule for stat upgrades, played and next
+      root.append(post.subEl, post.ruleEl);
       post.cdEl = el('div', 'fl-cd');
       post.rivalEl = el('div', 'fl-rivalline');
       const cdRow = el('div', 'fl-row fl-cdrow');
@@ -1586,6 +1601,7 @@ export function createFlow(ctx) {
     const at = cr ? `  ·  CREW RECORD VS ${rivalLabel(v)} ${cr.w}–${cr.l}${cr.d ? `–${cr.d}` : ''}`
       : v.allTime && (v.allTime.w + v.allTime.l + v.allTime.d) > v.tally.games ? `  ·  ALL TIME VS THIS RIVAL ${v.allTime.w}–${v.allTime.l}` : '';
     setText(post.subEl, `ROUNDS ${v.tally.roundsYou}–${v.tally.roundsRival}${v.tally.draw ? `  ·  DRAWS ${v.tally.draw}` : ''}${at}`);
+    setText(post.ruleEl, ruleLine(v));
     // the rival's choice
     const rw = v.rival.want, rf = v.rival.focus;
     let line = '';
@@ -1622,6 +1638,15 @@ export function createFlow(ctx) {
     ui.refresh();
   }
 
+  /** the room rule for stat upgrades in plain words (README, Progression, Stat upgrades): what the last match was played
+   *  on, and the next match's when it differs (the host changed it in SETTINGS) or there's no last match yet */
+  function ruleLine(v) {
+    const next = v.rules ? v.rules.upgrades : null, played = v.played ? v.played.upgrades : null;
+    const say = (u) => `${upgradesLabel(u)}  ·  ${upgradesNote(u)}`;
+    if (played && (!next || next === played)) return `THIS MATCH: ${say(played)}`;
+    if (played) return `THIS MATCH: ${upgradesLabel(played)}  ·  NEXT: ${say(next)}`;
+    return next ? say(next) : "UPGRADES: THE HOST'S CALL";
+  }
   // the pick screen: both pick at once, each seeing the other's card; the host starts
   let pickUi = null;
   function screenOnlineSelect() {
@@ -1630,14 +1655,14 @@ export function createFlow(ctx) {
     const host = v.role === 'host';
     betweenRole = v.role;
     const status = el('div', 'fl-selstatus');
-    const youEl = el('span'), rivalEl = el('span');
-    status.append(youEl, rivalEl);
+    const youEl = el('span'), rivalEl = el('span'), ruleEl = el('span', 'fl-uprule-line');
+    status.append(youEl, rivalEl, ruleEl);
     let startBtn = null;
     if (host) {
       startBtn = button('START', () => { if (t >= 0.3) getNet().startNow?.(); }, 'fl-amber');
       startBtn.disabled = () => { const w = view(); return !w || !w.canStart; };
     }
-    pickUi = { host, youEl, rivalEl, startBtn };
+    pickUi = { host, youEl, rivalEl, ruleEl, startBtn };
     const tl = v.tally;
     const crewName = crewMatch ? String((crewCli && crewCli.state && crewCli.state.crew && crewCli.state.crew.name) || 'CREW MATCH').toUpperCase() : '';
     selCtl = openSelect(ui, {
@@ -1676,6 +1701,9 @@ export function createFlow(ctx) {
       p.youEl.textContent = ''; p.youEl.appendChild(el('b', me.ready ? 'fl-ok' : '', you));
       p.rivalEl.textContent = ''; p.rivalEl.appendChild(el('b', them.ready ? 'fl-ok' : '', riv));
     }
+    // the match about to start: the host's rule as it stands (the guest hears it with every pick)
+    const next = v.rules ? v.rules.upgrades : null;
+    setText(p.ruleEl, next ? `${upgradesLabel(next)}  ·  ${upgradesNote(next)}${p.host ? '  ·  SETTINGS CHANGES IT' : ''}` : "UPGRADES: THE HOST'S CALL");
     if (p.startBtn) {
       const label = v.canStart && !them.ready ? `START · ${rn}: ${nameOf(them.id)}` : 'START';
       if (p.startBtn.el.textContent !== label) p.startBtn.el.textContent = label;
@@ -2323,13 +2351,16 @@ export function createFlow(ctx) {
     rows.forEach((r, i) => {
       const cls = r.member && r.member === you ? ' fl-me' : '';
       t.appendChild(el('span', 'fl-srank' + cls, String(i + 1)));
-      t.appendChild(el('span', 'fl-sname fl-sinit' + cls, withTitle(r.initials, r.title || '')));
+      const nm = el('span', 'fl-sname fl-sinit' + cls, withTitle(r.initials, r.title || ''));
+      if (r.up) nm.appendChild(upTag());
+      t.appendChild(nm);
       t.appendChild(el('span', 'fl-snum' + cls, S.fmt(r.score)));
       const f = el('span', 'fl-sfav' + cls, characterOr(r.char).name);
       f.style.setProperty('--fc', characterOr(r.char).color);
       t.append(f, el('span', 'fl-snote' + cls, r.clear ? 'CLEAR' : String(r.reach)), el('span', 'fl-sdate' + cls, shortDate(r.at)));
     });
     if (!rows.length) t.appendChild(el('span', 'fl-smore', s ? `NO ${kind.toUpperCase()} SCORES YET  ·  FINISH A RUN WITH THIS CREW ON YOUR LIST` : 'CONNECTING…'));
+    else if (rows.some((r) => r.up)) t.appendChild(el('span', 'fl-smore up-key', UP_KEY));
   }
   /** the crew's stats: time played and matches, the most picked, each member's time and favorite, and the crew's own matchups */
   function paintCrewStats(t, s, you) {

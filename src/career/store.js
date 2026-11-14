@@ -28,6 +28,9 @@
 //   mastery(fighter)       fighter mastery (src/career/mastery.js): { xp, n, rank, into, span, next, newHire }
 //   kit(fighter)           { pose, taunt }: whether the fighter plays its unlocked victory pose and taunt
 //   setKit(fighter, kind, on)   switch an unlocked pose or taunt on or off (the closet)
+//   upgrades(fighter)      stat upgrades (src/career/upgrades.js): { health, power, stamina, speed }, the tier owned of each
+//   boost(fighter)         the sim's multipliers for this fighter's upgrades, or null (arcade, horde and training use it)
+//   buyUpgrade(fighter, stat)   the next tier of a stat: { ok, tier } | { error: 'short' | 'maxed' | 'unreachable' ... }
 //   look(fighter)          the look string a fight is started with: the palette id, then '+p' / '+t' / '+pt' for the
 //                          pose and taunt (src/main.js lookFor reads it; online it rides where the palette always did)
 //
@@ -36,6 +39,7 @@ import { blankCareer, titleFor, utcDay, NUDGE, PAID_MODES, ONLINE_MODES, cleanPt
 import { shiftsFor, cleanShifts, swapShift } from './shifts.js';
 import { payWithMastery, applyWithMastery, cleanMastery, masteryOf, rankFor, NEW_HIRE, kitOn, kitKey, kitItemKey } from './mastery.js';
 import { palette, itemKey } from './palettes.js';
+import { levelsOf, nextTier, upKey, boostFor } from './upgrades.js';
 import { profile } from '../net/profile.js';
 import { apiUrl } from '../net/link.js';
 
@@ -220,6 +224,27 @@ export async function buy(fighter, id) {
   write({ ...s, career: { ...s.career, sticks: s.career.sticks - pal.price, owned: [...s.career.owned, itemKey(fighter, id)], equip: { ...s.career.equip, [fighter]: id } } });
   changed();
   return { ok: true };
+}
+
+/** stat upgrades: the tier owned of each stat for this fighter (README, Progression, Stat upgrades) */
+export function upgrades(fighter) { return levelsOf(read().career.owned, fighter); }
+/** the sim's multipliers for this fighter's upgrades, or null with none */
+export function boost(fighter) { return boostFor(upgrades(fighter)); }
+/** Buy the next tier of one stat. Signed in, the Worker checks the price and the order (POST career/buy with upgrade). */
+export async function buyUpgrade(fighter, stat) {
+  const s = read(), p = profile();
+  const nx = nextTier(s.career.owned, fighter, stat);
+  if (!nx) return { error: 'maxed' };
+  if (s.career.sticks < nx.price) return { error: 'short' };
+  if (p.email && s.email === p.email) {
+    const r = await api('career/buy', 'POST', { fighter, upgrade: stat, tier: nx.tier });
+    if (r && r.career) adopt(r.career, p.email);
+    changed();
+    return r && !r.error ? { ok: true, tier: nx.tier } : { error: (r && r.error) || 'unreachable' };
+  }
+  write({ ...s, career: { ...s.career, sticks: s.career.sticks - nx.price, owned: [...s.career.owned, upKey(fighter, stat, nx.tier)] } });
+  changed();
+  return { ok: true, tier: nx.tier };
 }
 
 export function equip(fighter, id) {
