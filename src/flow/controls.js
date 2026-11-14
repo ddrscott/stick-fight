@@ -13,10 +13,11 @@
 //                                               anywhere else it's confirm
 //   delete    Backspace (typing screens)        X / □ (the two keyboard screens)  DEL
 //   move list F1 (pause menu, character select)  Y / △ (same screens)             the MOVE LIST button
+//   closet    C (screens with the sticks counter) X / □ (same screens)             tap the sticks counter
 //   settings  the menu button (a click), or      SETTINGS in the pause menu;       the menu button, or SETTINGS
 //             SETTINGS in the pause menu; Esc   B closes                          in the pause menu; X closes
 //             closes (src/audio/ui.js key())
-//   nothing   -                                 X and Y elsewhere, bumpers, triggers, sticks
+//   nothing   -                                 X and Y elsewhere, triggers, sticks
 //
 // A screen with nothing to back out to (the title, a stage card, stage clear, continue, game over,
 // initials, the ending) ignores back: B never confirms and A never backs out. The press that
@@ -32,7 +33,7 @@
 
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 
-/** @typedef {'move'|'confirm'|'back'|'start'|'del'|'type'|'moves'|'tab'} Action */
+/** @typedef {'move'|'confirm'|'back'|'start'|'del'|'type'|'moves'|'tab'|'closet'} Action */
 
 // ---- the device in use ------------------------------------------------------------------------------
 // <html> carries dev-key, dev-pad or dev-touch (and pad-ps for a PlayStation pad), so legends switch
@@ -76,8 +77,8 @@ export const FACE = {
   3: { x: 'Y', ps: '△', c: '#ffd23d', pc: '#3ddcb0' },
 };
 export const PILL = { start: { x: 'START', ps: 'OPTIONS' }, select: { x: 'SELECT', ps: 'SHARE' }, lb: { x: 'LB', ps: 'L1' }, rb: { x: 'RB', ps: 'R1' } };
-const KEY = { move: 'ARROWS', confirm: 'ENTER', back: 'ESC', del: 'BACKSPACE', type: 'A-Z', moves: 'F1', tab: 'Q E' };
-const PAD = { confirm: 0, back: 1, del: 2, moves: 3 };
+const KEY = { move: 'ARROWS', confirm: 'ENTER', back: 'ESC', del: 'BACKSPACE', type: 'A-Z', moves: 'F1', tab: 'Q E', closet: 'C' };
+const PAD = { confirm: 0, back: 1, del: 2, moves: 3, closet: 2 };
 
 function span(cls, text) { const s = document.createElement('span'); s.className = cls; if (text != null) s.textContent = text; return s; }
 /** a round face button glyph (0 A, 1 B, 2 X, 3 Y), Xbox and PlayStation faces both drawn, CSS picks */
@@ -147,6 +148,7 @@ export const MENUS = [
   ['SELECT', 'ENTER / SPACE', 0],
   ['BACK', 'ESC / BACKSPACE', 1],
   ['SWITCH TAB', 'Q / E', 'LB / RB'],
+  ['SUPPLY CLOSET', 'C', 2],
 ];
 /** a two-column table, keyboard and gamepad, the gamepad column in glyphs */
 export function controlsTable(rows, title) {

@@ -78,12 +78,14 @@ import { palettesFor } from '../career/palettes.js';   // the title's ticker of 
 const TRANSITIONS = {
   off: ['attract', 'onlineJoin', 'onlineConnecting', 'charSelect', 'nameEntry', 'crewLobby', 'signInCode', 'watching'],
   attract: ['modeSelect', 'highScores'],
-  highScores: ['attract', 'modeSelect', 'ageCheck'],   // ageCheck: the save-your-sticks nudge after a game (README, Progression)
+  highScores: ['attract', 'modeSelect', 'ageCheck', 'closet'],   // ageCheck: the save-your-sticks nudge after a game (README, Progression)
   controls: ['attract', 'modeSelect'],
   modeSelect: ['attract', 'stageIntro', 'fighting', 'onlineMenu', 'charSelect', 'nameEntry', 'ageCheck', 'shifts', 'closet', 'profile', 'highScores'],   // ageCheck: the save nudge; profile: the PROFILE card
-  shifts: ['modeSelect', 'attract'],   // the daily shifts (README, Progression, Daily shifts)
-  closet: ['modeSelect', 'attract'],   // the Supply Closet (README, Progression, The Supply Closet)
-  charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract'],
+  shifts: ['modeSelect', 'attract', 'closet'],   // the daily shifts (README, Progression, Daily shifts)
+  // the Supply Closet (README, Progression, The Supply Closet): off MAIN MENU, or from the sticks counter on any screen in
+  // LINK, and back to where it came from
+  closet: ['modeSelect', 'attract', 'shifts', 'charSelect', 'onlineMenu', 'profile', 'crewLobby', 'highScores', 'watchList'],
+  charSelect: ['modeSelect', 'stageIntro', 'fighting', 'attract', 'closet'],
   stageIntro: ['fighting', 'modeSelect'],
   fighting: ['roundEnd', 'result', 'paused', 'attract'],
   roundEnd: ['fighting', 'result', 'paused'],
@@ -94,9 +96,9 @@ const TRANSITIONS = {
   enterInitials: ['highScores'],
   ending: ['enterInitials', 'highScores', 'modeSelect'],
   paused: ['fighting', 'roundEnd', 'stageIntro', 'attract', 'modeSelect'],
-  onlineMenu: ['modeSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract', 'profile', 'crewCreate', 'crewJoin', 'crewLobby', 'nameEntry', 'watchList'],
+  onlineMenu: ['modeSelect', 'onlineHost', 'onlineJoin', 'onlineEnd', 'attract', 'profile', 'crewCreate', 'crewJoin', 'crewLobby', 'nameEntry', 'watchList', 'closet'],
   // spectators (src/net/watch.js): the LIVE list, and the watch view
-  watchList: ['watching', 'onlineMenu', 'modeSelect', 'attract', 'onlineHost'],
+  watchList: ['watching', 'onlineMenu', 'modeSelect', 'attract', 'onlineHost', 'closet'],
   watching: ['watchList', 'onlineMenu', 'modeSelect', 'attract'],
   onlineHost: ['onlineMenu', 'onlineSelect', 'onlineFighting', 'onlineEnd', 'modeSelect'],
   onlineJoin: ['onlineMenu', 'onlineConnecting', 'attract'],
@@ -107,14 +109,14 @@ const TRANSITIONS = {
   onlineEnd: ['onlineMenu', 'onlineHost', 'onlineConnecting', 'modeSelect', 'attract', 'crewLobby', 'ageCheck'],
   // profiles and crew rooms (src/net/profile.js, src/net/crew.js)
   nameEntry: ['onlineJoin', 'crewLobby', 'onlineMenu', 'profile', 'modeSelect', 'attract', 'ageCheck'],
-  profile: ['nameEntry', 'ageCheck', 'onlineMenu', 'modeSelect', 'attract'],
+  profile: ['nameEntry', 'ageCheck', 'onlineMenu', 'modeSelect', 'attract', 'closet'],
   // the email field is only ever reached through the age question (or from the code screen, which an email already led to)
   ageCheck: ['signInEmail', 'profile', 'nameEntry', 'onlineMenu', 'modeSelect'],
   signInEmail: ['signInCode', 'profile', 'modeSelect', 'nameEntry'],
   signInCode: ['profile', 'signInEmail', 'modeSelect', 'nameEntry', 'onlineMenu', 'onlineJoin', 'crewLobby'],
   crewCreate: ['crewLobby', 'onlineMenu', 'modeSelect'],
   crewJoin: ['crewLobby', 'onlineMenu', 'modeSelect'],
-  crewLobby: ['crewLinking', 'onlineMenu', 'modeSelect', 'nameEntry'],
+  crewLobby: ['crewLinking', 'onlineMenu', 'modeSelect', 'nameEntry', 'closet'],
   crewLinking: ['onlineSelect', 'onlineFighting', 'crewLobby', 'onlineEnd', 'modeSelect'],
 };
 // the screens that take typing (src/flow/index.js textScreen): letters type, Backspace deletes, Enter submits
@@ -148,6 +150,10 @@ const IDLE_MS = 30000;
 const ONLINE = new Set(['watchList', 'watching', 'onlineMenu', 'onlineHost', 'onlineJoin', 'onlineConnecting', 'onlineFighting', 'onlineEnd', 'onlinePost', 'onlineSelect', 'crewLobby', 'crewLinking']);
 // the sticks counter shows on these menus (src/flow/careerUI.js), never in a fight
 const COUNTER = new Set(['modeSelect', 'shifts', 'closet', 'charSelect', 'onlineMenu', 'profile', 'onlineSelect', 'onlineEnd', 'crewLobby', 'highScores', 'watchList']);
+// ...and on these it's the way into the SUPPLY CLOSET (a press, C, the pad's X), whose ‹ chip comes back. Never the closet
+// itself, and never with a live room behind the screen: the online pick screen and a finished match (onlineSelect,
+// onlineEnd) show it as plain text, so nothing pulls a player out of a room.
+const LINK = new Set(['modeSelect', 'shifts', 'charSelect', 'onlineMenu', 'profile', 'crewLobby', 'highScores', 'watchList']);
 // between online matches: the room is open, the scene behind is the last match's final frame (held)
 const BETWEEN = new Set(['onlinePost', 'onlineSelect']);
 
@@ -207,6 +213,8 @@ export function createFlow(ctx) {
   const ui = createUI((k) => { if (ctx.click) ctx.click(k); });
   const ticker = createTicker();
   const counter = createCounter(ui.bar);   // in the top-left bar, beside the ‹ chip
+  // where the counter opens the SUPPLY CLOSET (LINK), the legend says how: C, or the pad's X
+  ui.setExtraLegend(() => (LINK.has(state) ? ['closet', 'CLOSET'] : null));
   // turning the phone: the crew lobby lists the whole crew upright and the top seven sideways (paintLobby)
   onSquare(() => { if (state === 'crewLobby') paintLobby(); });
   // the pause button: the desktop corner row's (a click) and the touch layer's (src/touch.js sends 'sf:pause')
@@ -277,6 +285,7 @@ export function createFlow(ctx) {
     c.toggle('flow-on', state !== 'off');
     ticker.show(state === 'attract');
     counter.show(COUNTER.has(state));
+    counter.link(LINK.has(state) ? openCloset : null);
     if (state === 'off') return;
     // main.js marks the old flow-less demo 'attract', which hides the touch layer (index.html); a page opened on a
     // crew or room link starts that demo before the menus are on, and kept the mark, so it had no menu button
@@ -612,6 +621,8 @@ export function createFlow(ctx) {
         case 'onlineJoin': if (k === 'del') { typeCode('DEL'); return; } break;
         default: if (TEXT.has(state) && k === 'del') { teType('DEL'); return; } break;
       }
+      // C or the pad's X on a screen with the sticks counter: the SUPPLY CLOSET (LINK)
+      if ((k === 'closet' || k === 'del') && LINK.has(state)) { openCloset(); return; }
       if (k === 'confirm' || k === 'start') ui.activate();
       else if (k === 'back' || k === 'escape' || k === 'select') ui.back();
     },
@@ -784,7 +795,7 @@ export function createFlow(ctx) {
       ];
       const more = el('div', 'fl-more');
       const small = (label, act) => { const b = button(label, act, 'fl-slim fl-violet'); more.appendChild(b.el); items.push(b); return b; };
-      small('SUPPLY CLOSET', () => go('closet'));
+      small('SUPPLY CLOSET', () => { closetFrom = 'modeSelect'; go('closet'); });
       small('HIGH SCORES', openScores);
       if (settingsPanel) small('SETTINGS', () => settingsPanel.open({ keys: !ctx.touchUI() }));
       list.appendChild(more);
@@ -845,9 +856,20 @@ export function createFlow(ctx) {
         note: (m) => { msg = m; note.textContent = m; },
       });
       root.append(body.el, note);
-      return { items: body.items, focus: body.focus, back: () => go('modeSelect'), backTo: 'MAIN MENU' };
+      return { items: body.items, focus: body.focus, back: () => go(closetFrom), backTo: CLOSET_FROM[closetFrom] || 'MAIN MENU' };
     });
     paint(`f:${closetSt.fighter}`);
+  }
+  // The sticks counter's way in (LINK): the closet opens on the fighter under the cursor at a character select, and its
+  // ‹ chip and legend name the screen it came from. HIGH SCORES' attract-loop turn becomes one the player is reading.
+  let closetFrom = 'modeSelect';
+  const CLOSET_FROM = { modeSelect: 'MAIN MENU', shifts: 'SHIFTS', charSelect: 'FIGHTERS', onlineMenu: 'ONLINE', profile: 'PROFILE', crewLobby: 'CREW', highScores: 'HIGH SCORES', watchList: 'LIVE LIST' };
+  function openCloset() {
+    if (!LINK.has(state) || ml || panelOpen() || (ctx.netBusy && ctx.netBusy())) return;
+    if (state === 'charSelect' && selCtl && selCtl.current) closetSt.fighter = selCtl.current.id;
+    if (state === 'highScores' && !hs.postGame && !hs.manual) { detourFrom = 'attract'; hs.manual = true; }
+    closetFrom = state;
+    go('closet');
   }
   // the match rules (src/flow/rules.js): ROUNDS cycles best of 1, 3, 5 and TIME cycles 30, 60, 99 and no
   // limit, each press stepping to the next and remembering it; they take effect from the next fight

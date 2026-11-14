@@ -44,6 +44,7 @@
     "test:device": "node scripts/perf/device.mjs",
     "test:closet": "node scripts/career/closet.mjs",
     "test:closet:ui": "node scripts/career/closet-ui.mjs",
+    "test:closet:link": "node scripts/career/closet-link.mjs",
     "test:pto": "node scripts/career/pto.mjs",
     "test:pto:ui": "node scripts/career/pto-ui.mjs",
     "test:shifts": "node scripts/career/shifts.mjs",

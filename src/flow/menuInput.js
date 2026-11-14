@@ -6,7 +6,8 @@
 //
 //   keyboard: arrows / WASD move, Enter or Space confirm, Escape (escape), Backspace (back), P (pause),
 //             F1 (moves: the MOVE LIST, src/flow/movelist.js), Q / PageUp and E / PageDown (prevtab, nexttab:
-//             the tab to the left or right on a page with tabs, SETTINGS and the MOVE LIST)
+//             the tab to the left or right on a page with tabs, SETTINGS and the MOVE LIST), C (closet: the SUPPLY
+//             CLOSET from a screen with the sticks counter; the pad's X, 'del', does the same there)
 //   pad:      D-pad or left stick move, A confirm, B or Select back (Select is 'select', which the
 //             flow reads as back in menus and pause in a fight), Start (start), X (del: the
 //             keyboard screens' DEL), Y (moves: the MOVE LIST where a screen offers it), LB and RB (prevtab,
@@ -25,7 +26,7 @@ import { setDevice, watchDevice } from './controls.js';
 const KEYS = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
   Enter: 'confirm', NumpadEnter: 'confirm', Space: 'confirm', Escape: 'escape', Backspace: 'back', KeyP: 'pause', F1: 'moves',
-  KeyQ: 'prevtab', PageUp: 'prevtab', KeyE: 'nexttab', PageDown: 'nexttab',
+  KeyQ: 'prevtab', PageUp: 'prevtab', KeyE: 'nexttab', PageDown: 'nexttab', KeyC: 'closet',
 };
 const PAD = { 0: 'confirm', 1: 'back', 2: 'del', 3: 'moves', 4: 'prevtab', 5: 'nexttab', 8: 'select', 9: 'start' };
 const DIRS = new Set(['up', 'down', 'left', 'right']);
