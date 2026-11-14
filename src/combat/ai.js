@@ -737,6 +737,20 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const makingRoom = joining && Math.abs(me.x - hx) < ROOM && me.grounded && /^(idle|walk|run|block|crouch)$/.test(me.state);
     if (makingRoom) { const away = Math.sign(me.x - hx) || -toward; queue = []; act = { ...move(away, (m) => Math.abs(m.x - hx) >= ROOM), room: true }; }
     else if (act && act.room && !joining) { act = null; queue = []; }
+    // horde, waiting my turn (sim.hordeWaits: one goon swings at a time): hang back WAIT_NEAR to WAIT_FAR px off him
+    // on my partner's side, pacing, a guard up if he swings at me; no buttons
+    const WAIT_NEAR = 240, WAIT_FAR = 320;
+    const waiting = !regrouping && !makingRoom && !!(sim.hordeWaits && sim.hordeWaits(me));
+    if (waiting && me.grounded && /^(idle|walk|run|block|crouch)$/.test(me.state)) {
+      const off = Math.abs(me.x - hx), away = Math.sign(me.x - hx) || -toward, b = sim.bounds;
+      const wallBehind = away > 0 ? b.x1 - me.x < 40 : me.x - b.x0 < 40;
+      const pace = (Math.floor(step / 90) + me.id) % 3;   // a step in, a stand, a step back, every 0.75 s
+      queue = [];
+      if (opp.state === 'attack' && off < 160) act = { ...blockFor(4), wait: true };
+      else if (off < WAIT_NEAR && !wallBehind) act = { ...move(away, 2), wait: true };
+      else if (off > WAIT_FAR) act = { ...move(-away, 2), wait: true };
+      else act = { ...move(pace === 0 ? -away : pace === 2 && !wallBehind ? away : 0, 2), wait: true };
+    } else if (act && act.wait && !waiting) { act = null; queue = []; }
     // catch-all: after two blocked hits, never the same class again until a different one lands
     if (act && act.attack && blockedStreak >= 2 && blockedClasses.has(CLASS[act.attack])) { queue = mixup(dist, toward, opp); act = queue.shift(); }
     // showcase: never swing into his strike that is already coming; guard it at its height
@@ -824,8 +838,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         if (a) { accFor = me.attackId; if (chance(0.03)) { if (a.tok === 'T') { out.lp = true; out.lk = true; } else out[BTN[a.tok]] = true; out.down = false; } }
       }
     }
-    // regrouping (or making room for it): no button gets out, whatever reflex or mash pressed it (the jump is out.jump, not a button)
-    if ((regrouping || makingRoom) && me.grounded && me.state !== 'knockdown') { for (const k in out) if (k === 'lp' || k === 'rp' || k === 'lk' || k === 'rk' || k === 'down' || FRAME_DATA[k]) out[k] = false; }
+    // regrouping (or making room for it, or waiting my turn): no button gets out, whatever reflex or mash pressed it (the jump is out.jump, not a button)
+    if ((regrouping || makingRoom || waiting) && me.state !== 'knockdown' && (me.grounded || waiting)) {
+      for (const k in out) if (k === 'lp' || k === 'rp' || k === 'lk' || k === 'rk' || k === 'down' || FRAME_DATA[k]) out[k] = false;
+      if (waiting) { out.jump = false; out.dash = false; }   // (in the air too: a jump-in started before the turn passed had its air strike come out)
+    }
     // fainted on its feet: no plan moves it (the sim roots it); the stick shakes the head clear instead
     if (me.faint > 0 && me.grounded && me.state === 'idle') { shakeOff(me, out, step); stickDx = out.dx; stickAt = step; return out; }
     // A hand on a stick. Plans can be a few steps long, and back-to-back plans used to flip the direction

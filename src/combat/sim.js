@@ -714,10 +714,42 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (H.calm >= H.regenDelay && p.health < max) p.health = Math.min(max, p.health + H.regen * DT);
     H.lastHp = p.health;
   }
+  // One goon swings at a time (kung fu movie rules; the owner's call after a tester found two at once too much).
+  // H.fighter is the id of the goon that may fight him; any other goon up waits its turn at a distance, holding its
+  // swings (ai.js, sim.hordeWaits). The turn goes to the goon nearest him when nobody has it (the fighter went down
+  // or left), to the waiting one after FIGHTER_TURN seconds once the fighter is between swings, and at once to a
+  // waiting goon he goes after himself (it's in hit- or blockstun, down or grabbed: only he can put it there).
+  const FIGHTER_TURN = 6, TURN_STATES = new Set(['hitstun', 'blockstun', 'knockdown', 'down', 'grabbed', 'getup', 'roll']);
+  function hordeTurn(H, p) {
+    const up = goonsLive().filter(u => u.state !== 'ko');   // every goon up, a floor away or on the stairs too (one there had nobody's turn)
+    let f = up.find(u => u.id === H.fighter);
+    const waiting = up.filter(u => u !== f);
+    const busy = f && (f.state === 'attack' || f.state === 'dash');   // never in the middle of its swing
+    const hit = !busy && waiting.find(u => TURN_STATES.has(u.state));
+    if (hit) f = hit;
+    else if (!f) f = up.slice().sort((a, b) => Math.abs(bodyX(a) - bodyX(p)) - Math.abs(bodyX(b) - bodyX(p)) || a.id - b.id)[0] || null;
+    else if (H.fighterT >= FIGHTER_TURN && waiting.length && /^(idle|walk|run|block|crouch)$/.test(f.state)) f = waiting[0];
+    const id = f ? f.id : -1;
+    if (id !== H.fighter) {
+      // the goon losing its turn drops any press it had buffered (it came out a few steps later, out of turn)
+      const was = sim.units.find(u => u.id === H.fighter);
+      if (was) { was.buffer = null; was.bufferKeys = null; was.bufferName = ''; was.queued = null; }
+      H.fighter = id; H.fighterT = 0;
+    } else H.fighterT = (H.fighterT || 0) + DT;
+    // and a goon waiting its turn keeps no press buffered (one made in the air came out as it landed)
+    for (const u of up) if (u.id !== H.fighter && id >= 0) { u.buffer = null; u.bufferKeys = null; u.bufferName = ''; u.queued = null; }
+  }
+  // a goon that must wait its turn (H.fighter is another goon, up)
+  sim.hordeWaits = (g) => {
+    const H = sim.horde;
+    if (!H || !g || g.id < 1 || H.fighter == null || H.fighter < 0 || H.fighter === g.id) return false;
+    const f = sim.units.find(u => u.id === H.fighter);
+    return !!f && !f.hidden && f.state !== 'ko';
+  };
   function hordeStep() {
     const H = sim.horde, p = sim.units[0];
     if (!H || sim.phase !== 'fight') return;
-    hordeRegen(H, p);
+    hordeRegen(H, p);   // (the turn, hordeTurn, is decided at the top of the step)
     if (!H.transit) return;
     const T = H.transit;
     if (T.kind === 'down') {
@@ -745,7 +777,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (fresh) freshState();
     sim.seed = seed; sim.startHealth = startHealth; sim.introTime = introTime;
     sim.hordeCfg = horde;   // a lost run restarts as a fresh run, not as a 1v1
-    sim.horde = horde ? { goonHealth: 40, goonDifficulty: 0.5, heal: 6, regen: HORDE_REGEN, regenDelay: HORDE_REGEN_DELAY, calm: 0, lastHp: null, count: 0, goonsAI: true, floor: 0, floorsCleared: 0, doorTurn: 0, wave: null, transit: null, ...horde } : null;
+    sim.horde = horde ? { goonHealth: 40, goonDifficulty: 0.5, heal: 6, regen: HORDE_REGEN, regenDelay: HORDE_REGEN_DELAY, calm: 0, lastHp: null, count: 0, goonsAI: true, fighter: -1, fighterT: 0, floor: 0, floorsCleared: 0, doorTurn: 0, wave: null, transit: null, ...horde } : null;
     if (!rules().clock) sim.roundTime = 0;   // a run is endless: no clock to run out (TIME used to end it, the hero standing)
     sim.ragdolls.length = 0; sim.card = null; sim.combo = null; sim.lastCombo = null;
     if (sim.units.length > 2) sim.units.length = 2;   // extra horde goons go away with the match
@@ -3362,6 +3394,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // a hidden unit (a KO'd goon taken off the floor) is never stepped, so a hitstop it was hidden in never counts
     // down: counting it froze the whole fight's hitstop, and the camera with it, until the next wave
     sim.hitstopActive = Math.max(0, ...sim.units.map(u => (u.hidden ? 0 : u.hitstop)));
+    // horde: whose turn it is, before anyone's controller is read (decided after, a goon pressed on the step it lost
+    // the turn and that strike landed out of turn)
+    if (sim.horde && sim.phase === 'fight') hordeTurn(sim.horde, sim.units[0]);
     for (const u of sim.units) {
       u.prevX = u.x; u.prevBX = bodyX(u);
       // which side of the opponent he is on, remembered from the last moment both stood: separate()

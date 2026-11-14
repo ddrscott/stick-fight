@@ -6,6 +6,8 @@
 //                 starts the wait over
 //   3. trips      a CPU hero against weak goons, 12 seeds up to 12 floors: every trip to the next floor starts its wave
 //                 (the old build left him upstairs on 4 of them, until TIME)
+//      turns      over the same runs, one goon swings at a time: never both in a strike, no hit on him from the one
+//                 waiting its turn (sim.horde.fighter)
 //      sides      over the same runs, a goon coming in while another is up enters on that goon's side of the hero, so
 //                 two never surround him (the old build took the doors in turn, so the second came in behind him); and
 //                 when he gets between two anyway (a jump or a walk past one), the one on the wrong side goes over him
@@ -71,8 +73,10 @@ const results = await pg.evaluate(() => {
   // over 9 s, or any TIME, is not.
   const runs = [], bad = [];
   let longest = 0, floors = 0, pairs = 0, twoUp = 0, flanked = 0, flankRun = 0, flankLong = 0;
+  let bothSwing = 0, heroHits = 0, offTurnHits = 0, turns = 0, lastFighter = -1;
   const flanks = [], prevFilter = sim.eventFilter;
   sim.eventFilter = (ev) => {
+    if (ev.type === 'hit' && ev.defender && ev.defender.id === 0 && ev.attacker && ev.attacker.id >= 1) { heroHits++; if (sim.horde.fighter !== ev.attacker.id) offTurnHits++; }
     if (ev.type === 'goon' && ev.unit) {
       const p = sim.units[0], o = sim.units.find(u => u.id >= 1 && u !== ev.unit && !u.hidden);
       if (o) { pairs++; if (Math.sign(o.x - p.x) !== Math.sign(ev.unit.x - p.x)) flanks.push(`floor ${ev.floor}: hero ${p.x.toFixed(0)}, up ${o.x.toFixed(0)}, new ${ev.unit.x.toFixed(0)}`); }
@@ -88,6 +92,8 @@ const results = await pg.evaluate(() => {
       const gs = sim.units.filter(u => u.id >= 1 && !u.hidden && u.state !== 'ko' && (u.floor || 0) === (p.floor || 0));
       if (gs.length === 2 && !(p.stair >= 0) && sim.phase === 'fight') {
         twoUp++;
+        if (gs.every(u => u.state === 'attack')) bothSwing++;
+        if (sim.horde.fighter !== lastFighter) { if (lastFighter >= 0 && sim.horde.fighter >= 0) turns++; lastFighter = sim.horde.fighter; }
         if (Math.sign(gs[0].rig.joints.hip.x - p.rig.joints.hip.x) * Math.sign(gs[1].rig.joints.hip.x - p.rig.joints.hip.x) < 0) { flanked++; flankLong = Math.max(flankLong, ++flankRun); } else flankRun = 0;
       } else flankRun = 0;
       if (sim.phase === 'ko' || sim.phase === 'match') { res = sim.banner === 'TIME' ? 'TIME' : 'KO'; return false; }
@@ -103,6 +109,7 @@ const results = await pg.evaluate(() => {
   sim.eventFilter = prevFilter;
   ok('sides: a second goon never comes in on the hero\'s other side', pairs > 0 && !flanks.length, `${pairs} goons came in with another up, ${flanks.length} behind the hero${flanks.length ? ': ' + flanks.slice(0, 4).join('; ') : ''}`);
   ok('sides: two goons up never keep him between them', twoUp > 0 && flankLong <= 3 * 60, `with two goons up he was between them ${(100 * flanked / Math.max(1, twoUp)).toFixed(1)}% of the time (${(flanked / 60).toFixed(1)} of ${(twoUp / 60).toFixed(0)} s), longest ${(flankLong / 60).toFixed(2)} s (3 s at most)`);
+  ok('turns: one goon swings at a time', twoUp > 0 && bothSwing === 0 && offTurnHits === 0 && heroHits > 0, `with two goons up: ${bothSwing} steps with both swinging, ${offTurnHits} of ${heroHits} hits on him by the goon waiting its turn, the turn passed ${turns} times in ${(twoUp / 60).toFixed(0)} s`);
   ok('trips: every trip to the next floor starts its wave, no TIME', !bad.length && longest <= 9, `${floors} floors over 12 runs (seed:floors or KO) ${runs.join(' ')}, longest trip ${longest.toFixed(1)} s${bad.length ? '; ' + bad.join('; ') : ''}`);
 
   // 3b. put him between two goons and hold him still (a guard, his bar kept full): the one on the wrong side goes
