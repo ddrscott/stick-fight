@@ -121,16 +121,37 @@ export function earningsPanel(compact = false) {
   return box;
 }
 
-/** the sticks and title chip for the menus (the flow shows it on menu screens, never in a fight) */
+/** the sticks and title chip for the menus (the flow shows it on menu screens, never in a fight). link(act) makes it
+ *  the way into the SUPPLY CLOSET (README, Progression, The Supply Closet): a › after it, a hover state, a press
+ *  runs act. link(null) makes it plain text again (the closet itself, a live room's pick screen). */
 export function createCounter(root) {
   injectStyle();
-  const chip = el('div', 'cr-chip');
+  const chip = el('button', 'cr-chip');
+  chip.type = 'button'; chip.tabIndex = -1;
   chip.setAttribute('aria-live', 'polite');
-  const paint = () => { const c = career(); chip.textContent = ''; chip.append(el('b', '', `${fmt(c.sticks)} STICKS`), el('span', '', c.title)); };
+  const go = el('i', 'cr-go');
+  go.innerHTML = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M6.5 2.5 L13 9 L6.5 15.5"/></svg>';
+  let act = null;
+  const paint = () => {
+    const c = career(); chip.textContent = '';
+    chip.append(el('b', '', `${fmt(c.sticks)} STICKS`), el('span', 'cr-ctitle', c.title));
+    if (act) chip.appendChild(go);
+  };
+  chip.addEventListener('mousedown', (e) => e.preventDefault());   // a click never leaves the browser's focus on it
+  chip.addEventListener('click', (e) => { e.preventDefault(); if (act && chip.classList.contains('cr-on')) act(); });
   paint();
   onCareer(paint);
   root.appendChild(chip);
-  return { el: chip, show(on) { chip.classList.toggle('cr-on', !!on); if (on) paint(); } };
+  return {
+    el: chip,
+    show(on) { chip.classList.toggle('cr-on', !!on); if (on) paint(); },
+    link(fn) {
+      act = fn || null;
+      chip.classList.toggle('cr-link', !!act);
+      if (act) chip.setAttribute('aria-label', `${fmt(career().sticks)} sticks: open the supply closet`); else chip.removeAttribute('aria-label');
+      paint();
+    },
+  };
 }
 
 /** A guest with something to lose: the prompt, and a SAVE MY PROFILE button for the screen's items. null when not due. */
@@ -417,6 +438,15 @@ function injectStyle() {
     font: 600 2cqw/1.2 'Teko', 'Arial Narrow', sans-serif; letter-spacing: 0.1em; color: #ffc46b; text-shadow: var(--plain); }
   .cr-chip span { color: #eadcff; font-size: 1.7cqw; }
   .cr-chip.cr-on { display: flex; }
+  /* a <button> (the closet link) inherits none of this from the page, so it's said here; square, no glow */
+  .cr-chip { appearance: none; margin: 0; border-radius: 0; cursor: default; text-align: left; }
+  .cr-chip:focus { outline: none; }
+  /* the link into the SUPPLY CLOSET: a › after it, and on hover or press the colors swap (like the ‹ chip's) */
+  .cr-chip.cr-link { pointer-events: auto; cursor: pointer; transition: background 80ms, color 80ms; }
+  .cr-chip .cr-go { display: flex; align-self: center; margin-left: -0.3cqw; }
+  .cr-chip .cr-go svg { width: 0.8em; height: 0.8em; fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: square; }
+  .cr-chip.cr-link:hover, .cr-chip.cr-link:active, .cr-chip.cr-link.cr-hit { background: #ffb02e; border-color: #ffb02e; color: #0a0414; text-shadow: none; }
+  .cr-chip.cr-link:hover span, .cr-chip.cr-link:active span, .cr-chip.cr-link.cr-hit span { color: #0a0414; }
   /* a phone held sideways: the 16:9 stage is under 600 px tall, so 1cqw is about 7 px and the stacked panel's
      small print came out at 10 px. The panel goes two columns wide (what paid | shifts, mastery, the review) so it
      takes half the height, and no text is under 12 px. */

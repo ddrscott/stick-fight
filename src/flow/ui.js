@@ -65,6 +65,7 @@ export function createUI(onSound) {
   let token = 0;
   let veiled = false;   // the screen up is a menu over a dimmed scene (the title and the watch view aren't)
   let backTo = '';      // where back goes, by name (the chip and the legend say it)
+  let extraLegend = null;   // the flow's own entry for the screen up (the sticks counter's SUPPLY CLOSET shortcut), before back
 
   // Held upright (html.sq, src/square.js) the 16:9 box is a strip about 390 by 219, a quarter of the phone. So every
   // menu leaves it for the whole screen, under the top buttons, with its own phone-sized layout (.fl-up, the
@@ -226,6 +227,8 @@ export function createUI(onSound) {
     let lg = out.legend !== undefined ? out.legend
       : [...(items.length > 1 ? [['move']] : []), ...(items.length ? [['confirm', 'SELECT']] : []), ...(backFn ? [['back', backTo || 'BACK']] : [])];
     if (backTo && lg) lg = lg.map((x) => (x[0] === 'back' && x[1] === 'BACK' ? ['back', backTo] : x));   // the key says where it goes too
+    const xl = extraLegend && extraLegend();
+    if (xl && lg && lg.length) { const b = lg.findIndex((x) => x[0] === 'back'); lg = b < 0 ? [...lg, xl] : [...lg.slice(0, b), xl, ...lg.slice(b)]; }
     if (lg && lg.length) s.appendChild(legend(lg));
     focus = -1;
     zoomNow = 1;
@@ -282,6 +285,8 @@ export function createUI(onSound) {
   }
   return {
     root, bar, pauseBtn, show, clear, activate, back, move, setFocus, refresh, fit,
+    /** fn() gives a legend entry for the screen being shown, or null */
+    setExtraLegend(fn) { extraLegend = fn; },
     get backTo() { return backTo; },
     get screen() { return screen; },
     get focus() { return focus; },
