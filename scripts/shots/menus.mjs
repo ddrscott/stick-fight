@@ -4,14 +4,15 @@
 //
 //   npm run dev:worker & npx vite --port 8191 &       (the game, with ./api proxied to a local Worker)
 //   node scripts/shots/menus.mjs [--out dir] [--url http://127.0.0.1:8191/play/] [--only upright|sideways|desktop|<size>,...]
-//                                [--states crewLobby,onlineHost,...] [--no-net] [--check]
+//                                [--states crewLobby,onlineHost,...|local] [--no-net] [--check] [--jobs n]
 //
 // The tour, crew screens first: crewCreate, crewJoin, crewLobby (a long member list, then with PLAY pressed),
 // crewLinking, the NO CREW AT THAT LINK notice; then the online menu, profile, name and sign-in screens, onlineHost
 // (its QR read back with jsQR from the screenshot), onlineJoin, onlineConnecting and NO ROOM WITH THAT CODE, a real
 // room with a rival page (onlineSelect, the LEAVE confirm, onlinePost, the rival leaving), the LIVE list and the
 // watch view; then the title, SETTINGS (each tab), mode select, character select, high scores, an arcade run
-// (stage card, pause, pause panel, MOVE LIST, stage clear, continue, game over, initials, the ending) and the
+// (stage card, pause, pause panel, MOVE LIST, stage clear, continue, game over, initials, the table, the ending
+// and its table; the game is run ahead with __game.advance, never waited on) and the
 // home-screen how-to and the update pill. The crew and room screens need the Worker: a page URL whose ../api/
 // reaches it (Vite proxies it; SF_WORKER=http://127.0.0.1:<port> points the proxy at another port).
 //
@@ -216,13 +217,17 @@ function audit({ upright, textMin, tapMin }) {
   const ui = window.__flow && window.__flow.debug.ui;
   if (ui && scr && !overlayUp) {
     const view = cut(roots[0].box, screen);
-    const decides = scr.matches('.fl-clear, .fl-continue, .fl-gameover, .fl-ending, .fl-pause, .fl-stage, .fl-post, .fl-onlineend, .fl-initials') || !!scr.querySelector('[data-squeeze]');
+    // (the table after a game is one too: TITLE and MAIN MENU are where the run goes next)
+    const postGame = scr.matches('.fl-scores') && !!(window.__flow.debug.hs || {}).postGame;
+    const decides = postGame || scr.matches('.fl-clear, .fl-continue, .fl-gameover, .fl-ending, .fl-pause, .fl-stage, .fl-post, .fl-onlineend, .fl-initials') || !!scr.querySelector('[data-squeeze]');
     for (const [k, it] of ui.items.entries()) {
       if (!decides && k !== ui.focus) continue;
       const e = it.el;
       if (!shown(e) || e.offsetParent === null) continue;
+      // on a screen that decides, every button is in the view, inside a box that scrolls or not ([t6z5am]); on the
+      // rest, the button the screen opens on, unless it's a row of a list that scrolls in its own box
       const inner = e.parentElement && e.parentElement.closest('[data-scroll], .fl-ring');
-      if (inner && inner !== scr) continue;
+      if (!decides && inner && inner !== scr) continue;
       const a = R(e.getBoundingClientRect());
       if (!a.r || a.t < view.t - 1 || a.b > view.b + 1) out.push(`OUT OF VIEW ${name(e)} ${fmt(a)} (view ${fmt(view)})`);
     }
@@ -241,6 +246,14 @@ function audit({ upright, textMin, tapMin }) {
       if (!area(a)) continue;
       for (const bl of blockers) if (!bl.n.contains(e) && bl.n.closest('.sf-corner, .tc-top') && area(cut(a, bl.a)) > 4) out.push(`BOX UNDER ${bl.n.className.split(' ')[0] || bl.n.tagName} ${name(e)} ${fmt(a)}`);
     }
+  }
+  // an on-screen keyboard's keys share a row height, the wide ones (DEL, ENTER) included ([t6z5am]: the character
+  // select's .fl-wide padding reached the keyboard's DEL and ENTER, which grew taller with their labels at the top)
+  for (const row of document.querySelectorAll('#flow .fl-kbrow')) {
+    if (!shown(row)) continue;
+    const hs = [...row.children].filter(shown).map((k) => [k, k.getBoundingClientRect().height]);
+    const h0 = Math.min(...hs.map(([, h]) => h));
+    for (const [k, h] of hs) if (h > h0 + 1) out.push(`KEY TALLER THAN ITS ROW ${name(k)} ${Math.round(h)} px (row ${Math.round(h0)} px)`);
   }
   // overlaps: two things a player reads or presses, neither inside the other, drawn over each other
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
@@ -292,7 +305,12 @@ function members(slug, names, tag) {
 const player = (name, crews = []) => JSON.stringify({ id: 'a'.repeat(32), name, email: '', crews });
 
 // ---- the tour ----------------------------------------------------------------------------------------------------
-for (const size of SIZES) {
+// Sizes run side by side with --jobs n (each in its own browser context). The default is one at a time when the tour
+// goes online, since the local Worker caps joins and rooms a minute per IP, and 4 for --no-net.
+const JOBS = Math.max(1, Number(opt('--jobs', NET ? 1 : 4)) || 1);
+const t0 = Date.now();
+async function tour(size) {
+  const tz = Date.now();
   const ctxOpts = { viewport: size.viewport, deviceScaleFactor: size.deviceScaleFactor, hasTouch: size.hasTouch, isMobile: size.isMobile };
   const ctx = await browser.newContext(ctxOpts);
   const tag = size.name.replace(/\D/g, '').slice(0, 8).padStart(8, '0');
@@ -534,10 +552,50 @@ for (const size of SIZES) {
   async function localTour() {
   await open(URL_, { 'stick-fight-player': player('SCOTT') });
   const panel = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:settings')));
+  // The game is run ahead in the page instead of waited on ([t6z5am]): __game.advance steps the flow and the sim
+  // without drawing, so a KO plays out, a round rolls over, the match pays, a card or the CONTINUE? clock runs out
+  // through the game's own code in a few ms (headless draws a frame in about 60 ms, so 10 s of game took 16 s of wall
+  // clock and the run took most of an hour). ff runs until the flow is on one of `want`, at most `secs` of game time.
+  const ff = (want, secs = 15) => page.evaluate(([want, secs]) => {
+    const f = window.__flow, g = window.__game;
+    for (let i = 0; i < secs * 60 && !want.includes(f.state); i++) g.advance(1000 / 60);
+    return f.state;
+  }, [want, secs]);
+  /** KO `winner`'s rival every round (the sim's own KO, debugKO) until the flow is on one of `want` */
+  const playOut = (winner, want) => page.evaluate(([w, want]) => {
+    const f = window.__flow, g = window.__game;
+    for (let i = 0; i < 90 * 60 && !want.includes(f.state); i++) {
+      if (f.state === 'fighting' && g.sim.phase === 'fight') f.debug.debugKO(w);
+      g.advance(1000 / 60);
+    }
+    return f.state;
+  }, [winner, want]);
+  /** press the screen's button `k` (or the first that matches a pattern) once it takes presses: the flow's clock is
+   *  moved past the arm time a result screen gives its buttons (0.5 to 1.2 s, so a held key from the fight can't) */
+  const press = (k) => page.evaluate((k) => {
+    const d = window.__flow.debug, ui = d.ui;
+    const i = typeof k === 'number' ? k : ui.items.findIndex((it) => new RegExp(k).test(it.el.textContent));
+    if (i < 0) return false;
+    d.t = Math.max(d.t, 1.5); ui.items[i].act(); return true;
+  }, k);
+  const label0 = () => page.evaluate(() => { const ui = window.__flow.debug.ui; return ui.items[0] ? (ui.items[0].el.firstChild.textContent || '').trim() : ''; });
+  // each step says when it isn't reached (round 3 of [t55b8f]: the tour stopped at CONTINUE? without a word)
+  const step = async (s, ms = 3000) => { const ok = await at(s, ms); if (!ok) report(s, [`never got there (${await state()})`]); return ok; };
+  /** pick the fighter on the select screen: it takes a pick once it has ticked, so the pick is tried until it lands */
+  const pick = async () => {
+    await until(() => page.evaluate(() => { const d = window.__flow.debug; if (window.__flow.state === 'charSelect') d.pickChar(d.sel.player); return window.__flow.state === 'stageIntro'; }), 5000, 200);
+    return step('stageIntro');
+  };
+  const arcade = async () => {
+    await go('attract', 'modeSelect');
+    await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
+    return pick();
+  };
+
   await shot('title');
   // SETTINGS, every tab (it's a page of its own: each tab is checked like a screen)
   const tab = (t) => page.evaluate((x) => document.querySelector(`.sf-tab[data-t="${x}"]`).click(), t);
-  await panel(); await shot('title-settings', 2500);
+  await panel(); await shot('title-settings', 700);
   for (const t of ['controls', 'audio', 'display']) { await tab(t); await shot(`settings-${t}`, 400); }
   await tab('game');
   // Q and E (the pad's LB and RB) switch the tab from anywhere on the page
@@ -549,7 +607,7 @@ for (const size of SIZES) {
     if (a !== 'controls' || b !== 'display') report('settings-tabkeys', [`Q/E TABS: E went to ${a} (want controls), E Q Q Q to ${b} (want display)`]);
     await tab('game');
   }
-  await panel(); await sleep(400);
+  await panel(); await sleep(300);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('sf:homescreen')));
   if (await page.$('.sf-hs')) { await shot('title-howto', 600); await page.keyboard.press('Escape'); await page.evaluate(() => document.querySelectorAll('.sf-hs').forEach((n) => n.remove())); }
   await go('modeSelect'); await shot('modeSelect');
@@ -567,58 +625,45 @@ for (const size of SIZES) {
     for (const [keys, path] of want) { const got = await walk(keys); if (got !== path) report('modeSelect-keys', [`KEY WALK ${keys.join(' ')}: ${got} (want ${path})`]); }
     await page.evaluate(() => window.__flow.debug.ui.setFocus(0));
   }
-  await page.evaluate(() => { const it = window.__flow.debug.ui.items.find((i) => /HIGH SCORES/.test(i.el.textContent)); it && it.act(); }); await shot('highScores');
+  await press('HIGH SCORES'); if (await step('highScores')) await shot('highScores');
   await go('modeSelect');
   await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
   await shot('charSelect', 900);
   await page.keyboard.press('F1'); await shot('charSelect-movelist', 700); await page.keyboard.press('Escape'); await sleep(300);
-  await page.evaluate(() => window.__flow.debug.pickChar(window.__flow.debug.sel.player));
-  if (await at('stageIntro', 5000)) {
+  if (await pick()) {
     await shot('stageIntro', 700);
-    // SETTINGS over the stage card holds it: no fight starts under the page (round 2 of [t55b8f])
-    await panel(); await sleep(4200);
+    // SETTINGS over the stage card holds it: no fight starts under the page (round 2 of [t55b8f]). The card times out
+    // at 3.4 s; 5 s of game time is run under the page
+    await panel(); await sleep(200); await ff(['fighting'], 5);
     const st = await state(); if (st !== 'stageIntro') report('stageIntro-settings', [`THE FLOW MOVED ON UNDER SETTINGS: ${st}`]);
-    await panel(); await sleep(300);
+    await panel(); await sleep(200);
   }
-  await go('fighting'); await sleep(1500);
+  await go('fighting'); await ff(['_'], 1.5);
   await shot('fighting', 300);
   await page.keyboard.press('KeyP');
-  if (await at('paused', 3000)) {
+  if (await step('paused')) {
     await shot('paused');
-    await panel(); await shot('paused-settings', 2500); await panel(); await sleep(400);
+    await panel(); await shot('paused-settings', 700); await panel(); await sleep(300);
     await page.keyboard.press('F1'); await shot('paused-movelist', 700); await page.keyboard.press('Escape'); await sleep(300);
     await page.keyboard.press('KeyP'); await at('fighting', 3000);
   }
-  // win the stage: KO each round until the stage is clear
-  for (let i = 0; i < 6 && (await state()) !== 'stageClear'; i++) {
-    await page.evaluate(() => window.__flow.debug.debugKO(0));
-    await until(async () => ['stageClear', 'fighting'].includes(await state()) && (await state()) !== 'roundEnd', 9000);
-    await sleep(2600);
-  }
-  if (await at('stageClear', 9000)) await shot('stageClear');
-  // lose the next one: CONTINUE?, then GAME OVER, initials and the table
-  await page.evaluate(() => { const it = window.__flow.debug.ui.items[0]; it && it.act(); });
-  if (await at('stageIntro', 6000)) { await sleep(500); await go('fighting'); await sleep(800); }
-  for (let i = 0; i < 6 && (await state()) !== 'continue'; i++) {
-    await page.evaluate(() => window.__flow.debug.debugKO(1));
-    await until(async () => ['continue', 'fighting'].includes(await state()), 9000);
-    await sleep(2600);
-  }
-  // each step says when it isn't reached (round 3 of [t55b8f]: the tour stopped at CONTINUE? without a word). The
-  // countdown is run out through the debug clock (it takes 16 s of wall clock headless), and GAME OVER's way on is
-  // pressed, so it's named by where it goes: SIGN THE TABLE (a score makes the table) or HIGH SCORES
-  const label0 = () => page.evaluate(() => { const ui = window.__flow.debug.ui; return ui.items[0] ? (ui.items[0].el.firstChild.textContent || '').trim() : ''; });
-  const step = async (s, ms = 6000) => { const ok = await at(s, ms); if (!ok) report(s, [`never got there (${await state()})`]); return ok; };
-  if (await step('continue', 9000)) {
+  // win the stage: a KO each round, played out until the stage is clear
+  await playOut(0, ['stageClear']);
+  if (await step('stageClear')) await shot('stageClear');
+  // lose the next one: CONTINUE?, then its clock runs out to GAME OVER, initials and the table
+  await press(0);
+  if (await step('stageIntro')) await go('fighting');
+  await playOut(1, ['continue']);
+  if (await step('continue')) {
     await shot('continue', 300);
-    await page.evaluate(() => { window.__flow.debug.t = 9.95; });
+    await ff(['gameOver'], 11);
     if (await step('gameOver')) {
       await shot('gameOver', 300);
-      await sleep(600);
+      // GAME OVER's way on is named by where it goes: SIGN THE TABLE (a score makes the table) or HIGH SCORES
       const way = await label0();
       if (way !== 'SIGN THE TABLE') report('gameOver', [`WAY ON "${way}" (want SIGN THE TABLE: a first score makes the table)`]);
-      await page.evaluate(() => window.__flow.debug.ui.items[0].act());
-      if (await step('enterInitials')) { await shot('enterInitials'); await page.keyboard.press('Enter'); }
+      await press(0);
+      if (await step('enterInitials')) { await shot('enterInitials'); await press('^ENTER$'); }
       if (await step('highScores')) {
         await shot('highScores-new');
         if (await label0() !== 'TITLE') report('highScores-new', [`WAY ON "${await label0()}" (want TITLE)`]);
@@ -626,50 +671,53 @@ for (const size of SIZES) {
     }
   }
   // the pause menu's run-ending choices ask first, NO lit, and Esc is NO
-  await go('attract', 'modeSelect');
-  await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
-  await sleep(500);
-  await page.evaluate(() => window.__flow.debug.pickChar(window.__flow.debug.sel.player));
-  if (await step('stageIntro')) {
-    await go('fighting'); await sleep(500);
+  if (await arcade()) {
+    await go('fighting'); await sleep(200);
     await page.keyboard.press('Escape');
-    if (await step('paused', 3000)) {
-      const press = (re) => page.evaluate((src) => { const ui = window.__flow.debug.ui; const k = ui.items.findIndex((i) => new RegExp(src).test(i.el.textContent)); ui.setFocus(k); ui.activate(); }, re);
+    if (await step('paused')) {
+      const pick = (re) => page.evaluate((src) => { const ui = window.__flow.debug.ui; const k = ui.items.findIndex((i) => new RegExp(src).test(i.el.textContent)); ui.setFocus(k); ui.activate(); }, re);
       const asked = () => page.evaluate(() => ({ q: (document.querySelector('#flow .fl-ask .fl-h2') || {}).textContent || '', lit: window.__flow.debug.ui.items[window.__flow.debug.ui.focus]?.el.textContent || '' }));
-      await press('^MAIN MENU'); await sleep(200);
+      await pick('^MAIN MENU'); await sleep(200);
       const a = await asked();
       if (a.q !== 'QUIT TO MAIN MENU?' || a.lit !== 'NO') report('paused-quit', [`MAIN MENU ASKED "${a.q}" WITH "${a.lit}" LIT (want QUIT TO MAIN MENU? with NO)`]);
       else await shot('paused-quit');
       await page.keyboard.press('Escape'); await sleep(200);
       const b = await asked(); const st = await state();
       if (b.q || st !== 'paused' || !/^MAIN MENU/.test(b.lit)) report('paused-quit', [`ESC ON THE CONFIRM: ${st}, "${b.q}", cursor on "${b.lit}" (want PAUSED, on MAIN MENU)`]);
-      await press('^RESTART STAGE'); await sleep(200);
+      await pick('^RESTART STAGE'); await sleep(200);
       const c = await asked();
       if (c.q !== 'RESTART STAGE?') report('paused-restart', [`RESTART STAGE ASKED "${c.q}"`]);
       await page.keyboard.press('ArrowRight'); await page.keyboard.press('Enter'); await sleep(200);
       if (await state() !== 'stageIntro') report('paused-restart', [`YES WENT TO ${await state()} (want stageIntro)`]);
     }
   }
-  // the ending: the last stage cleared
-  await go('attract', 'modeSelect');
-  await page.evaluate(() => { const d = window.__flow.debug; d.sel.mode = 'arcade'; d.sel.step = 'player'; d.go('charSelect'); });
-  await sleep(500);
-  await page.evaluate(() => window.__flow.debug.pickChar(window.__flow.debug.sel.player));
-  await at('stageIntro', 5000);
-  await page.evaluate(() => { const d = window.__flow.debug; d.run.stage = d.run.ladder.length - 1; d.run.continues = 1; });   // (a continue: no secret stage)
-  await go('fighting'); await sleep(600);
-  for (let i = 0; i < 6 && (await state()) !== 'stageClear'; i++) {
-    await page.evaluate(() => window.__flow.debug.debugKO(0));
-    await until(async () => ['stageClear', 'fighting'].includes(await state()), 9000);
-    await sleep(2600);
-  }
-  if (await step('stageClear', 9000)) {
-    await sleep(600);
-    if (await label0() !== 'THE ENDING') report('stageClear-boss', [`WAY ON "${await label0()}" (want THE ENDING after the boss, with a continue used)`]);
-    await page.evaluate(() => { const it = window.__flow.debug.ui.items[0]; it && it.act(); });
-    if (await step('ending')) {
-      await shot('ending', 4000);
-      if (!/^(SIGN THE TABLE|HIGH SCORES)$/.test(await label0())) report('ending', [`WAY ON "${await label0()}"`]);
+  // the ending: the run jumps to the boss's stage (with a continue used, so no secret floor) and wins it
+  if (await arcade()) {
+    await page.evaluate(() => { const d = window.__flow.debug; d.run.stage = d.run.ladder.length - 1; d.run.continues = 1; });
+    await go('fighting');
+    await playOut(0, ['stageClear']);
+    if (await step('stageClear')) {
+      if (await label0() !== 'THE ENDING') report('stageClear-boss', [`WAY ON "${await label0()}" (want THE ENDING after the boss, with a continue used)`]);
+      await press(0);
+      if (await step('ending')) {
+        await shot('ending', 1500);
+        // the roll held at a third and two thirds of the way: the ladder's names, then the credits, judged in its box
+        // (round 1 of [t55b8f] had the names at 11.3 px sideways)
+        for (const k of [0.33, 0.66]) {
+          const held = await page.evaluate((k) => {
+            const a = document.querySelector('#flow .fl-roll > div')?.getAnimations()[0];
+            if (!a) return false;
+            a.pause(); a.currentTime = Number(a.effect.getComputedTiming().duration) * k; return true;
+          }, k);
+          if (held) await shot(`ending-roll${Math.round(k * 100)}`, 200); else report('ending', ['NO ROLL ANIMATION to hold']);
+        }
+        const way = await label0();
+        if (!/^(SIGN THE TABLE|HIGH SCORES)$/.test(way)) report('ending', [`WAY ON "${way}"`]);
+        // and on: the ending's table (its score signs it), then the table after a game
+        await press(0);
+        if (way === 'SIGN THE TABLE' && await step('enterInitials')) await press('^ENTER$');
+        if (await step('highScores')) await shot('highScores-ending');
+      }
     }
   }
   // the update pill on a menu: version.json says a newer build is out
@@ -680,9 +728,14 @@ for (const size of SIZES) {
   }
 
   await ctx.close();
-  console.log(`[${size.name}] done`);
+  console.log(`[${size.name}] done in ${Math.round((Date.now() - tz) / 1000)} s`);
+}
+{
+  const queue = [...SIZES];
+  await Promise.all(Array.from({ length: Math.min(JOBS, queue.length) }, async () => { while (queue.length) await tour(queue.shift()); }));
 }
 await browser.close();
 if (DUMP) fs.writeFileSync(DUMP, JSON.stringify(dump, null, 1));
+console.log(`${SIZES.length} sizes in ${Math.round((Date.now() - t0) / 1000)} s, ${JOBS} at a time`);
 console.log(bad ? `${bad} problems` : 'nothing cut off or overlapping, text and tap targets at size, no page errors');
 process.exit(CHECK && bad ? 1 : 0);

@@ -356,6 +356,11 @@ function injectStyle() {
   .cr-nudge { max-width: 60cqw; padding: 0.8cqh 1.6cqw; border: 2px solid #ffb02e; background: rgba(10,4,20,0.82);
     font: 600 2.2cqw/1.15 'Teko', sans-serif; letter-spacing: 0.08em; color: #fff4d6; text-align: center; }
   .cr-nudge .cr-nsub { font-size: 1.8cqw; font-weight: 500; color: rgba(230,214,255,0.86); }
+  .cr-nudgewrap { display: contents; }
+  @container (min-aspect-ratio: 1/1) and (max-height: 520px) {
+    .cr-nudgewrap { display: flex; align-items: center; justify-content: center; gap: 2cqw; }
+    .cr-nudgewrap .cr-nudge { max-width: 58cqw; }
+  }
   .cr-walletline { color: #ffc46b; }
   .fl-pcareer { width: 46cqw; display: flex; flex-direction: column; gap: 0.6cqh; }
   /* PTO: plain text, square corners, the mint the bonuses use, a full outline */

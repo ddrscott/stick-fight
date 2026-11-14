@@ -911,7 +911,7 @@ function injectStyle() {
   /* The character select sideways and on a desktop (select.js, .fl-wide): the same carousel as upright, in the
      16:9 stage, with the sheet beside it and the roster strip under the cards. Every size has a px floor, so a
      phone held sideways (a stage about 390 px tall) reads at 12 px and up; the sheet scrolls if it has to. */
-  #flow .fl-wide { gap: 1.2cqh; padding-top: 2.4cqh; padding-bottom: calc(8cqh + 2px); }   /* the foot clears the key legend under it */
+  #flow .fl-carousel.fl-wide { gap: 1.2cqh; padding-top: 2.4cqh; padding-bottom: calc(8cqh + 2px); }   /* the foot clears the key legend under it (.fl-carousel: the keyboard's DEL and ENTER are .fl-wide too, and took this padding) */
   #flow .fl-wide .fl-selrow { align-self: stretch; flex: 1 1 0; min-height: 0; padding: 0 3cqw; gap: 2cqw; }
   #flow .fl-wide .fl-ringcol { flex: 1.25 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1.4cqh; }
   #flow .fl-wide .fl-ring { margin: 0; max-height: none; min-height: 0; }
