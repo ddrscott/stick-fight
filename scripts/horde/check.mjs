@@ -6,6 +6,8 @@
 //                 starts the wait over
 //   3. trips      a CPU hero against weak goons, 12 seeds up to 12 floors: every trip to the next floor starts its wave
 //                 (the old build left him upstairs on 4 of them, until TIME)
+//      sides      over the same runs, a goon coming in while another is up enters on that goon's side of the hero, so
+//                 two never surround him (the old build took the doors in turn, so the second came in behind him)
 //   4. KOs        ?scene=horde-ko-test: a goon put down by a plain hit, a juggle, a counter on its wake-up strike, a
 //                 hit through armor and a throw. Each keeps the run going and counts exactly once, the fifth clears
 //                 the floor, and then a goon KOing the hero still ends the run (the old build ended it on a juggle,
@@ -66,7 +68,15 @@ const results = await pg.evaluate(() => {
   // as upstairs) with no wave coming, until TIME ended the run: 4 of these 12 runs. A KO is fair; a trip
   // over 9 s, or any TIME, is not.
   const runs = [], bad = [];
-  let longest = 0, floors = 0;
+  let longest = 0, floors = 0, pairs = 0;
+  const flanks = [], prevFilter = sim.eventFilter;
+  sim.eventFilter = (ev) => {
+    if (ev.type === 'goon' && ev.unit) {
+      const p = sim.units[0], o = sim.units.find(u => u.id >= 1 && u !== ev.unit && !u.hidden);
+      if (o) { pairs++; if (Math.sign(o.x - p.x) !== Math.sign(ev.unit.x - p.x)) flanks.push(`floor ${ev.floor}: hero ${p.x.toFixed(0)}, up ${o.x.toFixed(0)}, new ${ev.unit.x.toFixed(0)}`); }
+    }
+    return prevFilter ? prevFilter(ev) : true;
+  };
   for (let seed = 1; seed <= 12; seed++) {
     g.setScene('horde-floors-ai', { seed }); sim.setAI(0, 1.0);
     let at = -1, res = '';
@@ -82,6 +92,8 @@ const results = await pg.evaluate(() => {
     runs.push(`${seed}:${res || sim.horde.floorsCleared}`);
     if (res === 'TIME' || res.startsWith('STUCK')) bad.push(`seed ${seed} ${res} after ${sim.horde.floorsCleared} floors`);
   }
+  sim.eventFilter = prevFilter;
+  ok('sides: a second goon never comes in on the hero\'s other side', pairs > 0 && !flanks.length, `${pairs} goons came in with another up, ${flanks.length} behind the hero${flanks.length ? ': ' + flanks.slice(0, 4).join('; ') : ''}`);
   ok('trips: every trip to the next floor starts its wave, no TIME', !bad.length && longest <= 9, `${floors} floors over 12 runs (seed:floors or KO) ${runs.join(' ')}, longest trip ${longest.toFixed(1)} s${bad.length ? '; ' + bad.join('; ') : ''}`);
 
   // 4. every way a goon goes down

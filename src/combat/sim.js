@@ -608,13 +608,24 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function placeGoon(g) {
     const p = sim.units[0], H = sim.horde, info = floorInfo(H.floor);
     if (!H.wave) H.wave = { size: 5 + Math.min(3, H.floorsCleared), spawned: 0, downed: 0 };
-    // the next door in turn, not on top of the hero
+    // Goons never surround the hero: with a goon already up, the next one comes in on that goon's side of him.
+    // side is -1 (left of the hero), 1 (right) or 0 (no goon up, any side).
+    const others = goonsLive().filter(o => o !== g);
+    let side = 0;
+    if (others.length) { const dx = others[0].x - p.x; side = dx > 0 ? 1 : dx < 0 ? -1 : -(others[0].facing || 1); }
+    const onSide = (x) => !side || Math.sign(x - p.x) === side;
+    // the next door in turn on that side, not on top of the hero
     let door = null;
     for (let k = 0; k < info.doors.length; k++) {
       const d = info.doors[(H.doorTurn + k) % info.doors.length];
-      if (Math.abs(d.x - p.x) > 160) { door = d; H.doorTurn = (H.doorTurn + k + 1) % info.doors.length; break; }
+      if (Math.abs(d.x - p.x) > 160 && onSide(d.x)) { door = d; H.doorTurn = (H.doorTurn + k + 1) % info.doors.length; break; }
     }
-    if (!door) { const mid = (info.band.x0 + info.band.x1) / 2; door = { x: p.x < mid ? info.band.x1 - 40 : info.band.x0 + 40, y: info.y }; }
+    if (!door) {
+      // no door far enough on that side: the band's end on that side (with no goon up, the far end from him)
+      const mid = (info.band.x0 + info.band.x1) / 2, s = side || (p.x < mid ? 1 : -1);
+      // (a hero backed into that end still gets the goon on that side of him, not behind him)
+      door = { x: s > 0 ? Math.max(info.band.x1 - 40, p.x + 30) : Math.min(info.band.x0 + 40, p.x - 30), y: info.y };
+    }
     const j = info.doors.indexOf(door);
     if (j >= 0 && typeof arena.openDoor === 'function') arena.openDoor(H.floor, j, 1.2);
     g.floor = H.floor; g.stair = -1; g.y = info.y; g.grounded = true;
