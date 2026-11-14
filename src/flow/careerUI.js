@@ -366,7 +366,7 @@ function injectStyle() {
   /* PTO: plain text, square corners, the mint the bonuses use, a full outline */
   .pto-menu { display: none; align-items: center; gap: 1cqw; padding: 0.6cqh 1cqw; border: 2px solid #9dffc0; background: rgba(10,4,20,0.82); }
   .pto-menu.pto-on { display: flex; }
-  .pto-x { font: 400 2cqw/1 'Bungee', sans-serif; color: #0b0616; background: #9dffc0; padding: 0.2em 0.35em 0.1em; }
+  .pto-x { font: 400 2cqw/1 'Bungee', sans-serif; color: #0b0616; background: #9dffc0; padding: 0.2em 0.35em 0.1em; text-shadow: none; }   /* dark on mint, like .ms-hire */
   .pto-text { font: 600 2cqw/1.05 'Teko', sans-serif; letter-spacing: 0.08em; color: #9dffc0; }
   /* daily shifts: plain text, square corners, the career's amber */
   .sh-ticks { display: inline-flex; gap: 0.35cqw; align-items: center; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 1.6cqw; color: #ffc46b; }
