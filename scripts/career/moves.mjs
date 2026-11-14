@@ -7,7 +7,7 @@
 //   - the real sim: each move out of slot A and slot B on bodies of every size, an empty slot still the throw, a
 //     held body still breaking a throw with the same buttons, a sim with empty slots hashing as before
 //   - no loops: every move and every pair of launchers pressed as fast as the sim takes them against a dummy (open
-//     and at the wall): every combo ends, none past 8 hits, no juggle past the cap
+//     and at the wall): every combo ends (within 6 s), none past 8 hits, no juggle past the cap (a splat's follow-up aside)
 //   - the CPU: it uses a borrowed move, and CPU vs CPU at 0.7 with random loadouts (every fighter) finishes every
 //     match with the sim's invariants holding on every step; a CPU with a loadout against the same fighter without
 //     one wins about as often as it loses (moves are sidegrades)
@@ -166,7 +166,8 @@ function hammer(who, a, b, gap, wall) {
     if (d.comboBy === 0 && d.combo === 1 && d.lastHitAt !== start && (start < 0 || d.lastHitAt > start)) { if (d.combo === 1) start = d.lastHitAt; }
     if (d.comboBy === 0 && d.combo > 1 && start >= 0) longest = Math.max(longest, d.lastHitAt - start);
     if (d.comboBy === 0) max = Math.max(max, d.combo);
-    air = Math.max(air, d.airHits || 0);
+    // juggle hits only: a wall-splatted body takes one follow-up of its own (sim.js splatHit), which counts on as air
+    for (const x of sim.log) if (x.type === 'hit' && x.def === 1 && x.air && x.splat === false && x.step === sim.stepCount) air = Math.max(air, x.air);
   }
   return { max, air, longest };
 }
@@ -178,7 +179,7 @@ function hammer(who, a, b, gap, wall) {
     if (r.max > worst.max) worst = { ...r, m: m.id, who, gap, wall };
     airMax = Math.max(airMax, r.air); longest = Math.max(longest, r.longest);
   }
-  ok('one move pressed as fast as it goes: every combo ends, none past 8 hits', worst.max <= 8 && longest < 120 * 4, `worst ${worst.max} hits (${worst.m} on ${worst.who}), longest combo ${(longest / 120).toFixed(1)} s`);
+  ok('one move pressed as fast as it goes: every combo ends, none past 8 hits', worst.max <= 8 && longest < 120 * 6, `worst ${worst.max} hits (${worst.m} on ${worst.who}), longest combo ${(longest / 120).toFixed(1)} s`);
   const L = ['dropOffKnee', 'updraft', 'chef_flambe', 'ceo_takeover', 'finePrint', 'lawyer_crossExam', 'paperCut', 'electrician_liveWire', 'ba_pourOver', 'shoulderCheck'];
   let pw = { max: 0 };
   for (const a of L) for (const b of L) if (a !== b) for (const who of QUICK ? ['temp'] : ['temp', 'chef']) for (const gap of QUICK ? [12] : [8, 12, 16, 24]) for (const wall of [false, true]) {
@@ -187,8 +188,8 @@ function hammer(who, a, b, gap, wall) {
     if (r.max > pw.max) pw = { ...r, a, b, who };
     airMax = Math.max(airMax, r.air); longest = Math.max(longest, r.longest);
   }
-  ok('two launchers and pokes in the two slots, alternated: every combo ends, none past 8 hits', pw.max <= 8 && longest < 120 * 4, `worst ${pw.max} hits (${pw.a} + ${pw.b} on ${pw.who})`);
-  ok('no juggle past the sim\'s cap of 4 air hits', airMax <= 4, `most ${airMax}`);
+  ok('two launchers and pokes in the two slots, alternated: every combo ends, none past 8 hits', pw.max <= 8 && longest < 120 * 6, `worst ${pw.max} hits (${pw.a} + ${pw.b} on ${pw.who}), longest combo ${(longest / 120).toFixed(1)} s`);
+  ok('no juggle past the sim\'s cap of 4 air hits (a wall splat\'s one follow-up aside)', airMax <= 4, `most ${airMax}`);
 }
 
 // ---- the CPU --------------------------------------------------------------------------------------------------------

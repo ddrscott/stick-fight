@@ -126,17 +126,23 @@ try {
     await p.evaluate(() => window.__flow.debug.go('fighting'));
     await until(() => p.evaluate(() => window.__game.sim.phase === 'fight'), 10000);
     if (!touch) {
+      // the stage's CPU fights back, so each try waits until COURIER is on his feet and free (up to three tries)
       const out = async (keys) => {
-        await p.evaluate(() => { const s = window.__game.sim; s.units[0].stamina = s.units[0].staminaMax; s.units[1].x = s.units[0].x + 100 * s.units[0].facing; window.__seen = []; window.__seenT = setInterval(() => { const m = window.__game.sim.units[0].move; if (m && !window.__seen.includes(m)) window.__seen.push(m); }, 10); });
-        await p.keyboard.down('KeyS'); await p.keyboard.down(keys[0]); await p.keyboard.down(keys[1]); await sleep(120);
-        await p.keyboard.up(keys[0]); await p.keyboard.up(keys[1]); await p.keyboard.up('KeyS');
-        await sleep(700);
-        return p.evaluate(() => { clearInterval(window.__seenT); return window.__seen; });
+        let seen = [];
+        for (let k = 0; k < 3 && !seen.includes(keys[2]); k++) {
+          await until(() => p.evaluate(() => { const s = window.__game.sim, u = s.units[0]; return s.phase === 'fight' && u.grounded && /^(idle|walk|crouch)$/.test(u.state); }), 6000, 30);
+          await p.evaluate(() => { const s = window.__game.sim; s.units[0].stamina = s.units[0].staminaMax; s.units[1].x = s.units[0].x + 100 * s.units[0].facing; window.__seen = []; window.__seenT = setInterval(() => { const m = window.__game.sim.units[0].move; if (m && !window.__seen.includes(m)) window.__seen.push(m); }, 10); });
+          await p.keyboard.down('KeyS'); await p.keyboard.down(keys[0]); await p.keyboard.down(keys[1]); await sleep(120);
+          await p.keyboard.up(keys[0]); await p.keyboard.up(keys[1]); await p.keyboard.up('KeyS');
+          await sleep(700);
+          seen = await p.evaluate(() => { clearInterval(window.__seenT); return window.__seen; });
+        }
+        return seen;
       };
-      const a = await out(['KeyU', 'KeyJ']);
+      const a = await out(['KeyU', 'KeyJ', 'reboot']);
       check(`${label}: ↓ 1+3 (S + U + J) throws REBOOT`, a.includes('reboot'), a.join(','));
       if (SHOTS) { await p.evaluate(() => { const s = window.__game.sim; s.units[1].x = s.units[0].x + 100 * s.units[0].facing; }); await p.keyboard.down('KeyS'); await p.keyboard.down('KeyI'); await p.keyboard.down('KeyK'); await sleep(260); await p.screenshot({ path: `${SHOTS}/${label}-5-fight.png` }); await p.keyboard.up('KeyI'); await p.keyboard.up('KeyK'); await p.keyboard.up('KeyS'); await sleep(900); }
-      const bb = await out(['KeyI', 'KeyK']);
+      const bb = await out(['KeyI', 'KeyK', 'mopSpin']);
       check(`${label}: ↓ 2+4 (S + I + K) throws MOP SPIN`, bb.includes('mopSpin'), bb.join(','));
     } else {
       // touch: the stick's down and two buttons, through the sim's own input like the touch layer's snapshot
