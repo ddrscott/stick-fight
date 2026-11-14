@@ -94,7 +94,7 @@ export function upgradeShelf(o) {
 function injectStyle() {
   if (typeof document === 'undefined' || document.getElementById('upgrades-style')) return;
   const css = `
-  #flow .up-tag { display: inline-block; margin-left: 0.5em; padding: 0.05em 0.35em 0; font: 600 0.8em/1.1 'JetBrains Mono', ui-monospace, monospace; font-style: normal;
+  #flow .up-tag { display: inline-block; margin-left: 0.5em; padding: 0.05em 0.35em 0; font: 600 0.62em/1.1 'JetBrains Mono', ui-monospace, monospace; font-style: normal;
     letter-spacing: 0.08em; color: #9dffc0; border: 1.5px solid #9dffc0; border-radius: 0; vertical-align: 0.12em; text-shadow: none; }
   .up-key { color: rgba(234,220,255,0.85); }
   .up-line { display: flex; align-items: baseline; gap: 0.8cqw; font: 600 1.7cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffe0a8; margin-top: 0.4cqh; }
