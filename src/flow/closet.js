@@ -19,6 +19,7 @@ import { el, button } from './ui.js';
 import { createFighter } from '../fighter/index.js';
 import { itemsFor, unlockText, stateOf, completion, KINDS, EXTRAS } from '../career/catalog.js';
 import { career, equipped, equip, buy, mastery, kit, setKit } from '../career/store.js';
+import { upgradeShelf } from './upgradesUI.js';   // stat upgrades (README, Progression, Stat upgrades): not cosmetics, so not in the counts
 
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
 const SILHOUETTE = '#2a2140';   // a locked item: the figure filled flat, no colors to give it away
@@ -117,6 +118,11 @@ export function closetBody(o) {
     }
     shelf.appendChild(cards);
   }
+  // stat upgrades: after the looks, their own section with its own count (the COLLECTED numbers are cosmetics only)
+  const ups = upgradeShelf({ fighter: ch, focusKey: o.focusKey, repaint: o.repaint, note: o.note });
+  if (ups.focus >= 0) focus = items.length + ups.focus;
+  items.push(...ups.items);
+  shelf.appendChild(ups.el);
   wrap.appendChild(shelf);
 
   /** a press on an item card: put it on, buy it (press twice), or say how to get it */
@@ -193,7 +199,7 @@ function injectStyle() {
   #flow > .fl-up .cl-tabs { grid-template-columns: repeat(3, 1fr); max-height: 25vh; overflow-y: auto; gap: 6px; }
   #flow > .fl-up .cl-tab { font-size: max(13px, 3.8cqw); min-height: 44px; }
   #flow > .fl-up .cl-tab .cl-tcount { font-size: max(12px, 3.2cqw); }
-  #flow > .fl-up .cl-shelf { padding: 8px 3cqw; gap: 6px; }
+  #flow > .fl-up .cl-shelf { padding: 8px 3cqw; gap: 6px; max-height: calc(100vh - 380px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; }   /* scrolls in its own box under the tabs (the stat upgrades sit at its foot) */
   #flow > .fl-up .cl-stitle { flex-wrap: wrap; gap: 0.3em 1em; }
   #flow > .fl-up .cl-stitle b { font-size: max(15px, 5cqw); }
   #flow > .fl-up .cl-stitle span, #flow > .fl-up .cl-kind { font-size: max(12px, 3.6cqw); }

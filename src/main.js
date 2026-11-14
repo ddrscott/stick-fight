@@ -24,12 +24,13 @@ import { createFlow } from './flow/index.js';     // the arcade flow: title, men
 import { setNet, adaptOnline } from './flow/netApi.js';
 import { roster, getCharacter, TEMP_ID } from './characters/index.js';   // registers every character before the sim is made
 import { botchEnabled, discover, techniques } from './flow/techniques.js';
-import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
+import { roundTime, bestOf, winsFor, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF, versusUpgrades } from './flow/rules.js';   // the round time and best-of the player picked   // the botch switch and the happy accidents found (src/combat/botch.js)
 import { ACCIDENTS } from './combat/botch.js';
 import { perf, perfOverlay } from './perf.js';
 import { watchScrollCues } from './scrollcue.js';   // every scrolling box fades at the edge with more past it
 import { reportMatch as careerReport, fromRoom as careerFromRoom, look as careerLook, career, syncCareer } from './career/store.js';   // XP, sticks, palettes and mastery (README, Progression)
 import { palette } from './career/palettes.js';
+import { boostFor, FULL as FULL_UPGRADES } from './career/upgrades.js';   // stat upgrades (README, Progression, Stat upgrades)
 import { createBook, sendLeftovers } from './bookkeeping.js';   // match bookkeeping: one result per finished match (README, Analytics)
 import { track, trackAll } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
 import { readDevice, startTier, perfLabels, boundBucket } from './device.js';   // the capability check: where AUTO starts, and the perf event's buckets
@@ -278,7 +279,7 @@ watchScrollCues();
 // falls back to the demo for a ?scene= page; online.js's own "rival left" panel is closed in favor of it
 const online = createOnline({ sim, input, startMatch: (o) => setScene('online', o), matchDetail: () => book.detail(),
   palette: (id) => careerLook(id), title: () => career().title,   // the look: the palette id plus mastery's pose and taunt flags ('coldBrew+pt')
-  botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()) }),
+  botchSetting: () => botchEnabled(), rulesSetting: () => ({ roundTime: roundTime(), winsNeeded: winsFor(bestOf()), upgrades: versusUpgrades() }),
   endMatch: (reason) => { if (flow && flow.on) { flow.netEnded(reason); setTimeout(() => online.closeLobby(), 0); } else setScene('attract'); } });
 // bookkeeping online: count this match's effects from its start; the result itself goes through the room (online.js matchOver)
 online.on('start', (m) => book.begin({ mode: m.crew ? 'crew' : 'quick', local: m.localIndex }));
@@ -1231,6 +1232,15 @@ function looksFor(chars, opts) {
     return { palette: id ? palette(c, id) : null, kit: { pose: flags.includes('p'), taunt: flags.includes('t') } };
   });
 }
+// stat upgrades (README, Progression, Stat upgrades): online only the host's room rule decides, and EVEN puts every
+// stat's top tier on both fighters, whatever either player owns (what a player bought never reaches a human). The
+// flow's own fights (arcade, horde, training) hand the player's boost in opts.boosts. Everything else: none.
+const BOOSTED_SCENES = new Set(['arcade', 'horde', 'dummy']);
+function boostsFor(name, opts) {
+  if (name === 'online') return opts && opts.lockstep && opts.rules && opts.rules.upgrades === 'even' ? [boostFor(FULL_UPGRADES), boostFor(FULL_UPGRADES)] : [];
+  if (BOOSTED_SCENES.has(name) && opts && Array.isArray(opts.boosts)) return opts.boosts.map((b) => b || null);
+  return [];
+}
 // the scenes the flow starts for a player's own fight: they run on the player's round time and best-of
 const PICKED_RULES = new Set(['arcade', 'horde', 'dummy']);
 function setScene(name, opts) {
@@ -1240,7 +1250,7 @@ function setScene(name, opts) {
   book.cut();   // a match cut short (a restart, the menu, the demo) is reported as it stands, once (src/bookkeeping.js); whoever starts the next one begins it
   const chars = pickChars(name, opts);
   const looks = looksFor(chars, opts);
-  sim.setCharacters(chars, [], looks.map((l) => l.palette), looks.map((l) => l.kit));
+  sim.setCharacters(chars, [], looks.map((l) => l.palette), looks.map((l) => l.kit), boostsFor(name, opts));
   syncMirror();
   attract = name === 'attract'; attractKO = false; idleMs = 0; lastPhase = '';
   document.documentElement.classList.toggle('attract', attract && !(flow && flow.on));   // index.html hides the touch controls (the flow has its own classes)

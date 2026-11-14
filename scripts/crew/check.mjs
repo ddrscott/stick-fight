@@ -214,7 +214,7 @@ check('two members are in the lobby', A.you && B.you && A.you !== B.you);
   const ar = board.body && board.body.arcade;
   check('scores: GET gives the crew\'s name and both tables', board.status === 200 && board.body.name === 'LUNCH CREW' && Array.isArray(board.body.horde), JSON.stringify(board.body).slice(0, 120));
   check('scores: the arcade table keeps the top 10, best first', ar && ar.length === 10 && ar[0].score === 50000 && ar[0].initials === 'ABC' && ar[9].score === 3000 && ar.every((r, i) => !i || ar[i - 1].score >= r.score), ar && ar.map((r) => r.score).join(','));
-  check('scores: a row has initials, score, fighter, stage, date, the poster\'s job title, and never who posted it', ar && Object.keys(ar[0]).sort().join() === 'at,char,clear,initials,reach,score,title', ar && Object.keys(ar[0]).join());
+  check('scores: a row has initials, score, fighter, stage, date, the poster\'s job title, whether it had stat upgrades (up), and never who posted it', ar && Object.keys(ar[0]).sort().join() === 'at,char,clear,initials,reach,score,title,up' && ar[0].up === 0, ar && Object.keys(ar[0]).join());
   const m10 = ar && ar.find((r) => r.initials === 'M10'), m09 = ar && ar.find((r) => r.initials === 'M09');
   check('scores: a run posted with a job title keeps it (MANAGER); one not on the ladder is dropped', m10 && m10.title === 'MANAGER' && m09 && m09.title === '', JSON.stringify([m10, m09]));
   const hz = board.body && board.body.horde;

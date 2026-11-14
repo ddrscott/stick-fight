@@ -27,3 +27,23 @@ export const timeLabel = (s) => (s ? `${s}S` : 'NO LIMIT');
 /** step one choice either way (d: -1 or 1), wrapping, and remember it: the SETTINGS panel's ‹ › (src/audio/ui.js) */
 export function stepBestOf(d) { const i = BEST_OF.indexOf(bestOf()), v = BEST_OF[(i + d + BEST_OF.length) % BEST_OF.length]; write(ROUNDS_KEY, v); return v; }
 export function stepRoundTime(d) { const i = ROUND_TIMES.indexOf(roundTime()), v = ROUND_TIMES[(i + d + ROUND_TIMES.length) % ROUND_TIMES.length]; write(TIME_KEY, v); return v; }
+
+// The versus room rule for stat upgrades (README, Progression, Stat upgrades): 'off' (the default: nobody's upgrades,
+// the fighters as they are) or 'even' (both fighters play every stat at its top tier, whatever either player owns).
+// Only the host's counts: it rides the start message with the round time and best-of (src/net/online.js cleanRules).
+// What a player bought never reaches a human any other way.
+export const UPGRADE_RULES = ['off', 'even'];
+const UP_KEY = 'stick-fight-upgrades-rule';
+export function versusUpgrades() {
+  if (UP_KEY in mem) return mem[UP_KEY];
+  try { const v = localStorage.getItem(UP_KEY); return UPGRADE_RULES.includes(v) ? v : 'off'; } catch { return 'off'; }
+}
+export function setVersusUpgrades(v) {
+  const x = UPGRADE_RULES.includes(v) ? v : 'off';
+  try { localStorage.setItem(UP_KEY, x); delete mem[UP_KEY]; } catch { mem[UP_KEY] = x; }
+  return x;
+}
+export const stepVersusUpgrades = () => setVersusUpgrades(versusUpgrades() === 'even' ? 'off' : 'even');
+/** the words for it, everywhere it shows: UPGRADES: OFF / UPGRADES: EVEN */
+export const upgradesLabel = (v) => `UPGRADES: ${v === 'even' ? 'EVEN' : 'OFF'}`;
+export const upgradesNote = (v) => (v === 'even' ? 'BOTH FIGHTERS FULLY UPGRADED' : 'FIGHTERS AS THEY ARE');

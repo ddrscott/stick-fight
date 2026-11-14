@@ -460,12 +460,13 @@ function injectStyle() {
   .fl-qrwait .fl-qrtile { background: rgba(14,4,30,0.62); border-color: rgba(46,242,255,0.35); }
   .fl-qrwait .fl-qrlabel { opacity: 0.4; }
   /* the host screen: the title across, the code and link beside the QR code, the buttons under both */
-  .fl-host { display: grid; grid-template-columns: auto auto; grid-template-areas: "t t" "i q" "b b" "s s";
+  .fl-host { display: grid; grid-template-columns: auto auto; grid-template-areas: "t t" "i q" "b b" "s s" "u u";
     justify-content: center; align-content: center; justify-items: center; align-items: center; column-gap: 4cqw; row-gap: 1.8cqh; }
   .fl-host > .fl-h2 { grid-area: t; }
   .fl-host > .fl-qr { grid-area: q; }
   .fl-host > .fl-row { grid-area: b; }
   .fl-host > .fl-spec { grid-area: s; }
+  .fl-host > .fl-uprule { grid-area: u; }   /* the room rule UPGRADES: OFF / EVEN (README, Progression, Stat upgrades) */
   .fl-hostinfo { grid-area: i; width: 46cqw; display: flex; flex-direction: column; align-items: center; gap: 1.8cqh; }
   .fl-hostinfo .fl-link { max-width: 100%; line-height: 1.2; min-height: 1.2em; }   /* a line's room before the link arrives */
   @keyframes fl-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
@@ -587,6 +588,10 @@ function injectStyle() {
   .fl-selstatus { display: flex; gap: 3cqw; font-size: 2.3cqw; font-weight: 600; letter-spacing: 0.12em; line-height: 1; min-height: 2.4cqw; }
   .fl-selstatus b { font-weight: 600; color: var(--amber); }
   .fl-selstatus b.fl-ok { color: #c8ff3a; }
+  /* the room rule for stat upgrades (README, Progression, Stat upgrades) on the pick and post-match screens: plain, read once */
+  .fl-selstatus { flex-wrap: wrap; justify-content: center; row-gap: 0.6cqh; }
+  .fl-selstatus .fl-uprule-line { flex-basis: 100%; text-align: center; font-size: 0.8em; color: #9dffc0; }
+  .fl-uprule-line { color: #9dffc0; }
   .fl-post { gap: 1.3cqh; }
   .fl-set { display: flex; align-items: baseline; gap: 2.4cqw; font-family: 'Bungee', 'Arial Black', sans-serif; line-height: 1; }
   .fl-set .fl-sn { font-size: 8cqw; color: #fff; text-shadow: 0 0 0.6cqw var(--c), 0 0 1.8cqw var(--c); }
@@ -806,7 +811,7 @@ function injectStyle() {
     .fl-selfoot .fl-btn { min-height: 12cqh; }
     .fl-select { padding-top: 1.6cqh; gap: 1cqh; }
     /* the host screen: the QR code takes the right of the stage at the biggest size that fits, everything else stacks beside it */
-    .fl-host { grid-template-areas: "t q" "i q" "b q" "s q"; column-gap: 2.4cqw; row-gap: 1.2cqh; }
+    .fl-host { grid-template-areas: "t q" "i q" "b q" "s q" "u q"; column-gap: 2.4cqw; row-gap: 1.2cqh; }
     .fl-host > .fl-qr { --qr: 66cqh; }
     .fl-hostinfo { width: 56cqw; gap: 1.2cqh; }
     .fl-host > .fl-row { width: 56cqw; flex-wrap: wrap; gap: 1.2cqh 1.4cqw; }

@@ -1,5 +1,6 @@
 // SETTINGS: every setting in the game on one full-screen page, under four tabs (README, Arcade flow, SETTINGS):
-//   GAME      ROUNDS, ROUND TIME and BOTCHES (src/flow/rules.js, src/flow/techniques.js), from the next fight
+//   GAME      ROUNDS, ROUND TIME, BOTCHES and UPGRADES, the room rule for stat upgrades (src/flow/rules.js,
+//             src/flow/techniques.js), from the next fight
 //   CONTROLS  on a touch screen the size of the stick and buttons with a picture of them; then the fight and menu
 //             tables, keyboard and gamepad (src/flow/controls.js), and the notes on dash, parry, getups and stairs
 //   AUDIO     SOUND, MUSIC, the TRACK playing, MUSIC VOLUME and EFFECTS VOLUME
@@ -33,7 +34,7 @@ import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchF
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 import { MENU_ICON, cornerButton, cornerRow } from '../corner.js';
 import { GFX_CHOICES, TIER_NAME, gfxPick, setGfxPick, onGfxPick, liveTier, onLiveTier } from '../gfxPrefs.js';   // GRAPHICS (README, Performance, Chromebooks)
-import { bestOf, roundTime, stepBestOf, stepRoundTime, timeLabel } from '../flow/rules.js';   // GAME: the match rules
+import { bestOf, roundTime, stepBestOf, stepRoundTime, timeLabel, versusUpgrades, stepVersusUpgrades } from '../flow/rules.js';   // GAME: the match rules
 import { botchEnabled, setBotchEnabled } from '../flow/techniques.js';                       // GAME: the botch switch
 import { controlsTable, legend, FIGHT, MENUS } from '../flow/controls.js';                   // CONTROLS: the tables, and the legend
 import { canFullscreen, isFullscreen, toggleFullscreen } from '../fullscreen.js';            // DISPLAY: FULLSCREEN, where it can work
@@ -82,7 +83,8 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
           ${opt('rounds', 'ROUNDS', 'ROUNDS TO WIN A MATCH')}
           ${opt('time', 'ROUND TIME', 'THE CLOCK ON EACH ROUND')}
           ${opt('botch', 'BOTCHES', 'A PRESS AT THE WRONG TIME STUMBLES')}
-          <p class="sf-note">THESE START WITH THE NEXT FIGHT. ONLINE, THE HOST'S RULES ARE THE ONES PLAYED. HORDE HAS NO ROUNDS OR CLOCK.</p>
+          ${opt('upgrades', 'UPGRADES', 'ROOMS YOU HOST: OFF, OR EVEN (BOTH FIGHTERS FULLY UPGRADED)')}
+          <p class="sf-note">THESE START WITH THE NEXT FIGHT. ONLINE, THE HOST'S RULES ARE THE ONES PLAYED. HORDE HAS NO ROUNDS OR CLOCK. STAT UPGRADES YOU BOUGHT ONLY COUNT IN ARCADE, HORDE AND TRAINING; ONLINE THEY'RE OFF FOR BOTH UNLESS THE HOST PICKS EVEN, WHICH GIVES BOTH FIGHTERS EVERY UPGRADE.</p>
         </div>
         <div class="sf-page" data-p="controls">
           <div class="sf-touchonly">
@@ -194,6 +196,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     rounds: { step: (d) => stepBestOf(d), text: () => `BEST OF ${bestOf()}` },
     time: { step: (d) => stepRoundTime(d), text: () => (roundTime() ? `${roundTime()} SECONDS` : timeLabel(0)) },
     botch: { step: () => setBotchEnabled(!botchEnabled()), text: () => (botchEnabled() ? 'ON' : 'OFF') },
+    upgrades: { step: () => stepVersusUpgrades(), text: () => (versusUpgrades() === 'even' ? 'EVEN' : 'OFF') },
     gfx: { quiet: true, step: (d) => { const at = GFX_CHOICES.findIndex((c) => c.id === gfxPick()), to = GFX_CHOICES[(at + d + GFX_CHOICES.length) % GFX_CHOICES.length]; pickGfx(to.id); }, text: () => (GFX_CHOICES.find((x) => x.id === gfxPick()) || GFX_CHOICES[0]).name },
     size: { quiet: true, step: (d) => pickStep(touchStep() + d), text: () => TOUCH_STEPS[touchStep()].name, ends: () => [touchStep() === 0, touchStep() === TOUCH_STEPS.length - 1] },
     fullscreen: { step: () => toggleFullscreen(), text: () => (isFullscreen() ? 'ON' : 'OFF') },

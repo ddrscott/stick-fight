@@ -10,7 +10,7 @@
 //   placeFor(kind, score)     the best place this score would take on a loaded crew board: { slug, name, rank } or null
 //   postRun(run)              post a run to every recent crew: resolves to [{ slug, name, rank } | { slug, error }]
 //   rowNote(kind, row)        'STAGE 4', 'ALL CLEAR', '3 FLOORS'
-// A Row is { initials, score, char, reach, clear, at, title } (and member, from the lobby's own state); title is the
+// A Row is { initials, score, char, reach, clear, at, title, up } (and member, from the lobby's own state); title is the
 // poster's job title when they posted it (README, Progression), shown as AAA · MANAGER.
 
 import { apiUrl } from './link.js';
@@ -67,7 +67,7 @@ export function placeFor(kind, score) {
   return best;
 }
 /**
- * @param {{ kind: 'arcade' | 'horde', initials: string, score: number, char: string, reach: number, clear?: boolean, title?: string }} run  title: the poster's job title
+ * @param {{ kind: 'arcade' | 'horde', initials: string, score: number, char: string, reach: number, clear?: boolean, title?: string, up?: boolean }} run  title: the poster's job title; up: played with stat upgrades
  */
 export async function postRun(run) {
   const list = recentCrews();
@@ -77,7 +77,7 @@ export async function postRun(run) {
     try {
       const res = await fetch(apiUrl(`crews/${encodeURIComponent(c.slug)}/scores`), {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ pid, run: { ...run, clear: !!run.clear } }),
+        body: JSON.stringify({ pid, run: { ...run, clear: !!run.clear, up: !!run.up } }),
       });
       const body = await res.json().catch(() => null);
       if (body && body.ok) { cache.delete(c.slug); return { slug: c.slug, name: c.name, rank: Number(body.rank) }; }

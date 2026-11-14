@@ -6,6 +6,8 @@
 //   POST /api/career/match   { m }                    -> { award, career }   an arcade stage or horde run (the page's word)
 //   POST /api/career/merge   { career }               -> { career }          a guest's local progress, at sign-in
 //   POST /api/career/buy     { fighter, id }          -> { career } | { error: 'short' | 'owned' | 'unknown' }
+//   POST /api/career/buy     { fighter, upgrade, tier } -> { career } | { error: 'short' | 'owned' | 'order' | 'unknown' }
+//                                                     a stat upgrade's tier (src/career/upgrades.js), bought in order
 //   PUT  /api/career/equip   { fighter, id, kind? }   -> { career } | { error }   id '' is the fighter's own look;
 //                                                     kind 'pose' or 'taunt' switches an unlocked one on (id) or off ('')
 //   POST /api/career/shifts/swap { slot }              -> { career } | { error: 'used' | 'done' | 'bad' }   one a day
@@ -24,7 +26,8 @@
 //   online (quick, crew)  the room, from the result both pages agree on (worker/stats.ts roomResult): awardOnline.
 //                         The technique counts come from each page's own report, capped per match like the rest.
 //   offline (arcade, horde) the page reports it here. Nothing can check it, so what offline play pays a day is
-//                         capped (OFFLINE_CAP): sticks only buy cosmetics, so a forged result isn't worth more.
+//                         capped (OFFLINE_CAP): what sticks buy never reaches another person (looks, and stat upgrades
+//                         that only count against the CPU), so a forged result isn't worth more.
 //   training, the dummy   nothing.
 //   crew goals            the crew's Durable Object (worker/crew.ts) pays a met weekly goal: awardCrewGoal. A
 //                         signed-in player's paid arcade stage or horde run also counts toward each of their crews'
@@ -37,6 +40,7 @@ import { blankCareer, utcDay, MERGE_MAX, OFFLINE_MODES, ONLINE_MODES, titleFor, 
 import { GOAL_PAY, soloCounts } from "../src/career/crewgoal.js";
 import { palette, itemKey } from "../src/career/palettes.js";
 import { cleanShifts, swapShift, mergeShifts } from "../src/career/shifts.js";
+import { canBuy, upKey, PRICES as UP_PRICES } from "../src/career/upgrades.js";
 import { payWithMastery, applyWithMastery, isOwnable, cleanMastery, mergeMastery, grantAll, kitKey, kitItemKey, MASTERY_FIGHTERS } from "../src/career/mastery.js";
 
 export type Career = ReturnType<typeof blankCareer>;
@@ -46,7 +50,7 @@ type Row = {
 };
 const COLS = "career_xp, sticks, win_day, online_day, offline_day, offline_xp, offline_sticks, owned, equip, shifts, fighter_xp, pto";
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_OWNED = 200;
+const MAX_OWNED = 600;   // 18 fighters: 108 cosmetics and 216 upgrade tiers, with room to grow
 
 const int = (v: unknown, hi = 1e9) => Math.max(0, Math.min(hi, Math.floor(Number(v) || 0)));
 const day = (v: unknown) => (typeof v === "string" && DAY_RE.test(v) ? v : "");
@@ -231,6 +235,20 @@ async function route(req: Request, env: Env, path: string, ctx?: ExecutionContex
   if (path === "POST career/merge") {
     const r = await update(env, email, (c) => ({ next: merge(c, body.career), out: null }));
     return r ? json({ career: view(r.career) }) : json({ error: "signed-out" });
+  }
+  if (path === "POST career/buy" && body.upgrade !== undefined) {
+    // a stat upgrade (README, Progression, Stat upgrades): this tier of this stat, the one after the last owned, at its fixed price
+    const fighter = String(body.fighter || ""), stat = String(body.upgrade || ""), tier = Number(body.tier);
+    if (!MASTERY_FIGHTERS.includes(fighter) || canBuy([], fighter, stat, tier) === "unknown") return json({ error: "unknown" }, 400);
+    const price = UP_PRICES[tier - 1], key = upKey(fighter, stat, tier);
+    const r = await update<string>(env, email, (c) => {
+      const ok = canBuy(c.owned, fighter, stat, tier);
+      if (ok !== "ok") return { next: null, out: ok };
+      if (c.sticks < price) return { next: null, out: "short" };
+      return { next: { ...c, sticks: c.sticks - price, owned: [...c.owned, key] }, out: "ok" };
+    });
+    if (!r) return json({ error: "signed-out" });
+    return r.out === "ok" ? json({ career: view(r.career) }) : json({ error: r.out, career: view(r.career) });
   }
   if (path === "POST career/buy") {
     const fighter = String(body.fighter || ""), id = String(body.id || ""), p = palette(fighter, id);

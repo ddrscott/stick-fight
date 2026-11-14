@@ -203,7 +203,7 @@ export function cleanSetup(m) {
   const r = m.rules && typeof m.rules === 'object' ? m.rules : {}, t = m.tally && typeof m.tally === 'object' ? m.tally : {};
   return {
     n, v, seed: m.seed >>> 0, chars: [id(chars[0]), id(chars[1])], botch: m.botch !== false,
-    rules: { roundTime: num(r.roundTime, 0, 999, 60), winsNeeded: num(r.winsNeeded, 1, 9, 2) },
+    rules: { roundTime: num(r.roundTime, 0, 999, 60), winsNeeded: num(r.winsNeeded, 1, 9, 2), upgrades: r.upgrades === 'even' ? 'even' : 'off' },
     names: [name(names[0]), name(names[1])],
     tally: { host: num(t.host, 0, 9999, 0), guest: num(t.guest, 0, 9999, 0), draw: num(t.draw, 0, 9999, 0) },
     round: num(m.round, 1, 99, 1), wins: [num(wins[0], 0, 9, 0), num(wins[1], 0, 9, 0)],

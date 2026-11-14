@@ -62,7 +62,7 @@ import { legend, watchDevice } from '../flow/controls.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 import { linkFromUrl, linkUrl, setLinkInBar } from '../links.js';
 
-export const NET_VERSION = 25;   // bump when the sim or the netcode changes in a way old builds can't play against (25: fighter mastery: the look in ready, pick and start carries '+p' / '+t' for the victory pose (it replaces the dance on the WINS card) and the taunt (the last round's winner, the 'taunt' state under the ROUND card), both sim state; 24: dashes: a double tap is a forward or a back dash (the 'dash' state, u.dashDir / dashT, the tap count u.tapDir / tapAt / tapN in place of the old tap timer), the input's 12th bit `dash` (the touch stick's double flick), a dash attack on every button and a rising attack on every limb with the rise read out of a crouching attack too (u.lowStance), the 'r' string token and RISE AND SHINE; 23: the clash: two live strikes whose striking limbs touch stop each other with no damage, both bounce back and recover on the same step (u.clashUntil, in the state hash with tradeUntil / tradeLimb), a much heavier strike breaks through and bats the lighter aside (frame data CLASH), and a striking limb on its way is no longer body to another strike; 22: the perfect round finisher, a sim stage inside the KO phase (sim.perfectT, the winner's 'perfect' state, the body thrown at the camera) that only the winner's press skips; 21: getups by the sides (u.home fixed at touchdown, rolls away / toward with a cross under a man standing near, u.roll* fields, rig.rebase and the roll clips), a body on the floor held off to its drawn feet and short of its hip, lows that touch a floored body as its one ground hit and grazes (u.grazeId), the stomp on down+4 only; 'home', 'rollT' and 'otgHit' in the state hash; 20: a fainted fighter is rooted and shakes it off with alternating left/right presses (u.shakeDir, u.shakeAt, u.faintCut, in the state hash), the CPU's faint shake; 19: bodies never sink into the floor: the ground snap and the point simulation use each joint's drawn radius, the stairs' solid line runs through the nosings, tumbling joints stop at the risers, poses on and beside a flight are fitted to its treads, the vault faces the opening; all of it moves the rig's joints, which are the hitboxes and are hashed; 18: stamina refunds on contact and the no-faint save on a connecting strike (u.paid, u.faintPending, u.refundMove/refundRep/refundAt), so an old build's sim drifts from a new one's; 17: resync (the host sends its confirmed state on a hash mismatch), the end of a match agreed by state hash, a character's reach measured on a reset rig (it depended on what the rig was doing the first time that phone saw the character), the rng and the reach table in the state hash; 16: quick rooms from the menus open on the pick screen too (pickFirst, the 'go' at match 0), which an old guest would ignore; 15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
+export const NET_VERSION = 26;   // bump when the sim or the netcode changes in a way old builds can't play against (26: stat upgrades: the host's rules carry `upgrades` ('off' or 'even'), and EVEN puts every stat's top tier on both fighters (u.upHp, upDmg, upRegen, upWalk, in the state hash); 25: fighter mastery: the look in ready, pick and start carries '+p' / '+t' for the victory pose (it replaces the dance on the WINS card) and the taunt (the last round's winner, the 'taunt' state under the ROUND card), both sim state; 24: dashes: a double tap is a forward or a back dash (the 'dash' state, u.dashDir / dashT, the tap count u.tapDir / tapAt / tapN in place of the old tap timer), the input's 12th bit `dash` (the touch stick's double flick), a dash attack on every button and a rising attack on every limb with the rise read out of a crouching attack too (u.lowStance), the 'r' string token and RISE AND SHINE; 23: the clash: two live strikes whose striking limbs touch stop each other with no damage, both bounce back and recover on the same step (u.clashUntil, in the state hash with tradeUntil / tradeLimb), a much heavier strike breaks through and bats the lighter aside (frame data CLASH), and a striking limb on its way is no longer body to another strike; 22: the perfect round finisher, a sim stage inside the KO phase (sim.perfectT, the winner's 'perfect' state, the body thrown at the camera) that only the winner's press skips; 21: getups by the sides (u.home fixed at touchdown, rolls away / toward with a cross under a man standing near, u.roll* fields, rig.rebase and the roll clips), a body on the floor held off to its drawn feet and short of its hip, lows that touch a floored body as its one ground hit and grazes (u.grazeId), the stomp on down+4 only; 'home', 'rollT' and 'otgHit' in the state hash; 20: a fainted fighter is rooted and shakes it off with alternating left/right presses (u.shakeDir, u.shakeAt, u.faintCut, in the state hash), the CPU's faint shake; 19: bodies never sink into the floor: the ground snap and the point simulation use each joint's drawn radius, the stairs' solid line runs through the nosings, tumbling joints stop at the risers, poses on and beside a flight are fitted to its treads, the vault faces the opening; all of it moves the rig's joints, which are the hitboxes and are hashed; 18: stamina refunds on contact and the no-faint save on a connecting strike (u.paid, u.faintPending, u.refundMove/refundRep/refundAt), so an old build's sim drifts from a new one's; 17: resync (the host sends its confirmed state on a hash mismatch), the end of a match agreed by state hash, a character's reach measured on a reset rig (it depended on what the rig was doing the first time that phone saw the character), the rng and the reach table in the state hash; 16: quick rooms from the menus open on the pick screen too (pickFirst, the 'go' at match 0), which an old guest would ignore; 15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
 const WATCH_KEY = 'stick-fight-watch';   // localStorage: '0' when the host has turned spectators off for their rooms
@@ -97,6 +97,7 @@ function addRivalResult(pid, res) {
 export const cleanRules = (r) => ({
   roundTime: r && ROUND_TIMES.includes(r.roundTime) ? r.roundTime : DEFAULT_ROUND_TIME,
   winsNeeded: r && [1, 2, 3].includes(r.winsNeeded) ? r.winsNeeded : winsFor(DEFAULT_BEST_OF),
+  upgrades: r && r.upgrades === 'even' ? 'even' : 'off',   // stat upgrades (src/flow/rules.js versusUpgrades): EVEN is both fully upgraded
 });
 const freshTally = () => ({ host: 0, guest: 0, draw: 0, rounds: [0, 0] });
 
@@ -133,6 +134,7 @@ export function createOnline(game) {
   let myName = '', rivalName = '', pickFirst = false, crewMode = false;
   // palettes (src/career/palettes.js): each side's for its own pick, '' for the fighter's own look; the rival's title
   let remotePal = '', rivalTitle = '';
+  let heardRules = null, playedRules = null;   // the room's rules as the host last told this guest, and the last match's (view().rules, .played)
   const myPal = (id) => { try { return typeof game.palette === 'function' ? String(game.palette(id) || '').slice(0, 36) : ''; } catch { return ''; } };
   const myTitle = () => { try { return typeof game.title === 'function' ? String(game.title() || '').slice(0, 12) : ''; } catch { return ''; } };
   // a look: the palette id, then fighter mastery's '+p' / '+t' / '+pt' (pose, taunt; src/career/store.js look)
@@ -190,6 +192,7 @@ export function createOnline(game) {
         if (m <= n) return;   // a start we already played
         if (lockstep) lockstep = null;   // still finishing the match before (a stall): the host has it confirmed, its tally counts
         if (msg.tally) adoptTally(msg.tally);
+        heardRules = cleanRules(msg.rules);
         begin(msg.seed >>> 0, Array.isArray(msg.chars) ? msg.chars : ['temp', localChar], msg.botch !== false, m, cleanRules(msg.rules), Array.isArray(msg.pals) ? msg.pals.map(cleanPal) : null);
       } else onSession(msg);
     });
@@ -215,7 +218,7 @@ export function createOnline(game) {
     if (lockstep) { if (role === 'host' && lastStart && lastStart.n === n) link.sendControl(lastStart); return; }
     if (!between()) return;
     if (role === 'host') {
-      if (state === 'select') link.sendControl({ t: 'go', n });
+      if (state === 'select') link.sendControl({ t: 'go', n, ...ruleTag() });
       if (state === 'post' && last) link.sendControl({ t: 'result', n, tally, hash: last.hash, f: last.frame });
       sendCd();
     }
@@ -239,6 +242,7 @@ export function createOnline(game) {
   function hostRules() { return cleanRules(typeof game.rulesSetting === 'function' ? game.rulesSetting() : null); }
   function begin(seed, chars = ['temp', 'temp'], botch = true, m = 1, rules = cleanRules(null), pals = null) {
     const localIndex = role === 'host' ? 0 : 1;
+    playedRules = rules;
     n = m; matchSeed = seed >>> 0; drain = null; stopTimer();
     endSent = ''; rivalEnd = null; endWait = 0;
     localChar = chars[localIndex] || localChar; remoteChar = chars[1 - localIndex] || remoteChar;
@@ -342,12 +346,16 @@ export function createOnline(game) {
     sendCd();
   }
   function cancelCd() { if (!cd) return; cd = null; sendCd(); }
-  function sendCd() { if (role === 'host' && link) link.sendControl({ t: 'cd', n, kind: cd ? cd.kind : null, ms: cd ? Math.max(0, Math.round(cd.until - now())) : 0 }); }
-  function sendPost(poke = false) { if (link) link.sendControl({ t: 'post', n, want: mine.want, focus: mine.focus, poke }); }
-  function sendPick() { if (link) link.sendControl({ t: 'pick', n, id: mine.id, pal: myPal(mine.id), ready: mine.ready }); }
+  // the host's rules ride its between-match messages too, so the guest's pick and post-match screens can say them
+  // (the room rule UPGRADES: OFF / EVEN, README Progression, Stat upgrades) before the next start makes them so
+  const ruleTag = () => (role === 'host' ? { rules: hostRules() } : {});
+  function sendCd() { if (role === 'host' && link) link.sendControl({ t: 'cd', n, kind: cd ? cd.kind : null, ms: cd ? Math.max(0, Math.round(cd.until - now())) : 0, ...ruleTag() }); }
+  function sendPost(poke = false) { if (link) link.sendControl({ t: 'post', n, want: mine.want, focus: mine.focus, poke, ...ruleTag() }); }
+  function sendPick() { if (link) link.sendControl({ t: 'pick', n, id: mine.id, pal: myPal(mine.id), ready: mine.ready, ...ruleTag() }); }
   /** the session messages from the other side (start and ready are handled above) */
   function onSession(msg) {
     if (msg.t === 'alive' || (msg.n | 0) !== n) return;   // another match's (late), or a heartbeat
+    if (role === 'guest' && msg.rules) heardRules = cleanRules(msg.rules);
     if (msg.t === 'post') {
       rival.want = WANTS.has(msg.want) ? msg.want : null;
       rival.focus = typeof msg.focus === 'string' ? msg.focus : '';
@@ -386,7 +394,7 @@ export function createOnline(game) {
     rival.ready = false; rival.at = now();
     setState('select');
     if (!timer) startTimer();   // a crew match opens here, before any match: the heartbeat starts now
-    if (role === 'host' && link) link.sendControl({ t: 'go', n });
+    if (role === 'host' && link) link.sendControl({ t: 'go', n, ...ruleTag() });
     sendPick();
     changed();
   }
@@ -429,6 +437,9 @@ export function createOnline(game) {
       cd: cd ? { kind: cd.kind, left: Math.max(0, cd.until - now()) } : null,
       autoOff, canStart: canStart(), allTime: crewMode ? null : rivalRecord(rivalPid),
       name: myName, rivalName, rivalTitle, crew: crewMode,
+      // the room's rules as this side knows them (the host's own; what the host last told a guest, or null), and the
+      // rules the last match was played on
+      rules: role === 'host' ? hostRules() : heardRules, played: playedRules,
     };
   }
 
@@ -475,7 +486,7 @@ export function createOnline(game) {
      *  this browser's per-rival record out of it */
     async host(opts = {}) {
       net.leave();
-      n = 0; tally = freshTally(); last = null; rivalName = '';
+      n = 0; tally = freshTally(); last = null; rivalName = ''; heardRules = null; playedRules = null;
       pickFirst = !!opts.pickFirst; crewMode = !!opts.crew;
       role = 'host'; setState('creating');
       try { code = opts.code && CODE_RE.test(opts.code) ? opts.code : await (game.createRoom || createRoom)(); } catch (e) { setState('error', (e && e.reason) || 'unreachable'); throw e; }
@@ -486,7 +497,7 @@ export function createOnline(game) {
     /** join a room by its code */
     async join(c, opts = {}) {
       net.leave();
-      n = 0; tally = freshTally(); last = null; rivalName = '';
+      n = 0; tally = freshTally(); last = null; rivalName = ''; heardRules = null; playedRules = null;
       pickFirst = !!opts.pickFirst; crewMode = !!opts.crew;
       c = String(c || '').trim().toUpperCase();
       if (!CODE_RE.test(c)) { setState('error', 'bad-code'); throw new Error('bad room code'); }

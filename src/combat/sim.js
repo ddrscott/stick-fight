@@ -38,6 +38,8 @@ const GUARD_STATES = new Set(['idle', 'walk', 'block', 'blockstun', 'crouch']); 
 const JUGGLE_MAX = 4, JUGGLE_POP = 220, JUGGLE_G = 0.3;   // airborne hits; each one adds 30% gravity, so juggles end on their own
 const SPLAT_STEPS = 48, BREAK_STEPS = 36, RISE_STEPS = 24, DASH_STEPS = DASH.attack, COUNTER_DMG = 1.35, COUNTER_STUN = 1.5;
 const CROUCH_SQUASH = 0.7;
+// a unit's stat-upgrade multiplier (setCharacter boost; src/career/upgrades.js): 1 when it has none, a horde goon included
+const up = (u, k) => (u && u[k]) || 1;
 const FLOOR_DMG = 10, VAULT_HOP_VY = 420;   // landing damage after a floor break; the vault's hop   // a crouch drawn by squashing the standing pose, until the rig has crouch clips
 const INVULN = new Set(['getup', 'ko', 'roll']);
 const OTG = { bounce: 4 };   // a ground hit's flinch: a 2-frame 6px pop; the body stays down
@@ -391,6 +393,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     return {
       char: ch, maxHealth: 100, staminaMax: STAMINA.max * ch.stats.stamina, armorLeft: 0, hitN: 0, airJumpsUsed: 0, wallJumps: 0,
       victory: null, taunt: null,   // fighter mastery's clips, when this player has them on (setCharacter)
+      upHp: 1, upDmg: 1, upRegen: 1, upWalk: 1,   // stat upgrades' multipliers (setCharacter boost), 1 without
       id: i, name: 'P' + (i + 1), rig, color: rig.color || (i === 0 ? '#f0f0f0' : '#E85D00'),
       x: rig.x, y: rig.y, vx: 0, vy: 0, grounded: true, facing: rig.facing || (i === 0 ? 1 : -1),
       state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,   // a new unit starts idle: built here, not a state change (enter())
@@ -453,11 +456,15 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   // never simulated (nothing in the state hash). P2's stays only where it doesn't clash with P1's (colorFor).
   // pose, taunt (fighter mastery, README Progression): this player has the character's victory pose or taunt unlocked and
   // on. Both are sim state (the clips move the rig, which is hashed), so online both pages are told (src/main.js lookFor).
-  sim.setCharacter = (i, id, { color = null, palette = null, pose = false, taunt = false } = {}) => {
+  // boost (stat upgrades, src/career/upgrades.js boostFor): { hp, dmg, regen, walk } multipliers on max health, every
+  // hit's damage, stamina regen and walk/run speed; null is the character as it is. Sim state (it moves health and
+  // bodies), so online it only ever comes from the host's room rule, the same on both pages (src/main.js setScene).
+  sim.setCharacter = (i, id, { color = null, palette = null, pose = false, taunt = false, boost = null } = {}) => {
     const u = sim.units[i];
     if (!u) return null;
     const ch = characterOr(id);
     u.char = ch; u.rig.charDef = ch;
+    u.upHp = boost ? boost.hp || 1 : 1; u.upDmg = boost ? boost.dmg || 1 : 1; u.upRegen = boost ? boost.regen || 1 : 1; u.upWalk = boost ? boost.walk || 1 : 1;
     u.victory = pose && ch.victory ? ch.victory : null;
     u.taunt = taunt && ch.taunt ? ch.taunt : null;
     const accent = (palette && palette.accent) || ch.accent;
@@ -476,7 +483,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     }
     return ch;
   };
-  sim.setCharacters = (ids, colors = [], palettes = [], kits = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null, palette: palettes[i] || null, pose: !!(kits[i] && kits[i].pose), taunt: !!(kits[i] && kits[i].taunt) }));
+  sim.setCharacters = (ids, colors = [], palettes = [], kits = [], boosts = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null, palette: palettes[i] || null, pose: !!(kits[i] && kits[i].pose), taunt: !!(kits[i] && kits[i].taunt), boost: boosts[i] || null }));
 
   // ---- rounds ----------------------------------------------------------------------
   function spawn(u, i) {
@@ -485,7 +492,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     // a fresh unit for the round, every field set from scratch below: not a state change, so not through enter()
     u.state = 'idle'; u.move = null; u.phase = null; u.hitstop = 0; u.flash = 0; u.stun = 0; u.buffer = null;
     // a character's health is its stat out of 100 times the match's starting health (100, the ko scene's 24)
-    u.maxHealth = (sim.horde && i >= 1) ? sim.horde.goonHealth : u.char.stats.health === 100 ? sim.startHealth : Math.round(sim.startHealth * u.char.stats.health / 100);
+    u.maxHealth = (sim.horde && i >= 1) ? sim.horde.goonHealth : u.char.stats.health === 100 && up(u, 'upHp') === 1 ? sim.startHealth : Math.round(sim.startHealth * u.char.stats.health * up(u, 'upHp') / 100);
     u.health = u.maxHealth; u.hidden = false; u.koDone = false; u.running = false; u.hitConfirmed = false;
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
 u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.paid = 0; u.refundId = 0; u.faintPending = 0; u.shakeDir = 0; u.shakeAt = -999; u.faintCut = 0; u.refundMove = ''; u.refundRep = 0; u.refundAt = -999; u.crouch = false; u.seq = null; u.bufferKeys = null;
@@ -684,9 +691,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function freshState() {
     if (sim.units.length > 2) sim.units.length = 2;
     sim.units.forEach((u, i) => {
-      const { rig, controller, kind, victory, taunt } = u;   // the character's look stays, fighter mastery's clips too
+      const { rig, controller, kind, victory, taunt, upHp, upDmg, upRegen, upWalk } = u;   // the character's look stays, fighter mastery's clips and the stat upgrades too
       for (const k of Object.keys(u)) delete u[k];
-      Object.assign(u, makeUnit(rig, i), { controller, kind, victory: victory || null, taunt: taunt || null });
+      Object.assign(u, makeUnit(rig, i), { controller, kind, victory: victory || null, taunt: taunt || null, upHp: upHp || 1, upDmg: upDmg || 1, upRegen: upRegen || 1, upWalk: upWalk || 1 });
       if (typeof rig.reset === 'function') rig.reset({ full: true });
     });
     for (const k of Object.keys(reachSeen)) delete reachSeen[k];
@@ -1033,7 +1040,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     }
     const guarding = u.state === 'block' || u.state === 'blockstun' || (u.state === 'crouch' && u.backHeld);
     if (u.state === 'attack' || u.state === 'run' || u.state === 'dash' || u.state === 'botch') return;
-    const smax = u.staminaMax || STAMINA.max, rk = (u.char ? u.char.stats.regen : 1) * (sim.stepCount < u.regenEnd ? u.regenMul : 1);   // a timed regen status (applyStatus)
+    const smax = u.staminaMax || STAMINA.max, rk = (u.char ? u.char.stats.regen : 1) * up(u, 'upRegen') * (sim.stepCount < u.regenEnd ? u.regenMul : 1);   // a timed regen status (applyStatus)
     if (guarding) u.stamina = Math.min(smax, u.stamina + STAMINA.regenBlock * rk * DT);
     else if (sim.stepCount >= u.regenAt) u.stamina = Math.min(smax, u.stamina + STAMINA.regen * rk * DT);
   }
@@ -1512,7 +1519,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
           const run = (e.run || u.running) && u.stamina > 1 && e.dx === u.facing;
           if (run) { u.lastRunStep = sim.stepCount; u.stamina = Math.max(1, u.stamina - STAMINA.run * DT); u.regenAt = sim.stepCount + Math.round(STAMINA.delay * 120); }
           // walking back goes at the character's back-walk speed (backWalk, 1 = the forward walk)
-          u.vx = e.dx * (run ? RUN * u.char.stats.run : WALK * u.char.stats.walk * (e.block ? u.char.stats.backWalk : 1));
+          u.vx = e.dx * up(u, 'upWalk') * (run ? RUN * u.char.stats.run : WALK * u.char.stats.walk * (e.block ? u.char.stats.backWalk : 1));
           setState(u, run ? 'run' : 'walk');
         } else {
           // a stumble or a follow-through runs out, no snap stop
@@ -1530,7 +1537,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (fwd) { u.lastRunStep = sim.stepCount; if (tryAttack(u)) break; }
         u.dashT++;
         if (u.dashT <= D.steps) { u.vx = u.facing * u.dashDir * D.speed * u.char.stats.dash; break; }
-        if (fwd && u.dashT === D.steps + 1 && e.dx === u.facing && u.stamina > 1 && !(u.rootT > 0)) { u.running = true; u.vx = u.facing * RUN * u.char.stats.run; setState(u, 'run'); break; }
+        if (fwd && u.dashT === D.steps + 1 && e.dx === u.facing && u.stamina > 1 && !(u.rootT > 0)) { u.running = true; u.vx = u.facing * RUN * u.char.stats.run * up(u, 'upWalk'); setState(u, 'run'); break; }
         u.vx *= DASH.brake;
         if (u.dashT > D.steps + D.rec) {
           u.vx = 0; u.dashDir = 0;
@@ -1564,7 +1571,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (!e.down) { u.crouchEnd = sim.stepCount; setState(u, 'idle'); break; }
         // crouch-walk forward (down-back is the crouching guard)
         const creep = e.dx && e.dx === u.facing && !e.block && !(u.rootT > 0);
-        if (creep) u.vx = u.facing * CROUCH_WALK * u.char.stats.walk;
+        if (creep) u.vx = u.facing * CROUCH_WALK * u.char.stats.walk * up(u, 'upWalk');
         const want = e.block ? ANIM.crouchBlock : creep && ANIM.crouchWalk ? ANIM.crouchWalk : ANIM.crouch;
         if (u.rig.current.move !== want) safePlay(u.rig, want);
         break;
@@ -2513,7 +2520,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function absorb(att, def, pt, fd, dfd, dir, move) {
     def.armorLeft--;
     const share = dfd.armor && dfd.armor.dmg != null ? dfd.armor.dmg : 0.5;
-    const dmg = Math.max(1, Math.round(fd.damage * att.char.stats.damage * share));
+    const dmg = Math.max(1, Math.round(fd.damage * att.char.stats.damage * up(att, 'upDmg') * share));
     def.health = Math.max(0, def.health - dmg); def.flash = FLASH_STEPS;
     att.hitstop = def.hitstop = f60(6); att.vx = -dir * 200; att.glide = null;
     callout('ARMOR', def.id, 'counter');
@@ -2579,7 +2586,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (def.comboBy !== att.id) { def.combo = 0; def.comboDmg = 0; }
       def.combo = (def.combo || 0) + 1; def.comboBy = att.id; def.lastHitAt = sim.stepCount;
       sim.combo = { count: def.combo, by: att.id, on: def.id };
-      def.health = Math.max(0, def.health - comboDamage(def, fd.damage * att.char.stats.damage * comboScale(COMBO_DMG, def.combo) * COUNTER_DMG));
+      def.health = Math.max(0, def.health - comboDamage(def, fd.damage * att.char.stats.damage * up(att, 'upDmg') * comboScale(COMBO_DMG, def.combo) * COUNTER_DMG));
       def.flash = FLASH_STEPS; def.buffer = null; def.seq = null;
       att.hitstop = def.hitstop = f60(fd.hitstop + 3); att.vx = 0; att.glide = null;
       callout('COUNTER', att.id, 'counter');
@@ -2600,7 +2607,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const chained = def.comboBy === att.id;
       def.combo = chained ? (def.combo || 1) + 1 : 1; if (!chained) def.comboDmg = 0;
       def.comboBy = att.id; def.lastHitAt = sim.stepCount; sim.combo = { count: def.combo, by: att.id, on: def.id };
-      const dmg = comboDamage(def, fd.damage * att.char.stats.damage * (fd.otg ? 1 : GROUND.share) * comboScale(COMBO_DMG, def.combo));
+      const dmg = comboDamage(def, fd.damage * att.char.stats.damage * up(att, 'upDmg') * (fd.otg ? 1 : GROUND.share) * comboScale(COMBO_DMG, def.combo));
       def.health = Math.max(1, def.health - dmg);
       att.glide = null; att.vx = 0;
       if (fd.otg) {
@@ -2625,7 +2632,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       sim.combo = { count: def.combo, by: att.id, on: def.id };
       // the juggle's own scaling, or the combo's if that is lower by now
       const scale = Math.min(Math.max(0.4, 0.6 - 0.05 * def.airHits), comboScale(COMBO_DMG, def.combo));
-      const dmg = comboDamage(def, fd.damage * att.char.stats.damage * scale);
+      const dmg = comboDamage(def, fd.damage * att.char.stats.damage * up(att, 'upDmg') * scale);
       const ko = def.health - dmg <= 0;
       def.health = Math.max(0, def.health - dmg);
       def.airHits++; def.gScale = 1 + JUGGLE_G * def.airHits; def.flash = FLASH_STEPS;
@@ -2703,7 +2710,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     def.combo = chained ? def.combo + 1 : 1; def.comboBy = att.id; def.lastHitAt = sim.stepCount;
     if (!chained) { def.comboDmg = 0; def.shockUsed = false; }
     sim.combo = { count: def.combo, by: att.id, on: def.id };
-    def.health = Math.max(0, def.health - comboDamage(def, fd.damage * att.char.stats.damage * comboScale(COMBO_DMG, def.combo) * (counter ? COUNTER_DMG : 1)));
+    def.health = Math.max(0, def.health - comboDamage(def, fd.damage * att.char.stats.damage * up(att, 'upDmg') * comboScale(COMBO_DMG, def.combo) * (counter ? COUNTER_DMG : 1)));
     if (fd.status) applyStatus(def, fd.status);   // a timed status rides the hit (HR REP's Write-Up)
     def.flash = FLASH_STEPS; def.phase = null; def.move = null;
     def.wasLow = isLow(def);
@@ -3352,8 +3359,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       syncRig(u);
       // a walk or run cycle plays at the rate that keeps planted feet planted at the character's speed
       // (exactly 1 for TEMP); the getup at its own speed
-      const rate = u.state === 'getup' ? GETUP_SPEED : u.state === 'roll' ? u.rollRate || 1 : u.state === 'walk' ? u.char.stats.walk * (u.backHeld ? u.char.stats.backWalk : 1) / u.char.stride
-        : u.state === 'run' || (u.state === 'perfect' && u.pfStage === 'run') ? u.char.stats.run / u.char.stride : u.state === 'crouch' && u.vx ? u.char.stats.walk / u.char.stride
+      const rate = u.state === 'getup' ? GETUP_SPEED : u.state === 'roll' ? u.rollRate || 1 : u.state === 'walk' ? u.char.stats.walk * up(u, 'upWalk') * (u.backHeld ? u.char.stats.backWalk : 1) / u.char.stride
+        : u.state === 'run' || (u.state === 'perfect' && u.pfStage === 'run') ? u.char.stats.run * up(u, 'upWalk') / u.char.stride : u.state === 'crouch' && u.vx ? u.char.stats.walk * up(u, 'upWalk') / u.char.stride
         : u.state === 'attack' && u.phase === 'startup' && sim.stepCount < u.speedEnd ? u.speedMul : 1;   // a timed speed status quickens startups
       rigUpd(u, DT * rate);
       takeRoot(u);
