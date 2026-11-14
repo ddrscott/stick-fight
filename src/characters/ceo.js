@@ -131,12 +131,12 @@ export default {
   body: { scale: 1.03, headR: 15, upperArm: 23.4, lowerArm: 22.4, upperLeg: 31, lowerLeg: 30, torsoW: 16.5, hipW: 12, limbW: 12, limbTip: 9, lean: 0, stance: 1, accessory: suitAndWatch },
   moves: {
     // no strike; strikes and throws pass through for its first 200 ms (invuln), then the landing is open
-    ceo_parachute: { rig: parachute, frame: { limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', cost: 14, reach: 20, flashR: 0,
+    ceo_parachute: { rig: parachute, frame: { transfer: true, limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', cost: 14, reach: 20, flashR: 0,
       noHit: true, invuln: { at: 0, ms: 200 }, travel: { vx: -560, at: 40, ms: 150 } } },
-    ceo_takeover: { rig: takeover, frame: { limb: 'hand', damage: 12, kb: { x: 150, y: 540 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, juggle: true, height: 'mid',
+    ceo_takeover: { rig: takeover, frame: { transfer: true, limb: 'hand', damage: 12, kb: { x: 150, y: 540 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, juggle: true, height: 'mid',
       travel: { vx: 220, at: 60, ms: 100 }, cost: 26, reach: 75, flashR: 36,
       onJuggle: { damage: 14, kb: { x: 820, y: 240 }, ender: true, splat: true, callout: 'HOSTILE TAKEOVER' } } },
-    ceo_stockSplit: { rig: stockSplit, frame: { limb: 'hand', damage: 11, kb: { x: 480, y: 300 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, ender: true, height: 'mid',
+    ceo_stockSplit: { rig: stockSplit, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 11, kb: { x: 480, y: 300 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, ender: true, height: 'mid',
       hits: 2, rush: { damage: 5, kb: { x: 0, y: 0 }, hitstun: 30, blockstun: 10, hitstop: 5, knockdown: false, ender: false, callout: null },
       travel: { vx: 200, at: 40, ms: 90 }, cost: 28, reach: 80, flashR: 38, callout: 'STOCK SPLIT' } },
   },

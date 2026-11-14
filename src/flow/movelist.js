@@ -21,7 +21,7 @@
 
 import { moveListOf, animOf } from '../combat/moveinfo.js';
 import { ACCIDENTS } from '../combat/botch.js';
-import { canUse } from '../characters/index.js';
+import { canUse, characterOr } from '../characters/index.js';
 import { createFighter, MOVE_DATA } from '../fighter/index.js';
 import { techniques } from './techniques.js';
 import { faceGlyph, legend } from './controls.js';
@@ -32,6 +32,7 @@ const PAD_FACE = { 1: 2, 2: 3, 3: 0, 4: 1 };
 const STRING_RULE = 'STRINGS NEED EVERY HIT TO CONNECT (HIT OR BLOCKED). IF ONE WHIFFS, THE NEXT PRESS IS A MASH AND YOU BOTCH.';
 // the stamina rule (README, Controls: Stamina and Faint), at the top of SYSTEM
 const STAMINA_RULE = 'EVERY STRIKE COSTS STAMINA. A HIT GIVES HALF OF IT BACK, A BLOCKED HIT A QUARTER, A WHIFF NOTHING. EMPTY THE BAR WITH A STRIKE THAT HITS AND YOU STAY ON YOUR FEET, NEARLY EMPTY; WHIFF OR GET BLOCKED AND YOU FAINT. FAINTED, YOU CAN\'T MOVE: PRESS LEFT, RIGHT, LEFT ON A STEADY BEAT TO SHAKE IT OFF SOONER (HOLDING OR MASHING ONE WAY DOES NOTHING).';
+const SLOT_RULE = 'TWO SLOTS FOR MOVES BORROWED FROM OTHER FIGHTERS, ON TOP OF YOUR OWN: ↓ 1+3 AND ↓ 2+4. BUY THEM AND PICK WHAT GOES IN EACH IN THE SUPPLY CLOSET. AN EMPTY SLOT IS STILL THE THROW.';
 const STRING_BEAT = 'PRESS ON A STEADY BEAT, ABOUT 0.1 TO 0.5 S APART: RHYTHM, NOT SPEED. MISS A HIT? STOP, RESET, START AGAIN.';
 
 function el(tag, cls = '', text) {
@@ -59,16 +60,19 @@ export function inputGlyphs(s) {
 }
 
 /**
- * @param {{ char: any, onClose: () => void, click?: (kind?: string) => void, backTo?: string }} o  backTo: where closing goes, by name
+ * @param {{ char: any, onClose: () => void, click?: (kind?: string) => void, backTo?: string, loadout?: string[] | null }} o  backTo: where closing goes, by name;
+ *   loadout: the custom employee's two slots for this fighter (null where nobody has picked any: the training dummy)
  */
 export function openMoveList(o) {
   injectStyle();
   const c = o.char;
-  const data = moveListOf(c);
+  const data = moveListOf(c, o.loadout || [], (id) => characterOr(id).name);
   const tech = techniques().filter((x) => { const a = ACCIDENTS.find((y) => y.id === x.id); return a && canUse(c, a.move); });
   const sections = [
     { id: 'unique', tab: c.ownMoves.length ? 'UNIQUE' : 'SIGNATURE', title: c.ownMoves.length ? 'UNIQUE MOVES' : 'SIGNATURE MOVES',
       notes: c.ownMoves.length ? [] : [`${c.name} HAS NO MOVES OF ITS OWN. THESE ARE THE ONES TO LEARN FIRST.`], rows: data.unique },
+    // the custom employee (README, Characters, Custom employee): the two slots, on every fighter, so the inputs are learned
+    { id: 'slots', tab: 'SLOTS', title: 'CUSTOM EMPLOYEE', notes: [SLOT_RULE], rows: data.slots },
     { id: 'strings', tab: 'STRINGS', title: 'STRINGS', notes: [STRING_RULE, STRING_BEAT], rule: true, rows: data.strings,
       after: data.dropped.length ? `${c.name} DOESN'T USE ${data.dropped.join(', ')}` : '' },
     { id: 'basics', tab: 'BASICS', title: 'BASIC ATTACKS', notes: [], rows: data.basics },
@@ -316,6 +320,8 @@ function injectStyle() {
   .ml-chip { font: normal 400 max(12px, 0.55em)/1 'Bungee', sans-serif; padding: 0.35em 0.45em 0.2em; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(230,214,255,0.85); border: 1px solid rgba(166,107,255,0.6); }
   .ml-c-unique { color: var(--deep); text-shadow: none; background: var(--c); border-color: var(--c); }
   .ml-c-found { color: var(--deep); text-shadow: none; background: var(--lime); border-color: var(--lime); }
+  .ml-c-borrowed { color: var(--deep); text-shadow: none; background: var(--amber); border-color: var(--amber); }
+  .ml-c-empty { color: rgba(230,214,255,0.7); }
   .ml-c-launch, .ml-c-wallsplat, .ml-c-wallbounce, .ml-c-groundbounce { color: var(--pink); border-color: var(--pink); }
   .ml-c-knockdown { color: var(--amber); border-color: var(--amber); }
   .ml-c-low { color: var(--cyan); border-color: var(--cyan); }

@@ -8,8 +8,11 @@
 //   POST /api/career/buy     { fighter, id }          -> { career } | { error: 'short' | 'owned' | 'unknown' }
 //   POST /api/career/buy     { fighter, upgrade, tier } -> { career } | { error: 'short' | 'owned' | 'order' | 'unknown' }
 //                                                     a stat upgrade's tier (src/career/upgrades.js), bought in order
+//   POST /api/career/buy     { move, fighter?, slot? } -> { career } | { error: 'short' | 'owned' | 'unknown' }
+//                                                     another fighter's move (src/career/moves.js), put in that slot if asked
 //   PUT  /api/career/equip   { fighter, id, kind? }   -> { career } | { error }   id '' is the fighter's own look;
-//                                                     kind 'pose' or 'taunt' switches an unlocked one on (id) or off ('')
+//                                                     kind 'pose' or 'taunt' switches an unlocked one on (id) or off ('');
+//                                                     kind 'slot' with slot 1 or 2 puts an owned move there (id) or empties it ('')
 //   POST /api/career/shifts/swap { slot }              -> { career } | { error: 'used' | 'done' | 'bad' }   one a day
 //
 // Fighter mastery (src/career/mastery.js) rides every award too: payWithMastery adds what the match paid the fighter
@@ -41,6 +44,7 @@ import { GOAL_PAY, soloCounts } from "../src/career/crewgoal.js";
 import { palette, itemKey } from "../src/career/palettes.js";
 import { cleanShifts, swapShift, mergeShifts } from "../src/career/shifts.js";
 import { canBuy, upKey, PRICES as UP_PRICES } from "../src/career/upgrades.js";
+import { moveInfo, moveKey, slotKey, canSlot, MOVE_PRICE } from "../src/career/moves.js";
 import { payWithMastery, applyWithMastery, isOwnable, cleanMastery, mergeMastery, grantAll, kitKey, kitItemKey, MASTERY_FIGHTERS } from "../src/career/mastery.js";
 
 export type Career = ReturnType<typeof blankCareer>;
@@ -50,7 +54,7 @@ type Row = {
 };
 const COLS = "career_xp, sticks, win_day, online_day, offline_day, offline_xp, offline_sticks, owned, equip, shifts, fighter_xp, pto";
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_OWNED = 600;   // 18 fighters: 108 cosmetics and 216 upgrade tiers, with room to grow
+const MAX_OWNED = 600;   // 18 fighters: 108 cosmetics, 216 upgrade tiers and 25 moves, with room to grow
 
 const int = (v: unknown, hi = 1e9) => Math.max(0, Math.min(hi, Math.floor(Number(v) || 0)));
 const day = (v: unknown) => (typeof v === "string" && DAY_RE.test(v) ? v : "");
@@ -67,6 +71,7 @@ function cleanEquip(raw: unknown, owned: string[]): Record<string, string> {
     if (typeof id !== "string") continue;
     const [f, kind] = k.split(":");
     if (kind === "pose" || kind === "taunt") { if (id === (kind === "pose" ? "victory" : "taunt") && owned.includes(kitItemKey(f, kind))) out[k] = id; }
+    else if (kind === "slot1" || kind === "slot2") { if (MASTERY_FIGHTERS.includes(f) && canSlot(owned, f, id) === "ok" && out[slotKey(f, kind === "slot1" ? 2 : 1)] !== id) out[k] = id; }
     else if (!kind && palette(f, id) && owned.includes(itemKey(f, id))) out[k] = id;
   }
   return out;
@@ -214,6 +219,14 @@ function mergeCareer(c: Career, raw: unknown): Career {
   return out;
 }
 
+/** equip with id in this fighter's slot n ('' empties it); the same move in the other slot comes out of that one */
+function slotted(equip: Record<string, string>, fighter: string, n: number, id: string): Record<string, string> {
+  const eq = { ...equip };
+  if (id) for (const k of [1, 2]) if (k !== n && eq[slotKey(fighter, k)] === id) delete eq[slotKey(fighter, k)];
+  if (id) eq[slotKey(fighter, n)] = id; else delete eq[slotKey(fighter, n)];
+  return eq;
+}
+
 async function route(req: Request, env: Env, path: string, ctx?: ExecutionContext): Promise<Response> {
   const email = await currentEmail(req, env);
   if (path === "GET career") {
@@ -250,6 +263,20 @@ async function route(req: Request, env: Env, path: string, ctx?: ExecutionContex
     if (!r) return json({ error: "signed-out" });
     return r.out === "ok" ? json({ career: view(r.career) }) : json({ error: r.out, career: view(r.career) });
   }
+  if (path === "POST career/buy" && body.move !== undefined) {
+    // a move another fighter lends (README, Characters, Custom employee): owned once, at its fixed price; slotted if asked
+    const id = String(body.move || ""), fighter = String(body.fighter || ""), n = Number(body.slot);
+    if (!moveInfo(id)) return json({ error: "unknown" }, 400);
+    const into = MASTERY_FIGHTERS.includes(fighter) && (n === 1 || n === 2) && canSlot([moveKey(id)], fighter, id) === "ok";
+    const r = await update<string>(env, email, (c) => {
+      if (c.owned.includes(moveKey(id))) return { next: null, out: "owned" };
+      if (c.sticks < MOVE_PRICE) return { next: null, out: "short" };
+      const owned = [...c.owned, moveKey(id)];
+      return { next: { ...c, sticks: c.sticks - MOVE_PRICE, owned, equip: into ? slotted(c.equip, fighter, n, id) : c.equip }, out: "ok" };
+    });
+    if (!r) return json({ error: "signed-out" });
+    return r.out === "ok" ? json({ career: view(r.career) }) : json({ error: r.out, career: view(r.career) });
+  }
   if (path === "POST career/buy") {
     const fighter = String(body.fighter || ""), id = String(body.id || ""), p = palette(fighter, id);
     if (!p || !p.price) return json({ error: "unknown" }, 400);   // a mastery-only palette isn't for sale
@@ -280,6 +307,17 @@ async function route(req: Request, env: Env, path: string, ctx?: ExecutionContex
       const equip = { ...c.equip }, k = kitKey(fighter, kind);
       if (id) equip[k] = id; else delete equip[k];
       return { next: { ...c, equip }, out: "ok" };
+    });
+    if (!r) return json({ error: "signed-out" });
+    return r.out === "ok" ? json({ career: view(r.career) }) : json({ error: r.out, career: view(r.career) });
+  }
+  if (path === "PUT career/equip" && body.kind === "slot") {
+    // a custom employee's slot: an owned move this fighter can take (not its own), or '' to empty it
+    const fighter = String(body.fighter || ""), n = Number(body.slot), id = String(body.id || "");
+    if (!MASTERY_FIGHTERS.includes(fighter) || (n !== 1 && n !== 2) || (id && !moveInfo(id))) return json({ error: "unknown" }, 400);
+    const r = await update<string>(env, email, (c) => {
+      if (id) { const ok = canSlot(c.owned, fighter, id); if (ok !== "ok") return { next: null, out: ok }; }
+      return { next: { ...c, equip: slotted(c.equip, fighter, n, id) }, out: "ok" };
     });
     if (!r) return json({ error: "signed-out" });
     return r.out === "ok" ? json({ career: view(r.career) }) : json({ error: r.out, career: view(r.career) });

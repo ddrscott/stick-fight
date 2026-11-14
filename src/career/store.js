@@ -32,7 +32,12 @@
 //   boost(fighter)         the sim's multipliers for this fighter's upgrades, or null (arcade, horde and training use it)
 //   buyUpgrade(fighter, stat)   the next tier of a stat: { ok, tier } | { error: 'short' | 'maxed' | 'unreachable' ... }
 //   look(fighter)          the look string a fight is started with: the palette id, then '+p' / '+t' / '+pt' for the
-//                          pose and taunt (src/main.js lookFor reads it; online it rides where the palette always did)
+//                          pose and taunt, then '~a.b' for the custom employee's slots (src/main.js looksFor reads it;
+//                          online it rides where the palette always did)
+//   ownsMove(id)           the custom employee (src/career/moves.js): this player owns that move
+//   buyMove(id, slot?)     buy a move at MOVE_PRICE (and put it in this fighter's slot: { fighter, n }): { ok } | { error }
+//   loadout(fighter)       [slot A, slot B]: the move ids in this fighter's slots, '' for an empty one
+//   setSlot(fighter, n, id) put an owned move in slot n (1 or 2), or '' to empty it; a move in the other slot moves over
 //
 // Every storage call is wrapped: blocked storage just means the career lives for this page.
 import { blankCareer, titleFor, utcDay, NUDGE, PAID_MODES, ONLINE_MODES, cleanPto, ptoFor } from './rules.js';
@@ -40,6 +45,7 @@ import { shiftsFor, cleanShifts, swapShift } from './shifts.js';
 import { payWithMastery, applyWithMastery, cleanMastery, masteryOf, rankFor, NEW_HIRE, kitOn, kitKey, kitItemKey } from './mastery.js';
 import { palette, itemKey } from './palettes.js';
 import { levelsOf, nextTier, upKey, boostFor } from './upgrades.js';
+import { moveInfo, moveKey, slotKey, canSlot, loadoutOf, loadoutText, MOVE_PRICE } from './moves.js';
 import { profile } from '../net/profile.js';
 import { apiUrl } from '../net/link.js';
 
@@ -279,11 +285,50 @@ export function setKit(fighter, kind, on) {
   changed();
   return true;
 }
-/** the look a fight starts this fighter in: 'coldBrew', 'coldBrew+pt', '+t' (no palette, the taunt on) */
+/** the look a fight starts this fighter in: 'coldBrew', 'coldBrew+pt', '+t' (no palette, the taunt on), and the slots
+ *  after a '~': 'coldBrew+t~reboot.mopSpin', '~.mopSpin' (slot A empty) */
 export function look(fighter) {
   const pal = equipped(fighter), k = kit(fighter);
   const flags = `${k.pose ? 'p' : ''}${k.taunt ? 't' : ''}`;
-  return `${pal ? pal.id : ''}${flags ? `+${flags}` : ''}`;
+  return `${pal ? pal.id : ''}${flags ? `+${flags}` : ''}${loadoutText(loadout(fighter))}`;
+}
+
+/** the custom employee (README, Characters, Custom employee) */
+export function ownsMove(id) { return read().career.owned.includes(moveKey(id)); }
+export function loadout(fighter) { return loadoutOf(read().career, fighter); }
+/** Buy a move. Signed in, the Worker checks the price (POST career/buy with `move`), and slots it when asked to. */
+export async function buyMove(id, slot = null) {
+  if (!moveInfo(id)) return { error: 'unknown' };
+  const s = read(), p = profile();
+  if (s.career.owned.includes(moveKey(id))) return { error: 'owned' };
+  if (s.career.sticks < MOVE_PRICE) return { error: 'short' };
+  const into = slot && canSlot([moveKey(id)], slot.fighter, id) === 'ok' ? slot : null;
+  if (p.email && s.email === p.email) {
+    const r = await api('career/buy', 'POST', { move: id, ...(into ? { fighter: into.fighter, slot: into.n } : {}) });
+    if (r && r.career) adopt(r.career, p.email);
+    changed();
+    return r && !r.error ? { ok: true } : { error: (r && r.error) || 'unreachable' };
+  }
+  const career = { ...s.career, sticks: s.career.sticks - MOVE_PRICE, owned: [...s.career.owned, moveKey(id)] };
+  write({ ...s, career: into ? { ...career, equip: slotted(career, into.fighter, into.n, id) } : career });
+  changed();
+  return { ok: true };
+}
+/** the equip with id in this fighter's slot n ('' empties it); the same move in the other slot comes out of it */
+function slotted(c, fighter, n, id) {
+  const eq = { ...c.equip };
+  if (id) for (const k of [1, 2]) if (k !== n && eq[slotKey(fighter, k)] === id) delete eq[slotKey(fighter, k)];
+  if (id) eq[slotKey(fighter, n)] = id; else delete eq[slotKey(fighter, n)];
+  return eq;
+}
+export function setSlot(fighter, n, id) {
+  const s = read(), p = profile();
+  if (n !== 1 && n !== 2) return false;
+  if (id && canSlot(s.career.owned, fighter, id) !== 'ok') return false;
+  write({ ...s, career: { ...s.career, equip: slotted(s.career, fighter, n, id || '') } });
+  if (p.email && s.email === p.email) api('career/equip', 'PUT', { fighter, kind: 'slot', slot: n, id: id || '' });
+  changed();
+  return true;
 }
 
 /** A guest with something to lose: after the first promotion or NUDGE.sticks, then only after more progress. */

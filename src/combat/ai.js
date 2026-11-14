@@ -183,7 +183,9 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     far: (m, o) => Math.abs(o.x - m.x) > 160,
   };
   function special(me, opp, sim, dist, toward, reflex = false) {
-    const list = me.char && me.char.ai && me.char.ai.specials;
+    const own = me.char && me.char.ai && me.char.ai.specials;
+    // and the moves in the custom employee's slots, with their owners' specials (sim.js setLoadout)
+    const list = me.borrowAi && me.borrowAi.length ? [...(own || []), ...me.borrowAi] : own;
     if (!list || !list.length || me.faint > 0) return null;
     for (const sp of list) {
       if (!!sp.reflex !== reflex) continue;   // reflex: true specials are checked every step (think), the rest when deciding

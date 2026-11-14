@@ -172,12 +172,12 @@ export default {
     { draw: tieTail, layer: 'back', axis: ['chest', 'hip'], at: 0.9, off: [-1, 0], dir: [-0.6, 1], hang: 0.4, len: 8, seg: 2, hz: 2.2, damping: 0.25, limit: 2 },
   ],
   moves: {
-    ba_espresso: { rig: espresso, frame: { limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', noHit: true,
+    ba_espresso: { rig: espresso, frame: { transfer: 'the cup: it\'s a drink from BARISTA\'s paper cup, and on anyone else it\'s drinking from an empty hand', limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', noHit: true,
       selfStatus: { speed: 1.35, ms: 2500, tag: 'WIRED' }, cost: 20, reach: 40, flashR: 0 } },
-    ba_pourOver: { rig: pourOver, frame: { limb: 'hand', damage: 8, kb: { x: 440, y: 240 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, height: 'mid',
+    ba_pourOver: { rig: pourOver, frame: { transfer: true, limb: 'hand', damage: 8, kb: { x: 440, y: 240 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, height: 'mid',
       hits: 4, rush: { damage: 3, kb: { x: 0, y: 0 }, hitstun: 26, blockstun: 8, hitstop: 4, knockdown: false, ender: false, callout: null, flashR: 22 },
       travel: { vx: 220, at: 40, ms: 110 }, cost: 24, reach: 85, flashR: 36, callout: 'POUR OVER' } },
-    ba_latteArt: { rig: latteArt, frame: { limb: 'hand', damage: 13, kb: { x: 560, y: 240 }, hitstun: 0, blockstun: 14, hitstop: 9, knockdown: true, ender: true, height: 'high',
+    ba_latteArt: { rig: latteArt, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 13, kb: { x: 560, y: 240 }, hitstun: 0, blockstun: 14, hitstop: 9, knockdown: true, ender: true, height: 'high',
       travel: { vx: 240, at: 40, ms: 120 }, reach: 85, flashR: 38, callout: 'LATTE ART' } },
   },
   commands: [

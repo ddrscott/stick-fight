@@ -152,14 +152,14 @@ export default {
   cloth: [{ draw: briefcase, axis: ['rElbow', 'rHand'], at: 1, dir: caseRest, len: 18, seg: 1, hz: 3.2, damping: 0.35, gravity: 400, limit: 1.6 }],
   moves: {
     // the stance never strikes (noHit); a throw or command grab landing in its startup or active frames is caught
-    lawyer_objection: { rig: objection, frame: { limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', cost: 14, reach: 60, flashR: 0,
+    lawyer_objection: { rig: objection, frame: { transfer: 'a throw counter that answers with LAWYER\'s own throw (Sustained) and its own thrown clip', limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', cost: 14, reach: 60, flashR: 0,
       noHit: true, throwCounter: { reversal: 'lawyer_sustained', callout: 'OBJECTION!' } } },
     // the reversal: a grab of his own that can't be broken, and the victim takes the shared thrown reaction
-    lawyer_sustained: { rig: sustained, frame: { limb: 'hand', damage: 12, kb: { x: 300, y: 240 }, hitstun: 0, blockstun: 0, hitstop: 6, knockdown: true, height: 'throw',
+    lawyer_sustained: { rig: sustained, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 12, kb: { x: 300, y: 240 }, hitstun: 0, blockstun: 0, hitstop: 6, knockdown: true, height: 'throw',
       throw: true, grab: true, noBreak: true, unblockable: true, range: 200, hold: 12, thrownClip: true, cost: 0, reach: 60, flashR: 30, callout: 'SUSTAINED' } },
-    lawyer_crossExam: { rig: crossExam, frame: { limb: 'hand', damage: 5, kb: { x: 200, y: 0 }, hitstun: 26, blockstun: 15, hitstop: 4, knockdown: false, height: 'mid',
+    lawyer_crossExam: { rig: crossExam, frame: { transfer: true, limb: 'hand', damage: 5, kb: { x: 200, y: 0 }, hitstun: 26, blockstun: 15, hitstop: 4, knockdown: false, height: 'mid',
       travel: { vx: 220, at: 30, ms: 80 }, blockPush: -150, cost: 14, reach: 80, flashR: 26, cancels: ['cross', 'jab', 'lkick'] } },
-    lawyer_closingArgument: { rig: closingArgument, frame: { limb: 'hand', damage: 15, kb: { x: 680, y: 200 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, splat: true, ender: true,
+    lawyer_closingArgument: { rig: closingArgument, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 15, kb: { x: 680, y: 200 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, splat: true, ender: true,
       height: 'mid', reach: 95, flashR: 38, callout: 'CLOSING ARGUMENT' } },
   },
   commands: [

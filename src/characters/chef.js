@@ -166,11 +166,11 @@ export default {
     { draw: bowTail, layer: 'back', axis: ['neck', 'hip'], at: 1, off: [-8, -8], dir: [-0.58, 0.81], len: 8.6, seg: 2, hz: 2.2, damping: 0.25, limit: 2 },
   ],
   moves: {
-    chef_cleaver: { rig: cleaver, frame: { limb: 'hand', damage: 13, kb: { x: 240, y: 260 }, hitstun: 0, blockstun: 10, hitstop: 10, knockdown: true, height: 'overhead',
+    chef_cleaver: { rig: cleaver, frame: { transfer: true, limb: 'hand', damage: 13, kb: { x: 240, y: 260 }, hitstun: 0, blockstun: 10, hitstop: 10, knockdown: true, height: 'overhead',
       armor: { hits: 1, dmg: 0.5 }, travel: { vx: 160, at: 300, ms: 90 }, cost: 26, reach: 85, flashR: 42, callout: 'CLEAVER' } },
-    chef_flambe: { rig: flambe, frame: { limb: 'hand', damage: 11, kb: { x: 110, y: 480 }, hitstun: 0, blockstun: 12, hitstop: 9, knockdown: true, juggle: true, height: 'mid',
+    chef_flambe: { rig: flambe, frame: { transfer: true, limb: 'hand', damage: 11, kb: { x: 110, y: 480 }, hitstun: 0, blockstun: 12, hitstop: 9, knockdown: true, juggle: true, height: 'mid',
       travel: { vx: 260, at: 40, ms: 120 }, cost: 24, reach: 80, flashR: 92, flashColor: [1, 0.5, 0.12], callout: 'FLAMBÉ' } },
-    chef_eightySix: { rig: eightySix, frame: { limb: 'foot', damage: 15, kb: { x: 760, y: 180 }, hitstun: 0, blockstun: 16, hitstop: 10, knockdown: true, splat: true, ender: true, height: 'mid',
+    chef_eightySix: { rig: eightySix, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'foot', damage: 15, kb: { x: 760, y: 180 }, hitstun: 0, blockstun: 16, hitstop: 10, knockdown: true, splat: true, ender: true, height: 'mid',
       reach: 90, flashR: 38, callout: 'EIGHTY-SIXED' } },
   },
   commands: [

@@ -133,11 +133,11 @@ export default {
   // long and thin: the reach comes from the limbs, the width doesn't
   body: { scale: 1.02, headR: 14, upperArm: 26, lowerArm: 25, upperLeg: 33.5, lowerLeg: 32.5, upperTorso: 20, limbW: 10, limbTip: 7.6, torsoW: 13, hipW: 10, lean: 3, accessory: bucketHat },
   moves: {
-    wetFloor: { rig: wetFloor, frame: { limb: 'foot', damage: 10, kb: { x: 300, y: 210 }, hitstun: 0, blockstun: 8, hitstop: 7, knockdown: true, height: 'low',
+    wetFloor: { rig: wetFloor, frame: { transfer: true, limb: 'foot', damage: 10, kb: { x: 300, y: 210 }, hitstun: 0, blockstun: 8, hitstop: 7, knockdown: true, height: 'low',
       travel: { vx: 320, at: 120, ms: 150 }, cost: 22, reach: 150, flashR: 28, callout: 'WET FLOOR' } },
-    mopSpin: { rig: mopSpin, frame: { limb: 'foot', damage: 12, kb: { x: 400, y: 270 }, hitstun: 0, blockstun: 14, hitstop: 8, knockdown: true, height: 'mid',
+    mopSpin: { rig: mopSpin, frame: { transfer: true, limb: 'foot', damage: 12, kb: { x: 400, y: 270 }, hitstun: 0, blockstun: 14, hitstop: 8, knockdown: true, height: 'mid',
       bothSides: true, cost: 24, reach: 105, flashR: 30, callout: 'MOP SPIN' } },
-    aisle3: { rig: aisle3, frame: { limb: 'foot', damage: 15, kb: { x: 700, y: 180 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, splat: true, ender: true,
+    aisle3: { rig: aisle3, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'foot', damage: 15, kb: { x: 700, y: 180 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, splat: true, ender: true,
       height: 'mid', reach: 115, flashR: 34, callout: 'AISLE 3' } },
   },
   commands: [

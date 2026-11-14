@@ -163,11 +163,11 @@ export default {
   body: { scale: 1.02, headR: 15, upperArm: 23.5, lowerArm: 22.5, upperLeg: 30.5, lowerLeg: 29.5, torsoW: 16.5, hipW: 12, lean: 2, accessory: hardHatAndBelt },
   cloth: [{ draw: tester, axis: ['neck', 'hip'], at: 1, off: [-4, -4], dir: [-0.077, 1], hang: 0.5, len: 13, seg: 2, hz: 2.4, damping: 0.3, gravity: 400, limit: 1.8 }],
   moves: {
-    electrician_liveWire: { rig: liveWire, frame: { limb: 'hand', damage: 7, kb: { x: 200, y: 0 }, hitstun: 22, blockstun: 8, hitstop: 8, height: 'mid', react: 'hitStun',
+    electrician_liveWire: { rig: liveWire, frame: { transfer: true, limb: 'hand', damage: 7, kb: { x: 200, y: 0 }, hitstun: 22, blockstun: 8, hitstop: 8, height: 'mid', react: 'hitStun',
       shock: { frames: 26, clip: 'electrician_shocked' }, cost: 20, reach: 85, flashR: 34, flashColor: [1, 0.95, 0.45], callout: 'LIVE WIRE' } },
-    electrician_groundFault: { rig: groundFault, frame: { limb: 'foot', damage: 6, kb: { x: 0, y: 0 }, hitstun: 20, blockstun: 8, hitstop: 6, height: 'low', tc: true,
+    electrician_groundFault: { rig: groundFault, frame: { transfer: true, limb: 'foot', damage: 6, kb: { x: 0, y: 0 }, hitstun: 20, blockstun: 8, hitstop: 6, height: 'low', tc: true,
       root: 30, cost: 18, reach: 80, flashR: 26, flashColor: [1, 0.95, 0.45], callout: 'GROUND FAULT' } },
-    electrician_shortCircuit: { rig: shortCircuit, frame: { limb: 'hand', damage: 12, kb: { x: 560, y: 260 }, hitstun: 0, blockstun: 14, hitstop: 10, knockdown: true, ender: true, height: 'mid',
+    electrician_shortCircuit: { rig: shortCircuit, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 12, kb: { x: 560, y: 260 }, hitstun: 0, blockstun: 14, hitstop: 10, knockdown: true, ender: true, height: 'mid',
       travel: { vx: 220, at: 60, ms: 100 }, reach: 95, flashR: 56, flashColor: [1, 0.95, 0.45], callout: 'SHORT CIRCUIT' } },
     // the shock's jitter, a reaction-layer clip (no frame data: never pressed)
     electrician_shocked: { rig: shocked },

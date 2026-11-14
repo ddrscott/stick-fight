@@ -199,12 +199,17 @@ export function cleanSetup(m) {
   // a name off the filter's list (src/namefilter.js) is shown to spectators and on the LIVE list as PLAYER
   const name = (s) => { const n = typeof s === 'string' ? s.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim().slice(0, 12) : ''; return n && blockedName(n) ? 'PLAYER' : n; };
   const num = (x, lo, hi, d) => (Number.isFinite(+x) && +x >= lo && +x <= hi ? Math.floor(+x) : d);
+  const look = (s) => (typeof s === 'string' && s.length <= 100 && /^[A-Za-z0-9]{0,32}(\+p?t?)?(~[A-Za-z0-9_]{0,32}(\.[A-Za-z0-9_]{0,32})?)?$/.test(s) ? s : '');
+  const pals = Array.isArray(m.pals) ? m.pals : [];
   const chars = Array.isArray(m.chars) ? m.chars : [], names = Array.isArray(m.names) ? m.names : [], wins = Array.isArray(m.wins) ? m.wins : [];
   const r = m.rules && typeof m.rules === 'object' ? m.rules : {}, t = m.tally && typeof m.tally === 'object' ? m.tally : {};
   return {
     n, v, seed: m.seed >>> 0, chars: [id(chars[0]), id(chars[1])], botch: m.botch !== false,
     rules: { roundTime: num(r.roundTime, 0, 999, 60), winsNeeded: num(r.winsNeeded, 1, 9, 2), upgrades: r.upgrades === 'even' ? 'even' : 'off' },
     names: [name(names[0]), name(names[1])],
+    // each side's look (the palette, the mastery flags, the custom employee's slots: src/net/online.js cleanPal), which the
+    // spectator's sim needs as much as the players' do (the taunt and the slots are sim state)
+    pals: [look(pals[0]), look(pals[1])],
     tally: { host: num(t.host, 0, 9999, 0), guest: num(t.guest, 0, 9999, 0), draw: num(t.draw, 0, 9999, 0) },
     round: num(m.round, 1, 99, 1), wins: [num(wins[0], 0, 9, 0), num(wins[1], 0, 9, 0)],
   };

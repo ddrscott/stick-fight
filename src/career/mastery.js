@@ -25,7 +25,7 @@
 //   unlocksFor(fighter)            [{ rank, kind, id, name, key, price? }]: what each rank unlocks, in rank order
 //   earlyRank(fighter, paletteId)  the rank that unlocks a sold palette early, or 0
 //   masteryItems(fighter)          the catalog's extra items (catalog.js EXTRAS): the pose, the taunt, the mastery palette
-//   isOwnable(key)                 a key career.owned may hold: a palette, or a known fighter's pose or taunt
+//   isOwnable(key)                 a key career.owned may hold: a palette, a known fighter's pose or taunt, an upgrade tier, a move (moves.js)
 //   payWithMastery(m, career, day) shifts.js payMatch, plus award.mastery: what this match paid the fighter played
 //   applyWithMastery(career, award, day)   rules.js applyAward, plus the mastery XP and anything a new rank unlocked
 //   grantAll(career)               every unlock the career's ranks have earned, in owned (a merge, a forged state)
@@ -39,6 +39,7 @@ import { applyAward, utcDay } from './rules.js';
 import { payMatch } from './shifts.js';
 import { palettesFor, masteryPalette, itemKey, isItem, MASTERY_PALETTE_RANK } from './palettes.js';
 import { isUpgradeKey } from './upgrades.js';
+import { isMoveKey } from './moves.js';
 
 /** XP to reach each rank, rank 0 first. A first evening with a new fighter (the NEW HIRE bonus helps) reaches
  *  rank 1; rank 5 is about 80 matches with one fighter (measured: npm run test:mastery). */
@@ -145,7 +146,7 @@ export function masteryItems(fighter) {
 /** a key career.owned may hold: a palette, a known fighter's pose or taunt, or a tier of one of their stat upgrades
  *  (src/career/upgrades.js) @param {unknown} key */
 export function isOwnable(key) {
-  if (isItem(key)) return true;
+  if (isItem(key) || isMoveKey(key)) return true;   // a move another fighter lends (the custom employee, src/career/moves.js)
   if (typeof key !== 'string') return false;
   if (isUpgradeKey(key)) return isFighter(key.split(':')[0]);
   const [f, kind, id] = key.split(':');

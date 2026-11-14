@@ -143,14 +143,14 @@ export default {
   body: { scale: 1, headR: 15, torsoW: 15.5, hipW: 11.5, lean: -1, accessory: headset },
   moves: {
     // the stance never strikes on its own (parry hook): the window is its startup and active frames
-    ticketClosed: { rig: ticketClosed, frame: { limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', cost: 18, reach: 60, flashR: 0,
+    ticketClosed: { rig: ticketClosed, frame: { transfer: 'a parry stance whose catch fires a second move of HELPDESK\'s own (Ticket Reversal)', limb: 'hand', damage: 0, kb: { x: 0, y: 0 }, hitstun: 0, blockstun: 0, hitstop: 0, height: 'mid', cost: 18, reach: 60, flashR: 0,
       parry: { heights: ['high', 'mid'], reversal: 'ticketReversal', stun: 46, callout: 'TICKET CLOSED' } } },
     // the reversal closes the gap itself (travel stops at the body), so a strike caught at the tip of its reach is still answered
-    ticketReversal: { rig: ticketReversal, frame: { limb: 'hand', damage: 10, kb: { x: 420, y: 280 }, hitstun: 0, blockstun: 14, hitstop: 10, knockdown: true, height: 'mid',
+    ticketReversal: { rig: ticketReversal, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 10, kb: { x: 420, y: 280 }, hitstun: 0, blockstun: 14, hitstop: 10, knockdown: true, height: 'mid',
       travel: { vx: 520, at: 30, ms: 170 }, cost: 0, reach: 70, flashR: 38 } },
-    reboot: { rig: reboot, frame: { limb: 'hand', damage: 11, kb: { x: 700, y: 170 }, hitstun: 0, blockstun: 12, hitstop: 9, knockdown: true, splat: true, height: 'mid',
+    reboot: { rig: reboot, frame: { transfer: true, limb: 'hand', damage: 11, kb: { x: 700, y: 170 }, hitstun: 0, blockstun: 12, hitstop: 9, knockdown: true, splat: true, height: 'mid',
       travel: { vx: 240, at: 70, ms: 110 }, cost: 24, reach: 100, flashR: 38, callout: 'REBOOT' } },
-    ctrlAltDel: { rig: ctrlAltDel, frame: { limb: 'hand', damage: 13, kb: { x: 140, y: 470 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, juggle: true, ender: true,
+    ctrlAltDel: { rig: ctrlAltDel, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 13, kb: { x: 140, y: 470 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, juggle: true, ender: true,
       height: 'mid', reach: 70, flashR: 36, callout: 'CTRL ALT DEL' } },
   },
   commands: [

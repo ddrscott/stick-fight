@@ -31,6 +31,7 @@ import { watchScrollCues } from './scrollcue.js';   // every scrolling box fades
 import { reportMatch as careerReport, fromRoom as careerFromRoom, look as careerLook, career, syncCareer } from './career/store.js';   // XP, sticks, palettes and mastery (README, Progression)
 import { palette } from './career/palettes.js';
 import { boostFor, FULL as FULL_UPGRADES } from './career/upgrades.js';   // stat upgrades (README, Progression, Stat upgrades)
+import { parseLoadout } from './career/moves.js';   // the custom employee's slots (README, Characters, Custom employee)
 import { createBook, sendLeftovers } from './bookkeeping.js';   // match bookkeeping: one result per finished match (README, Analytics)
 import { track, trackAll } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
 import { readDevice, startTier, perfLabels, boundBucket } from './device.js';   // the capability check: where AUTO starts, and the perf event's buckets
@@ -1224,12 +1225,15 @@ function pickChars(name, opts) {
 }
 // looks (README, Progression): online each side's as the start message says; the flow's own fights pass opts.pals.
 // A look is the palette id (src/career/palettes.js), then '+p', '+t' or '+pt' when that player has fighter mastery's
-// victory pose or taunt on (src/career/store.js look): 'coldBrew+pt', '+t'.
+// victory pose or taunt on (src/career/store.js look): 'coldBrew+pt', '+t'. After a '~', the custom employee's two
+// slots: 'coldBrew+t~reboot.mopSpin', '~.mopSpin'. The slots are sim state, and online each side's own look carries
+// them (a guest's career is on their device, so nothing checks them: README, Characters, Custom employee).
 function looksFor(chars, opts) {
   const ids = opts && Array.isArray(opts.pals) ? opts.pals : [];
   return chars.map((c, i) => {
-    const [id, flags = ''] = String(ids[i] || '').split('+');
-    return { palette: id ? palette(c, id) : null, kit: { pose: flags.includes('p'), taunt: flags.includes('t') } };
+    const [head, slots = ''] = String(ids[i] || '').split('~');
+    const [id, flags = ''] = head.split('+');
+    return { palette: id ? palette(c, id) : null, kit: { pose: flags.includes('p'), taunt: flags.includes('t'), moves: parseLoadout(c, slots).map((m) => m || null) } };
   });
 }
 // stat upgrades (README, Progression, Stat upgrades): online only the host's room rule decides, and EVEN puts every

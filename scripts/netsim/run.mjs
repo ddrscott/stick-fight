@@ -7,11 +7,13 @@
 //   npm run netsim                          every scenario, 4 seeds each
 //   npm run netsim -- --seeds 10 --matches 3 --only dropout-10s
 //   npm run netsim -- --upgrades even        the same at the room rule UPGRADES: EVEN (both fighters fully upgraded)
+//   npm run netsim -- --loadouts             the same with the custom employee: each phone slots random moves in its fighters (their looks carry them) and its thumbs press the slots
 //   npm run netsim -- --list                the scenarios
 //
 // Exit code 1 if any run ends with the two sides in different fights (an unrecovered desync, different
 // match results, or one side playing on after the other stopped).
 
+const LOADOUTS = process.argv.includes('--loadouts');   // the custom employee: each phone slots random moves in its fighters
 const UPGRADES = process.argv.includes('--upgrades') && process.argv[process.argv.indexOf('--upgrades') + 1] === 'even' ? 'even' : 'off';
 import { installDom, installClock, sched, runUntil, resetClock } from './env.mjs';
 installDom();
@@ -55,8 +57,8 @@ async function session(name, seed, matches) {
   const cond = sc.cond(r);
   const network = createNetwork(cond, seed);
   const rules = { roundTime: 30, winsNeeded: 2, upgrades: UPGRADES };   // best of 3 with 30 s rounds: plenty of round and match ends; --upgrades even: both fighters fully upgraded
-  const A = createClient({ name: 'host', seed: seed * 2 + 1, network, frames: sc.frames[0], rules, drawCheck: !!sc.drawCheck, inject: sc.inject ? sc.inject[0] : null });
-  const B = createClient({ name: 'guest', seed: seed * 2 + 2, network, frames: sc.frames[1], rules, drawCheck: !!sc.drawCheck, inject: sc.inject ? sc.inject[1] : null });
+  const A = createClient({ name: 'host', seed: seed * 2 + 1, network, frames: sc.frames[0], rules, drawCheck: !!sc.drawCheck, inject: sc.inject ? sc.inject[0] : null, loadouts: LOADOUTS });
+  const B = createClient({ name: 'guest', seed: seed * 2 + 2, network, frames: sc.frames[1], rules, drawCheck: !!sc.drawCheck, inject: sc.inject ? sc.inject[1] : null, loadouts: LOADOUTS });
   const both = [A, B];
   for (const w of sc.bg ? sc.bg(r) : []) {
     const c = both[w.who];
@@ -130,6 +132,7 @@ function evaluate(name, seed, A, B, network, matches, timedOut) {
     name, seed, matches: finished, injected: A.injected + B.injected, checks, diffs, endDiverged, resultDiffs, desyncs, resyncs: A.resyncs + B.resyncs,
     ended: [A.ended, B.ended].map((e) => e || '-').join('/'), oneSided, stuck, bad,
     drawLeaks: A.drawLeaks + B.drawLeaks, drawChecks: A.drawChecks + B.drawChecks,
+    lent: (A.lentOut || 0) + (B.lentOut || 0),   // --loadouts: borrowed moves that came out, on either phone
     firstDesync: firstDesync && { n: firstDesync.n, frame: firstDesync.frame, diff: (firstDesync.diff || []).slice(0, 4) },
     loss: network.stats.sent ? (network.stats.lost + network.stats.dropped) / network.stats.sent : 0,
     minutes: sched.t / 60000,
@@ -151,7 +154,7 @@ for (const name of names) {
     rows.push(rep);
     const flag = rep.bad ? 'DIVERGED' : rep.stuck ? 'STUCK' : 'ok';
     const why = rep.firstDesync ? `  first desync m${rep.firstDesync.n} f${rep.firstDesync.frame}: ${rep.firstDesync.diff.join(' | ')}` : '';
-    process.stdout.write(`${name.padEnd(19)} seed ${String(s).padStart(2)}  ${flag.padEnd(8)} matches ${rep.matches}  hash checks ${String(rep.checks).padStart(5)}  differ ${String(rep.diffs).padStart(4)}  end-diverged ${rep.endDiverged}  results-differ ${rep.resultDiffs}  desyncs ${rep.desyncs}${rep.injected ? ` (${rep.injected} injected)` : ''}  resyncs ${rep.resyncs}  ended ${rep.ended}  draw ${rep.drawLeaks}/${rep.drawChecks}  loss ${(rep.loss * 100).toFixed(1)}%  ${rep.minutes.toFixed(1)} min${why}\n`);
+    process.stdout.write(`${name.padEnd(19)} seed ${String(s).padStart(2)}  ${flag.padEnd(8)} matches ${rep.matches}  hash checks ${String(rep.checks).padStart(5)}  differ ${String(rep.diffs).padStart(4)}  end-diverged ${rep.endDiverged}  results-differ ${rep.resultDiffs}  desyncs ${rep.desyncs}${rep.injected ? ` (${rep.injected} injected)` : ''}  resyncs ${rep.resyncs}  ended ${rep.ended}  draw ${rep.drawLeaks}/${rep.drawChecks}  loss ${(rep.loss * 100).toFixed(1)}%  ${rep.minutes.toFixed(1)} min${LOADOUTS ? `  borrowed moves ${rep.lent}` : ''}${why}\n`);
   }
 }
 const tot = (k) => rows.reduce((s, r) => s + (typeof r[k] === 'boolean' ? +r[k] : r[k]), 0);

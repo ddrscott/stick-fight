@@ -156,11 +156,11 @@ export default {
   body: { scale: 0.98, headR: 14.5, limbW: 11, limbTip: 8.4, torsoW: 14, hipW: 11, lean: 1, accessory: headsetAndPhone },
   cloth: [{ draw: cord, axis: ['chest', 'hip'], at: 1.1, off: [0, 2], end: 'lHand', len: 40, seg: 4, hz: 1.2, damping: 0.3, gravity: 500 }],
   moves: {
-    receptionist_pleaseHold: { rig: pleaseHold, frame: { limb: 'hand', damage: 10, kb: { x: 300, y: 0 }, hitstun: 30, blockstun: 9, hitstop: 6, knockdown: false, height: 'mid',
+    receptionist_pleaseHold: { rig: pleaseHold, frame: { transfer: 'the phone cord: its 180 px reach is the handset on its cord, and a bare arm can\'t reach that', limb: 'hand', damage: 10, kb: { x: 300, y: 0 }, hitstun: 30, blockstun: 9, hitstop: 6, knockdown: false, height: 'mid',
       cost: 20, reach: 180, flashR: 24, callout: 'PLEASE HOLD' } },
-    receptionist_transfer: { rig: transfer, frame: { limb: 'hand', damage: 10, kb: { x: 300, y: 570 }, hitstun: 0, blockstun: 0, hitstop: 6, knockdown: true, height: 'throw',
+    receptionist_transfer: { rig: transfer, frame: { transfer: true, limb: 'hand', damage: 10, kb: { x: 300, y: 570 }, hitstun: 0, blockstun: 0, hitstop: 6, knockdown: true, height: 'throw',
       throw: true, grab: true, unblockable: true, noBreak: true, hold: 14, backThrow: true, range: 96, cost: 26, reach: 60, flashR: 30, callout: 'TRANSFER' } },
-    receptionist_hangUp: { rig: hangUp, frame: { limb: 'hand', damage: 14, kb: { x: 240, y: 300 }, hitstun: 0, blockstun: 14, hitstop: 9, knockdown: true, ender: true, height: 'overhead',
+    receptionist_hangUp: { rig: hangUp, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 14, kb: { x: 240, y: 300 }, hitstun: 0, blockstun: 14, hitstop: 9, knockdown: true, ender: true, height: 'overhead',
       reach: 110, flashR: 34, callout: 'HANG UP' } },
   },
   commands: [

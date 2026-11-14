@@ -66,9 +66,10 @@ import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';  
 import { rootUrl } from '../root.js';
 import { createTicker } from '../ticker.js';
 import { closetBody } from './closet.js';   // the Supply Closet (README, Progression)
+import { slotPage, loadoutLine } from './customUI.js';   // the custom employee's move slots (README, Characters, Custom employee)
 import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip, profileCard } from './careerUI.js';
 import { upTag, UP_KEY, upgradesLine } from './upgradesUI.js';   // stat upgrades (README, Progression, Stat upgrades)   // career and sticks (README, Progression)
-import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery, fromCrewGoal, boost as boostOf, upgrades } from '../career/store.js';
+import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery, fromCrewGoal, boost as boostOf, upgrades, loadout } from '../career/store.js';
 import { tiersOwned } from '../career/upgrades.js';
 import { goalText } from '../career/crewgoal.js';   // crew goals (README, Crew rooms, Crew goals)
 import { masteryPalette } from '../career/palettes.js';
@@ -546,10 +547,11 @@ export function createFlow(ctx) {
    *  A press on an owned one fights in it; on a locked one the first press asks and the second buys it with sticks.
    *  changed: online, the pick goes out again so the rival sees the new look. */
   // fighter mastery on the select screens (README, Progression, Fighter mastery): the rank on each card and under the tagline
-  const masteryOpts = { mastery: (id) => masteryChip(id), rank: (id) => mastery(id).rank };
+  // and the custom employee's slots (README, Characters, Custom employee) under it, in every mode, online too (when any are filled)
+  const masteryOpts = { mastery: (id) => { const l = loadoutLine(id); if (!l) return masteryChip(id); const f = document.createElement('div'); f.className = 'up-mwrap'; f.append(masteryChip(id), l); return f; }, rank: (id) => mastery(id).rank };
   // arcade, horde and training also show the fighter's stat upgrades under it (they apply there; never online)
   // (only when it has some: a fighter with none shows nothing extra)
-  const soloOpts = { ...masteryOpts, mastery: (id) => { const f = document.createElement('div'); f.className = 'up-mwrap'; f.appendChild(masteryChip(id)); const u = upgradesLine(id); if (u) f.appendChild(u); return f; } };
+  const soloOpts = { ...masteryOpts, mastery: (id) => { const f = document.createElement('div'); f.className = 'up-mwrap'; f.appendChild(masteryChip(id)); const u = upgradesLine(id); if (u) f.appendChild(u); const l = loadoutLine(id); if (l) f.appendChild(l); return f; } };
   function palettePicker(changed = () => {}) {
     let armed = '';
     return {
@@ -590,7 +592,9 @@ export function createFlow(ctx) {
   // the MOVE LIST for a fighter, over the pause menu or a pick screen; closing it hands the keys back
   function openMoves(c) {
     if (ml || !c) return;
-    ml = openMoveList({ char: c, click: ctx.click, backTo: state === 'paused' ? 'PAUSE MENU' : 'FIGHTERS', onClose: () => { ml = null; if (menu) menu.swallow(); } });
+    // the custom employee's slots: what the fight has (paused), else what this player slotted (none for the training dummy)
+    const slots = state === 'paused' ? ((sim.units[0] && sim.units[0].char === c && sim.units[0].borrow) || []).map((m) => m || '') : state === 'charSelect' && sel.step === 'dummy' ? null : loadout(c.id);
+    ml = openMoveList({ char: c, loadout: slots, click: ctx.click, backTo: state === 'paused' ? 'PAUSE MENU' : 'FIGHTERS', onClose: () => { ml = null; if (menu) menu.swallow(); } });
   }
   const myChar = () => (sim.units[0] && sim.units[0].char) || characterOr(sel.player);
   function pressStart() { if (state === 'attract') go('modeSelect'); }
@@ -852,15 +856,30 @@ export function createFlow(ctx) {
   }
   // The Supply Closet (README, Progression, The Supply Closet; src/flow/closet.js): a tab per fighter with its count,
   // that fighter's shelf, buy with a second press, put on with one. Repaints keep the focus where it was.
-  const closetSt = { fighter: '', extras: null, ranks: null };   // extras/ranks: the tests' stand-in for fighter mastery (debug.closet)
+  // slot: 0 the shelf, or 1 / 2 for the CUSTOM EMPLOYEE page of that slot (src/flow/customUI.js), whose back is the shelf
+  const closetSt = { fighter: '', extras: null, ranks: null, slot: 0 };   // extras/ranks: the tests' stand-in for fighter mastery (debug.closet)
   function screenCloset() {
     const r = roster();
     if (!r.some((c) => c.id === closetSt.fighter)) closetSt.fighter = (r.find((c) => c.id === sel.player) || r[0]).id;
-    let msg = 'LOCKED ITEMS SAY HOW TO GET THEM. PRESS ONE TO PUT IT ON OR TO BUY IT. STAT UPGRADES ARE AT THE BOTTOM OF EACH SHELF.';
+    closetSt.slot = 0;
+    let msg = 'LOCKED ITEMS SAY HOW TO GET THEM. PRESS ONE TO PUT IT ON OR TO BUY IT. MOVE SLOTS AND STAT UPGRADES ARE AT THE BOTTOM OF EACH SHELF.';
     const paint = (focusKey = '') => ui.show('fl-closet', (root) => {
+      if (closetSt.slot) {
+        const ch = r.find((c) => c.id === closetSt.fighter) || r[0], n = closetSt.slot;
+        root.append(el('h1', 'fl-h2', 'CUSTOM EMPLOYEE'));
+        const note = el('div', 'fl-small cl-note', msg);
+        const shelf = (m) => { closetSt.slot = 0; msg = m; if (state === 'closet') paint(`s:${n}`); };
+        const body = slotPage({ fighter: ch, n, focusKey,
+          repaint: (fk, m) => { msg = m; if (state === 'closet') paint(fk); },
+          note: (m) => { msg = m; note.textContent = m; },
+          done: shelf });
+        root.append(body.el, note);
+        return { items: body.items, focus: body.focus, back: () => shelf('PICK A SLOT TO CHANGE IT. A BORROWED MOVE IS YOURS FOR EVERY FIGHTER BUT ITS OWNER.'), backTo: 'SUPPLY CLOSET' };
+      }
       root.append(el('h1', 'fl-h2', 'SUPPLY CLOSET'));
       const note = el('div', 'fl-small cl-note', msg);
       const body = closetBody({
+        openSlot: (n) => { closetSt.slot = n; msg = 'OWNED MOVES GO IN WITH ONE PRESS. A NEW ONE TAKES TWO: THE FIRST ASKS, THE SECOND BUYS IT AND PUTS IT IN.'; if (state === 'closet') paint(''); },
         roster: r, fighter: closetSt.fighter, focusKey, extras: closetSt.extras, ranks: closetSt.ranks,
         pick: (id, fk) => { closetSt.fighter = id; if (state === 'closet') paint(fk); },
         repaint: (fk, m) => { msg = m; if (state === 'closet') paint(fk); },

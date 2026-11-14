@@ -26,7 +26,7 @@
 // on a newer or an older version.
 
 import { apiUrl } from './link.js';
-import { NET_VERSION, cleanRules } from './online.js';
+import { NET_VERSION, cleanRules, LOOK_MAX } from './online.js';
 import { createLog, decodeBatch, cleanSetup, hashHex, HOLD_MS } from './watchlog.js';
 import { hashSim } from './hash.js';
 import { decodeInput } from './codec.js';
@@ -163,7 +163,7 @@ export function createWatch(game) {
     };
     result = null; totals.matches++;
     cur[0] = cur[1] = decodeInput(0);
-    game.startMatch({ seed: setup.seed, chars: setup.chars, pals: Array.isArray(setup.pals) ? setup.pals.map((x) => String(x || '').slice(0, 36)) : null, botch: setup.botch, rules: cleanRules(setup.rules), lockstep: ctl, names: setup.names, watch: true });
+    game.startMatch({ seed: setup.seed, chars: setup.chars, pals: Array.isArray(setup.pals) ? setup.pals.map((x) => String(x || '').slice(0, LOOK_MAX)) : null, botch: setup.botch, rules: cleanRules(setup.rules), lockstep: ctl, names: setup.names, watch: true });
     setState('buffering');
     emit('start', view());
   }
