@@ -393,6 +393,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     return {
       char: ch, maxHealth: 100, staminaMax: STAMINA.max * ch.stats.stamina, armorLeft: 0, hitN: 0, airJumpsUsed: 0, wallJumps: 0,
       victory: null, taunt: null,   // fighter mastery's clips, when this player has them on (setCharacter)
+      upHp: 1, upDmg: 1, upRegen: 1, upWalk: 1,   // stat upgrades' multipliers (setCharacter boost), 1 without
       id: i, name: 'P' + (i + 1), rig, color: rig.color || (i === 0 ? '#f0f0f0' : '#E85D00'),
       x: rig.x, y: rig.y, vx: 0, vy: 0, grounded: true, facing: rig.facing || (i === 0 ? 1 : -1),
       state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,   // a new unit starts idle: built here, not a state change (enter())
@@ -690,9 +691,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function freshState() {
     if (sim.units.length > 2) sim.units.length = 2;
     sim.units.forEach((u, i) => {
-      const { rig, controller, kind, victory, taunt } = u;   // the character's look stays, fighter mastery's clips too
+      const { rig, controller, kind, victory, taunt, upHp, upDmg, upRegen, upWalk } = u;   // the character's look stays, fighter mastery's clips and the stat upgrades too
       for (const k of Object.keys(u)) delete u[k];
-      Object.assign(u, makeUnit(rig, i), { controller, kind, victory: victory || null, taunt: taunt || null });
+      Object.assign(u, makeUnit(rig, i), { controller, kind, victory: victory || null, taunt: taunt || null, upHp: upHp || 1, upDmg: upDmg || 1, upRegen: upRegen || 1, upWalk: upWalk || 1 });
       if (typeof rig.reset === 'function') rig.reset({ full: true });
     });
     for (const k of Object.keys(reachSeen)) delete reachSeen[k];

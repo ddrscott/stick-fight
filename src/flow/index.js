@@ -44,7 +44,7 @@
 // scheme (one for every screen) is in controls.js. "MAIN MENU" always means modeSelect.
 
 import { track, trackAll } from '../analytics.js';   // cookieless game analytics (README, Analytics)
-import { LADDER, buildLadder, secretStage, retryDifficulty } from './ladder.js';
+import { LADDER, buildLadder, secretStage, retryDifficulty, upgradeLift } from './ladder.js';
 import { openSelect } from './select.js';
 import { openMoveList } from './movelist.js';
 import { roster, getCharacter, characterOr, TEMP_ID } from '../characters/index.js';
@@ -68,7 +68,8 @@ import { createTicker } from '../ticker.js';
 import { closetBody } from './closet.js';   // the Supply Closet (README, Progression)
 import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip, profileCard } from './careerUI.js';
 import { upTag, UP_KEY, upgradesLine } from './upgradesUI.js';   // stat upgrades (README, Progression, Stat upgrades)   // career and sticks (README, Progression)
-import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery, fromCrewGoal, boost as boostOf } from '../career/store.js';
+import { career as careerNow, equipped, equip, buy, owns, syncCareer, resetCareer, look, mastery, fromCrewGoal, boost as boostOf, upgrades } from '../career/store.js';
+import { tiersOwned } from '../career/upgrades.js';
 import { goalText } from '../career/crewgoal.js';   // crew goals (README, Crew rooms, Crew goals)
 import { masteryPalette } from '../career/palettes.js';
 import { titleFor } from '../career/rules.js';
@@ -884,8 +885,9 @@ export function createFlow(ctx) {
     const st = ladder()[run.stage];
     run.stageStart = run.score;
     for (const u of sim.units) hp.delete(u);
-    // each continue on this stage eases its CPU (src/flow/ladder.js retryDifficulty)
-    const level = retryDifficulty(st.difficulty, run.stageContinues);
+    // each continue on this stage eases its CPU (src/flow/ladder.js retryDifficulty); stat upgrades sharpen it a little
+    // (upgradeLift: up to +0.1 for a fighter with all 12 tiers), so the first stages don't turn into a walk
+    const level = upgradeLift(retryDifficulty(st.difficulty, run.stageContinues), tiersOwned(upgrades(sel.player)));
     ctx.scene('arcade', { stage: { ...st, difficulty: level }, chars: [sel.player, st.char || TEMP_ID], pals: [lookOf(sel.player), ''], boosts: boostsOf(sel.player) });
     if (ctx.book) ctx.book.begin({ mode: 'arcade', level, stage: st.n, local: 0 });   // the books: one match per stage fought
     ui.show('fl-stage', (root) => {

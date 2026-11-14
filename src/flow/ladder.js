@@ -41,6 +41,15 @@ export const SUB_BOSS = { char: 'security', name: 'HEAD OF SECURITY', tagline: '
 export const SECRET_BOSS = { n: 7, char: 'ceo', name: 'THE CEO', tagline: 'THE BOARD HAS DECIDED YOU’RE A COST', difficulty: 0.9, style: 'showcase', color: '#ffd84f', preset: 'neon-rain', floor: 0, seed: 79, boss: true, secret: true };
 // Each continue on a stage takes 0.1 off its CPU, stacking, never under 0.15; the next stage starts fresh.
 export const CONTINUE_EASE = 0.1, EASE_FLOOR = 0.15;
+// Stat upgrades (README, Progression, Stat upgrades) would make the first stages a walk, so a player who has some
+// meets a slightly sharper CPU: up to UPGRADE_LIFT more difficulty at every tier, in proportion to the tiers owned
+// (measured with npm run test:upgrades -- --balance). It's the CPU's existing dial, nothing new.
+export const UPGRADE_LIFT = 0.1;
+/** @param {number} difficulty @param {number} tiers  the player's fighter's upgrade tiers (0..12) */
+export function upgradeLift(difficulty, tiers) {
+  const t = Math.max(0, Math.min(12, Number(tiers) || 0));
+  return t ? Math.min(1, Math.round((difficulty + UPGRADE_LIFT * t / 12) * 100) / 100) : difficulty;
+}
 /** @param {number} difficulty @param {number} continues  continues used on this stage */
 export function retryDifficulty(difficulty, continues) {
   return continues > 0 ? Math.max(EASE_FLOOR, Math.round((difficulty - CONTINUE_EASE * continues) * 100) / 100) : difficulty;
