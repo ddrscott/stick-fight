@@ -7,7 +7,9 @@
 //   3. trips      a CPU hero against weak goons, 12 seeds up to 12 floors: every trip to the next floor starts its wave
 //                 (the old build left him upstairs on 4 of them, until TIME)
 //      sides      over the same runs, a goon coming in while another is up enters on that goon's side of the hero, so
-//                 two never surround him (the old build took the doors in turn, so the second came in behind him)
+//                 two never surround him (the old build took the doors in turn, so the second came in behind him); and
+//                 when he gets between two anyway (a jump or a walk past one), the one on the wrong side goes over him
+//                 to its partner's side: never 3 s between them
 //   4. KOs        ?scene=horde-ko-test: a goon put down by a plain hit, a juggle, a counter on its wake-up strike, a
 //                 hit through armor and a throw. Each keeps the run going and counts exactly once, the fifth clears
 //                 the floor, and then a goon KOing the hero still ends the run (the old build ended it on a juggle,
@@ -68,7 +70,7 @@ const results = await pg.evaluate(() => {
   // as upstairs) with no wave coming, until TIME ended the run: 4 of these 12 runs. A KO is fair; a trip
   // over 9 s, or any TIME, is not.
   const runs = [], bad = [];
-  let longest = 0, floors = 0, pairs = 0;
+  let longest = 0, floors = 0, pairs = 0, twoUp = 0, flanked = 0, flankRun = 0, flankLong = 0;
   const flanks = [], prevFilter = sim.eventFilter;
   sim.eventFilter = (ev) => {
     if (ev.type === 'goon' && ev.unit) {
@@ -82,6 +84,12 @@ const results = await pg.evaluate(() => {
     let at = -1, res = '';
     step(300, (i) => {
       const H = sim.horde, p = sim.units[0];
+      // two goons up on his floor, off the stairs: how many steps they had him between them, and the longest stretch
+      const gs = sim.units.filter(u => u.id >= 1 && !u.hidden && u.state !== 'ko' && (u.floor || 0) === (p.floor || 0));
+      if (gs.length === 2 && !(p.stair >= 0) && sim.phase === 'fight') {
+        twoUp++;
+        if (Math.sign(gs[0].rig.joints.hip.x - p.rig.joints.hip.x) * Math.sign(gs[1].rig.joints.hip.x - p.rig.joints.hip.x) < 0) { flanked++; flankLong = Math.max(flankLong, ++flankRun); } else flankRun = 0;
+      } else flankRun = 0;
       if (sim.phase === 'ko' || sim.phase === 'match') { res = sim.banner === 'TIME' ? 'TIME' : 'KO'; return false; }
       if (H.transit && at < 0) at = i; if (!H.transit) at = -1;
       if (at >= 0) longest = Math.max(longest, (i - at) / 60);
@@ -94,7 +102,37 @@ const results = await pg.evaluate(() => {
   }
   sim.eventFilter = prevFilter;
   ok('sides: a second goon never comes in on the hero\'s other side', pairs > 0 && !flanks.length, `${pairs} goons came in with another up, ${flanks.length} behind the hero${flanks.length ? ': ' + flanks.slice(0, 4).join('; ') : ''}`);
+  ok('sides: two goons up never keep him between them', twoUp > 0 && flankLong <= 3 * 60, `with two goons up he was between them ${(100 * flanked / Math.max(1, twoUp)).toFixed(1)}% of the time (${(flanked / 60).toFixed(1)} of ${(twoUp / 60).toFixed(0)} s), longest ${(flankLong / 60).toFixed(2)} s (3 s at most)`);
   ok('trips: every trip to the next floor starts its wave, no TIME', !bad.length && longest <= 9, `${floors} floors over 12 runs (seed:floors or KO) ${runs.join(' ')}, longest trip ${longest.toFixed(1)} s${bad.length ? '; ' + bad.join('; ') : ''}`);
+
+  // 3b. put him between two goons and hold him still (a guard, his bar kept full): the one on the wrong side goes
+  // over him to its partner's side. 8 tries with the gap and the side the near one is on varied.
+  const tries = [];
+  for (let t = 0; t < 8; t++) {
+    g.setScene('horde-floors-ai', { seed: 20 + t });
+    sim.setController(0, 'script', () => ({ dx: 0, block: true }));
+    // two goons down brings the second in with the third
+    for (let k = 0; k < 40 && sim.units.filter(u => u.id >= 1 && !u.hidden).length < 2; k++) {
+      const gl = sim.units.find(u => u.id >= 1 && !u.hidden && u.state !== 'ko');
+      if (gl) sim.forceKO(gl, sim.units[0]);
+      step(0.5);
+    }
+    const p = sim.units[0], gs = sim.units.filter(u => u.id >= 1 && !u.hidden);
+    if (gs.length < 2) { tries.push('no second goon'); continue; }
+    const fl = sim.bounds, mid = (fl.x0 + fl.x1) / 2, near = 90 + 20 * t, far = 260 - 10 * t, s = t % 2 ? 1 : -1;
+    p.x = mid; gs[0].x = mid + s * near; gs[1].x = mid - s * far;
+    for (const u of [p, ...gs]) { u.vx = 0; u.prevX = u.x; }
+    let at = -1;
+    step(6, (i) => {
+      p.health = p.maxHealth || 100;
+      const a = gs.filter(u => !u.hidden && u.state !== 'ko');
+      if (a.length < 2) { at = -2; return false; }
+      const hx = (u) => u.rig.joints.hip.x;   // by the bodies, like the sim (a lying one's root is off at its feet)
+      if (Math.sign(hx(a[0]) - hx(p)) === Math.sign(hx(a[1]) - hx(p))) { at = i; return false; }
+    });
+    tries.push(at === -2 ? 'a goon went down' : at < 0 ? 'still between them after 6 s' : (at / 60).toFixed(2) + ' s');
+  }
+  ok('sides: held between two goons, they get to one side of him', tries.every(x => / s$/.test(x) && parseFloat(x) <= 3), tries.join(', '));
 
   // 4. every way a goon goes down
   g.setScene('horde-ko-test', {});

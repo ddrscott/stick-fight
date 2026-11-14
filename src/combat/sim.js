@@ -605,6 +605,25 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // The pile stays on the floor where each goon fell. sim.horde: { floor, floorsCleared, count,
   // wave: { size, spawned, downed }, doorTurn, transit }.
   function goonsLive() { return sim.units.filter(u => u.id >= 1 && !u.hidden); }
+  // Two goons never surround the hero. With one on each side of him (on his floor, off the stairs), the one with
+  // the higher id is on the wrong side: this gives its partner, else null. The rule can't flip back and forth as
+  // they move (the way "the one farther off" did). The goon's AI walks it around him to its partner's side, and
+  // while it does it isn't solid to him (separatePair): it passes behind him (goons are drawn under the hero
+  // unless they're swinging, src/main.js), since in a side view there's no way around him but behind.
+  function regroupMate(g) {
+    const p = sim.units[0];
+    if (!sim.horde || !g || g.id < 1 || g.hidden || g.state === 'ko' || p.hidden || p.state === 'ko') return null;
+    if ((g.floor || 0) !== (p.floor || 0) || g.stair >= 0 || p.stair >= 0) return null;
+    const px = bodyX(p), side = Math.sign(bodyX(g) - px);   // by the bodies: a lying one's root is off at its feet
+    if (!side) return null;
+    for (const u of sim.units) {
+      if (u === g || u.id < 1 || u.hidden || u.state === 'ko' || (u.floor || 0) !== (g.floor || 0)) continue;
+      const s = Math.sign(bodyX(u) - px);
+      if (s && s !== side && g.id > u.id) return u;
+    }
+    return null;
+  }
+  sim.regroupMate = regroupMate;
   function placeGoon(g) {
     const p = sim.units[0], H = sim.horde, info = floorInfo(H.floor);
     if (!H.wave) H.wave = { size: 5 + Math.min(3, H.floorsCleared), spawned: 0, downed: 0 };
@@ -2164,7 +2183,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     {
       const o = oppOf(u);
       const stomping = u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].otg;   // the stomp's step goes in over the legs
-      if (o && u.grounded && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx && sameLevel(u, o)) {
+      if (o && u.grounded && !NOT_SOLID_BODY.has(u.state) && !u.rag && (NOT_SOLID_BODY.has(o.state) || o.rag) && u.vx && sameLevel(u, o) && !(sim.horde && o.id === 0 && regroupMate(u))) {   // (a goon going around the downed hero walks on)
         const ends = o.rag ? [Math.min(o.x, bodyX(o)), Math.max(o.x, bodyX(o))] : lieEnds(o), dir = Math.sign(u.vx);
         // the stomp's step goes in over the legs, but never past the hip (HIP_GAP short of it, like a man standing there)
         const near = stomping ? bodyX(o) - dir * (HIP_GAP - 24) : dir > 0 ? ends[0] : ends[1];
@@ -3140,6 +3159,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (lying(a) === lying(b)) return;
     const stand = lying(a) ? b : a, down = stand === a ? b : a;
     if (!onFoot(stand) || down.falling || oppOf(stand) !== down || !stand.home) return;
+    if (sim.horde && down.id === 0 && regroupMate(stand)) return;   // a goon going around the downed hero to its partner
     const home = stand.home;   // his side of her, from the last moment they both stood
     const over = down.rag || !down.grounded ? OVER_AIR : OVER;   // under a juggled body he may step farther in
     const bx = bodyX(down);
@@ -3186,6 +3206,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const airFreeze = (u) => !u.grounded && u.hitstop > 0 && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air;
     if (airFreeze(a) || airFreeze(b)) return;
     if (a.hidden || b.hidden) return;
+    if (sim.horde && (a.id === 0 || b.id === 0) && regroupMate(a.id === 0 ? b : a)) return;   // a goon going around him to its partner
     if ((a.state === 'roll' && a.rollCross) || (b.state === 'roll' && b.rollCross)) return;   // a roll crossing under him: nothing stops it
     if (NOT_SOLID.has(a.state) || NOT_SOLID.has(b.state) || wakeLying(a) || wakeLying(b)) { keepSides(a, b); keepOff(a, b); return; }
     // a body rising from the floor is solid only for the last quarter of its getup (or of a wake-up strike's rise)
