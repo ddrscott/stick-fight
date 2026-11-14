@@ -655,8 +655,12 @@ export function createFlow(ctx) {
   function addNudge(root, items) {
     const n = nudgeBlock(() => { signInReturn = null; go('ageCheck'); });
     if (!n) return;
-    root.appendChild(n.el);
-    items.push(...btnRow(root, [n.button], '26cqw'));
+    // the prompt and its button in one box: on a short stage held sideways they sit side by side, a button's height
+    // saved, so the table after a game keeps SAVE MY PROFILE on screen at 667x375 ([t6z5am]); elsewhere it's not a box
+    const wrap = el('div', 'cr-nudgewrap');
+    wrap.appendChild(n.el);
+    root.appendChild(wrap);
+    items.push(...btnRow(wrap, [n.button], '26cqw'));
   }
   function btnRow(root, items, width = '20cqw') {
     const row = el('div', 'fl-row');
