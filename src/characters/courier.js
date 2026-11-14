@@ -101,12 +101,12 @@ export default {
   stats: { health: 97, walk: 1.2, backWalk: 0.95, run: 1.2, jump: 1.06, dash: 1.2, weight: 0.9, stamina: 1, regen: 1.25, damage: 1.03 },
   body: { scale: 0.96, headR: 14.5, upperLeg: 32, lowerLeg: 31.5, limbW: 11, limbTip: 8.5, torsoW: 13.5, hipW: 10, lean: 5, accessory: cap },
   moves: {
-    expressSlide: { rig: expressSlide, frame: { limb: 'foot', damage: 10, kb: { x: 260, y: 210 }, hitstun: 0, blockstun: 10, hitstop: 7, knockdown: true, height: 'low', tc: true,
+    expressSlide: { rig: expressSlide, frame: { transfer: true, limb: 'foot', damage: 10, kb: { x: 260, y: 210 }, hitstun: 0, blockstun: 10, hitstop: 7, knockdown: true, height: 'low', tc: true,
       travel: { vx: 520, at: 60, ms: 230 }, cost: 22, reach: 140, flashR: 28, callout: 'EXPRESS SLIDE' } },
-    dropOffKnee: { rig: dropOffKnee, frame: { limb: 'foot', damage: 13, kb: { x: 130, y: 450 }, hitstun: 0, blockstun: 14, hitstop: 8, knockdown: true, juggle: true, height: 'mid',
+    dropOffKnee: { rig: dropOffKnee, frame: { transfer: true, limb: 'foot', damage: 13, kb: { x: 130, y: 450 }, hitstun: 0, blockstun: 14, hitstop: 8, knockdown: true, juggle: true, height: 'mid',
       travel: { vx: 420, at: 50, ms: 190 }, lowInvuln: true, cost: 24, reach: 70, flashR: 32, callout: 'DROP-OFF KNEE' } },
     // SAME DAY's ender: the slide off two jabs, harder
-    sameDay: { frame: { limb: 'foot', damage: 12, kb: { x: 320, y: 240 }, hitstun: 0, blockstun: 10, hitstop: 9, knockdown: true, ender: true, height: 'low', tc: true,
+    sameDay: { frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'foot', damage: 12, kb: { x: 320, y: 240 }, hitstun: 0, blockstun: 10, hitstop: 9, knockdown: true, ender: true, height: 'low', tc: true,
       travel: { vx: 460, at: 60, ms: 200 }, reach: 140, flashR: 32, anims: ['expressSlide'], callout: 'SAME DAY' } },
   },
   commands: [

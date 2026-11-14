@@ -15,11 +15,13 @@
 //     o.pick(id, focusKey)   open another fighter's shelf
 //     o.repaint(focusKey, msg)   rebuild the screen after a buy or an equip, the line under it saying what happened
 //     o.extras / o.ranks     the catalog's extra items and each fighter's mastery rank (catalog.js; tests set them)
+//     o.openSlot(n)   open the CUSTOM EMPLOYEE page for this fighter's slot n (src/flow/customUI.js slotPage)
 import { el, button } from './ui.js';
 import { createFighter } from '../fighter/index.js';
 import { itemsFor, unlockText, stateOf, completion, KINDS, EXTRAS } from '../career/catalog.js';
 import { career, equipped, equip, buy, mastery, kit, setKit } from '../career/store.js';
 import { upgradeShelf } from './upgradesUI.js';   // stat upgrades (README, Progression, Stat upgrades): not cosmetics, so not in the counts
+import { slotShelf } from './customUI.js';   // the custom employee's move slots (README, Characters, Custom employee): not cosmetics either
 
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
 const SILHOUETTE = '#2a2140';   // a locked item: the figure filled flat, no colors to give it away
@@ -118,6 +120,13 @@ export function closetBody(o) {
     }
     shelf.appendChild(cards);
   }
+  // the custom employee's two move slots, after the looks (a press opens the slot's page of moves to buy and slot)
+  const ce = slotShelf({ fighter: ch, focusKey: o.focusKey, open: (n) => o.openSlot && o.openSlot(n) });
+  if (ce.focus >= 0) focus = items.length + ce.focus;
+  items.push(...ce.items);
+  shelf.appendChild(ce.el);
+  // back from a slot's page: the shelf (its own scroll box) shows that slot, not its top
+  if (ce.focus >= 0 && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { const it = ce.items[ce.focus].el; if (it.isConnected) shelf.scrollTop += it.getBoundingClientRect().bottom - shelf.getBoundingClientRect().bottom + 12; });
   // stat upgrades: after the looks, their own section with its own count (the COLLECTED numbers are cosmetics only)
   const ups = upgradeShelf({ fighter: ch, focusKey: o.focusKey, repaint: o.repaint, note: o.note });
   if (ups.focus >= 0) focus = items.length + ups.focus;

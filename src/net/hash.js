@@ -5,6 +5,8 @@
 // machines learn them in different orders). Floats are hashed by their exact bits, so a
 // difference in the last bit shows up.
 
+import { FRAME_DATA } from '../combat/frameData.js';
+
 const UNIT_FIELDS = [
   'x', 'y', 'vx', 'vy', 'facing', 'grounded', 'state', 'move', 'phase', 'health', 'stamina', 'faint', 'faintPending', 'faintCut', 'shakeDir', 'shakeAt',
   'hitstop', 'stun', 'downTimer', 'combo', 'floor', 'stair', 'attackId', 'hidden', 'rag', 'falling', 'airHits',
@@ -12,6 +14,7 @@ const UNIT_FIELDS = [
   'dashDir', 'dashT', 'tapDir', 'tapAt', 'tapN', 'crouchEnd', 'lowStance',   // a dash and how far in, the double tap's count, the rise out of a crouch
   'clashUntil', 'tradeUntil', 'tradeLimb',   // a clash's bounce back, and the limbs left out of the solid bodies while they're in each other
   'maxHealth', 'upHp', 'upDmg', 'upRegen', 'upWalk',   // stat upgrades (the EVEN room rule): both pages must have put the same on both fighters
+  'loadout',   // the custom employee's two slots (each side's look): both pages must have the same moves in them
 ];
 
 const f64 = new Float64Array(1);
@@ -32,9 +35,19 @@ function mixValue(h, v) {
 
 // the reach table's entries the fight reads: TEMP's (no prefix) and the two fighters' ('id:move'). Each machine
 // also keeps the measurements of every character it has shown in its demo, which no fight here reads.
+// A borrowed move (the custom employee) is measured on a body the first time it's slotted there, so one machine may
+// hold a measurement the other never made: only the ones a fighter here owns or has slotted count.
 function reachKeys(sim) {
   const ids = new Set(sim.units.map((u) => u.char && u.char.id));
-  return Object.keys(sim.reachSeen || {}).filter((k) => { const i = k.indexOf(':'); return i < 0 || ids.has(k.slice(0, i)); });
+  const lent = new Set();
+  for (const u of sim.units) for (const m of u.borrow || []) if (m && u.char) lent.add(u.char.id + ':' + m);
+  return Object.keys(sim.reachSeen || {}).filter((k) => {
+    const i = k.indexOf(':');
+    if (i < 0) return true;
+    if (!ids.has(k.slice(0, i))) return false;
+    const fd = FRAME_DATA[k.slice(i + 1)];
+    return !(fd && fd.transfer === true && fd.owner && fd.owner !== k.slice(0, i)) || lent.has(k);
+  });
 }
 // whatever order the keys went in: each entry hashed alone, the results summed
 function reachHash(sim) {

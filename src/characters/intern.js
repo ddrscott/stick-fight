@@ -159,13 +159,13 @@ export default {
   // the lanyard: the cord from the collar to the clip, then the badge on a short clip that swings on its own
   cloth: [{ draw: lanyard, axis: ['neck', 'chest'], off: [5.6, 0], dir: [[0.263, 0.965], [0.263, 0.965], [0, 1]], len: [8.35, 8.35, 2.5], hz: 2.4, damping: 0.22, side: 'front', clear: 5 }],
   moves: {
-    coffeeRun: { rig: coffeeRun, frame: { limb: 'hand', damage: 11, kb: { x: 340, y: 0 }, hitstun: 30, blockstun: 8, hitstop: 7, height: 'mid',
+    coffeeRun: { rig: coffeeRun, frame: { transfer: true, limb: 'hand', damage: 11, kb: { x: 340, y: 0 }, hitstun: 30, blockstun: 8, hitstop: 7, height: 'mid',
       travel: { vx: 420, at: 40, ms: 160 }, cost: 19, reach: 90, flashR: 34, callout: 'COFFEE RUN' } },
-    paperCut: { rig: paperCut, frame: { limb: 'hand', damage: 4, kb: { x: 0, y: 0 }, hitstun: 17, blockstun: 6, hitstop: 4, height: 'low', tc: true, cost: 12, reach: 72, flashR: 22 } },
-    paperCut2: { rig: paperCut2, frame: { limb: 'hand', damage: 4, kb: { x: 0, y: 0 }, hitstun: 15, blockstun: 6, hitstop: 4, height: 'low', tc: true, cost: 12, reach: 74, flashR: 22 } },
-    paperCutUp: { rig: paperCutUp, frame: { limb: 'hand', damage: 9, kb: { x: 300, y: 260 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, height: 'mid',
+    paperCut: { rig: paperCut, frame: { transfer: true, limb: 'hand', damage: 4, kb: { x: 0, y: 0 }, hitstun: 17, blockstun: 6, hitstop: 4, height: 'low', tc: true, cost: 12, reach: 72, flashR: 22 } },
+    paperCut2: { rig: paperCut2, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 4, kb: { x: 0, y: 0 }, hitstun: 15, blockstun: 6, hitstop: 4, height: 'low', tc: true, cost: 12, reach: 74, flashR: 22 } },
+    paperCutUp: { rig: paperCutUp, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 9, kb: { x: 300, y: 260 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, height: 'mid',
       cost: 20, reach: 70, flashR: 32, callout: 'PAPER CUT' } },
-    replyAll: { rig: replyAll, frame: { limb: 'hand', damage: 15, kb: { x: 520, y: 260 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, ender: true, height: 'mid',
+    replyAll: { rig: replyAll, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 15, kb: { x: 520, y: 260 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, ender: true, height: 'mid',
       reach: 95, flashR: 40, callout: 'REPLY ALL' } },
   },
   commands: [

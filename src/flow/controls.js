@@ -138,6 +138,7 @@ export const FIGHT = [
   ['JUMP / CROUCH', 'W / S', 'UP / DOWN'],
   ['GUARD', 'HOLD BACK, B', 'HOLD BACK, L1 L2'],
   ['THROW', '1+3 OR 2+4', 'R1'],
+  ['MOVE SLOTS', 'S + 1+3, S + 2+4', 'DOWN + R1, DOWN + Y+B'],
   ['DASH', 'TAP → →', 'TAP → →'],
   ['BACK DASH', 'TAP ← ←', 'TAP ← ←'],
   ['RUN', 'SHIFT, OR HOLD THE DASH', 'R2, OR HOLD THE DASH'],

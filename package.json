@@ -53,7 +53,10 @@
     "test:upgrades": "node scripts/career/upgrades.mjs",
     "test:upgrades:worker": "node scripts/career/upgrades-worker.mjs",
     "test:upgrades:ui": "node scripts/career/upgrades-ui.mjs",
-    "test:mastery:ui": "node scripts/career/mastery-ui.mjs"
+    "test:mastery:ui": "node scripts/career/mastery-ui.mjs",
+    "test:moves": "node scripts/career/moves.mjs",
+    "test:moves:worker": "node scripts/career/moves-worker.mjs",
+    "test:moves:ui": "node scripts/career/moves-ui.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",

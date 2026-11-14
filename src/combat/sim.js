@@ -109,6 +109,17 @@ function commandMove(btn, inp, u, step, air) {
   }
   return null;
 }
+// A move another fighter lent this one (README, Characters, Custom employee): a unit may press its own moves, the
+// shared ones, and the transferable moves in its two slots (u.borrow, setCharacter's `moves`)
+const mayUse = (u, m) => canUse(u.char, m) || (!!u.borrow && !!m && u.borrow.includes(m));
+// The slots' inputs: ↓ 1+3 is slot A and ↓ 2+4 slot B. No fighter has a command there and the shared table has no
+// move of its own there either (it was the plain throw, which a croucher's opponent dodges anyway), so a slot adds
+// a move and replaces none; an empty slot is still the throw. On his feet only, never while he's held in a grab
+// (the same buttons break it). Returns { attack, slot }.
+function throwPressOf(u, inp, t13, step) {
+  if (u.grounded && inp.down && u.state !== 'grabbed' && u.borrow) { const m = u.borrow[t13 ? 0 : 1]; if (m) return { attack: m, slot: true }; }
+  return { attack: (u.grounded && commandMove(t13 ? 'throw13' : 'throw24', inp, u, step, false)) || 'throw', slot: false };
+}
 function resolveButton(btn, inp, u, step) {
   const air = u.state === 'jump' || (!u.grounded && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air);
   const cmd = commandMove(btn, inp, u, step, air);
@@ -334,13 +345,13 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   // end up with the same bits, since the reach feeds the sim (a string's step-in, the auto guard). The rig's own
   // state is put back afterwards.
   const CAL_X = 1000, CAL_Y = 360;
-  function calibrate(rig, ch = null) {
+  function calibrate(rig, ch = null, only = null) {
     const keep = typeof rig.getState === 'function' ? rig.getState() : null;
     const x = rig.x, y = rig.y, fc0 = rig.facing, fc = 1, pre = ch && ch.id !== TEMP_ID ? ch.id + ':' : '';
     if (typeof rig.reset === 'function') rig.reset({ full: true });
     rig.x = CAL_X; rig.y = CAL_Y; rig.facing = fc; rig.play('idle'); rig.update(0); rig.events.length = 0;
     for (const m of ATTACKS) {
-      if (ch && !canUse(ch, m)) continue;
+      if (only ? !only.includes(m) : ch && !canUse(ch, m)) continue;
       rig.play(FRAME_DATA[m].anim || m);
       let active = false, n = 0;
       while (!rig.current.done && n++ < 1200) {
@@ -394,6 +405,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       char: ch, maxHealth: 100, staminaMax: STAMINA.max * ch.stats.stamina, armorLeft: 0, hitN: 0, airJumpsUsed: 0, wallJumps: 0,
       victory: null, taunt: null,   // fighter mastery's clips, when this player has them on (setCharacter)
       upHp: 1, upDmg: 1, upRegen: 1, upWalk: 1,   // stat upgrades' multipliers (setCharacter boost), 1 without
+      borrow: [null, null], loadout: '', borrowAi: [],   // the custom employee's two slots (setCharacter moves): the moves, 'a,b' for the hash, the CPU's specials for them
       id: i, name: 'P' + (i + 1), rig, color: rig.color || (i === 0 ? '#f0f0f0' : '#E85D00'),
       x: rig.x, y: rig.y, vx: 0, vy: 0, grounded: true, facing: rig.facing || (i === 0 ? 1 : -1),
       state: 'idle', move: null, phase: null, hitConfirmed: false, attackId: 0,   // a new unit starts idle: built here, not a state change (enter())
@@ -459,7 +471,10 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   // boost (stat upgrades, src/career/upgrades.js boostFor): { hp, dmg, regen, walk } multipliers on max health, every
   // hit's damage, stamina regen and walk/run speed; null is the character as it is. Sim state (it moves health and
   // bodies), so online it only ever comes from the host's room rule, the same on both pages (src/main.js setScene).
-  sim.setCharacter = (i, id, { color = null, palette = null, pose = false, taunt = false, boost = null } = {}) => {
+  // moves (the custom employee, README Characters): up to two other fighters' moves in slots A and B (↓ 1+3, ↓ 2+4);
+  // only moves whose frame data says transfer: true and that this character doesn't own already. Sim state, so online
+  // each side's rides its look and both pages put the same on both fighters (src/main.js looksFor).
+  sim.setCharacter = (i, id, { color = null, palette = null, pose = false, taunt = false, boost = null, moves = null } = {}) => {
     const u = sim.units[i];
     if (!u) return null;
     const ch = characterOr(id);
@@ -467,6 +482,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.upHp = boost ? boost.hp || 1 : 1; u.upDmg = boost ? boost.dmg || 1 : 1; u.upRegen = boost ? boost.regen || 1 : 1; u.upWalk = boost ? boost.walk || 1 : 1;
     u.victory = pose && ch.victory ? ch.victory : null;
     u.taunt = taunt && ch.taunt ? ch.taunt : null;
+    setLoadout(u, ch, moves);
     const accent = (palette && palette.accent) || ch.accent;
     if (typeof u.rig.setBody === 'function' && u.rig.body !== ch.body) u.rig.setBody(ch.body, { accent });
     else if (u.rig) u.rig.accent = accent;
@@ -481,9 +497,31 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       for (const k in reachSeen) if (k.startsWith(ch.id + ':')) reachCalibrated[k] = reachSeen[k];
       u.rig.play('idle'); u.rig.update(0); u.rig.events.length = 0;
     }
+    // a borrowed move is measured on this body the first time it's slotted here (TEMP's table already has every move)
+    const lent = ch.id === TEMP_ID ? [] : u.borrow.filter((m) => m && reachCalibrated[ch.id + ':' + m] == null);
+    if (lent.length) {
+      calibrate(u.rig, ch, lent);
+      for (const m of lent) if (reachSeen[ch.id + ':' + m] != null) reachCalibrated[ch.id + ':' + m] = reachSeen[ch.id + ':' + m];
+      u.rig.play('idle'); u.rig.update(0); u.rig.events.length = 0;
+    }
     return ch;
   };
-  sim.setCharacters = (ids, colors = [], palettes = [], kits = [], boosts = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null, palette: palettes[i] || null, pose: !!(kits[i] && kits[i].pose), taunt: !!(kits[i] && kits[i].taunt), boost: boosts[i] || null }));
+  // the slots: transferable, not the character's own, no move twice; 'a,b' ('' with none) for the state hash. The CPU
+  // gets the move's owner's specials for it (src/characters/), or a plain one when the owner's CPU has none.
+  function setLoadout(u, ch, moves) {
+    const list = Array.isArray(moves) ? moves : [];
+    u.borrow = [0, 1].map((k) => { const m = list[k], fd = m && FRAME_DATA[m]; return fd && fd.transfer === true && fd.owner && fd.owner !== ch.id && list.indexOf(m) === k ? m : null; });
+    u.loadout = u.borrow.some(Boolean) ? u.borrow.map((m) => m || '').join(',') : '';
+    u.borrowAi = [];
+    for (const m of u.borrow) {
+      if (!m) continue;
+      const own = (characterOr(FRAME_DATA[m].owner).ai.specials || []).filter((sp) => sp.move === m && !sp.plan);
+      if (own.length) u.borrowAi.push(...own);
+      else u.borrowAi.push({ move: m, min: 0, max: Math.round(FRAME_DATA[m].reach || 90), chance: 0.25, cooldown: 160, when: FRAME_DATA[m].throw ? 'guarding' : 'standing' });
+    }
+  }
+  sim.mayUse = mayUse;
+  sim.setCharacters = (ids, colors = [], palettes = [], kits = [], boosts = []) => ids.forEach((id, i) => sim.setCharacter(i, id, { color: colors[i] || null, palette: palettes[i] || null, pose: !!(kits[i] && kits[i].pose), taunt: !!(kits[i] && kits[i].taunt), boost: boosts[i] || null, moves: (kits[i] && kits[i].moves) || null }));
 
   // ---- rounds ----------------------------------------------------------------------
   function spawn(u, i) {
@@ -691,9 +729,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   function freshState() {
     if (sim.units.length > 2) sim.units.length = 2;
     sim.units.forEach((u, i) => {
-      const { rig, controller, kind, victory, taunt, upHp, upDmg, upRegen, upWalk } = u;   // the character's look stays, fighter mastery's clips and the stat upgrades too
+      const { rig, controller, kind, victory, taunt, upHp, upDmg, upRegen, upWalk, borrow, loadout, borrowAi } = u;   // the character's look stays, fighter mastery's clips, the stat upgrades and the slots too
       for (const k of Object.keys(u)) delete u[k];
-      Object.assign(u, makeUnit(rig, i), { controller, kind, victory: victory || null, taunt: taunt || null, upHp: upHp || 1, upDmg: upDmg || 1, upRegen: upRegen || 1, upWalk: upWalk || 1 });
+      Object.assign(u, makeUnit(rig, i), { controller, kind, victory: victory || null, taunt: taunt || null, upHp: upHp || 1, upDmg: upDmg || 1, upRegen: upRegen || 1, upWalk: upWalk || 1, borrow: borrow || [null, null], loadout: loadout || '', borrowAi: borrowAi || [] });
       if (typeof rig.reset === 'function') rig.reset({ full: true });
     });
     for (const k of Object.keys(reachSeen)) delete reachSeen[k];
@@ -1071,7 +1109,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     u.attackStart = sim.stepCount; u.crouch = !!fd0.tc; u.activeAt = -1; u.recoverAt = -1;
     // a plain crouching attack thrown with down held (the low jab, the low kick, the sweep, or a character's own ↓ + button
     // in their place; never a special on another motion, an ender or a slide): letting go of down in it is rising (risingNow)
-    u.lowStance = !!fd0.tc && !fd0.travel && !fd0.ender && !!u.downHeld && u.grounded && (!fd0.owner || u.char.commands.some((c) => c.move === move && c.motion === 'd'));
+    u.lowStance = !!fd0.tc && !fd0.travel && !fd0.ender && !!u.downHeld && u.grounded && (!fd0.owner || u.char.commands.some((c) => c.move === move && c.motion === 'd') || u.borrow.includes(move));
     // throws whiff on a croucher (crouch beats throws, mids beat crouch)
     u.grabOK = !!fd0.throw && opp && Math.abs(opp.x - u.x) <= (fd0.range || FRAME_DATA.throw.range) && !opp.crouch;
     u.armorLeft = fd0.armor ? (fd0.armor.hits || 1) : 0; u.hitN = 0; u.hitKey = 0;   // character hooks: armor, multi-hit
@@ -1172,12 +1210,12 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const back = inp.dx * u.facing < 0 || !!inp.block;
     u.backHeld = back; u.downHeld = !!inp.down;
     // the GUARD button (B, touch GUARD, the AI's `block`) means hold back: it walks back too
-    const e = { dx: inp.dx || (inp.block && !inp.down ? -u.facing : 0), dxPress: inp.dx && inp.dx !== prev.dx ? inp.dx : 0, run: inp.run, block: back, down: !!inp.down, jump: inp.jump && !prev.jump, up: !!inp.jump, attack: null, keys: null, name: '', dash: 0 };
+    const e = { dx: inp.dx || (inp.block && !inp.down ? -u.facing : 0), dxPress: inp.dx && inp.dx !== prev.dx ? inp.dx : 0, run: inp.run, block: back, down: !!inp.down, jump: inp.jump && !prev.jump, up: !!inp.jump, attack: null, keys: null, name: '', dash: 0, slot: false };
     const press = (b) => inp[b] && !prev[b];
     const t13 = (press('lp') || press('lk')) && inp.lp && inp.lk, t24 = (press('rp') || press('rk')) && inp.rp && inp.rk;
-    if ((t13 || t24) && !inStance(u)) e.attack = (u.grounded && commandMove(t13 ? 'throw13' : 'throw24', inp, u, sim.stepCount, false)) || 'throw';   // 1+3 or 2+4 (a character's command grab first; in a stance the buttons are read one by one)
+    if ((t13 || t24) && !inStance(u)) { const tp = throwPressOf(u, inp, t13, sim.stepCount); e.attack = tp.attack; e.slot = tp.slot; }   // 1+3 or 2+4 (with down, a slot's borrowed move; a character's command grab first; in a stance the buttons are read one by one)
     else for (const b of ['lp', 'rp', 'lk', 'rk']) if (press(b)) { Object.assign(e, resolvePress(u, b, inp)); break; }
-    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && !FRAME_DATA[m].botch && (!FRAME_DATA[m].owner || canUse(u.char, m))) { e.attack = m; break; }   // the AI names moves directly (its own character's)
+    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && !FRAME_DATA[m].botch && (!FRAME_DATA[m].owner || mayUse(u, m))) { e.attack = m; break; }   // the AI names moves directly (its own character's)
     // the universal parry: a fresh tap toward him (never a held direction), on his feet and free; a tap inside the
     // last one's lockout doesn't count and keeps it locked (a double-tap dash never parries, nor does mashing)
     // (nor within PARRY.quiet steps of a button press: a hand mashing buttons never parries by accident)
@@ -1325,6 +1363,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     // a wake-up strike: there's no standing body to tangle, so a press thrown into it is just lost (the last
     // BOTCH_GRACE steps of its stand-up still buffer, like any recovery)
     if (fd.wake) return u.phase === 'recovery' && stepsLeft(u) <= BOTCH_GRACE ? null : 'lost';
+    // holding a grab: the throw plays out whatever he presses, so a press there is lost too (a botch would let go of a
+    // body that's still held: the grab invariant, src/combat/invariants.js)
+    if (sim.units.some((o) => o.state === 'grabbed' && o.grabbedBy === u.id)) return 'lost';
     if (!u.grounded && fd.air) {
       if (u.hitConfirmed || u.phase === 'recovery' || u.rig.current.done || !FRAME_DATA[e.attack] || !FRAME_DATA[e.attack].air) return null;
       const toFloor = u.vy > 0 ? (floorUnder(u) - u.y) / u.vy * 120 : Infinity;
@@ -1333,7 +1374,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const tok = pressTok(e);
     if (tok) for (const keys of [u.seq, u.bufferKeys, u.queued && u.queued.keys]) if (keys && keys.length && matchStrings([...keys, tok], u.char.strings).length) return null;
     if (!e.keys && fd.cancels.includes(e.attack) && !(e.attack === u.move && (u.selfChain || 0) >= 1)) return null;
-    if (FRAME_DATA[e.attack] && FRAME_DATA[e.attack].throw && u.phase === 'startup' && sim.stepCount - u.attackStart <= 4) return null;
+    if (FRAME_DATA[e.attack] && (FRAME_DATA[e.attack].throw || e.slot) && u.phase === 'startup' && sim.stepCount - u.attackStart <= 4) return null;   // a slot's two buttons a frame apart, like a throw's
     const acc = accidentFor(u, digitOf(tok), (rel) => stepsSince(u, rel));
     if (acc && canUse(u.char, acc.move)) return acc;
     if (u.hitConfirmed && (u.launchCancelAt || u.otgConfirm)) return null;
@@ -1450,9 +1491,9 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const prev = u.last || EMPTY_INPUT, press = (b) => inp[b] && !prev[b];
     const e = { attack: null, keys: null, name: '', dx: inp.dx || 0, down: !!inp.down };
     const t13 = (press('lp') || press('lk')) && inp.lp && inp.lk, t24 = (press('rp') || press('rk')) && inp.rp && inp.rk;
-    if ((t13 || t24) && !inStance(u)) e.attack = (u.grounded && commandMove(t13 ? 'throw13' : 'throw24', inp, u, sim.stepCount, false)) || 'throw';
+    if ((t13 || t24) && !inStance(u)) { const tp = throwPressOf(u, inp, t13, sim.stepCount); e.attack = tp.attack; e.slot = tp.slot; }
     else for (const b of ['lp', 'rp', 'lk', 'rk']) if (press(b)) { Object.assign(e, resolvePress(u, b, inp)); break; }
-    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && !FRAME_DATA[m].botch && (!FRAME_DATA[m].owner || canUse(u.char, m))) { e.attack = m; break; }
+    if (!e.attack) for (const m of ATTACKS) if (inp[m] && !prev[m] && !FRAME_DATA[m].botch && (!FRAME_DATA[m].owner || mayUse(u, m))) { e.attack = m; break; }
     return !!e.attack && mistimed(u, e);
   };
   // For the CPU's showcase flavor: the technique whose window is open on this step, if any
@@ -2230,7 +2271,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         if (sim.stepCount - (u.tumbleAt || -99) > 6) { u.tumbleAt = sim.stepCount; onEvent({ type: 'stairTumble', x: hx, y: ev.y, strength: st, unit: u }); note({ type: 'stairTumble', def: u.id }); }
       }
       else if (ev.type === 'bounce' && u.rag) {
-        u.ragLanded = false; u.groundBounce = false; u.juggle = true; u.airHits = Math.max(u.airHits, JUGGLE_MAX - 1);
+        // a juggle only for a body that can still be hit: a KO'd one bounces too, but 'ko' doesn't own the flag (STATE_OWNS)
+        u.ragLanded = false; u.groundBounce = false; u.juggle = u.state === 'knockdown'; u.airHits = Math.max(u.airHits, JUGGLE_MAX - 1);
         callout('GROUND BOUNCE', u.comboBy, 'trick'); u.launchStep = sim.stepCount;
         onEvent({ type: 'thud', x: u.x, y: u.ragFloor, dir: u.facing, strength: 0.9 });
       }
@@ -3325,7 +3367,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
       if (e.attack && live) {
         // a throw pressed a few steps into a jab/cross/kick startup replaces it (1 then 3 a frame late)
-        if (e.attack === 'throw' && u.state === 'attack' && u.phase === 'startup' && sim.stepCount - u.attackStart <= 4) { enter(u, 'idle'); u.move = null; }
+        if ((e.attack === 'throw' || e.slot) && u.state === 'attack' && u.phase === 'startup' && sim.stepCount - u.attackStart <= 4) { enter(u, 'idle'); u.move = null; }
         if (e.feint && u.state === 'attack') { enter(u, 'idle'); u.move = null; u.glide = null; u.vx = 0; }   // the feint's follow-up starts now
         // a string press while the previous string press still waits for its window: queue it
         // behind that one instead of replacing it (a fast hand gets the whole string)

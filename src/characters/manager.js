@@ -135,12 +135,12 @@ export default {
   // drawn over the chest; its tip swings on the life layer's spring (src/fighter/life.js)
   cloth: [{ draw: tie, axis: ['neck', 'chest'], off: [3.6, 4], dir: [0.12, 1], len: 20.5, seg: 3, hz: 1.8, damping: 0.25, side: 'front', clear: 3.6 }],
   moves: {
-    performanceReview: { rig: performanceReview, frame: { limb: 'hand', damage: 10, kb: { x: 520, y: 300 }, hitstun: 0, blockstun: 14, hitstop: 10, knockdown: true, ender: true, height: 'mid',
+    performanceReview: { rig: performanceReview, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 10, kb: { x: 520, y: 300 }, hitstun: 0, blockstun: 14, hitstop: 10, knockdown: true, ender: true, height: 'mid',
       hits: 4, rush: PR_RUSH, travel: { vx: 300, at: 40, ms: 150 }, cost: 26, reach: 80, flashR: 42, callout: 'PERFORMANCE REVIEW' } },
-    downsizing: { rig: downsizing, frame: { limb: 'foot', damage: 16, kb: { x: 220, y: 260 }, hitstun: 0, blockstun: 12, hitstop: 10, knockdown: true, height: 'overhead',
+    downsizing: { rig: downsizing, frame: { transfer: true, limb: 'foot', damage: 16, kb: { x: 220, y: 260 }, hitstun: 0, blockstun: 12, hitstop: 10, knockdown: true, height: 'overhead',
       travel: { vx: 200, at: 330, ms: 130 }, cost: 26, reach: 90, flashR: 40, callout: 'DOWNSIZING' } },
     // TOP-DOWN's ender: the axe kick off a kick and a cross
-    topDown: { frame: { limb: 'foot', damage: 15, kb: { x: 260, y: 300 }, hitstun: 0, blockstun: 12, hitstop: 10, knockdown: true, ender: true, height: 'overhead',
+    topDown: { frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'foot', damage: 15, kb: { x: 260, y: 300 }, hitstun: 0, blockstun: 12, hitstop: 10, knockdown: true, ender: true, height: 'overhead',
       travel: { vx: 200, at: 330, ms: 130 }, reach: 90, flashR: 40, anims: ['downsizing'], callout: 'TOP-DOWN' } },
   },
   commands: [

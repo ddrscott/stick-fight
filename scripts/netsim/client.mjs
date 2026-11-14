@@ -17,8 +17,18 @@ import { roster } from '../../src/characters/index.js';
 import { createOnline } from '../../src/net/online.js';
 import { staticId } from '../../src/net/state.js';
 import { boostFor, FULL } from '../../src/career/upgrades.js';
+import { parseLoadout, movesFor, loadoutText } from '../../src/career/moves.js';
 // the stat upgrades a match's rules put on both fighters, as main.js setScene does: EVEN is every top tier, else none
 const boostsOf = (rules) => (rules && rules.upgrades === 'even' ? [boostFor(FULL), boostFor(FULL)] : []);
+// the custom employee's slots from each side's look ('pal+pt~a.b'), as main.js looksFor reads them
+export const kitsOf = (chars, pals) => (chars || []).map((c, i) => { const s = String((pals && pals[i]) || '').split('~')[1] || ''; return { moves: parseLoadout(c, s).map((m) => m || null) }; });
+/** a random loadout for a fighter (two moves of other fighters, sometimes one, sometimes none), from this phone's own dice */
+export function randomLook(r, fighter) {
+  const pool = movesFor(fighter).map((m) => m.id), k = r();
+  const pick = () => pool.splice(Math.floor(r() * pool.length), 1)[0];
+  const list = k < 0.15 ? ['', ''] : k < 0.35 ? [pick(), ''] : k < 0.45 ? ['', pick()] : [pick(), pick()];
+  return loadoutText(list);
+}
 
 const AI_FIELDS = ['aaJump', 'grabId', 'rollId'];
 
@@ -28,7 +38,7 @@ const AI_FIELDS = ['aaJump', 'grabId', 'rollId'];
  *   inject: knock this phone's sim off by a hair now and then (a stand-in for a nondeterminism bug), and with
  *   atEnd also on the frame the match result shows, so the resync and the end-of-match agreement get exercised
  */
-export function createClient({ name, seed, network, frames, rules, drawCheck = false, inject = null }) {
+export function createClient({ name, seed, network, frames, rules, drawCheck = false, inject = null, loadouts = false }) {
   const rng = mulberry32(seed);
   const arena = createArena('building');
   const sp = arena.spawns;
@@ -66,6 +76,8 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
 
   // ---- the player's thumbs: a CPU reading this phone's sim ----
   let ai = null, shadow = {}, li = 0;
+  let slotHold = 0, slotIn = EMPTY_INPUT; const slotRng = mulberry32((seed * 48271) >>> 0), lookRng = mulberry32((seed * 69621) >>> 0);
+  const looks = {};   // --loadouts: this phone's loadout per fighter, made up once
   function newThumbs(localIndex, n) {
     li = localIndex; shadow = {};
     const r = mulberry32((seed * 7919 + n * 104729) >>> 0);
@@ -80,6 +92,12 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
     for (const k of AI_FIELDS) shadow[k] = keep[k];
     const rs = sim.rng.state, out = ai(shadow, opp, sim) || EMPTY_INPUT;
     if (sim.rng.state !== rs) { client.rngTouches = (client.rngTouches || 0) + 1; sim.rng.state = rs; }   // a CPU helper that rolls the sim's dice: not the player's to roll
+    // --loadouts: the CPU names its specials, which don't go over the wire, so the thumbs press the slots as a person
+    // does (↓ 1+3 or ↓ 2+4, held for a few frames) now and then, close enough to land
+    if (loadouts && me.loadout) {
+      if (slotHold > 0) { slotHold--; return slotIn; }
+      if (Math.abs(opp.x - me.x) < 150 && slotRng() < 0.012) { const b = slotRng() < 0.5; slotIn = { ...EMPTY_INPUT, down: true, lp: b, lk: b, rp: !b, rk: !b }; slotHold = 3; client.slotPresses = (client.slotPresses || 0) + 1; return slotIn; }
+    }
     return out;
   }
 
@@ -87,12 +105,13 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
     sim, input, stage: null,
     botchSetting: () => true,
     rulesSetting: () => rules,
+    palette: (id) => (loadouts ? (looks[id] ??= randomLook(lookRng, id)) : ''),
     createRoom: () => network.createRoom(),
     createLink: (o) => network.createLink({ ...o, owner: client }),
     // main.js setScene('online', o) for an online match
     startMatch(o) {
       client.demoRunning = false;
-      sim.setCharacters(o.chars, [], [], [], boostsOf(o.rules));
+      sim.setCharacters(o.chars, [], [], kitsOf(o.chars, o.pals), boostsOf(o.rules));
       sim.botchOn = o.botch !== false;
       sim.roundTime = o.rules.roundTime; sim.winsNeeded = o.rules.winsNeeded;
       arena.clearBodies();
@@ -147,9 +166,12 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
     client.injected++;
   }
   // every confirmed hash frame this side has, for comparing the two sides afterwards
+  const lentAid = [-1, -1];
   function record() {
     const ls = net.netcode;
     if (!ls) return;
+    // --loadouts: borrowed moves that came out (each strike once, by its attack id)
+    for (const u of sim.units) if (u.move && u.borrow && u.borrow.includes(u.move) && lentAid[u.id] !== u.attackId) { lentAid[u.id] = u.attackId; client.lentOut = (client.lentOut || 0) + 1; }
     const top = ls.confirmed, n = net.match;
     for (const [f, h] of ls.hashes) if (f <= top) client.confirmed.set(`${n}:${f}`, h);   // the latest (a resync re-hashes frames from its point on)
   }
@@ -253,7 +275,7 @@ export function createSpectator({ name, seed, network, frames, createWatch }) {
     // main.js setScene('online', o), exactly as a player's page does it
     startMatch(o) {
       demoRunning = false;
-      sim.setCharacters(o.chars, [], [], [], boostsOf(o.rules));
+      sim.setCharacters(o.chars, [], [], kitsOf(o.chars, o.pals), boostsOf(o.rules));
       sim.botchOn = o.botch !== false;
       sim.roundTime = o.rules.roundTime; sim.winsNeeded = o.rules.winsNeeded;
       arena.clearBodies();

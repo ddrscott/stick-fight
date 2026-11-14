@@ -109,7 +109,7 @@ export function rosterCards(sheets, hrefPrefix, { detail = false, cast = false, 
 const TOUCH = {
   '1  LEFT PUNCH': 'button 1', '2  RIGHT PUNCH': 'button 2', '3  LEFT KICK': 'button 3', '4  RIGHT KICK': 'button 4',
   MOVE: 'the floating stick, left thumb', 'JUMP / CROUCH': 'stick up / down', GUARD: 'stick away, or GUARD',
-  THROW: '1+3 or 2+4 together', RUN: 'push the stick all the way', PAUSE: 'the pause button',
+  THROW: '1+3 or 2+4 together', 'MOVE SLOTS': 'stick down, then 1+3 or 2+4', RUN: 'push the stick all the way', PAUSE: 'the pause button',
 };
 const MENU_TOUCH = { MOVE: '—', SELECT: 'tap it', BACK: 'the BACK button' };
 export function controlsTable(FIGHT, MENUS, FACE, PILL) {

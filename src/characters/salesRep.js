@@ -149,20 +149,20 @@ export default {
   cloth: [{ draw: tie, axis: ['neck', 'chest'], off: [3.8, 3.5], dir: [0.094, 1], len: 21.3, seg: 3, hz: 2.1, damping: 0.22, side: 'front', clear: 3.8 }],
   moves: {
     // the feint: back+3 (sr_pitch) or a throw in the first 100 ms of startup replaces the jab (frame data feint)
-    sr_coldCall: { rig: coldCall, frame: { limb: 'hand', damage: 9, kb: { x: 0, y: 0 }, hitstun: 28, blockstun: 10, hitstop: 6, knockdown: false, height: 'mid',
+    sr_coldCall: { rig: coldCall, frame: { transfer: 'its startup is a feint into two more of SALES REP\'s moves (The Pitch, Close the Deal)', limb: 'hand', damage: 9, kb: { x: 0, y: 0 }, hitstun: 28, blockstun: 10, hitstop: 6, knockdown: false, height: 'mid',
       travel: { vx: 320, at: 130, ms: 120 }, feint: { ms: 90, into: { sr_pitch: 'sr_pitchFeint', sr_pitchFeint: 'sr_pitchFeint', throw: 'sr_closeFeint', sr_closeDeal: 'sr_closeFeint', sr_closeFeint: 'sr_closeFeint' } },
       cost: 18, reach: 110, flashR: 32, callout: 'COLD CALL' } },
-    sr_pitch: { rig: pitch, frame: { limb: 'foot', damage: 7, kb: { x: 0, y: 0 }, hitstun: 24, blockstun: 6, hitstop: 5, knockdown: false, height: 'low',
+    sr_pitch: { rig: pitch, frame: { transfer: true, limb: 'foot', damage: 7, kb: { x: 0, y: 0 }, hitstun: 24, blockstun: 6, hitstop: 5, knockdown: false, height: 'low',
       cost: 14, reach: 85, flashR: 26, callout: 'THE PITCH' } },
     // the feint's versions: the lunge already started, so the low slides in behind it and the handshake reaches
     // farther (the grab pulls him in to the hold, 720 px/s)
-    sr_pitchFeint: { frame: { limb: 'foot', damage: 7, kb: { x: 0, y: 0 }, hitstun: 24, blockstun: 6, hitstop: 5, knockdown: false, height: 'low',
+    sr_pitchFeint: { frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'foot', damage: 7, kb: { x: 0, y: 0 }, hitstun: 24, blockstun: 6, hitstop: 5, knockdown: false, height: 'low',
       travel: { vx: 400, at: 20, ms: 130 }, cost: 12, reach: 120, flashR: 26, anims: ['sr_pitch'], callout: 'THE PITCH' } },
-    sr_closeFeint: { frame: { limb: 'hand', damage: 11, kb: { x: 520, y: 260 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
+    sr_closeFeint: { frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 11, kb: { x: 520, y: 260 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
       throw: true, grab: true, unblockable: true, range: 150, hold: 12, cost: 20, reach: 70, flashR: 30, anims: ['sr_closeDeal'], callout: 'CLOSE THE DEAL' } },
-    sr_closeDeal: { rig: closeDeal, frame: { limb: 'hand', damage: 11, kb: { x: 520, y: 260 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
+    sr_closeDeal: { rig: closeDeal, frame: { transfer: true, limb: 'hand', damage: 11, kb: { x: 520, y: 260 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
       throw: true, grab: true, unblockable: true, range: 92, hold: 12, cost: 24, reach: 70, flashR: 30, callout: 'CLOSE THE DEAL' } },
-    sr_abc: { rig: abc, frame: { limb: 'hand', damage: 13, kb: { x: 130, y: 470 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, juggle: true, ender: true,
+    sr_abc: { rig: abc, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 13, kb: { x: 130, y: 470 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, juggle: true, ender: true,
       height: 'mid', reach: 70, flashR: 36, callout: 'ALWAYS BE CLOSING' } },
   },
   commands: [

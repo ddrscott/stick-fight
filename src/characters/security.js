@@ -123,11 +123,11 @@ export default {
   stats: { health: 100, walk: 0.84, backWalk: 0.9, run: 0.88, jump: 0.92, dash: 0.9, weight: 1.2, stamina: 1.05, regen: 0.85, damage: 0.86 },
   body: { scale: 1.12, headR: 14, upperArm: 21.5, lowerArm: 20.5, upperLeg: 28.5, lowerLeg: 27.5, lowerTorso: 18, upperTorso: 20, limbW: 11.5, limbTip: 8.6, torsoW: 19, hipW: 13, lean: 4, stance: 3, accessory: shadesAndEarpiece },
   moves: {
-    escort: { rig: escort, frame: { limb: 'hand', damage: 10, kb: { x: 780, y: 200 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
+    escort: { rig: escort, frame: { transfer: true, limb: 'hand', damage: 10, kb: { x: 780, y: 200 }, hitstun: 0, blockstun: 0, hitstop: 7, knockdown: true, height: 'throw',
       throw: true, grab: true, noBreak: true, unblockable: true, range: 92, hold: 16, splat: true, cost: 30, reach: 70, flashR: 32, callout: 'ESCORT' } },   // range 116, cost 24 and 12 damage dominated once stamina came back faster
-    shoulderCheck: { rig: shoulderCheck, frame: { limb: 'hand', damage: 12, kb: { x: 460, y: 230 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, height: 'mid',
+    shoulderCheck: { rig: shoulderCheck, frame: { transfer: true, limb: 'hand', damage: 12, kb: { x: 460, y: 230 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, height: 'mid',
       armor: { hits: 1, dmg: 0.7 }, wallBounce: true, cost: 30, reach: 80, flashR: 36, callout: 'SHOULDER CHECK' } },   // armor took half damage at cost 26 and landed ~80% of the time
-    lockdown: { rig: lockdown, frame: { limb: 'hand', damage: 16, kb: { x: 260, y: 300 }, hitstun: 0, blockstun: 16, hitstop: 10, knockdown: true, ender: true, height: 'overhead',
+    lockdown: { rig: lockdown, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 16, kb: { x: 260, y: 300 }, hitstun: 0, blockstun: 16, hitstop: 10, knockdown: true, ender: true, height: 'overhead',
       reach: 85, flashR: 40, callout: 'LOCKDOWN' } },
   },
   commands: [

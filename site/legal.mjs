@@ -85,7 +85,7 @@ export function privacyPage() {
     <ul>
       <li><b>Your email address</b>, so we can send you a 6-digit sign-in code. We don't use it for anything else.</li>
       <li>Your random player id, your nickname, the crews you've been in (up to 20), and the size you picked for the touch controls.</li>
-      <li>Your game progress: your XP and job title, your sticks, the colors you've bought and picked for each fighter, the stat upgrades you've bought for each fighter, the dates you last got the first-win and first-online-match bonuses (so they come once a day), how far you are on today's three shifts and which one you swapped, and your mastery with each fighter (how much XP you've earned and how many matches you've played with them, and the colors, victory pose and taunt it unlocked), and the last day you played and how many double-XP matches you have banked for coming back (PTO). Sticks are only earned by playing. They can't be bought with money.</li>
+      <li>Your game progress: your XP and job title, your sticks, the colors you've bought and picked for each fighter, the stat upgrades you've bought for each fighter, the moves you've bought from other fighters and which ones each fighter has in its two slots, the dates you last got the first-win and first-online-match bonuses (so they come once a day), how far you are on today's three shifts and which one you swapped, and your mastery with each fighter (how much XP you've earned and how many matches you've played with them, and the colors, victory pose and taunt it unlocked), and the last day you played and how many double-XP matches you have banked for coming back (PTO). Sticks are only earned by playing. They can't be bought with money.</li>
       <li>When you first saved it and when you last signed in.</li>
       <li>While you're signing in: the code, stored scrambled (a hash) so not even we can read it. It expires in 10 minutes.</li>
       <li>One cookie, <code>sf_session</code>, which keeps you signed in for 30 days. Its server copy is scrambled too.</li>
@@ -128,7 +128,7 @@ export function privacyPage() {
     <ul>
       <li>your profile: the random player id, your nickname, and your recent crews;</li>
       <li>your arcade and horde high scores, and the last fighter you picked;</li>
-      <li>your XP, job title and sticks, the colors and stat upgrades you've bought and picked, the dates of your last daily bonuses, today's shift progress, your mastery with each fighter, and your PTO (the last day you played and the double-XP matches banked) (if you save your profile, the server keeps the same numbers);</li>
+      <li>your XP, job title and sticks, the colors, stat upgrades and moves you've bought and picked, the dates of your last daily bonuses, today's shift progress, your mastery with each fighter, and your PTO (the last day you played and the double-XP matches banked) (if you save your profile, the server keeps the same numbers);</li>
       <li>your settings: sound, music, round time, rounds per match, botches on or off, the UPGRADES rule for rooms you host (off or even), touch-control size, the graphics setting (and the graphics level the game settled on, so the next visit starts there), and whether spectators may watch your rooms;</li>
       <li>the happy accidents you've found, your record against each online rival (by a random id), and whether you've seen the "add to home screen" tip;</li>
       <li>your answer to the age question, if you said under 13;</li>
@@ -194,7 +194,7 @@ export function termsPage() {
       'Trash talk inside the game is part of fighting games. Bullying outside it is not.',
       'No slurs, threats, grown-up stuff, or real people\'s names in player names, initials or crew names.',
       'Don\'t cheat the scoreboards or attack the servers.',
-      'Sticks are earned by playing, never bought with money. They buy colors and small stat upgrades, and upgrades never count against another person unless both of you agreed to an even match.',
+      'Sticks are earned by playing, never bought with money. They buy colors, small stat upgrades and moves borrowed from other fighters. Upgrades never count against another person unless both of you agreed to an even match.',
       'The game is free and comes as-is. We can rename or close anything that breaks these rules.',
       `See something? Email ${mail('Report')} with the crew link.`,
     ],
@@ -216,7 +216,8 @@ export function termsPage() {
 
       q('sticks', 'What can sticks buy?', `    <p>Sticks are the game's points. You only get them by playing. They can't be bought with money, and nothing you get for them is random: every price is shown before you buy, and you always know exactly what you're getting.</p>
     <p>They buy new colors for your fighters, and <b>stat upgrades</b>: a little more health, power, stamina or speed for one fighter, a few percent per step (a fighter with every upgrade is about a tenth stronger, never unbeatable). Upgrades count in arcade, horde and training.</p>
-    <p><b>They never count against another person</b>, unless the host of a room picks <b>UPGRADES: EVEN</b>. Then both fighters play with every upgrade, whatever either player bought, so it's still an even fight, and both screens say so before the match starts. A high score set with upgrades goes on the same table, marked <b>UP</b>, so everyone can see.</p>`),
+    <p><b>They never count against another person</b>, unless the host of a room picks <b>UPGRADES: EVEN</b>. Then both fighters play with every upgrade, whatever either player bought, so it's still an even fight, and both screens say so before the match starts. A high score set with upgrades goes on the same table, marked <b>UP</b>, so everyone can see.</p>
+    <p>They also buy <b>moves from other fighters</b>, 300 sticks each, for two extra move slots every fighter has (down and 1+3, down and 2+4). You pick what goes in each slot. Moves count everywhere, against people too, because a different move doesn't make a stronger fighter: every move has an answer.</p>`),
 
       q('cheat', 'What about cheating?', `    <p>Don't fake match results, flood rooms, try to get into anyone's profile, or attack the servers. The game counts a result only when both players' games agree on it, and it limits how fast anyone can make rooms or sign in, so most of this doesn't work anyway. Please don't make us add more locks.</p>`),
 

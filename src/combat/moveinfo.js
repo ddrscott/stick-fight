@@ -8,6 +8,7 @@
 import { FRAME_DATA, COMBO_DMG, COMBO_SOFTCAP, COMBO_OVERCAP, comboScale } from './frameData.js';
 import { STRINGS } from './strings.js';
 import { MOVE_DATA } from '../fighter/index.js';
+import { SLOTS, moveInfo } from '../career/moves.js';
 
 // The shared button table, as resolveButton() in src/combat/sim.js reads a press, plus the stomp (resolvePress)
 // and the wake-up strikes (wakeFor) (keep them together).
@@ -32,7 +33,7 @@ export const SHARED_INPUTS = [
   { button: '2', motion: 'rise', move: 'risingUppercut', name: 'RISING UPPERCUT' },
   { button: '3', motion: 'rise', move: 'risingKick', name: 'RISING KICK', note: 'the second hit of ↓1, release ↓, 3' },
   { button: '4', motion: 'rise', move: 'risingKnee', name: 'RISING KNEE' },
-  { button: '1+3', motion: '', move: 'throw', name: 'THROW', note: 'or 2+4; near a wall: Wall Slam' },
+  { button: '1+3', motion: '', move: 'throw', name: 'THROW', note: 'or 2+4; near a wall: Wall Slam. With ↓ held they\'re the move slots (CUSTOM EMPLOYEE): an empty slot is still the throw' },
   { button: '1', motion: 'air', move: 'jumpJab', name: 'JUMP JAB' },
   { button: '2', motion: 'air', move: 'jumpCross', name: 'JUMP CROSS' },
   { button: '3', motion: 'air', move: 'flyingKick', name: 'FLYING KICK' },
@@ -187,11 +188,25 @@ function clipsFor(c, name, input) {
 }
 
 /**
+ * The custom employee's two slots (README, Characters, Custom employee) as move list rows: the borrowed move's name
+ * on ↓ 1+3 / ↓ 2+4 with whose it was, or EMPTY. The preview plays it on this character's own rig and colors.
+ * owner(id) names a fighter (the registry's, passed in so this stays free of it).
+ */
+export function slotRows(c, loadout = [], owner = (id) => String(id).toUpperCase()) {
+  return SLOTS.map((s, i) => {
+    const id = loadout[i], m = moveInfo(id), fd = m && FRAME_DATA[id];
+    if (!m || !fd || m.fighter === c.id) return { name: `SLOT ${s.key}: EMPTY`, input: s.input, note: `nothing slotted: ${s.input} is the throw. Buy and slot a move in the SUPPLY CLOSET`, tags: ['empty'], seq: [], slot: s.n, empty: true };
+    return { name: m.name, input: s.input, note: `slot ${s.key}, borrowed from ${owner(m.fighter)}: ${m.note}`, tags: ['borrowed', ...(quiet(fd) ? [] : [heightOf(fd)])], seq: clean([animOf(id)]), slot: s.n, move: id };
+  });
+}
+
+/**
  * One character's command list, grouped like a fighting game's: its own moves (the file's moveList first, then
  * any own move the list doesn't name), every string it keeps, the shared buttons, and the system techniques.
  * Rows: { name, input, note, tags: string[], seq: clips for a preview, off?: replaced by a command }.
+ * loadout: the custom employee's two slots ([] for none), as `slots` rows.
  */
-export function moveListOf(c) {
+export function moveListOf(c, loadout = [], owner = undefined) {
   const unique = (c.moveList || []).map((e) => ({ name: e.name, input: glyphs(e.input), note: e.note || '', tags: [], seq: clipsFor(c, e.name, e.input) }));
   // an own move the written list doesn't cover, pressed some way other than a string (the strings have their own section)
   for (const m of c.ownMoves) {
@@ -233,5 +248,5 @@ export function moveListOf(c) {
 
   // shared strings this character doesn't keep
   const dropped = STRINGS.filter((s) => !c.strings.some((x) => x.name === s.name)).map((s) => s.name);
-  return { unique, strings, basics, system, dropped };
+  return { unique, slots: slotRows(c, loadout, owner), strings, basics, system, dropped };
 }

@@ -167,12 +167,12 @@ export default {
   body: { scale: 1, headR: 15, torsoW: 15, hipW: 11.5, limbW: 11.6, limbTip: 8.8, lean: -1, accessory: clipboard },
   cloth: [{ draw: lanyard, axis: ['neck', 'chest'], off: [1, 0], dir: [[0.246, 0.969], [0, 1]], len: [12.2, 8.6], hz: 2.2, damping: 0.25, side: 'front', clear: 4 }],
   moves: {
-    hr_writeUp: { rig: writeUp, frame: { limb: 'hand', damage: 7, kb: { x: 0, y: 0 }, hitstun: 26, blockstun: 8, hitstop: 7, knockdown: false, height: 'high',
+    hr_writeUp: { rig: writeUp, frame: { transfer: true, limb: 'hand', damage: 7, kb: { x: 0, y: 0 }, hitstun: 26, blockstun: 8, hitstop: 7, knockdown: false, height: 'high',
       status: WRITTEN_UP, cost: 19, reach: 85, flashR: 32, callout: 'WRITE-UP' } },
-    hr_training: { rig: training, frame: { limb: 'hand', damage: 8, kb: { x: 0, y: 0 }, hitstun: 34, blockstun: 14, hitstop: 8, knockdown: false, height: 'mid',
+    hr_training: { rig: training, frame: { transfer: true, limb: 'hand', damage: 8, kb: { x: 0, y: 0 }, hitstun: 34, blockstun: 14, hitstop: 8, knockdown: false, height: 'mid',
       react: 'hr_shoved', travel: { vx: 300, at: 150, ms: 130 }, cost: 22, reach: 110, flashR: 36, callout: 'MANDATORY TRAINING' } },
     hr_shoved: { rig: shoved },
-    hr_exitInterview: { rig: exitInterview, frame: { limb: 'hand', damage: 13, kb: { x: 0, y: 0 }, hitstun: 40, blockstun: 16, hitstop: 10, knockdown: false, ender: true, height: 'mid',
+    hr_exitInterview: { rig: exitInterview, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 13, kb: { x: 0, y: 0 }, hitstun: 40, blockstun: 16, hitstop: 10, knockdown: false, ender: true, height: 'mid',
       react: 'hr_shoved', status: WRITTEN_UP, reach: 90, flashR: 40, callout: 'EXIT INTERVIEW' } },
   },
   commands: [

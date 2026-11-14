@@ -173,11 +173,11 @@ export default {
   mechanics: { airJumps: 1, wallJump: true, airJumpClip: 'wwAirJump' },
   moves: {
     wwAirJump: { rig: airJump },
-    squeegeeDive: { rig: squeegeeDive, frame: { limb: 'foot', damage: 12, kb: { x: 0, y: 0 }, hitstun: 40, blockstun: 12, hitstop: 7, knockdown: false, height: 'overhead',
+    squeegeeDive: { rig: squeegeeDive, frame: { transfer: 'air only, and the slots are ground inputs; it\'s built around WINDOW WASHER\'s double jump', limb: 'foot', damage: 12, kb: { x: 0, y: 0 }, hitstun: 40, blockstun: 12, hitstop: 7, knockdown: false, height: 'overhead',
       air: true, dive: true, cost: 16, reach: 100, flashR: 32, callout: 'SQUEEGEE DIVE' } },
-    updraft: { rig: updraft, frame: { limb: 'foot', damage: 12, kb: { x: 110, y: 470 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, juggle: true, height: 'mid',
+    updraft: { rig: updraft, frame: { transfer: true, limb: 'foot', damage: 12, kb: { x: 110, y: 470 }, hitstun: 0, blockstun: 12, hitstop: 8, knockdown: true, juggle: true, height: 'mid',
       lowInvuln: true, cost: 24, reach: 60, flashR: 32, callout: 'UPDRAFT' } },
-    streakFree: { rig: streakFree, frame: { limb: 'foot', damage: 15, kb: { x: 640, y: 220 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, splat: true, ender: true, height: 'mid',
+    streakFree: { rig: streakFree, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'foot', damage: 15, kb: { x: 640, y: 220 }, hitstun: 0, blockstun: 16, hitstop: 9, knockdown: true, splat: true, ender: true, height: 'mid',
       reach: 90, flashR: 38, callout: 'STREAK FREE' } },
   },
   commands: [

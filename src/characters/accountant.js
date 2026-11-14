@@ -140,13 +140,13 @@ export default {
   stats: { health: 100, walk: 1, backWalk: 1, run: 1, jump: 1, dash: 1, weight: 0.98, stamina: 1, regen: 1.05, damage: 1.04 },
   body: { scale: 0.99, headR: 14.5, limbW: 11.2, limbTip: 8.6, torsoW: 14, hipW: 10.5, lean: 2, accessory: glasses },
   moves: {
-    finePrint: { rig: finePrint, frame: { limb: 'foot', damage: 5, kb: { x: 0, y: 0 }, hitstun: 26, blockstun: 15, hitstop: 5, knockdown: false, height: 'low', tc: true,
+    finePrint: { rig: finePrint, frame: { transfer: true, limb: 'foot', damage: 5, kb: { x: 0, y: 0 }, hitstun: 26, blockstun: 15, hitstop: 5, knockdown: false, height: 'low', tc: true,
       cost: 14, reach: 80, flashR: 24, callout: null } },
-    subClause: { rig: subClause, frame: { limb: 'foot', damage: 6, kb: { x: 0, y: 0 }, hitstun: 26, blockstun: 6, hitstop: 5, knockdown: false, height: 'low', tc: true,
+    subClause: { rig: subClause, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'foot', damage: 6, kb: { x: 0, y: 0 }, hitstun: 26, blockstun: 6, hitstop: 5, knockdown: false, height: 'low', tc: true,
       travel: { vx: 220, at: 120, ms: 160 }, cost: 15, reach: 90, flashR: 24 } },
-    balanceSheet: { rig: balanceSheet, frame: { limb: 'hand', damage: 12, kb: { x: 0, y: 0 }, hitstun: 32, blockstun: 10, hitstop: 8, knockdown: false, height: 'overhead',
+    balanceSheet: { rig: balanceSheet, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 12, kb: { x: 0, y: 0 }, hitstun: 32, blockstun: 10, hitstop: 8, knockdown: false, height: 'overhead',
       travel: { vx: 260, at: 120, ms: 150 }, cost: 20, reach: 90, flashR: 36, callout: 'BALANCE SHEET' } },
-    writeOff: { rig: writeOff, frame: { limb: 'hand', damage: 13, kb: { x: 440, y: 300 }, hitstun: 0, blockstun: 14, hitstop: 9, knockdown: true, ender: true, height: 'mid',
+    writeOff: { rig: writeOff, frame: { transfer: 'not a press of its own: it comes out of a string, a stance, a feint or a catch', limb: 'hand', damage: 13, kb: { x: 440, y: 300 }, hitstun: 0, blockstun: 14, hitstop: 9, knockdown: true, ender: true, height: 'mid',
       reach: 80, flashR: 38, callout: 'WRITE-OFF' } },
   },
   commands: [
