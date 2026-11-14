@@ -730,6 +730,13 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if ((!act || !act.regroup) && me.grounded && /^(idle|walk|run|block|crouch)$/.test(me.state)) { queue = regroupPlan(Math.sign(mate.x - me.x) || toward); act = queue.shift(); }
       else if (act && !act.regroup && (act.attack || act.press || act.pressFn)) { act = null; queue = []; }
     } else if (act && act.regroup && me.grounded) { act = null; queue = []; }
+    // the partner it's coming to makes room: up against him (a man lying there: against his hip) there's no gap on
+    // this side for it to come into, so step back to ROOM px off him, holding swings, until it's here
+    const ROOM = 150, hx = DOWN_STATES.has(opp.state) ? opp.rig.joints.hip.x : opp.x;
+    const joining = !regrouping && sim.regroupMate && sim.units.some(u => u !== me && u.id >= 1 && !u.hidden && sim.regroupMate(u) === me);
+    const makingRoom = joining && Math.abs(me.x - hx) < ROOM && me.grounded && /^(idle|walk|run|block|crouch)$/.test(me.state);
+    if (makingRoom) { const away = Math.sign(me.x - hx) || -toward; queue = []; act = { ...move(away, (m) => Math.abs(m.x - hx) >= ROOM), room: true }; }
+    else if (act && act.room && !joining) { act = null; queue = []; }
     // catch-all: after two blocked hits, never the same class again until a different one lands
     if (act && act.attack && blockedStreak >= 2 && blockedClasses.has(CLASS[act.attack])) { queue = mixup(dist, toward, opp); act = queue.shift(); }
     // showcase: never swing into his strike that is already coming; guard it at its height
@@ -817,8 +824,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         if (a) { accFor = me.attackId; if (chance(0.03)) { if (a.tok === 'T') { out.lp = true; out.lk = true; } else out[BTN[a.tok]] = true; out.down = false; } }
       }
     }
-    // regrouping: no button gets out, whatever reflex or mash pressed it (the jump is out.jump, not a button)
-    if (regrouping && me.grounded && me.state !== 'knockdown') { for (const k in out) if (k === 'lp' || k === 'rp' || k === 'lk' || k === 'rk' || k === 'down' || FRAME_DATA[k]) out[k] = false; }
+    // regrouping (or making room for it): no button gets out, whatever reflex or mash pressed it (the jump is out.jump, not a button)
+    if ((regrouping || makingRoom) && me.grounded && me.state !== 'knockdown') { for (const k in out) if (k === 'lp' || k === 'rp' || k === 'lk' || k === 'rk' || k === 'down' || FRAME_DATA[k]) out[k] = false; }
     // fainted on its feet: no plan moves it (the sim roots it); the stick shakes the head clear instead
     if (me.faint > 0 && me.grounded && me.state === 'idle') { shakeOff(me, out, step); stickDx = out.dx; stickAt = step; return out; }
     // A hand on a stick. Plans can be a few steps long, and back-to-back plans used to flip the direction

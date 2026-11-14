@@ -977,6 +977,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     glide: null, followThrough: false, chase: false, grabbedBy: -1, grabTo: null, grabT: 0, grabNoBreak: false,
     splatPending: false, wallBounce: false, groundBounce: false, juggle: false, breakOK: false, stun: 0,
     otgHit: false, downPin: 0, rollCross: false, rolled: false, vaultPhase: null, landLag: 0, dashDir: 0, pfStage: null,
+    passing: false,   // horde: a goon that went around the hero to its partner, until it's clear of him (separatePair)
   };
   // from -> to -> the flags to clear, worked out the first time that change happens (plain arrays in a table the
   // sim keeps; nothing is stored on units, so snapshots stay plain data)
@@ -3206,7 +3207,16 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const airFreeze = (u) => !u.grounded && u.hitstop > 0 && u.state === 'attack' && FRAME_DATA[u.move] && FRAME_DATA[u.move].air;
     if (airFreeze(a) || airFreeze(b)) return;
     if (a.hidden || b.hidden) return;
-    if (sim.horde && (a.id === 0 || b.id === 0) && regroupMate(a.id === 0 ? b : a)) return;   // a goon going around him to its partner
+    // A goon going around him to its partner passes through him, and its side of him is its partner's from now on:
+    // u.home (which keepSides and keepOff hold a man to over a lying body) and, until it's clear of him, the way the
+    // pushing apart sends it (u.passing). With its old side kept, the step that took it past him (past his hip, him
+    // lying) had it shoved back, onto the wrong side again, and it went back and forth there.
+    let passG = null;
+    if (sim.horde && (a.id === 0 || b.id === 0)) {
+      const g = a.id === 0 ? b : a, m = regroupMate(g);
+      if (m) { g.home = Math.sign(bodyX(m) - bodyX(a.id === 0 ? a : b)) || g.home; g.passing = true; return; }
+      if (g.passing) passG = g;
+    }
     if ((a.state === 'roll' && a.rollCross) || (b.state === 'roll' && b.rollCross)) return;   // a roll crossing under him: nothing stops it
     if (NOT_SOLID.has(a.state) || NOT_SOLID.has(b.state) || wakeLying(a) || wakeLying(b)) { keepSides(a, b); keepOff(a, b); return; }
     // a body rising from the floor is solid only for the last quarter of its getup (or of a wake-up strike's rise)
@@ -3214,7 +3224,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (rising(a) || rising(b)) return;
     for (let iter = 0; iter < 8; iter++) {   // two torsos leaning into each other cross in an X: it takes a few pushes
       const depth = penetration(a, b);
-      if (depth <= 0.5) return;
+      if (depth <= 0.5) { if (passG && iter === 0) passG.passing = false; return; }
       // which way to push: by position, except while one is getting up, when its root can sit on the
       // far side of a fighter standing over its legs; then by the sides they had (no shove across)
       const getting = a.state === 'getup' || b.state === 'getup' || isWake(a) || isWake(b);
@@ -3222,7 +3232,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       // that passed in one step (a lunge, a glide, a slide into a body) were pushed out the far side, a swap
       // with no motion to show it. A jump that crossed was already over there when the step began.
       const was = Math.sign(b.prevX - a.prevX);
-      const s = getting && oppOf(a) === b && a.home ? -a.home : getting && oppOf(b) === a && b.home ? b.home : was || ((b.x - a.x) >= 0 ? 1 : -1);
+      const s = passG && passG.home ? (passG === b ? passG.home : -passG.home)   // a goon just past him: out on its partner's side
+        : getting && oppOf(a) === b && a.home ? -a.home : getting && oppOf(b) === a && b.home ? b.home : was || ((b.x - a.x) >= 0 ? 1 : -1);
       // whoever is reeling or being pressed gives way; two equals split it
       const give = (u, o) => (u.state === 'hitstun' || u.state === 'blockstun' ? 3 : 1) * (o.state === 'attack' ? 2 : 1);
       const ga = give(a, b), gb = give(b, a), shareA = ga / (ga + gb);

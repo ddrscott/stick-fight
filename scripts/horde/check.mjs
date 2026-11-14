@@ -122,17 +122,58 @@ const results = await pg.evaluate(() => {
     const fl = sim.bounds, mid = (fl.x0 + fl.x1) / 2, near = 90 + 20 * t, far = 260 - 10 * t, s = t % 2 ? 1 : -1;
     p.x = mid; gs[0].x = mid + s * near; gs[1].x = mid - s * far;
     for (const u of [p, ...gs]) { u.vx = 0; u.prevX = u.x; }
-    let at = -1;
+    let at = -1, from = -1;
     step(6, (i) => {
       p.health = p.maxHealth || 100;
       const a = gs.filter(u => !u.hidden && u.state !== 'ko');
       if (a.length < 2) { at = -2; return false; }
       const hx = (u) => u.rig.joints.hip.x;   // by the bodies, like the sim (a lying one's root is off at its feet)
-      if (Math.sign(hx(a[0]) - hx(p)) === Math.sign(hx(a[1]) - hx(p))) { at = i; return false; }
+      // apart for good: on one side for half a second (one shoved straight back across doesn't count)
+      if (Math.sign(hx(a[0]) - hx(p)) === Math.sign(hx(a[1]) - hx(p))) { if (from < 0) from = i; if (i - from >= 30) { at = from; return false; } } else from = -1;
     });
     tries.push(at === -2 ? 'a goon went down' : at < 0 ? 'still between them after 6 s' : (at / 60).toFixed(2) + ' s');
   }
   ok('sides: held between two goons, they get to one side of him', tries.every(x => / s$/.test(x) && parseFloat(x) <= 3), tries.join(', '));
+
+  // 3c. the same with him lying on the floor (held down): in the middle of the floor, a goon on each side of his hip
+  // both ways round, and at the left stairwell's lip with one goon in the strip between his body and the opening.
+  // The old build bounced the goon back at his hip (its side of him, kept by the lying-body rules, was still the
+  // old one), and the partner standing at his hip left it no room to come into.
+  const downTries = [];
+  for (let t = 0; t < 4; t++) {
+    g.setScene('horde-floors-ai', { seed: 40 + t });
+    sim.setController(0, 'script', () => ({ dx: 0 }));
+    for (let k = 0; k < 40 && sim.units.filter(u => u.id >= 1 && !u.hidden).length < 2; k++) {
+      const gl = sim.units.find(u => u.id >= 1 && !u.hidden && u.state !== 'ko');
+      if (gl) sim.forceKO(gl, sim.units[0]);
+      step(0.5);
+    }
+    const p = sim.units[0], gs = sim.units.filter(u => u.id >= 1 && !u.hidden);
+    if (gs.length < 2) { downTries.push('no second goon'); continue; }
+    const lip = t >= 2, mid = (sim.bounds.x0 + sim.bounds.x1) / 2, well = sim.stairwells.slice().sort((a, b) => a.x0 - b.x0)[0];
+    const hold = () => { p.health = p.maxHealth || 100; if (p.state === 'down') p.downTimer = 9; };
+    p.x = mid; sim.enter(p, 'down'); p.rig.play('knockdown'); p.rig.update(1.5); p.vx = 0; sim.rigUpd(p, 0);
+    gs[0].x = mid + 600; gs[1].x = mid - 600;
+    step(0.1, hold);
+    const h0 = p.rig.joints.hip.x;
+    p.x += lip ? well.x1 + 70 - Math.min(p.x, h0) : mid - h0; sim.rigUpd(p, 0);
+    step(0.05, hold);
+    const H = p.rig.joints.hip.x, lo = Math.min(p.x, H), hi = Math.max(p.x, H), s = t % 2 ? 1 : -1;
+    if (lip) { gs[1].x = Math.max(well.x1 + 15, lo - 30); gs[0].x = hi + 120; }
+    else { gs[0].x = H + s * 120; gs[1].x = H - s * 70; }
+    for (const u of [p, ...gs]) { u.prevX = u.x; u.vx = 0; }
+    for (const u of gs) u.home = Math.sign(u.x - H);   // their side of him, as if they'd walked up (they were put there)
+    let at = -1, from = -1;
+    step(4, (i) => {
+      hold();
+      const a = gs.filter(u => !u.hidden && u.state !== 'ko');
+      if (a.length < 2) { at = -2; return false; }
+      const hx = (u) => u.rig.joints.hip.x;
+      if (Math.sign(hx(a[0]) - hx(p)) === Math.sign(hx(a[1]) - hx(p))) { if (from < 0) from = i; if (i - from >= 30) { at = from; return false; } } else from = -1;
+    });
+    downTries.push(`${lip ? 'lip' : 'mid'} ` + (at === -2 ? 'a goon went down' : at < 0 ? 'still between them after 4 s' : (at / 60).toFixed(2) + ' s'));
+  }
+  ok('sides: him lying between two goons (at a stairwell lip too), they get to one side of him', downTries.every(x => / s$/.test(x) && parseFloat(x.split(' ')[1]) <= 2), downTries.join(', '));
 
   // 4. every way a goon goes down
   g.setScene('horde-ko-test', {});
