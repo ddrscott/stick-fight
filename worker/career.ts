@@ -26,7 +26,8 @@
 //   online (quick, crew)  the room, from the result both pages agree on (worker/stats.ts roomResult): awardOnline.
 //                         The technique counts come from each page's own report, capped per match like the rest.
 //   offline (arcade, horde) the page reports it here. Nothing can check it, so what offline play pays a day is
-//                         capped (OFFLINE_CAP): sticks only buy cosmetics, so a forged result isn't worth more.
+//                         capped (OFFLINE_CAP): what sticks buy never reaches another person (looks, and stat upgrades
+//                         that only count against the CPU), so a forged result isn't worth more.
 //   training, the dummy   nothing.
 //   crew goals            the crew's Durable Object (worker/crew.ts) pays a met weekly goal: awardCrewGoal. A
 //                         signed-in player's paid arcade stage or horde run also counts toward each of their crews'

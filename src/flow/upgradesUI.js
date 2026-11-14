@@ -4,7 +4,7 @@
 // presses like a palette. No timers, no "limited", no nagging: a maxed stat just says MAXED.
 //
 //   upgradeShelf(o)        the closet's shelf section: { el, items }. o: { fighter: { id, name }, focusKey, repaint(fk, msg), note(msg) }
-//   upgradesLine(fighter)  character select's line: UPGRADES  HEALTH 2 · POWER 1 (or NONE YET · SUPPLY CLOSET)
+//   upgradesLine(fighter)  character select's line: UPGRADES  HEALTH 2 · POWER 1 (null when there are none)
 //   upTag()                the UP chip beside a score set with upgrades
 //   UP_KEY                 the one line that says what UP means, under any table that shows one
 import { el, button } from './ui.js';
@@ -29,15 +29,15 @@ function pips(n) {
   return p;
 }
 
-/** character select's line for a fighter: what's upgraded, or where to get it */
+/** character select's line for a fighter: what's upgraded (HEALTH 2 · POWER 1), or null when nothing is */
 export function upgradesLine(fighter) {
   injectStyle();
   const lv = upgrades(fighter), n = tiersOwned(lv);
+  if (!n) return null;
   const box = el('div', 'up-line');
   box.dataset.tiers = String(n);
   box.appendChild(el('b', '', 'UPGRADES'));
-  const on = STATS.filter((s) => lv[s.id] > 0);
-  box.appendChild(el('span', '', on.length ? on.map((s) => `${s.name} ${lv[s.id]}`).join('  ·  ') : 'NONE YET  ·  SUPPLY CLOSET'));
+  box.appendChild(el('span', '', STATS.filter((s) => lv[s.id] > 0).map((s) => `${s.name} ${lv[s.id]}`).join(' · ')));
   return box;
 }
 
@@ -97,7 +97,8 @@ function injectStyle() {
   #flow .up-tag { display: inline-block; margin-left: 0.5em; padding: 0.05em 0.35em 0; font: 600 0.62em/1.1 'JetBrains Mono', ui-monospace, monospace; font-style: normal;
     letter-spacing: 0.08em; color: #9dffc0; border: 1.5px solid #9dffc0; border-radius: 0; vertical-align: 0.12em; text-shadow: none; }
   .up-key { color: rgba(234,220,255,0.85); }
-  .up-line { display: flex; align-items: baseline; gap: 0.8cqw; font: 600 1.7cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffe0a8; margin-top: 0.4cqh; }
+  .up-mwrap { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4cqh 1.6cqw; }
+  .up-line { display: flex; align-items: baseline; gap: 0.8cqw; font: 600 1.7cqw/1 'Teko', sans-serif; letter-spacing: 0.12em; color: #ffe0a8; }
   .up-line b { color: #9dffc0; font-weight: 600; }
   .up-shelf { display: flex; flex-direction: column; gap: 0.6cqh; }
   .up-sub { font: 600 1.5cqw/1.15 'Teko', sans-serif; letter-spacing: 0.08em; color: rgba(234,220,255,0.8); }

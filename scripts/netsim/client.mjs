@@ -16,6 +16,9 @@ import { mulberry32 } from '../../src/combat/rng.js';
 import { roster } from '../../src/characters/index.js';
 import { createOnline } from '../../src/net/online.js';
 import { staticId } from '../../src/net/state.js';
+import { boostFor, FULL } from '../../src/career/upgrades.js';
+// the stat upgrades a match's rules put on both fighters, as main.js setScene does: EVEN is every top tier, else none
+const boostsOf = (rules) => (rules && rules.upgrades === 'even' ? [boostFor(FULL), boostFor(FULL)] : []);
 
 const AI_FIELDS = ['aaJump', 'grabId', 'rollId'];
 
@@ -89,7 +92,7 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
     // main.js setScene('online', o) for an online match
     startMatch(o) {
       client.demoRunning = false;
-      sim.setCharacters(o.chars);
+      sim.setCharacters(o.chars, [], [], [], boostsOf(o.rules));
       sim.botchOn = o.botch !== false;
       sim.roundTime = o.rules.roundTime; sim.winsNeeded = o.rules.winsNeeded;
       arena.clearBodies();
@@ -250,7 +253,7 @@ export function createSpectator({ name, seed, network, frames, createWatch }) {
     // main.js setScene('online', o), exactly as a player's page does it
     startMatch(o) {
       demoRunning = false;
-      sim.setCharacters(o.chars);
+      sim.setCharacters(o.chars, [], [], [], boostsOf(o.rules));
       sim.botchOn = o.botch !== false;
       sim.roundTime = o.rules.roundTime; sim.winsNeeded = o.rules.winsNeeded;
       arena.clearBodies();

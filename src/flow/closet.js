@@ -199,7 +199,7 @@ function injectStyle() {
   #flow > .fl-up .cl-tabs { grid-template-columns: repeat(3, 1fr); max-height: 25vh; overflow-y: auto; gap: 6px; }
   #flow > .fl-up .cl-tab { font-size: max(13px, 3.8cqw); min-height: 44px; }
   #flow > .fl-up .cl-tab .cl-tcount { font-size: max(12px, 3.2cqw); }
-  #flow > .fl-up .cl-shelf { padding: 8px 3cqw; gap: 6px; }
+  #flow > .fl-up .cl-shelf { padding: 8px 3cqw; gap: 6px; max-height: calc(100vh - 380px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; }   /* scrolls in its own box under the tabs (the stat upgrades sit at its foot) */
   #flow > .fl-up .cl-stitle { flex-wrap: wrap; gap: 0.3em 1em; }
   #flow > .fl-up .cl-stitle b { font-size: max(15px, 5cqw); }
   #flow > .fl-up .cl-stitle span, #flow > .fl-up .cl-kind { font-size: max(12px, 3.6cqw); }

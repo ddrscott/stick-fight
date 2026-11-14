@@ -11,9 +11,11 @@
 //
 //   npm run netsim:watch                    every scenario, 2 seeds
 //   npm run netsim:watch -- --seeds 6 --only late-joiners
+//   npm run netsim:watch -- --upgrades even  at the room rule UPGRADES: EVEN
 //
 // Exit code 1 if any spectator ever showed a different fight from the players'.
 
+const UPGRADES = process.argv.includes('--upgrades') && process.argv[process.argv.indexOf('--upgrades') + 1] === 'even' ? 'even' : 'off';
 import { installDom, installClock, sched, runUntil, resetClock, at } from './env.mjs';
 installDom();
 const { createNetwork } = await import('./network.mjs');
@@ -45,7 +47,7 @@ async function session(name, seed, wantMatches) {
   resetClock();
   const r = mulberry32((seed * 2654435761) >>> 0);
   const network = createNetwork(sc.cond(r), seed);
-  const rules = { roundTime: 30, winsNeeded: 2 };
+  const rules = { roundTime: 30, winsNeeded: 2, upgrades: UPGRADES };   // --upgrades even: the room rule that puts every stat's top tier on both fighters
   const A = createClient({ name: 'host', seed: seed * 2 + 1, network, frames: sc.frames[0], rules, inject: sc.inject ? sc.inject[0] : null });
   const B = createClient({ name: 'guest', seed: seed * 2 + 2, network, frames: sc.frames[1], rules, inject: sc.inject ? sc.inject[1] : null });
   const matches = sc.matches || wantMatches;

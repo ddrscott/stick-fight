@@ -2,8 +2,9 @@
 // run, so a guest's own count and the server's count for a signed-in player always come out the same.
 //
 // A player earns XP, shown as a job title on a "performance review" bar (never a level number), and sticks, the
-// currency that buys palettes (src/career/palettes.js). Sticks are only ever earned by playing: no real money, no
-// loot boxes, nothing random, and no streak that punishes a missed day.
+// currency that buys palettes (src/career/palettes.js) and stat upgrades (src/career/upgrades.js, which never apply
+// against a human unless both fighters get every one: the EVEN room rule). Sticks are only ever earned by playing: no
+// real money, no loot boxes, nothing random, and no streak that punishes a missed day.
 //
 // The design pillar "mashing loses" holds here too: raw hits and how many buttons were pressed pay nothing.
 // A finished match pays a base, a win pays more, and the rest comes from technique, read off the botch and
@@ -62,7 +63,8 @@ export const DAILY = {
 };
 
 /** Arcade and horde are reported by the page and can't be checked, so what they pay a day is capped (the
- *  daily bonuses aside, which come once a day anyway). Sticks only buy cosmetics: a forged result isn't worth more. */
+ *  daily bonuses aside, which come once a day anyway). What sticks buy never reaches another person (upgrades only count against the CPU, and a score set with
+ *  them is marked UP), so a forged result isn't worth more. */
 export const OFFLINE_CAP = { xp: 1500, sticks: 1500 };
 /** A match cut short pays the base only, and only after this much fighting */
 export const CUT_MIN_SECS = 30;

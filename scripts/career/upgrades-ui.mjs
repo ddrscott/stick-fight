@@ -93,6 +93,8 @@ try {
     await until(async () => (await state(p)) === 'charSelect');
     const line = await until(() => p.evaluate(() => { const e = document.querySelector('.up-line'); return e && e.innerText.replace(/\s+/g, ' '); }), 5000);
     check(`${label}: character select's sheet says UPGRADES HEALTH 2`, /UPGRADES HEALTH 2/.test(line || ''), line);
+    const fits = await p.evaluate(() => { const n = document.querySelector('.fl-palnote').getBoundingClientRect(), d = document.querySelector('.fl-detail').getBoundingClientRect(), m = document.querySelector('.fl-mastery').getBoundingClientRect(); return n.bottom <= d.bottom + 1 && m.bottom <= d.bottom + 1 && m.top >= d.top - 1; });
+    check(`${label}: the mastery and upgrades lines and the palette strip fit in the sheet`, fits);
     if (SHOTS) await p.screenshot({ path: `${SHOTS}/${label}-2-select.png` });
 
     // 2. the arcade fight

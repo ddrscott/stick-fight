@@ -6,11 +6,13 @@
 //
 //   npm run netsim                          every scenario, 4 seeds each
 //   npm run netsim -- --seeds 10 --matches 3 --only dropout-10s
+//   npm run netsim -- --upgrades even        the same at the room rule UPGRADES: EVEN (both fighters fully upgraded)
 //   npm run netsim -- --list                the scenarios
 //
 // Exit code 1 if any run ends with the two sides in different fights (an unrecovered desync, different
 // match results, or one side playing on after the other stopped).
 
+const UPGRADES = process.argv.includes('--upgrades') && process.argv[process.argv.indexOf('--upgrades') + 1] === 'even' ? 'even' : 'off';
 import { installDom, installClock, sched, runUntil, resetClock } from './env.mjs';
 installDom();
 const { createNetwork } = await import('./network.mjs');
@@ -52,7 +54,7 @@ async function session(name, seed, matches) {
   const r = mulberry32(seed * 2654435761 >>> 0);
   const cond = sc.cond(r);
   const network = createNetwork(cond, seed);
-  const rules = { roundTime: 30, winsNeeded: 2 };   // best of 3 with 30 s rounds: plenty of round and match ends
+  const rules = { roundTime: 30, winsNeeded: 2, upgrades: UPGRADES };   // best of 3 with 30 s rounds: plenty of round and match ends; --upgrades even: both fighters fully upgraded
   const A = createClient({ name: 'host', seed: seed * 2 + 1, network, frames: sc.frames[0], rules, drawCheck: !!sc.drawCheck, inject: sc.inject ? sc.inject[0] : null });
   const B = createClient({ name: 'guest', seed: seed * 2 + 2, network, frames: sc.frames[1], rules, drawCheck: !!sc.drawCheck, inject: sc.inject ? sc.inject[1] : null });
   const both = [A, B];

@@ -539,7 +539,8 @@ export function createFlow(ctx) {
   // fighter mastery on the select screens (README, Progression, Fighter mastery): the rank on each card and under the tagline
   const masteryOpts = { mastery: (id) => masteryChip(id), rank: (id) => mastery(id).rank };
   // arcade, horde and training also show the fighter's stat upgrades under it (they apply there; never online)
-  const soloOpts = { ...masteryOpts, mastery: (id) => { const f = document.createElement('div'); f.append(masteryChip(id), upgradesLine(id)); return f; } };
+  // (only when it has some: a fighter with none shows nothing extra)
+  const soloOpts = { ...masteryOpts, mastery: (id) => { const f = document.createElement('div'); f.className = 'up-mwrap'; f.appendChild(masteryChip(id)); const u = upgradesLine(id); if (u) f.appendChild(u); return f; } };
   function palettePicker(changed = () => {}) {
     let armed = '';
     return {
