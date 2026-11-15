@@ -7,7 +7,8 @@
 //                (out, back to the middle or off the glass, out again) is a dash, forward or back: see flick() below
 //   right thumb  Tekken diamond of round arcade buttons, one per limb: 1 LP (U)  2 RP (I) /
 //                3 LK (J)  4 RK (K), plus GUARD (B), which means hold back (it walks back and guards what's coming). Stick + button gives
-//                the directional and crouch moves; two buttons together (1+3, 2+4) throw.
+//                the directional and crouch moves; two buttons together (1+3, 2+4) throw. With HAPTICS on (src/touchPrefs.js)
+//                a press of 1-4 in a fight ticks the phone (buzz() below), and a stick dash ticks a little longer.
 //   top corner   one row of pills, the same set and order as the desktop's (src/corner.js): pause (only in a fight
 //                you can pause; the flow listens for 'sf:pause'), the menu button (three bars: the SETTINGS panel in
 //                src/audio/ui.js, which also sets this layer's size) and fullscreen (src/fullscreen.js). In an
@@ -21,7 +22,7 @@
 // from the settings panel (src/touchPrefs.js: SMALL to EXTRA LARGE), capped by fit() to what this
 // screen can hold without the controls touching each other, the HUD or the safe areas.
 
-import { touchPref, setTouchFit, onTouchPref } from './touchPrefs.js';
+import { touchPref, setTouchFit, onTouchPref, hapticsOn } from './touchPrefs.js';
 
 import { toggleFullscreen, canFullscreen, FS_ICON } from './fullscreen.js';
 import { homescreenHelp, openHomescreenHelp } from './homescreen.js';   // iPhone Safari: the fullscreen pill opens the Add to Home Screen how-to   // shared with the desktop button and F11
@@ -35,6 +36,9 @@ const TARGET = window;                  // must match createInput(window) in mai
 const DEAD_PX = 14, RUN_PX = 52, VERT_PX = 26, KNOB_MAX = 56;
 // the double flick (a dash): the second flick starts within FLICK_MS of the first, and the first was let go within FLICK_HOLD
 const FLICK_MS = 320, FLICK_HOLD = 220, DASH_CODE = 'TouchDash';   // DASH_CODE: src/combat/input.js reads it as the input's dash bit
+// HAPTICS (SETTINGS > CONTROLS, src/touchPrefs.js): a tick on an attack button's press and a longer one on a stick dash.
+// Short enough to feel like a click, not a buzz.
+const ATTACKS = new Set(['KeyU', 'KeyI', 'KeyJ', 'KeyK']), TICK_MS = 12, DASH_TICK_MS = 25;
 // The layout in rem at scale 1. The CSS below and fit() both read these, so they can't drift apart.
 const D = {
   btn: 4.5,                 // a main button: 72px, about an adult thumb pad
@@ -227,7 +231,7 @@ function init() {
     if (dir === flickOn) return;
     if (flickOn) { flickHeld = now - flickAt; if (dashing) { dashing = false; release(DASH_CODE); } }
     if (dir) {
-      if (dir === flickDir && now - flickAt <= FLICK_MS && flickHeld <= FLICK_HOLD) { dashing = true; press(DASH_CODE); flickAt = -1e9; }   // a third flick starts over
+      if (dir === flickDir && now - flickAt <= FLICK_MS && flickHeld <= FLICK_HOLD) { dashing = true; press(DASH_CODE); buzz(DASH_TICK_MS); flickAt = -1e9; }   // a third flick starts over
       else flickAt = now;
       flickDir = dir;
     }
@@ -263,6 +267,7 @@ function init() {
       if (btn && btn.dataset.code) {
         touches.set(t.identifier, { kind: 'btn', code: btn.dataset.code, el: btn });
         btn.classList.add('tc-on');
+        if (ATTACKS.has(btn.dataset.code)) buzz(TICK_MS);   // on the press itself, before the key: the sim and the netcode never know
         press(btn.dataset.code);
       } else if (btn && btn.dataset.tap) {
         tap(btn.dataset.tap); flash(btn);
@@ -335,6 +340,17 @@ function init() {
   window.addEventListener('pagehide', releaseAll);
   window.addEventListener('blur', releaseAll);
   window.addEventListener('orientationchange', releaseAll);
+
+  // A tick only in a fight: the flow's fighting, roundEnd or onlineFighting, or a ?scene= page (no flow, not the demo).
+  // Never in a menu, paused, on the result screen, watching (no controls there anyway) or with the page hidden. The
+  // SETTINGS page sits over this layer and swallows every press, so it never gets here either.
+  function buzz(ms) {
+    if (document.hidden || !hapticsOn()) return;
+    const c = de.classList;
+    const fight = c.contains('flow-on') ? c.contains('fl-fighting') || c.contains('fl-roundEnd') || c.contains('fl-onlineFighting') : !c.contains('attract');
+    if (!fight) return;
+    try { navigator.vibrate(ms); } catch { /* a browser that refuses (no user gesture yet, a policy) just stays still */ }
+  }
 
   function flash(b) { b.classList.add('tc-on'); setTimeout(() => b.classList.remove('tc-on'), 140); }
 

@@ -1,7 +1,7 @@
 // SETTINGS: every setting in the game on one full-screen page, under four tabs (README, Arcade flow, SETTINGS):
 //   GAME      ROUNDS, ROUND TIME, BOTCHES and UPGRADES, the room rule for stat upgrades (src/flow/rules.js,
 //             src/flow/techniques.js), from the next fight
-//   CONTROLS  on a touch screen the size of the stick and buttons with a picture of them; then the fight and menu
+//   CONTROLS  on a touch screen the size of the stick and buttons with a picture of them, and HAPTICS; then the fight and menu
 //             tables, keyboard and gamepad (src/flow/controls.js), and the notes on dash, parry, getups and stairs
 //   AUDIO     SOUND, MUSIC, the TRACK playing, MUSIC VOLUME and EFFECTS VOLUME
 //   DISPLAY   GRAPHICS and FRAME RATE (src/gfxPrefs.js), and FULLSCREEN where the browser can do it (src/fullscreen.js)
@@ -30,7 +30,7 @@
 // the page is a data-scroll box (touch.js) a finger can scroll.
 
 import { rootUrl } from '../root.js';   // the privacy and house rules pages, at the site's root
-import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
+import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref, canVibrate, hapticsOn, setHaptics } from '../touchPrefs.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 import { MENU_ICON, cornerButton, cornerRow } from '../corner.js';
 import { GFX_CHOICES, TIER_NAME, gfxPick, setGfxPick, onGfxPick, liveTier, onLiveTier, FPS_CHOICES, fpsPick, setFpsPick, onFpsPick } from '../gfxPrefs.js';   // GRAPHICS (README, Performance, Chromebooks)
@@ -91,6 +91,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
             ${opt('size', 'CONTROL SIZE', 'THE STICK AND BUTTONS ON THIS SCREEN')}
             <div class="sf-tcprev" aria-hidden="true"><div class="sf-tcview"></div></div>
             <p class="sf-note">LEFT THUMB STEERS (FLICK IT TWICE THE SAME WAY TO DASH). THE BUTTONS STRIKE AND GUARD. MENUS ARE TAPPED.</p>
+            ${opt('haptics', 'HAPTICS', 'A SHORT TICK WHEN YOU PRESS 1, 2, 3 OR 4 IN A FIGHT')}
             <h3 class="sf-h3">KEYBOARD AND GAMEPAD</h3>
           </div>
           <div class="sf-tables"></div>
@@ -201,6 +202,13 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     gfx: { quiet: true, step: (d) => { const at = GFX_CHOICES.findIndex((c) => c.id === gfxPick()), to = GFX_CHOICES[(at + d + GFX_CHOICES.length) % GFX_CHOICES.length]; pickGfx(to.id); }, text: () => (GFX_CHOICES.find((x) => x.id === gfxPick()) || GFX_CHOICES[0]).name },
     fps: { quiet: true, step: (d) => { const at = FPS_CHOICES.findIndex((c) => c.id === fpsPick()), to = FPS_CHOICES[(at + d + FPS_CHOICES.length) % FPS_CHOICES.length]; actions.click(to.id === '60' ? 'off' : 'on'); setFpsPick(to.id); }, text: () => (FPS_CHOICES.find((x) => x.id === fpsPick()) || FPS_CHOICES[0]).name },
     size: { quiet: true, step: (d) => pickStep(touchStep() + d), text: () => TOUCH_STEPS[touchStep()].name, ends: () => [touchStep() === 0, touchStep() === TOUCH_STEPS.length - 1] },
+    // HAPTICS (src/touchPrefs.js): where the browser can't vibrate (iPhone Safari) the row says so and doesn't step.
+    // Turning it on ticks once, so the player feels what they picked.
+    haptics: { quiet: true, step: () => {
+      if (!canVibrate()) return;
+      const on = !hapticsOn(); actions.click(on ? 'on' : 'off'); setHaptics(on);
+      if (on) { try { navigator.vibrate(12); } catch { /* refused: nothing to feel */ } }
+    }, text: () => (!canVibrate() ? 'UNAVAILABLE' : hapticsOn() ? 'ON' : 'OFF'), ends: () => (canVibrate() ? [false, false] : [true, true]) },
     fullscreen: { step: () => toggleFullscreen(), text: () => (isFullscreen() ? 'ON' : 'OFF') },
     sound: { quiet: true, step: () => { const on = !settings.sound; actions.click(on ? 'on' : 'off'); actions.setSound(on); }, text: () => (settings.sound ? 'ON' : 'OFF') },
     music: { quiet: true, step: () => { const on = !musicOn(); actions.click(on ? 'on' : 'off'); actions.setMusic(on); }, text: () => (musicOn() ? 'ON' : 'OFF') },
@@ -233,6 +241,8 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     $('.sf-opt[data-o="musicVolume"]').classList.toggle('sf-dim', !musicOn());
     $('.sf-opt[data-o="track"]').classList.toggle('sf-dim', !musicOn());
     $('.sf-opt[data-o="sfxVolume"]').classList.toggle('sf-dim', !settings.sound);
+    $('.sf-opt[data-o="haptics"]').classList.toggle('sf-dim', !canVibrate());
+    if (!canVibrate()) $('.sf-opt[data-o="haptics"] small').textContent = 'THIS BROWSER CAN\'T VIBRATE (IPHONE SAFARI HAS NO VIBRATION)';
     gfxNote();
     if (open) paintMore();
   }
