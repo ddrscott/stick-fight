@@ -100,7 +100,7 @@ function measure() {
     return { x0: Math.min(a, b), x1: Math.max(a, b), y0: sy(y0), y1: sy(y1), h: (y1 - y0) * cam.zoom * k };
   });
   return { sq, insets, vw: innerWidth, vh: innerHeight, scale: +cs.getPropertyValue('--tc-scale') || 1, stage, square, band: q('#hudband'), top: q('.tc-top'), cluster: q('.tc-cluster'), stick: q('.tc-base'),
-    btn: q('.tc-l1'), guard: q('.tc-guard'), zoom: Math.round(cam.zoom * 1000) / 1000, units };
+    btn: q('.tc-l1'), zoom: Math.round(cam.zoom * 1000) / 1000, units };
 }
 function checkLayout(tag, m, fight) {
   if (!m.sq) return fail(`${tag}: not in the square layout`);

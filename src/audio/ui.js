@@ -90,7 +90,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
           <div class="sf-touchonly">
             ${opt('size', 'CONTROL SIZE', 'THE STICK AND BUTTONS ON THIS SCREEN')}
             <div class="sf-tcprev" aria-hidden="true"><div class="sf-tcview"></div></div>
-            <p class="sf-note">LEFT THUMB STEERS (FLICK IT TWICE THE SAME WAY TO DASH). THE BUTTONS STRIKE AND GUARD. MENUS ARE TAPPED.</p>
+            <p class="sf-note">LEFT THUMB STEERS (FLICK IT TWICE THE SAME WAY TO DASH). HOLD IT AWAY TO GUARD, DOWN-AWAY FOR A LOW GUARD. THE BUTTONS STRIKE. MENUS ARE TAPPED.</p>
             <h3 class="sf-h3">KEYBOARD AND GAMEPAD</h3>
           </div>
           <div class="sf-tables"></div>
