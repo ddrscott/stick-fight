@@ -617,7 +617,7 @@ const PHASES = {
     { name: 'SPIN HEEL 2,1,4 (wall)', at: () => [W1() - 260, W1() - 170], p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], dur: 220 },
     { name: 'CRESCENT 3,3,4', p1: [[10, B('lk')], [30, B('lk')], [52, B('rk')]], dur: 220 },
     { name: 'GROUND RUSH d3,d3,4', p1: [[10, D('lk')], [30, D('lk')], [52, B('rk')]], dur: 220 },
-    { name: 'SKY SPIKE d2 then 1,2,4', at: () => [570, 640], p1: [[10, D('rp')], [64, B('lp')], [84, B('rp')], [108, B('rk')], [180, B('rp')]], dur: 280 },   // the cross after the bounce: 180 (was 168; the joint limits bounce the body 7 steps later, README Joint limits),
+    { name: 'SKY SPIKE d2 then 1,2,4', at: () => [570, 640], p1: [[10, D('rp')], [64, B('lp')], [84, B('rp')], [108, B('rk')], [168, B('rp')]], dur: 280 },   // the cross after the bounce: 168 (t22ix3 moved it to 180 for its joint stop's later bounce; te79mf took the stop out, README Joint limits)
     { name: 'COMET CROSS f,f+2 (wall)', at: () => [W1() - 420, W1() - 150], dash: 40, p1: [[40, (me) => ({ rp: true, dx: me.facing })]], dur: 220 },
     { name: 'WALL SPIN b+4 (wall)', at: () => nearRight(), p1: [[10, (me) => ({ rk: true, dx: -me.facing })]], dur: 220 },
     { name: 'WALL SLAM throw (wall)', at: () => [W1() - 140, W1() - 60], p1: [[10, { lp: true, lk: true }]], dur: 220 },
