@@ -27,6 +27,7 @@
     "test:horde": "node scripts/horde/check.mjs",
     "test:ko": "node scripts/ko/guard.mjs",
     "test:ai:stuck": "node scripts/ai/stuck.mjs",
+    "test:stairs:dmg": "node scripts/stairs/dmg.mjs",
     "test:limits": "node scripts/rig/limits.mjs",
     "test:settle": "node scripts/rig/limits.mjs --settle",
     "test:books": "node scripts/books/flow.mjs",

@@ -167,7 +167,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // body lies on) stays on that side; toward with him standing near crosses under him, so it's the escape when the
   // wall leaves no room to roll away.
   const rollAway = (me, opp) => me.home || -(Math.sign(opp.x - me.rig.joints.hip.x) || 1);
-  const walled = (me, dir, sim) => { const b = sim && sim.bounds; return !!b && (dir > 0 ? b.x1 - me.rig.joints.hip.x : me.rig.joints.hip.x - b.x0) < 90; };
+  // no room to roll away: the wall, or (rolling away from him) the top of a flight he'd knock me down next
+  const walled = (me, dir, sim, opp) => { const b = sim && sim.bounds; return (!!b && (dir > 0 ? b.x1 - me.rig.joints.hip.x : me.rig.joints.hip.x - b.x0) < 90) || (!!opp && dir === rollAway(me, opp) && drop(me, opp, sim, 150, false)); };
   function wakePlan(me, opp, sim) {
     const hip = me.rig.joints.hip.x, away = rollAway(me, opp), near = Math.abs(opp.x - hip) < 175 && opp.grounded;
     const k = rng(), wait = 10 + irnd(show ? 60 : 12 + Math.round(70 * difficulty));
@@ -175,7 +176,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const r = rng();
     if (near && r < 0.18 + 0.27 * difficulty) return [move(0, wait), attack(chance(0.55) ? 'wakeKick' : 'wakeSweep')];
     if (r < 0.72) return [move(0, wait), { ...move(0, (m) => m.state !== 'down'), jump: true }];   // up: stand in place
-    return [move(0, wait), { ...move(near && walled(me, away, sim) ? -away : chance(0.65) ? away : -away, 3), roll: true }];
+    return [move(0, wait), { ...move(near && walled(me, away, sim, opp) ? -away : chance(0.65) ? away : -away, 3), roll: true }];
   }
   // the string table of the character this CPU plays (src/characters/), the shared one for TEMP
   const strs = (me) => (me.char && me.char.strings) || undefined;
@@ -243,6 +244,26 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const dir = offDir(me, opp, sim), t0 = sim.stepCount;
     return [{ ...move(dir, (m) => !sim.onStair(m) || sim.stepCount - t0 > 240, me.stamina > 40), offStair: true }, move(0, 4)];
   }
+  // the stairs hurt (README, Stairs hurt): a body knocked off the top of a flight pays for every step it hits.
+  // `drop(a, b)`: a is at the top of a flight (on the floor above within `near` px of its head, or on the flight
+  // with b higher up) and the way down lies on the far side of a from b, so b's push sends a down the steps
+  function drop(a, b, sim, near = 170, flight = true) {
+    const S = sim.stairs;
+    if (!S || !S.length || a.hidden || b.hidden) return false;
+    const away = Math.sign(a.x - b.x) || -a.facing;
+    for (let k = 0; k < S.length; k++) {
+      const st = S[k];
+      if (st.dir !== away) continue;
+      const along = (a.x - st.head) * st.dir;
+      if (a.stair === k) { if (flight && (b.y < a.y - 8 || along < 90)) return true; continue; }
+      if ((a.floor || 0) === 0 && a.stair < 0 && along > -near && along < 40) return true;
+    }
+    return false;
+  }
+  // nothing behind me to back into: the stairwell's opening or the top of a flight
+  // (on a flight under him is left to the normal game: walking down costs nothing, and measured with
+  // scripts/stairs/cpu.mjs, guarding, stepping in or backing down from under him all got knocked down more)
+  const backedUp = (me, opp, sim) => wellBehindMe(well(me, sim), me, opp) || drop(me, opp, sim, 170, false);
   // which string to run from here: enders when there is stamina for them, a wall ender near a wall
   function chooseString(me, opp, sim, blocked) {
     if (!me.seq) return null;
@@ -257,6 +278,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (last.ender) w += me.stamina > restCost(st, me.seq.length) * (blocked || !me.hitConfirmed ? 1 : 1 - STAMINA.refundHit) + 4 && !me.faint ? 1.2 * difficulty : -3;
       if (last.splat && wallNear) w += 2;
       if (wellBeyond(well(me, sim, opp), me, opp) && (last.juggle || last.splat || (last.kb && last.kb.x >= 400))) w += 2.5;
+      if (drop(opp, me, sim) && (last.juggle || last.splat || last.knockdown)) w += 2;   // down the stairs he goes
       if (blocked && last.ender) w -= 1.5;   // a blocked string ends early more often
       return w;
     };
@@ -420,7 +442,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // room for him, so a guard is rare and short (a wall of guard would be the opposite)
     if (sim.stepCount < breatheUntil) {
       const k = rng();
-      if (k < 0.55 && dist < 200 && !cornered && !wellBehindMe(well(me, sim), me, opp)) return [move(-toward, 14 + irnd(10))];
+      if (k < 0.55 && dist < 200 && !cornered && !backedUp(me, opp, sim)) return [move(-toward, 14 + irnd(10))];
       if (k < 0.85) return [move(0, 10 + irnd(10))];
       if (k < 0.92) return [blockFor(10)];
       return [move(chance(0.5) ? toward : -toward, 8 + irnd(8))];
@@ -470,11 +492,11 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     const losing = !rush && me.health < 0.3 * (sim.horde ? sim.startHealth : me.maxHealth || sim.startHealth) && me.health < opp.health;
     if (grap && dist < 95 && !opp.crouch && me.stamina > 30 && chance(0.1 + 0.27 * difficulty)) return [move(toward, closer(78)), attack('throw')];   // 0.25 at SECURITY's 0.55 (was a flat 0.4)
-    if (losing && dist < 170 && !cornered && !wellBehindMe(well(me, sim), me, opp) && chance(0.4)) return [move(-toward, 10, chance(0.3))];
+    if (losing && dist < 170 && !cornered && !backedUp(me, opp, sim) && chance(0.4)) return [move(-toward, 10, chance(0.3))];
     if (dist > (show ? 230 : turtle ? 140 : 175)) return approach(me, opp, dist, toward);
     const aggression = Math.max(0.1, Math.min(0.95, 0.3 + 0.5 * difficulty + (rush ? 0.3 : turtle ? -0.2 : 0)));
     // spent: stay out and let the meter come back (it refills in about two seconds)
-    if (me.stamina < (show ? 28 : 30) || me.faint > 0) return dist < 200 && !cornered && !wellBehindMe(well(me, sim), me, opp) ? [move(-toward, 10)] : [blockFor(10)];
+    if (me.stamina < (show ? 28 : 30) || me.faint > 0) return dist < 200 && !cornered && !backedUp(me, opp, sim) ? [move(-toward, 10)] : [blockFor(10)];
     // the habit guard: his jab is faster than anyone sees, so inside his reach, with him swinging lately, a
     // person holds a guard on a hunch now and then (a height guessed: a third of the time low). Rolled every
     // think (several a second), so the odds per roll are small
@@ -492,6 +514,15 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       return [move(toward, closer(r('jab')), true), press('2')];
     }
     if (wellBehindMe(well(me, sim), me, opp) && chance(0.6)) return dist < r('jab') + 10 ? [attack(pick(['jab', 'lowKick', 'throw']))] : [move(toward, 6, true)];
+    // the top of a flight behind me, on the floor above: get off it (step in toward him, or fight my way past)
+    if (drop(me, opp, sim, 120, false) && chance(0.35 + 0.4 * difficulty)) return dist < r('jab') + 10 ? [attack(pick(['jab', 'lowKick', 'throw', 'cross']))] : [move(toward, 8, chance(0.5))];
+    // he's at the top of a flight: knock him down it (a throw goes that way, a launcher or a heavy push sends him)
+    if (drop(opp, me, sim, 120) && me.stamina > 35 && chance(0.25 + 0.35 * difficulty + (grap ? 0.2 : 0))) {
+      if (dist < 95 && !opp.crouch) return [move(toward, closer(78)), attack('throw')];
+      if (dist < r('spinKick') && chance(0.4)) return [attack('spinKick')];
+      if (dist < r('jab') + 10) return [press(chance(0.5) ? '1' : '2')];   // a string toward its ender
+      if (dist < 260) return [move(toward, closer(r('jab')), true), press('2')];
+    }
     // the wall is behind him: go for the wall payoffs
     const wallBehind = (toward > 0 ? sim.bounds.x1 - opp.x : opp.x - sim.bounds.x0) < 220;
     if (wallBehind && me.stamina > 45 && chance(0.35 + 0.4 * difficulty)) {
@@ -695,7 +726,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // stamina: low, back off and let it come back (a beat of guard if he presses). Fainted it's rooted
     // and shakes its head instead (shakeOff, below)
     if (!(me.faint > 0) && me.stamina < (show ? 28 : 30) && !queue.length && /^(idle|walk|block)$/.test(me.state) && opp.state !== 'hitstun' && !DOWN_STATES.has(opp.state) && !(opp.faint > 0 && !me.faint)) {
-      const cornered = me.x - sim.bounds.x0 < 90 || sim.bounds.x1 - me.x < 90 || wellBehindMe(well(me, sim), me, opp);
+      const cornered = me.x - sim.bounds.x0 < 90 || sim.bounds.x1 - me.x < 90 || backedUp(me, opp, sim);
       queue = opp.state === 'attack' && dist < 200 ? [blockFor(14)] : cornered ? [blockFor(16)] : [move(-toward, 12 + irnd(10))]; act = null;
     }
     // reflex: swing back on the way out of hitstun instead of resetting to range, decided `lag` steps after
@@ -726,7 +757,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         downSeen = saw.attackId; relag();
         if (chance(show ? 0.8 : 0.1 + 0.6 * difficulty)) {
           const away = rollAway(me, opp);
-          queue = open || chance(0.6) ? [attack(chance(0.6) ? 'wakeKick' : 'wakeSweep')] : [{ ...move(walled(me, away, sim) ? -away : away, 3), roll: true }];
+          queue = open || chance(0.6) ? [attack(chance(0.6) ? 'wakeKick' : 'wakeSweep')] : [{ ...move(walled(me, away, sim, opp) ? -away : away, 3), roll: true }];
           act = null;
         }
       }

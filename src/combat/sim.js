@@ -40,7 +40,10 @@ const SPLAT_STEPS = 48, BREAK_STEPS = 36, RISE_STEPS = 24, DASH_STEPS = DASH.att
 const CROUCH_SQUASH = 0.7;
 // a unit's stat-upgrade multiplier (setCharacter boost; src/career/upgrades.js): 1 when it has none, a horde goon included
 const up = (u, k) => (u && u[k]) || 1;
-const FLOOR_DMG = 10, VAULT_HOP_VY = 420;   // landing damage after a floor break; the vault's hop   // a crouch drawn by squashing the standing pose, until the rig has crouch clips
+const FLOOR_DMG = 10, VAULT_HOP_VY = 420;   // landing damage after a floor break; the vault's hop
+// stairs hurt (README, Stairs hurt): each new, lower tread a tumbling body touches costs STAIR_DMG (no combo decay);
+// a joint within STAIR_CONTACT px above a flight's nosing line is touching the tread under it
+const STAIR_DMG = 5, STAIR_CONTACT = 14;
 const INVULN = new Set(['getup', 'ko', 'roll']);
 const OTG = { bounce: 4 };   // a ground hit's flinch: a 2-frame 6px pop; the body stays down
 // Hitting a body on the floor (README, Fundamentals): only a strike whose drawn limb touches the drawn lying body
@@ -390,8 +393,10 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
   simRef = sim;
   // callouts (enders, counters, trick shots) for the HUD, which places them clear of the fighters;
   // the log is for measurement (capped)
-  function callout(text, by, kind = 'ender') {
-    sim.callouts.push({ text, by, kind, t: 1.1, max: 1.1 });
+  function callout(text, by, kind = 'ender', on) {
+    const c = { text, by, kind, t: 1.1, max: 1.1 };
+    if (on != null) c.on = on;   // a line drawn over this fighter instead of in the strip (DOWN THE STAIRS)
+    sim.callouts.push(c);
     if (sim.callouts.length > 3) sim.callouts.shift();
     note({ type: 'callout', text, by, kind });
     onEvent({ type: 'callout', text, by, kind });   // enders, COUNTER, TRADE, BREAK, GASSED, trick shots (for audio)
@@ -420,6 +425,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       parryAt: -999, parryLow: false, parryLock: -1, pressAt: -999,   // the universal parry: the last counted tap toward him, with down or not, and its lockout
       wakeUp: 0,   // a wake-up strike from the floor: 1 lying, 2 rising (sim.js isWake)
       stair: -1,   // the flight he's on (arena.stairs index), -1 on a floor
+      stairPaid: null, stairDmg: 0, stairN: 0, stairBy: -1,   // stairs hurt: the lowest tread paid this tumble (its y), the damage, treads, who sent him
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
       clashUntil: 0,   // the step a clash's bounce back ends (physics lets it slide; the draw leaves the guard off)
       shockT: 0, shockUsed: false, rootT: 0,   // character hooks: shock (extra stun), root (no walk or jump)
@@ -534,6 +540,7 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
     u.health = u.maxHealth; u.hidden = false; u.koDone = false; u.running = false; u.hitConfirmed = false;
     u.touched = false; u.otgHit = false; u.bounce = 0; u.followThrough = false; u.chase = false;
 u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u.staminaMax; u.faint = 0; u.faintDmg = 0; u.faintAt = -1; u.regenAt = 0; u.paid = 0; u.refundId = 0; u.faintPending = 0; u.shakeDir = 0; u.shakeAt = -999; u.faintCut = 0; u.refundMove = ''; u.refundRep = 0; u.refundAt = -999; u.crouch = false; u.seq = null; u.bufferKeys = null;
+    u.stairPaid = null; u.stairDmg = 0; u.stairN = 0; u.stairBy = -1;
     u.comboDmg = 0; u.selfChain = 0; u.blockedAt = -999; u.armorLeft = 0; u.hitN = 0; u.airJumpsUsed = 0; u.wallJumps = 0;
     u.botchKind = ''; u.botchSev = 0; u.botchShift = 0; u.botchFwd = 0; u.botchAt = -1; u.activeAt = -1; u.recoverAt = -1; u.wakeUp = 0; u.downPin = 0; u.techLock = -1; u.parryAt = -999; u.parryLow = false; u.parryLock = -1; u.pressAt = -999;
     u.shockT = 0; u.shockUsed = false; u.rootT = 0; u.clashUntil = 0;
@@ -1902,6 +1909,74 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       }
     }
   }
+  // ---- stairs hurt -------------------------------------------------------------------------
+  // A tumbling body (launched, knocked down, KO'd and still moving, or falling through a stairwell) pays STAIR_DMG
+  // for every stair tread it touches that is lower than any it has paid for since the tumble started. So one tread
+  // counts once, a body jittering or resting on a step pays nothing more, sliding up pays nothing, and walking,
+  // running, standing and the getup roll are never a tumble. Contact is read off the rig's joints (the hitboxes),
+  // so it's the same for the point simulation sliding down the flights' solid line, a floor break clattering down
+  // the treads, and a keyframed knockdown on the steps, for both players, the CPU and horde goons alike.
+  // The damage and any KO go to whoever sent him down (comboBy); at the bottom a DOWN THE STAIRS -N line goes up
+  // over him. Everything here is unit state (stairPaid, stairDmg, stairN, stairBy), so rollback carries it.
+  const tumbling = (u) => !u.hidden && (u.rag || (u.falling && !u.fellLanded) || u.state === 'knockdown' || (u.state === 'ko' && !u.koDone));
+  let contactX = 0;
+  // the lowest tread (its y) any of u's joints is touching, or null; contactX is where
+  function treadContact(u) {
+    const S = stairsNow(), J = u.rig.joints;
+    if (!S.length || !J) return null;
+    let best = null;
+    for (const k in J) {
+      const p = J[k];
+      for (let s = 0; s < S.length; s++) {
+        if (!inFlight(s, p.x) || p.y < nosingY(s, p.x) - STAIR_CONTACT) continue;
+        const ty = treadY(s, p.x);
+        if (ty < S[s].bottom && (best == null || ty > best)) { best = ty; contactX = p.x; }   // the lower floor at the foot is the landing, not a step
+      }
+    }
+    return best;
+  }
+  // where a tumble starts counting from: the tread it's touching, the tread under it on a flight, else its floor
+  function stairBase(u) {
+    const c = treadContact(u);
+    if (c != null) return c;
+    if (onStair(u)) return treadY(u.stair, bodyX(u));
+    return floorYOf(u.floor);
+  }
+  const senderOf = (u) => (u.comboBy >= 0 && u.comboBy !== u.id ? u.comboBy : u.launchedBy >= 0 && u.launchedBy !== u.id ? u.launchedBy : u.stairBy);
+  function stairHurt(u) {
+    if (!stairsNow().length) return;
+    if (!tumbling(u)) {
+      if (u.stairDmg > 0) callout(`DOWN THE STAIRS -${u.stairDmg}`, u.stairBy, 'stairs', u.id);
+      u.stairPaid = null; u.stairDmg = 0; u.stairN = 0;
+      return;
+    }
+    if (u.stairPaid == null) { u.stairPaid = stairBase(u); u.stairDmg = 0; u.stairN = 0; u.stairBy = senderOf(u); return; }
+    const c = treadContact(u);
+    if (c == null || c <= u.stairPaid + 0.5) return;
+    u.stairPaid = c; u.stairN++;
+    const by = senderOf(u), att = by >= 0 && sim.units[by] && !sim.units[by].hidden ? sim.units[by] : oppOf(u);
+    if (by >= 0) u.stairBy = by;
+    let dmg = 0;
+    if (sim.phase === 'fight' && u.health > 0) {
+      // the full step, never decayed (a tumble usually comes at the end of a combo, past the soft cap), but it
+      // counts in the sender's combo damage and toward waking a fainted body like any hit
+      dmg = Math.min(u.health, STAIR_DMG); u.comboDmg = (u.comboDmg || 0) + dmg;
+      if (u.faint > 0 && (u.faintDmg += dmg) >= STAMINA.faintDmgCap) endFaint(u);
+      u.health = Math.max(0, u.health - dmg); u.stairDmg += dmg; u.flash = FLASH_STEPS;
+    }
+    const n = u.stairN, x = contactX;
+    onEvent({ type: 'tread', x, y: c, strength: Math.min(1, 0.4 + 0.08 * n), unit: u });   // the knock, a little harder each step (audio)
+    if (dmg) onEvent({ type: 'stairHit', x, y: c, dmg, n, unit: u, attacker: att });     // the small flash on the step (main.js)
+    note({ type: 'stairHit', def: u.id, by: att ? att.id : -1, y: c, dmg, hp: u.health });
+    if (dmg && u.health <= 0 && u.state !== 'ko' && att) stairKO(u, att);
+  }
+  // knocked out by the steps: the body keeps tumbling as it is (no new launch) and the KO is reported like a hit's
+  function stairKO(u, att) {
+    enter(u, 'ko'); u.koDone = false; u.landJoints = null;
+    u.splatPending = false; u.wallBounce = false; u.groundBounce = false; u.juggle = false;
+    if (!u.rag) { safePlay(u.rig, 'knockdown'); if (u.grounded) u.koDone = true; }
+    downed.push({ att, def: u, fd: NO_HIT, dir: Math.sign(bodyX(u) - att.x) || -u.facing, how: 'stairs' });
+  }
   // which way the stairs go down from x: toward the nearest tread a step or two lower
   function treadBelow(x, y) {
     const T = arena.treads || [];
@@ -2330,7 +2405,6 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         // clattering down the steps (the rig reports each tread it hits)
         u.treadEvents = true;
         const hx = u.rig.joints.hip.x, st = Math.min(1, Math.max(0.2, Math.abs(u.vy) / 600));
-        onEvent({ type: 'tread', x: hx, y: ev.y, strength: st, unit: u });   // every step it hits (audio: a knock per tread)
         if (sim.stepCount - (u.tumbleAt || -99) > 6) { u.tumbleAt = sim.stepCount; onEvent({ type: 'stairTumble', x: hx, y: ev.y, strength: st, unit: u }); note({ type: 'stairTumble', def: u.id }); }
       }
       else if (ev.type === 'bounce' && u.rag) {
@@ -3487,6 +3561,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       drainRig(u);
       if (u.state === 'botch' && u.rig.current.done) endBotch(u);   // the rig took the clip's step this update: the root takes it now too
       floorStep(u);
+      stairHurt(u);
     }
     resolveHits();
     resolveKOs(true);   // the step's KOs mean what the mode's rules say (and nobody stands at 0 health)
