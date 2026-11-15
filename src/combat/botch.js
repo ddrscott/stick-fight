@@ -161,7 +161,7 @@ const CLIPS = {
     K({ ...F(14, HIP - 6, 16, 44), torso: 18, bend: 3, head: -10, spin: 200, la: [100, 196], ra: [24, 140] }, 50, 'linear'),
     K({ ...F(14, HIP - 4, 16, 44), torso: 16, bend: 3, head: -6, tw: -14, spin: 345, la: [92, 96], ra: [20, 140] }, 40, 'out', 'active'),
     K({ ...F(14, HIP - 4, 16, 44), torso: 18, bend: 4, head: -6, tw: -15, spin: 360, la: [94, 90], ra: [20, 140] }, 70, 'inOut'),
-    K({ ...F(14, HIP - 5, 16, 44), torso: 14, bend: 3, head: -4, tw: -8, spin: 360, la: [70, 60], ra: [24, 140] }, 90, 'in', 'recover'),
+    K({ ...F(14, HIP - 5, 16, 44), torso: 14, bend: 3, head: -4, tw: -8, spin: 360, la: [60, 70], ra: [24, 140] }, 90, 'in', 'recover'),
     K({ ...F(13, HIP - 6, 16, 40), torso: 12, bend: 2, head: -2, spin: 360, la: [40, 80], ra: [26, 140] }, 170, 'sine'),
     K({ ...F(12, HIP - 1, LF + 12, RF + 12), torso: 6, head: -4, spin: 360, la: [54, 148], ra: [28, 160] }, 120, 'out', 'footstep'),
     K({ ...F(12, HIP - 1, LF + 12, RF + 12), torso: 6, head: -3, spin: 360 }, 0, 'sine'),
@@ -170,8 +170,8 @@ const CLIPS = {
   // him and over; he lands back where he came from, crouched, and stays there a while
   flashKick: { blend: 30, limb: 'rFoot', shift: -24, height: 'mid', keys: [
     K({ hx: 0, ll: [10, -10], rl: [60, 40], torso: -30, bend: -8, head: 14, la: [140, 170], ra: [150, 180], air: 20 }, 40, 'linear'),
-    K({ hx: -2, ll: [20, -40], rl: [150, 160], torso: -70, bend: -14, head: 30, la: [170, 200], ra: [180, 210], air: 44 }, 40, 'out', 'active'),
-    K({ hx: -6, ll: [60, -30], rl: [190, 200], torso: -100, bend: -16, head: 36, la: [190, 220], ra: [200, 230], air: 54 }, 70, 'inOut'),
+    K({ hx: -2, ll: [20, -40], rl: [160, 150], torso: -70, bend: -14, head: 30, la: [170, 200], ra: [180, 210], air: 44 }, 40, 'out', 'active'),
+    K({ hx: -6, ll: [60, -30], rl: [200, 190], torso: -100, bend: -16, head: 36, la: [190, 220], ra: [200, 230], air: 54 }, 70, 'inOut'),
     K({ hx: -16, ll: [40, -40], rl: [70, 10], torso: -40, bend: -6, head: 16, la: [120, 150], ra: [110, 140], air: 28 }, 90, 'in', 'recover'),
     K({ ...F(-24, HIP - 16, LF - 24, RF - 24), torso: 28, bend: 8, head: -12, la: [60, 90], ra: [50, 80] }, 90, 'out', 'land'),
     K({ ...F(-24, HIP - 12, LF - 24, RF - 24), torso: 20, bend: 6, head: -8, la: [50, 110], ra: [36, 110] }, 200, 'sine'),
@@ -181,7 +181,7 @@ const CLIPS = {
   // the sweep's spin carries on round and up off the floor: the leg rises from the shin to the ribs as
   // he comes back to face him
   helicopter: { blend: 30, limb: 'rFoot', shift: 14, height: 'mid', keys: [
-    K({ hx: 10, torso: 40, bend: 8, head: -6, spin: 90, ll: [76, -70], rl: [90, 90], la: [-40, -10], ra: [60, 40] }, 50, 'linear'),
+    K({ hx: 10, torso: 40, bend: 8, head: -6, spin: 90, ll: [76, -70], rl: [90, 90], la: [-40, -10], ra: [40, 60] }, 50, 'linear'),
     K({ hx: 8, torso: 16, bend: 4, head: -2, spin: 200, ll: L(8, 48, 10), rl: [100, 100], la: [40, 100], ra: [-20, 20] }, 50, 'linear'),
     K({ hx: 12, torso: -20, bend: -4, head: 10, spin: 340, ll: L(12, 56, 14), rl: [110, 108], la: [90, 140], ra: [-60, -50], air: 10 }, 40, 'out', 'active'),
     K({ hx: 13, torso: -26, bend: -6, head: 14, spin: 360, ll: L(13, 57, 14), rl: [116, 112], la: [96, 146], ra: [-66, -56], air: 12 }, 70, 'inOut'),
@@ -196,8 +196,8 @@ const CLIPS = {
     K({ ...F(6, HIP - 10, LF + 10, RF), torso: 40, bend: 6, head: -24, la: [80, 90], ra: [80, 90] }, 40, 'in'),
     K({ hx: 24, torso: 66, bend: 6, head: -30, ll: [20, -40], rl: [-50, -60], la: [100, 100], ra: [96, 96], air: 18 }, 40, 'out', 'active'),
     K({ hx: 30, torso: 70, bend: 6, head: -30, ll: [10, -50], rl: [-60, -70], la: [104, 110], ra: [100, 104], air: 14 }, 80, 'inOut'),
-    K({ ...F(36, HIP - 30, LF + 36, RF + 10), torso: 70, bend: 6, head: -26, la: [80, 40], ra: [80, 40] }, 90, 'in', 'recover'),
-    K({ ...F(38, HIP - 28, LF + 38, RF + 14), torso: 64, bend: 6, head: -20, la: [76, 36], ra: [76, 36] }, 220, 'sine'),
+    K({ ...F(36, HIP - 30, LF + 36, RF + 10), torso: 70, bend: 6, head: -26, la: [41, 81], ra: [41, 81] }, 90, 'in', 'recover'),
+    K({ ...F(38, HIP - 28, LF + 38, RF + 14), torso: 64, bend: 6, head: -20, la: [37, 77], ra: [37, 77] }, 220, 'sine'),
     K({ ...F(40, HIP - 6, LF + 40, RF + 30), torso: 20, bend: 4, head: -8, la: [44, 120], ra: [30, 120] }, 160, 'inOut', 'footstep'),
     K({ ...F(40, HIP - 1, LF + 40, RF + 40), torso: 7, head: -4, la: [54, 148], ra: [28, 160] }, 100, 'out'),
     K({ ...F(40, HIP - 1, LF + 40, RF + 40), torso: 6, head: -3 }, 0, 'sine'),

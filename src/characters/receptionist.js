@@ -31,7 +31,7 @@ const pleaseHold = { blend: 40, limb: 'lHand', keys: [
 const transfer = { blend: 40, limb: 'lHand', keys: [
   K({ ...F(-2, HIP - 4, LF, RF), torso: 8, head: -2, la: [52, 118], ra: [44, 118] }, 40, 'in'),
   K({ ...F(8, HIP - 6, LF + 8, RF, 8, 0), torso: 16, bend: 3, head: -6, la: [84, 92], ra: [76, 92] }, 40, 'out', 'active'),
-  K({ ...F(6, HIP - 9, LF + 8, RF), torso: 12, bend: 2, head: -4, la: [84, 74], ra: [76, 72] }, 50, 'in'),
+  K({ ...F(6, HIP - 9, LF + 8, RF), torso: 12, bend: 2, head: -4, la: [74, 84], ra: [76, 72] }, 50, 'in'),
   K({ ...F(2, HIP - 12, LF + 8, RF), torso: -2, bend: -4, head: 4, la: [132, 150], ra: [124, 144] }, 70, 'linear'),
   K({ ...F(-2, HIP - 6, LF + 8, RF), torso: -16, bend: -8, head: 12, la: [184, 196], ra: [176, 190] }, 80, 'out', 'recover'),
   K({ ...F(-3, HIP - 4, LF + 8, RF), torso: -12, bend: -6, head: 10, la: [204, 214], ra: [196, 208] }, 90, 'inOut'),
@@ -45,8 +45,8 @@ const transfer = { blend: 40, limb: 'lHand', keys: [
 const hangUp = { blend: 40, limb: 'lHand', shift: 8, keys: [
   K({ ...F(-2, HIP - 1, LF, RF), torso: -4, bend: -3, head: 2, tw: 6, la: [120, 170], ra: [36, 150], ext: 16 }, 60, 'in'),
   K({ ...F(-4, HIP + 1, LF, RF), torso: -12, bend: -6, head: 8, tw: 8, la: [178, 196], ra: [40, 148], ext: 34 }, 60, 'in'),
-  K({ ...F(8, HIP - 6, LF + 8, RF), torso: 24, bend: 6, head: -10, tw: -10, la: [126, 74], ra: [24, 120], ext: 42 }, 40, 'out', 'active'),
-  K({ ...F(10, HIP - 8, LF + 8, RF), torso: 30, bend: 7, head: -12, tw: -12, la: [108, 52], ra: [20, 110], ext: 40 }, 60, 'inOut'),
+  K({ ...F(8, HIP - 6, LF + 8, RF), torso: 24, bend: 6, head: -10, tw: -10, la: [75, 127], ra: [24, 120], ext: 42 }, 40, 'out', 'active'),
+  K({ ...F(10, HIP - 8, LF + 8, RF), torso: 30, bend: 7, head: -12, tw: -12, la: [53, 109], ra: [20, 110], ext: 40 }, 60, 'inOut'),
   K({ ...F(8, HIP - 5, LF + 8, RF), torso: 18, bend: 4, head: -8, tw: -6, la: [64, 80], ra: [26, 130], ext: 22 }, 100, 'inOut', 'recover'),
   K({ ...F(6, HIP - 2, LF + 8, RF + 8, 0, 6), torso: 8, head: -4, la: [54, 140], ra: [30, 160], ext: 6 }, 110, 'out', 'footstep'),
   K({ ...F(8, HIP - 1, LF + 8, RF + 8), torso: 6, head: -4 }, 0, 'sine'),
@@ -99,10 +99,10 @@ function headsetAndPhone(ctx, J, o) {
 
 // The celebration (registry `dance`, played by the match winner under the WINS banner): A phone at the ear with the free hand on the hip, the hips swinging side to side: please hold, forever.
 const dance = { keys: [
-  K({ ...F(-9, HIP - 4, LF, RF), torso: -6, bend: -4, head: -12, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
-  K({ ...F(9, HIP - 1, LF, RF, 0, 4), torso: 10, bend: 2, head: 2, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
-  K({ ...F(-9, HIP - 4, LF, RF), torso: -6, bend: -4, head: -12, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
-  K({ ...F(9, HIP - 1, LF, RF, 4, 0), torso: 10, bend: 2, head: 2, la: [150, 250], ra: [30, -70] }, 280, 'sine'),
+  K({ ...F(-9, HIP - 4, LF, RF), torso: -6, bend: -4, head: -12, la: [150, 250], ra: [-67, 33] }, 280, 'sine'),
+  K({ ...F(9, HIP - 1, LF, RF, 0, 4), torso: 10, bend: 2, head: 2, la: [150, 250], ra: [-67, 33] }, 280, 'sine'),
+  K({ ...F(-9, HIP - 4, LF, RF), torso: -6, bend: -4, head: -12, la: [150, 250], ra: [-67, 33] }, 280, 'sine'),
+  K({ ...F(9, HIP - 1, LF, RF, 4, 0), torso: 10, bend: 2, head: 2, la: [150, 250], ra: [-67, 33] }, 280, 'sine'),
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): Transfer, the long way: both hands on him, heaved up overhead, a beat, and thrown forward down at the camera; then the phone back at her ear and a hip sway.
@@ -110,8 +110,8 @@ const perfect = { name: 'TRANSFER TO THE LENS', note: 'Transfer, the long way: b
   ...stoop('both'),
   lift('overhead', 'lHand', 260, 0.45),
   K({ face: 0.7, ...F(-2, HIP + 1, LF + 2, RF - 2), torso: -10, bend: -6, head: -14, la: [182, 192], ra: [176, 186] }, 200, 'sine'),
-  K({ face: 0.95, ...F(10, HIP - 8, LF + 16, RF - 2), torso: 30, bend: 6, head: -6, la: [110, 100], ra: [104, 96] }, 100, 'out', 'release'),
-  K({ face: 0.9, ...F(12, HIP - 6, LF + 16, RF + 4, 0, 4), torso: 26, bend: 4, head: -6, la: [80, 70], ra: [76, 66] }, 200, 'out', 'footstep'),
+  K({ face: 0.95, ...F(10, HIP - 8, LF + 16, RF - 2), torso: 30, bend: 6, head: -6, la: [100, 110], ra: [96, 104] }, 100, 'out', 'release'),
+  K({ face: 0.9, ...F(12, HIP - 6, LF + 16, RF + 4, 0, 4), torso: 26, bend: 4, head: -6, la: [70, 80], ra: [66, 76] }, 200, 'out', 'footstep'),
   K({ face: 0.55, ...F(10, HIP - 1, LF + 16, RF + 8), torso: 4, head: -4, la: [40, 120], ra: [150, 222] }, 240, 'inOut'),
   K({ face: 0.55, ...F(14, HIP - 2, LF + 16, RF + 8), torso: 6, head: -2, la: [36, 116], ra: [150, 222] }, 240, 'sine'),
   K({ face: 0.55, ...F(6, HIP - 1, LF + 16, RF + 8), torso: 2, head: -6, la: [40, 122], ra: [152, 224] }, 0, 'sine'),

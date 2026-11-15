@@ -19,7 +19,7 @@ const liveWire = { blend: 40, limb: 'lHand', shift: 10, keys: [
   K({ ...F(8, HIP - 5, LF + 10, RF, 5, 0), torso: 12, bend: 2, head: -4, tw: -6, la: [74, 92], ra: [30, 160] }, 30, 'linear'),
   K({ ...F(13, HIP - 5, LF + 10, RF), torso: 18, bend: 3, head: -6, tw: -14, la: [90, 88], ra: [34, 158] }, 40, 'out', 'active'),
   K({ ...F(13, HIP - 5, LF + 10, RF), torso: 18, bend: 3, head: -6, tw: -14, la: [91, 89], ra: [34, 158] }, 50, 'inOut'),
-  K({ ...F(12, HIP - 4, LF + 10, RF), torso: 15, bend: 2, head: -5, tw: -10, la: [80, 70], ra: [32, 160] }, 90, 'in', 'recover'),
+  K({ ...F(12, HIP - 4, LF + 10, RF), torso: 15, bend: 2, head: -5, tw: -10, la: [70, 80], ra: [32, 160] }, 90, 'in', 'recover'),
   K({ ...F(9, HIP - 1, LF + 10, RF + 6, 0, 6), torso: 7, head: -4, la: [56, 146], ra: [30, 164] }, 100, 'out', 'footstep'),
   K({ ...F(10, HIP - 1, LF + 10, RF + 10), torso: 6, head: -4 }, 0, 'sine'),
 ] };
@@ -101,8 +101,8 @@ const dance = { keys: [
   K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 90], ra: [-90, -90] }, 140, 'snap'),
   K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 130], ra: [-90, -90] }, 120, 'snap'),
   K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: -10, tw: 6, la: [70, 150], ra: [-90, -90] }, 120, 'snap'),
-  K({ ...F(0, HIP - 4, LF, RF), torso: 0, head: 6, tw: -6, la: [90, 90], ra: [-70, -150] }, 120, 'snap'),
-  K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 90], ra: [-90, -130] }, 120, 'snap'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 0, head: 6, tw: -6, la: [90, 90], ra: [-148, -68] }, 120, 'snap'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 90], ra: [-129, -89] }, 120, 'snap'),
   K({ ...F(0, HIP - 2, LF, RF), torso: 2, head: -4, la: [90, 90], ra: [-90, -90] }, 160, 'snap'),
   K({ ...F(0, HIP - 6, LF, RF), torso: 10, bend: 4, head: 10, la: [40, 120], ra: [30, 120] }, 140, 'snap'),
   K({ ...F(0, HIP - 6, LF, RF), torso: 12, bend: 4, head: 12, la: [42, 124], ra: [32, 122] }, 160, 'linear'),
@@ -120,26 +120,26 @@ const perfect = { name: 'LIVE CIRCUIT FLICK', note: 'Up by the collar while the 
   K({ face: 0.55, ...F(-4, HIP - 8, LF, RF - 4), torso: 10, head: -4, la: [40, 60], ra: [30, 110] }, 160, 'in'),
   K({ face: 0.9, ...F(6, HIP, LF + 8, RF - 4), torso: -8, bend: -4, head: -12, la: [134, 144], ra: [30, 120] }, 80, 'out', 'release'),
   K({ face: 0.85, ...F(8, HIP - 1, LF + 8, RF), torso: 0, head: -8, la: [120, 160], ra: [40, 120] }, 200, 'out', 'footstep'),
-  K({ face: 0.6, ...F(8, HIP - 1, LF + 8, RF), torso: 2, head: -6, la: [90, 160], ra: [60, 30] }, 200, 'sine'),
-  K({ face: 0.6, ...F(8, HIP - 1, LF + 8, RF), torso: 2, head: -6, la: [60, 30], ra: [90, 160] }, 200, 'sine'),
-  K({ face: 0.6, ...F(8, HIP, LF + 8, RF), torso: 2, head: -8, la: [90, 164], ra: [60, 30] }, 0, 'sine'),
+  K({ face: 0.6, ...F(8, HIP - 1, LF + 8, RF), torso: 2, head: -6, la: [90, 160], ra: [31, 61] }, 200, 'sine'),
+  K({ face: 0.6, ...F(8, HIP - 1, LF + 8, RF), torso: 2, head: -6, la: [31, 61], ra: [90, 160] }, 200, 'sine'),
+  K({ face: 0.6, ...F(8, HIP, LF + 8, RF), torso: 2, head: -8, la: [90, 164], ra: [31, 61] }, 0, 'sine'),
 ] };
 
 // Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
 // (registry `victory`, in place of the dance once it's unlocked and on): Grounded: a wide stance, one fist planted on the hip, the other pointing at the floor.
 const victory = { keys: [
   K({ ...F(0, HIP - 3, LF + 4, RF - 4), torso: 6, head: 4, la: [40, 110], ra: [20, 30] }, 180, 'in'),
-  K({ ...F(0, HIP - 4, LF + 10, RF - 10), torso: 4, bend: -2, head: -8, la: [24, 10], ra: [30, -70] }, 240, 'out'),
-  K({ ...F(0, HIP - 4, LF + 10, RF - 10), torso: 4, bend: -2, head: -10, la: [24, 10], ra: [30, -70] }, 460, 'sine'),
+  K({ ...F(0, HIP - 4, LF + 10, RF - 10), torso: 4, bend: -2, head: -8, la: [10, 24], ra: [-67, 33] }, 240, 'out'),
+  K({ ...F(0, HIP - 4, LF + 10, RF - 10), torso: 4, bend: -2, head: -10, la: [10, 24], ra: [-67, 33] }, 460, 'sine'),
 ] };
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). Shake it off: shakes out both hands like they got a jolt, quick and loose.
 const taunt = { keys: [
-  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 4, la: [60, 30], ra: [50, 20] }, 130, 'snap'),
-  K({ ...F(0, HIP - 2, LF, RF), torso: 6, head: -2, la: [70, 60], ra: [60, 50] }, 120, 'snap'),
-  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 4, la: [60, 30], ra: [50, 20] }, 120, 'snap'),
-  K({ ...F(0, HIP - 2, LF, RF), torso: 6, head: -2, la: [70, 60], ra: [60, 50] }, 120, 'snap'),
-  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 4, la: [60, 30], ra: [50, 20] }, 120, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 4, la: [31, 61], ra: [21, 51] }, 130, 'snap'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 6, head: -2, la: [60, 70], ra: [50, 60] }, 120, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 4, la: [31, 61], ra: [21, 51] }, 120, 'snap'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 6, head: -2, la: [60, 70], ra: [50, 60] }, 120, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: 4, head: 4, la: [31, 61], ra: [21, 51] }, 120, 'snap'),
   K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 260, 'inOut'),
 ] };
 

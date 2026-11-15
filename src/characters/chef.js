@@ -18,9 +18,9 @@ const cleaver = { blend: 50, limb: 'rHand', shift: 22, keys: [
   K({ ...F(-8, HIP - 4, LF, RF), torso: -10, bend: -5, head: 6, tw: -16, la: [44, 140], ra: [194, 232] }, 110, 'out'),
   K({ ...F(-9, HIP - 3, LF, RF, 0, 2), torso: -13, bend: -6, head: 8, tw: -18, la: [46, 136], ra: [198, 240] }, 90, 'sine'),
   // the chop: the lead foot lands as the arm comes through
-  K({ ...F(10, HIP - 7, LF + 22, RF + 4), torso: 28, bend: 8, head: -10, tw: 14, la: [24, 80], ra: [108, 84] }, 40, 'out', 'active'),
-  K({ ...F(13, HIP - 8, LF + 22, RF + 4), torso: 36, bend: 10, head: -14, tw: 18, la: [18, 70], ra: [76, 46] }, 70, 'inOut'),
-  K({ ...F(12, HIP - 7, LF + 22, RF + 4), torso: 30, bend: 8, head: -12, tw: 14, la: [26, 90], ra: [60, 34] }, 160, 'inOut', 'recover'),
+  K({ ...F(10, HIP - 7, LF + 22, RF + 4), torso: 28, bend: 8, head: -10, tw: 14, la: [24, 80], ra: [85, 109] }, 40, 'out', 'active'),
+  K({ ...F(13, HIP - 8, LF + 22, RF + 4), torso: 36, bend: 10, head: -14, tw: 18, la: [18, 70], ra: [47, 77] }, 70, 'inOut'),
+  K({ ...F(12, HIP - 7, LF + 22, RF + 4), torso: 30, bend: 8, head: -12, tw: 14, la: [26, 90], ra: [35, 61] }, 160, 'inOut', 'recover'),
   K({ ...F(16, HIP - 5, LF + 22, RF + 18, 0, 10), torso: 14, bend: 3, head: -6, tw: 4, la: [48, 140], ra: [36, 150] }, 120, 'inOut', 'footstep'),
   K({ ...F(22, HIP - 1, LF + 22, RF + 22), torso: 6, head: -4, la: [54, 148], ra: [30, 164] }, 0, 'sine'),
 ] };
@@ -108,9 +108,9 @@ const dance = { keys: [
   K({ ...F(0, HIP, LF, RF), torso: 2, bend: -1, head: -6, la: [120, 240], ra: [20, 40] }, 220, 'inOut'),
   K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -14, la: [130, 150], ra: [20, 40] }, 160, 'snap'),
   K({ ...F(0, HIP, LF, RF), torso: -2, bend: -3, head: -14, la: [132, 154], ra: [20, 40] }, 240, 'sine'),
-  K({ ...F(-2, HIP - 4, LF, RF), torso: 18, bend: 4, head: 6, la: [70, 50], ra: [60, 40] }, 200, 'sine'),
+  K({ ...F(-2, HIP - 4, LF, RF), torso: 18, bend: 4, head: 6, la: [50, 70], ra: [40, 60] }, 200, 'sine'),
   K({ ...F(2, HIP - 4, LF, RF), torso: 20, bend: 4, head: 6, la: [50, 70], ra: [70, 80] }, 200, 'sine'),
-  K({ ...F(-2, HIP - 4, LF, RF), torso: 18, bend: 4, head: 6, la: [70, 50], ra: [60, 40] }, 200, 'sine'),
+  K({ ...F(-2, HIP - 4, LF, RF), torso: 18, bend: 4, head: 6, la: [50, 70], ra: [40, 60] }, 200, 'sine'),
   K({ ...F(2, HIP - 4, LF, RF), torso: 20, bend: 4, head: 6, la: [50, 70], ra: [70, 80] }, 200, 'sine'),
 ] };
 
@@ -130,8 +130,8 @@ const perfect = { name: 'PANCAKE FLIP', note: 'A pancake flip: the body on the s
 // (registry `victory`, in place of the dance once it's unlocked and on): Plated: a low bow with one arm sweeping out to present the dish.
 const victory = { keys: [
   K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [40, 100], ra: [12, 24] }, 200, 'in'),
-  K({ ...F(0, HIP - 3, LF + 6, RF - 2), torso: 28, bend: 6, head: 18, la: [70, 60], ra: [-20, 40] }, 280, 'out'),
-  K({ ...F(0, HIP - 3, LF + 6, RF - 2), torso: 30, bend: 6, head: 20, la: [70, 60], ra: [-20, 40] }, 440, 'sine'),
+  K({ ...F(0, HIP - 3, LF + 6, RF - 2), torso: 28, bend: 6, head: 18, la: [60, 70], ra: [-20, 40] }, 280, 'out'),
+  K({ ...F(0, HIP - 3, LF + 6, RF - 2), torso: 30, bend: 6, head: 20, la: [60, 70], ra: [-20, 40] }, 440, 'sine'),
 ] };
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). Taste test: a spoon to the lips, a frown, a slow head shake.

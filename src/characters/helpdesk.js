@@ -27,11 +27,11 @@ const ticketClosed = { blend: 40, limb: 'lHand', keys: [
 // the reversal: the lead hand traps his arm down and away while the rear elbow drives through his
 // chest behind a short step, the shoulders turning into it
 const ticketReversal = { blend: 30, limb: 'rElbow', shift: 10, keys: [
-  K({ ...F(-3, HIP - 5, LF, RF), torso: 2, bend: -1, head: -2, tw: -12, la: [40, 30], ra: [-24, 120] }, 40, 'in'),
-  K({ ...F(5, HIP - 8, LF + 8, RF, 6, 0), torso: 14, bend: 3, head: -6, tw: 2, la: [16, 10], ra: [50, -100] }, 40, 'linear'),
-  K({ ...F(12, HIP - 9, LF + 10, RF), torso: 26, bend: 6, head: -10, tw: 16, la: [4, 20], ra: [94, -160] }, 40, 'out', 'active'),
-  K({ ...F(13, HIP - 9, LF + 10, RF), torso: 27, bend: 6, head: -10, tw: 17, la: [2, 22], ra: [96, -162] }, 70, 'inOut'),
-  K({ ...F(10, HIP - 5, LF + 10, RF), torso: 14, bend: 3, head: -6, tw: 8, la: [30, 110], ra: [60, 50] }, 90, 'inOut', 'recover'),
+  K({ ...F(-3, HIP - 5, LF, RF), torso: 2, bend: -1, head: -2, tw: -12, la: [30, 40], ra: [-24, 120] }, 40, 'in'),
+  K({ ...F(5, HIP - 8, LF + 8, RF, 6, 0), torso: 14, bend: 3, head: -6, tw: 2, la: [10, 16], ra: [-91, 59] }, 40, 'linear'),
+  K({ ...F(12, HIP - 9, LF + 10, RF), torso: 26, bend: 6, head: -10, tw: 16, la: [4, 20], ra: [94, 200] }, 40, 'out', 'active'),
+  K({ ...F(13, HIP - 9, LF + 10, RF), torso: 27, bend: 6, head: -10, tw: 17, la: [2, 22], ra: [96, 198] }, 70, 'inOut'),
+  K({ ...F(10, HIP - 5, LF + 10, RF), torso: 14, bend: 3, head: -6, tw: 8, la: [30, 110], ra: [40, 170] }, 90, 'inOut', 'recover'),   // the elbow stays folded as it comes back
   K({ ...F(9, HIP - 2, LF + 10, RF + 10, 0, 8), torso: 7, head: -4, la: [54, 148], ra: [30, 162] }, 100, 'inOut', 'footstep'),
   K({ ...F(10, HIP - 1, LF + 10, RF + 10), torso: 6, head: -4 }, 0, 'sine'),
 ] };
@@ -41,8 +41,8 @@ const ticketReversal = { blend: 30, limb: 'rElbow', shift: 10, keys: [
 const reboot = { blend: 40, limb: 'lHand', shift: 30, keys: [
   K({ ...F(-4, HIP - 4, LF, RF), torso: 0, bend: -2, head: 2, tw: -4, la: [-12, 100], ra: [-22, 96] }, 80, 'in'),
   K({ ...F(6, HIP - 8, LF + 18, RF, 8, 0), torso: 10, bend: 2, head: -2, tw: -2, la: [34, 90], ra: [24, 86] }, 60, 'linear'),
-  K({ ...F(18, HIP - 9, LF + 30, RF), torso: 22, bend: 4, head: -6, tw: 4, la: [88, 82], ra: [84, 78] }, 40, 'out', 'active'),
-  K({ ...F(20, HIP - 9, LF + 30, RF + 4), torso: 24, bend: 4, head: -6, tw: 4, la: [90, 84], ra: [86, 80] }, 90, 'inOut'),
+  K({ ...F(18, HIP - 9, LF + 30, RF), torso: 22, bend: 4, head: -6, tw: 4, la: [82, 88], ra: [78, 84] }, 40, 'out', 'active'),
+  K({ ...F(20, HIP - 9, LF + 30, RF + 4), torso: 24, bend: 4, head: -6, tw: 4, la: [84, 90], ra: [80, 86] }, 90, 'inOut'),
   K({ ...F(18, HIP - 5, LF + 30, RF + 8), torso: 12, bend: 2, head: -5, la: [50, 116], ra: [40, 118] }, 110, 'inOut', 'recover'),
   K({ ...F(26, HIP - 2, LF + 30, RF + 30, 0, 8), torso: 7, head: -4, la: [54, 148], ra: [30, 162] }, 110, 'inOut', 'footstep'),
   K({ ...F(30, HIP - 1, LF + 30, RF + 30), torso: 6, head: -4 }, 0, 'sine'),
@@ -90,8 +90,8 @@ const dance = { keys: [
   K({ ...F(0, HIP, LF, RF), torso: 0, head: 10, la: [0, 90], ra: [90, 180] }, 120, 'linear'),
   K({ ...F(0, HIP - 4, LF, RF), torso: 0, head: -10, la: [90, 90], ra: [90, 90] }, 180, 'snap'),
   K({ ...F(0, HIP - 4, LF, RF), torso: 0, head: -10, la: [90, 90], ra: [90, 90] }, 120, 'linear'),
-  K({ ...F(0, HIP - 12, LF, RF), torso: 24, bend: 10, head: 30, la: [10, 4], ra: [6, 0] }, 300, 'in'),
-  K({ ...F(0, HIP - 12, LF, RF), torso: 24, bend: 10, head: 30, la: [10, 4], ra: [6, 0] }, 260, 'linear'),
+  K({ ...F(0, HIP - 12, LF, RF), torso: 24, bend: 10, head: 30, la: [4, 10], ra: [0, 6] }, 300, 'in'),
+  K({ ...F(0, HIP - 12, LF, RF), torso: 24, bend: 10, head: 30, la: [4, 10], ra: [0, 6] }, 260, 'linear'),
   K({ ...F(0, HIP, LF, RF), torso: 0, head: 0, la: [90, 180], ra: [0, 90] }, 0, 'snap'),
 ] };
 
@@ -111,9 +111,9 @@ const perfect = { name: 'OFF AND ON AGAIN', note: 'Have you tried turning them o
 // Fighter mastery (README, Progression, Fighter mastery; the names are src/career/mastery.js KIT). The victory pose
 // (registry `victory`, in place of the dance once it's unlocked and on): Ticket resolved: one stiff arm out with a thumbs up, the other hand on the hip.
 const victory = { keys: [
-  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [40, 120], ra: [30, -70] }, 180, 'snap'),
-  K({ ...F(0, HIP - 1, LF + 2, RF), torso: -2, head: -6, la: [84, 160], ra: [30, -70] }, 220, 'out'),
-  K({ ...F(0, HIP - 1, LF + 2, RF), torso: -2, head: -8, la: [84, 162], ra: [30, -70] }, 420, 'sine'),
+  K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [40, 120], ra: [-67, 33] }, 180, 'snap'),
+  K({ ...F(0, HIP - 1, LF + 2, RF), torso: -2, head: -6, la: [84, 160], ra: [-67, 33] }, 220, 'out'),
+  K({ ...F(0, HIP - 1, LF + 2, RF), torso: -2, head: -8, la: [84, 162], ra: [-67, 33] }, 420, 'sine'),
 ] };
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). Turn it off and on: a finger presses an invisible button, the body slumps, then snaps back up.

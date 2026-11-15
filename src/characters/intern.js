@@ -14,10 +14,10 @@ const { K, F, LF, RF, HIP, CH, crouchP } = RIG_KIT;
 // travel carries the body), the rear hand held up at the chin as if a coffee is still in it. Lands a step on.
 const coffeeRun = { blend: 40, limb: 'lElbow', shift: 26, keys: [
   K({ ...F(-4, HIP - 6, LF, RF), torso: 14, bend: 3, head: -6, tw: 8, la: [40, 130], ra: [34, 172] }, 50, 'in'),
-  K({ ...F(4, HIP - 9, LF + 16, RF, 7, 0), torso: 24, bend: 5, head: -10, tw: -2, la: [72, -36], ra: [40, 176] }, 50, 'linear'),
-  K({ ...F(16, HIP - 10, LF + 28, RF + 2), torso: 30, bend: 6, head: -12, tw: -14, la: [96, -78], ra: [44, 178] }, 40, 'out', 'active'),
-  K({ ...F(17, HIP - 10, LF + 28, RF + 2), torso: 31, bend: 6, head: -12, tw: -15, la: [97, -79], ra: [44, 178] }, 80, 'inOut'),
-  K({ ...F(18, HIP - 7, LF + 28, RF + 8), torso: 20, bend: 4, head: -8, tw: -6, la: [64, 30], ra: [40, 170] }, 110, 'inOut', 'recover'),
+  K({ ...F(4, HIP - 9, LF + 16, RF, 7, 0), torso: 24, bend: 5, head: -10, tw: -2, la: [-33, 75], ra: [40, 176] }, 50, 'linear'),
+  K({ ...F(16, HIP - 10, LF + 28, RF + 2), torso: 30, bend: 6, head: -12, tw: -14, la: [96, 266], ra: [44, 178] }, 40, 'out', 'active'),
+  K({ ...F(17, HIP - 10, LF + 28, RF + 2), torso: 31, bend: 6, head: -12, tw: -15, la: [97, 267], ra: [44, 178] }, 80, 'inOut'),
+  K({ ...F(18, HIP - 7, LF + 28, RF + 8), torso: 20, bend: 4, head: -8, tw: -6, la: [36, 176], ra: [40, 170] }, 110, 'inOut', 'recover'),   // the elbow stays folded as it comes back
   K({ ...F(22, HIP - 2, LF + 28, RF + 26, 0, 8), torso: 8, head: -4, la: [54, 148], ra: [30, 164] }, 110, 'inOut', 'footstep'),
   K({ ...F(26, HIP - 1, LF + 26, RF + 26), torso: 6, head: -4 }, 0, 'sine'),
 ] };
@@ -27,8 +27,8 @@ const coffeeRun = { blend: 40, limb: 'lElbow', shift: 26, keys: [
 const paperCut = { blend: 30, limb: 'lHand', keys: [
   K({ ...crouchP, ...F(-2, CH - 1, LF + 2, RF - 2), torso: 16, tw: 4, la: [36, 140] }, 30, 'in'),
   K({ ...crouchP, ...F(4, CH - 1, LF + 2, RF - 2), torso: 26, bend: 8, tw: -6, head: -12, la: [50, 84] }, 30, 'linear'),
-  K({ ...crouchP, ...F(7, CH - 2, LF + 2, RF - 2), torso: 30, bend: 9, tw: -12, head: -14, la: [56, 50] }, 30, 'out', 'active'),
-  K({ ...crouchP, ...F(7, CH - 2, LF + 2, RF - 2), torso: 30, bend: 9, tw: -12, head: -14, la: [57, 40] }, 40, 'inOut'),
+  K({ ...crouchP, ...F(7, CH - 2, LF + 2, RF - 2), torso: 30, bend: 9, tw: -12, head: -14, la: [50, 56] }, 30, 'out', 'active'),
+  K({ ...crouchP, ...F(7, CH - 2, LF + 2, RF - 2), torso: 30, bend: 9, tw: -12, head: -14, la: [40, 57] }, 40, 'inOut'),
   K({ ...crouchP, ...F(4, CH - 1, LF + 2, RF - 2), torso: 24, bend: 7, la: [48, 110] }, 90, 'inOut', 'recover'),
   K({ ...crouchP }, 70, 'out'),
   K({ ...crouchP }, 0, 'sine'),
@@ -38,8 +38,8 @@ const paperCut = { blend: 30, limb: 'lHand', keys: [
 const paperCut2 = { blend: 30, limb: 'rHand', keys: [
   K({ ...crouchP, ...F(-2, CH - 1, LF + 2, RF - 2), torso: 16, tw: -6, ra: [20, 150] }, 30, 'in'),
   K({ ...crouchP, ...F(5, CH - 2, LF + 2, RF - 2), torso: 28, bend: 8, tw: 6, head: -12, la: [34, 150], ra: [46, 86] }, 30, 'linear'),
-  K({ ...crouchP, ...F(9, CH - 3, LF + 2, RF - 2), torso: 32, bend: 9, tw: 14, head: -14, la: [30, 150], ra: [58, 50] }, 30, 'out', 'active'),
-  K({ ...crouchP, ...F(9, CH - 3, LF + 2, RF - 2), torso: 32, bend: 9, tw: 15, head: -14, la: [30, 150], ra: [59, 40] }, 40, 'inOut'),
+  K({ ...crouchP, ...F(9, CH - 3, LF + 2, RF - 2), torso: 32, bend: 9, tw: 14, head: -14, la: [30, 150], ra: [50, 58] }, 30, 'out', 'active'),
+  K({ ...crouchP, ...F(9, CH - 3, LF + 2, RF - 2), torso: 32, bend: 9, tw: 15, head: -14, la: [30, 150], ra: [40, 59] }, 40, 'inOut'),
   K({ ...crouchP, ...F(5, CH - 1, LF + 2, RF - 2), torso: 24, bend: 7, la: [36, 156], ra: [40, 110] }, 90, 'inOut', 'recover'),
   K({ ...crouchP }, 70, 'out'),
   K({ ...crouchP }, 0, 'sine'),
@@ -101,10 +101,10 @@ const dance = { keys: [
   K({ ...F(0, HIP + 4, LF + 8, RF - 8), torso: -4, bend: -3, head: -20, la: [168, 190], ra: [150, 172], air: 24 }, 170, 'out'),
   K({ ...F(0, HIP - 7, LF, RF), torso: 14, bend: 4, head: 4, la: [70, 96], ra: [50, 80] }, 130, 'in'),
   K({ ...F(0, HIP + 1, LF, RF), torso: 4, head: -10, la: [130, 170], ra: [-50, -20], spin: 180, air: 16 }, 170, 'linear'),
-  K({ ...F(0, HIP - 4, LF, RF), torso: 8, head: -6, la: [96, 110], ra: [-70, -80], spin: 360 }, 140, 'out'),
-  K({ ...F(0, HIP - 2, LF, RF, 6, 0), torso: 2, bend: -2, head: -14, la: [150, 210], ra: [40, 20], spin: 360 }, 120, 'sine'),
-  K({ ...F(0, HIP - 2, LF, RF, 0, 6), torso: 2, bend: -2, head: -14, la: [60, 30], ra: [150, 210], spin: 360 }, 120, 'sine'),
-  K({ ...F(0, HIP - 2, LF, RF, 6, 0), torso: 2, bend: -2, head: -14, la: [150, 210], ra: [40, 20], spin: 360 }, 120, 'sine'),
+  K({ ...F(0, HIP - 4, LF, RF), torso: 8, head: -6, la: [96, 110], ra: [-80, -70], spin: 360 }, 140, 'out'),
+  K({ ...F(0, HIP - 2, LF, RF, 6, 0), torso: 2, bend: -2, head: -14, la: [150, 210], ra: [20, 40], spin: 360 }, 120, 'sine'),
+  K({ ...F(0, HIP - 2, LF, RF, 0, 6), torso: 2, bend: -2, head: -14, la: [31, 61], ra: [150, 210], spin: 360 }, 120, 'sine'),
+  K({ ...F(0, HIP - 2, LF, RF, 6, 0), torso: 2, bend: -2, head: -14, la: [150, 210], ra: [20, 40], spin: 360 }, 120, 'sine'),
   K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4, la: [50, 120], ra: [30, 120], spin: 360 }, 0, 'inOut'),
 ] };
 
@@ -112,8 +112,8 @@ const dance = { keys: [
 const perfect = { name: 'ACCIDENTAL LOB', note: 'He gets it up, it slips, he juggles it, and a panicked underhand lob sends it at the camera by accident; then both hands on his head.', stamp: 'OOPS', hand: 'lHand', hold: 'collar', fly: { spin: 2, arc: 220, wobble: 1 }, keys: [
   ...stoop('lHand'),
   lift('collar', 'lHand', 200),
-  K({ face: 0.3, ...F(4, HIP - 10, LF + 6, RF), torso: 30, bend: 6, head: 12, la: [28, 20], ra: [60, 30] }, 150, 'in'),
-  K({ face: 0.4, ...F(0, HIP - 4, LF + 2, RF - 4), torso: -6, bend: -4, head: -10, la: [100, 66], ra: [130, 80] }, 130, 'out'),
+  K({ face: 0.3, ...F(4, HIP - 10, LF + 6, RF), torso: 30, bend: 6, head: 12, la: [20, 28], ra: [31, 61] }, 150, 'in'),
+  K({ face: 0.4, ...F(0, HIP - 4, LF + 2, RF - 4), torso: -6, bend: -4, head: -10, la: [67, 101], ra: [81, 131] }, 130, 'out'),
   K({ face: 0.6, ...F(-4, HIP - 12, LF, RF - 6), torso: 18, bend: 4, head: 4, la: [-30, -24], ra: [150, 200] }, 150, 'inOut'),
   K({ face: 0.95, ...F(6, HIP + 2, LF + 8, RF - 6), torso: -14, bend: -6, head: -16, la: [132, 160], ra: [170, 220] }, 100, 'out', 'release'),
   K({ face: 0.85, ...F(8, HIP, LF + 8, RF - 4), torso: -6, head: -12, la: [150, 176], ra: [160, 210] }, 200, 'out'),
