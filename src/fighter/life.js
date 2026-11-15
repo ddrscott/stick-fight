@@ -397,9 +397,9 @@ export function createLife() {
     M.head = { x: neckX + vx * c - vy * sn, y: neckY + vx * sn + vy * c };
 
     // the takes, habits, slump and hand springs move joints one by one: put any hand or foot that now bends its
-    // elbow or knee the wrong way back inside the limit (copies: M can share the rig's own joint objects)
+    // elbow or knee the wrong way back inside the limit, on a fighter on its feet (copies: M can share the rig's own joint objects)
     for (const k of ['lHand', 'rHand', 'lFoot', 'rFoot']) if (M[k]) M[k] = { x: M[k].x, y: M[k].y };
-    guardLimbs(M, f, sc, (u.rig && u.rig.pose && u.rig.pose.spin) || 0);
+    if (!(u.rig && u.rig.limbsLoose && u.rig.limbsLoose())) guardLimbs(M, f, sc, (u.rig && u.rig.pose && u.rig.pose.spin) || 0);   // not while lying or rising
     const out = floor ? floor.fit(M) : M;
     clothRun(u, s, out, sim, dt, sc, floor);
     s.last = out;
