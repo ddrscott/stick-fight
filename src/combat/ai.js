@@ -127,6 +127,13 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // falling: the air recovery out of a juggle (once per hit, the step to press it), a second jab on the way
   // down after a whiffed air attack (once per jump), an air attack out of the vault's drop (once per vault)
   let techFor = -1, techAt = -1, fallFor = -1, vaultFor = -1;
+  // never stuck (README, The CPU, Never stuck): the way the stick has been held since the last strike, jump, dash or
+  // turn and since when, when I last broke out of that, and how long I've stood on a flight's treads with him off them
+  // (steps I could act in: knocked down or stunned the clock waits)
+  let runDir = 0, runSince = 0, lastBreak = -9999, stairT = 0;
+  const tally = { breaks: 0, stairBreaks: 0, chaseRuns: 0, chaseDrops: 0, stepOffs: 0 };   // how often each fired (think.debug, the stuck check)
+  const STUCK_STEPS = 264, STAIR_GRACE = 30, STAIR_STUCK = 240;   // 2.2 s one way; 0.25 s on the treads before stepping off, 2 s at most
+  const MOVING = /^(idle|walk|run|block|crouch|blockstun)$/;
   // Shaking off a faint (sim.js shakeOff: alternating fresh left/right presses at least STAMINA.shakeGap
   // apart): decided once per faint, whether it shakes at all (always for the showcase, 45% at the bottom of
   // the ladder up to 95% at the top) and its rhythm, a press every 14 to 16 steps for the showcase (the best
@@ -218,6 +225,19 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   const wellBeyond = (w, me, opp) => !!w && Math.abs(opp.x - w.cx) < 230 && Math.sign(w.cx - opp.x) === Math.sign(opp.x - me.x);
   // it's behind me and close: don't back up into it
   const wellBehindMe = (w, me, opp) => !!w && Math.abs(me.x - w.cx) < 200 && Math.sign(w.cx - me.x) === -Math.sign(opp.x - me.x);
+  // On a flight's treads with him on a floor he can touch me from (the stair head, the main floor running on over
+  // the stairwell, the lower floor at the foot): get off it, up to the main floor or down to the lower one, whichever
+  // he's on. Fighting from the treads, 'toward him' is often down the flight (he stands on the main floor over the
+  // hole), so the plain CPU sank further down and swung from there for as long as the round lasted.
+  // When the way off runs through him and he's in reach (he stands at the head, I'm on the top steps), there's
+  // nothing to step around: the fight goes on from there, and pressing toward him is the way up anyway.
+  const offStairs = (me, opp, sim) => !!(sim.onStair && sim.onStair(me) && !sim.onStair(opp) && !opp.hidden);
+  const offDir = (me, opp, sim) => { const st = sim.stairs[me.stair]; return (opp.floor || 0) === 0 ? -st.dir : st.dir; };
+  const blockedOff = (me, opp, sim) => offDir(me, opp, sim) === (Math.sign(opp.x - me.x) || me.facing) && Math.abs(opp.x - me.x) < reach('cross') + 30;
+  function stepOff(me, opp, sim) {
+    const dir = offDir(me, opp, sim), t0 = sim.stepCount;
+    return [{ ...move(dir, (m) => !sim.onStair(m) || sim.stepCount - t0 > 240, me.stamina > 40), offStair: true }, move(0, 4)];
+  }
   // which string to run from here: enders when there is stamina for them, a wall ender near a wall
   function chooseString(me, opp, sim, blocked) {
     if (!me.seq) return null;
@@ -249,7 +269,13 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     return (FRAME_DATA[m] && FRAME_DATA[m].cost) || 20;
   }
   const landed = (me) => me.grounded && me.state !== 'jump' && me.state !== 'landing';
-  const closer = (px) => (me, opp) => Math.abs(opp.x - me.x) <= px;
+  // An approach: walk (or run) at him until a distance comes true. Marked `chase`, so the act runner (think, below)
+  // steers it at where he is now, not where he was when it was planned (he rolled under me, jumped over, crossed
+  // up), and runs him down or gives up when the gap stops shrinking (he backs off as fast as I walk). Without
+  // that, a man who rolled past the body I was walking to had me walk away from him holding back, a guard, until
+  // the wall; and one backing off holding guard had me walking after him the length of the floor.
+  const chase = (fn) => { fn.chase = true; return fn; };
+  const closer = (px) => chase((me, opp) => Math.abs(opp.x - me.x) <= px);
   // a jump-in: jump toward him, strike on the way down when close (a dive kick on a croucher), land
   // and go straight into a ground string
   const jumpIn = (toward, finish) => [
@@ -350,7 +376,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     for (const [c, w] of table) { if (k < w) { cls = c; break; } k -= w; }
     mixLog.push(cls + '@' + (lastStep / 2).toFixed(0));
     const beat = chance(0.5) ? [move(toward, 2)] : [move(toward, 2), move(-toward, 2)];
-    if (cls === 'throw') return [move(toward, (m, o) => Math.abs(o.x - m.x) <= 82 || Math.abs(m.vx) < 5 && Math.abs(o.x - m.x) < 100, true), attack('throw')];   // solid bodies settle 75px apart against a guard
+    if (cls === 'throw') return [move(toward, chase((m, o) => Math.abs(o.x - m.x) <= 82 || Math.abs(m.vx) < 5 && Math.abs(o.x - m.x) < 100), true), attack('throw')];   // solid bodies settle 75px apart against a guard
     if (cls === 'air' && dist < 220) return [...beat, ...jumpIn(toward, 'jab')];
     if (cls === 'mid' || cls === 'overhead') {
       const m = cls === 'overhead' ? 'overhead' : pick(['lkick', 'bodyBlow', 'uppercut']);
@@ -417,7 +443,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       }
       const mid = (sim.bounds.x0 + sim.bounds.x1) / 2;
       const bodyBetweenMeAndCenter = Math.sign(mid - me.x) === toward && Math.abs(mid - me.x) > 160;
-      if (floored && bodyBetweenMeAndCenter && chance(0.5)) return [move(toward, (m, o) => (o.x - m.x) * toward < -46), move(0, 4)];   // step over it
+      // step over it (and stop when he gets up: standing he's solid, and walking on would shove him across the floor)
+      if (floored && bodyBetweenMeAndCenter && chance(0.5)) return [move(toward, (m, o) => (o.x - m.x) * toward < -46 || !DOWN_STATES.has(o.state)), move(0, 4)];
       const timeLeft = (o) => (1 - o.rig.current.t) * GETUP_MS;
       if (opp.state === 'getup') {
         const left = timeLeft(opp);
@@ -454,7 +481,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const w = well(me, sim, opp);
     if (wellBeyond(w, me, opp) && me.stamina > 40 && chance(0.35 + 0.45 * difficulty + (grap ? 0.3 : 0))) {
       if (dist < 95) return [move(toward, closer(78)), attack('throw')];   // a throw toward the opening goes over
-      if (dist > 140 && dist < 320) return [move(toward, (m, o) => Math.abs(o.x - m.x) < 150, true), { ...move(toward, 2, true), attack: 'cometCross' }];
+      if (dist > 140 && dist < 320) return [move(toward, closer(149), true), { ...move(toward, 2, true), attack: 'cometCross' }];
       if (dist < r('spinKick') && chance(0.4)) return [attack('spinKick')];
       if (dist < r('jab') + 10) return [press('1')];   // into 1,2,3,4 Neon Tornado or 2,1,4 when it lands
       return [move(toward, closer(r('jab')), true), press('2')];
@@ -465,7 +492,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     if (wallBehind && me.stamina > 45 && chance(0.35 + 0.4 * difficulty)) {
       const k = rng();
       if (k < 0.35 && dist < r('spinKick')) return [attack('spinKick')];
-      if (k < 0.6 && dist > 140 && dist < 320) return [move(toward, (m, o) => Math.abs(o.x - m.x) < 150, true), { ...move(toward, 2, true), attack: 'cometCross' }];
+      if (k < 0.6 && dist > 140 && dist < 320) return [move(toward, closer(149), true), { ...move(toward, 2, true), attack: 'cometCross' }];
       if (k < 0.8 && dist < 100) return [move(toward, closer(80)), attack('throw')];
       if (dist < r('cross')) return [press('2')];   // 2,1,4 Spin Heel when it lands
     }
@@ -521,8 +548,12 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     const toward = Math.sign(opp.x - me.x) || me.facing;
     const dist = Math.abs(opp.x - me.x);
     // he's on another floor, or up or down the stairs out of reach: take the stairs to him (stairNav.js)
+    // (the stair clock runs through the routing too: down on a flight he's out of reach and stairRoute walks me up,
+    // near the top he's in reach and the plain CPU swung from the treads, its own recoil dropped me back out of
+    // reach, and around it went for the whole round)
+    if (!offStairs(me, opp, sim)) stairT = 0; else if ((MOVING.test(me.state) || me.state === 'attack' || me.state === 'jump' || me.state === 'landing') && !blockedOff(me, opp, sim)) stairT++;
     const nav = stairRoute(me, opp, sim);
-    if (nav) { queue = []; act = null; return nav; }
+    if (nav) { queue = []; act = null; runDir = 0; return nav; }
     if (me.attackId !== seenAttackId) { seenAttackId = me.attackId; lastAttackStep = step; }
     if (me.state === 'hitstun' && opp.attackId !== lastHitTakenId) { lastHitTakenId = opp.attackId; myRun = 0; counterFor = opp.attackId; counterAt = step + lag; }
     // what I can see of him: as he was `lag` steps ago
@@ -703,6 +734,12 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       queue = (opp.state === 'block' || blockedStreak >= 1) ? mixup(dist, toward, opp) : show ? [opener(opp, dist)] : [attack(dist < reach('jab') + 10 ? 'jab' : 'cross')]; act = null;
     }
     if (act && act.block && !act.habit && typeof act.until === 'number' && act.until > 4 && opp.state !== 'attack' && !HIT_STATES.has(opp.state)) act.until = 4;
+    // on a flight's treads with him on a floor (offStairs): step off, over whatever reflex or plan would swing from
+    // there (a guard that's up and a strike of his on its way still come first)
+    if (stairT > STAIR_GRACE && offStairs(me, opp, sim) && !blockedOff(me, opp, sim) && MOVING.test(me.state) && me.grounded && !(me.faint > 0)
+      && (!act || (!act.offStair && !act.block)) && !(opp.state === 'attack' && opp.phase !== 'recovery' && dist < reach('roundhouse') + 20)) {
+      tally.stepOffs++; queue = stepOff(me, opp, sim); act = queue.shift();
+    }
     // reflex: a character's own reflex specials (ai.specials with reflex: true: LAWYER's Objection at a grab starting up,
     // THE CEO's Golden Parachute at a strike), looked at every step instead of only when deciding
     if (/^(idle|walk|block|crouch|blockstun)$/.test(me.state) && still(saw, opp)) { const rx = special(me, saw, sim, sawDist, toward, true); if (rx) { queue = rx; act = null; } }
@@ -753,6 +790,20 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     } else if (act && act.wait && !waiting) { act = null; queue = []; }
     // catch-all: after two blocked hits, never the same class again until a different one lands
     if (act && act.attack && blockedStreak >= 2 && blockedClasses.has(CLASS[act.attack])) { queue = mixup(dist, toward, opp); act = queue.shift(); }
+    // The last resort, on top of the fixes (chase, stepOff, the step over a body that stands up): the stick held one
+    // way STUCK_STEPS with no strike, jump, dash or turn while the two of us can touch, or STAIR_STUCK on the treads
+    // with him off them. Drop whatever plan re-picked itself and do something else: at him, a jump-in, a dash or a
+    // swing; backing off, turn and come in (a swing when he's in reach); on the treads, step off.
+    if (MOVING.test(me.state) && me.grounded && !(me.faint > 0) && step - lastBreak > 60) {
+      if (stairT > STAIR_STUCK && (!act || !act.offStair)) {
+        lastBreak = step; tally.stairBreaks++; queue = stepOff(me, opp, sim); act = queue.shift();
+      } else if (runDir && step - runSince > STUCK_STEPS) {
+        lastBreak = step; runSince = step; tally.breaks++;
+        if (runDir === toward) queue = dist < 260 && dist > 110 && me.stamina > 30 ? jumpIn(toward, 'jab') : canDash(me, sim, false) && dist > 150 ? [dashAct(toward), dashOut()] : [{ ...attack(dist < reach('jab') + 10 ? 'jab' : 'cross'), ok: true }];
+        else queue = dist < reach('cross') && me.stamina > 20 ? [{ ...attack(dist < reach('jab') + 10 ? 'jab' : 'cross'), ok: true }] : [move(toward, 24), move(0, 6)];
+        act = queue.shift();
+      }
+    }
     // showcase: never swing into his strike that is already coming; guard it at its height
     // (a counter after a duck, the anti-air and the jab interrupt are marked ok)
     if (show && act && (act.attack || act.press || act.pressFn) && !act.ok && opp.state === 'attack' && opp.phase !== 'recovery' && dist < reach(opp.move) + 40 && /^(idle|walk|block|crouch|run)$/.test(me.state)) {
@@ -793,6 +844,14 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     }
     if (!act && dist < 140 && (opp.state === 'block' || opp.state === 'blockstun') && /^(idle|walk)$/.test(me.state)) {
       out.dx = (Math.floor(step / 30) % 2) ? toward : -toward;   // a shuffle between thinks, not a stand (a quarter second each way)
+    }
+    // a chase (see `chase`): at him wherever he is now; running once the gap stops shrinking for a quarter second, and
+    // dropped if even that hasn't closed it in a second and a quarter (the next think picks again)
+    if (act && typeof act.until === 'function' && act.until.chase && typeof act.dx === 'number' && act.dx) {
+      act.dx = toward;
+      if (act.best == null || dist < act.best - 6) { act.best = dist; act.stall = 0; }
+      else if (++act.stall > 30 && !act.run) { act.run = true; tally.chaseRuns++; }
+      if (act && act.stall > 150) { act = null; queue = []; tally.chaseDrops++; }
     }
     if (act) {
       out.dx = typeof act.dx === 'function' ? act.dx(me, opp) : act.dx; out.run = act.run; out.block = act.block; out.jump = act.jump;
@@ -844,7 +903,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
       if (waiting) { out.jump = false; out.dash = false; }   // (in the air too: a jump-in started before the turn passed had its air strike come out)
     }
     // fainted on its feet: no plan moves it (the sim roots it); the stick shakes the head clear instead
-    if (me.faint > 0 && me.grounded && me.state === 'idle') { shakeOff(me, out, step); stickDx = out.dx; stickAt = step; return out; }
+    if (me.faint > 0 && me.grounded && me.state === 'idle') { shakeOff(me, out, step); stickDx = out.dx; stickAt = step; runDir = 0; return out; }
     // A hand on a stick. Plans can be a few steps long, and back-to-back plans used to flip the direction
     // every 2 to 4 steps (25 ms) over a downed body, which restarted the walk, idle and run clips each time:
     // the arms seized. Walking, running or standing, the direction holds at least STICK_DWELL steps before
@@ -856,9 +915,16 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
         else { stickDx = dx; stickRun = run; stickAt = step; }
       }
     } else { stickDx = out.dx || 0; stickRun = !!out.run; }
+    // the stuck clock (see the last resort above): a strike, jump, dash or anything but moving, a turn of the stick, or
+    // the two of us out of each other's reach (he's down, on another level) starts it over; a stand doesn't
+    const sdx = Math.sign(out.dx || 0);
+    const busy = !MOVING.test(me.state) || !me.grounded || out.jump || out.dash || out.lp || out.rp || out.lk || out.rk || (act && act.attack)
+      || DOWN_STATES.has(opp.state) || opp.hidden || (sim.sameLevel && !sim.sameLevel(me, opp));
+    if (busy || (sdx && runDir && sdx !== runDir)) { runDir = sdx; runSince = step; }
+    else if (sdx && !runDir) { runDir = sdx; runSince = step; }
     return out;
   }
-  think.debug = () => ({ mixLog, blockedStreak, lastBlockedId, queue: queue.map(a => a.attack || (a.jump ? 'jump' : 'move')), act: act && (act.attack || (act.block ? 'block' : 'move')) });
+  think.debug = () => ({ mixLog, blockedStreak, lastBlockedId, tally, queue: queue.map(a => a.attack || (a.jump ? 'jump' : 'move')), act: act && (act.attack || (act.block ? 'block' : 'move')) });
   think.setDifficulty = (d) => { difficulty = Math.max(0, Math.min(1, d)); lag = baseLag(); };
   think.getDifficulty = () => difficulty;
   think.style = style;
