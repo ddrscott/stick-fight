@@ -9,20 +9,24 @@
 //
 // Part 1, the clips themselves, runs with the runtime guard off (setJointGuard(false)): every clip, a strike retargeted
 // by `adapt` (reach and target), and the botch mixes (makeBotch, limbBlend.js). These must be clean on their own.
-// Part 2 runs with the guard on and measures what's drawn: f.joints after the springs and the crossfade, the additive
-// hit reactions, the point simulation (launch, juggle, wall splat, ground bounce), the life layer's offsets (fatigue,
-// takes, habits, hand springs) and the perfect finisher's carried bodies and turned thrower. These must be clean, full
-// stop: no allowlist.
+// Part 2 runs with the guard on and measures what's drawn on a fighter on its feet: f.joints after the springs and the
+// crossfade, the additive hit reactions, the life layer's offsets (fatigue, takes, habits, hand springs) and the perfect
+// finisher's turned thrower. These must be clean, full stop: no allowlist. A body whose limbs are loose (rig.limbsLoose():
+// the point simulation, lying, getting up, rolling, thrown; README, Joint limits) is skipped: the limits are for attacks.
+//
+// Part 3, the settle check: every character launched every which way, and how long until the point simulation lets
+// go (rig.airborne false). Loose limbs let a body lie down; locked ones propped it up and it crept for seconds.
 //
 //   node scripts/rig/limits.mjs            run it (exit 1 on any violation not on the allowlist)
 //   node scripts/rig/limits.mjs --all      also print the allowlisted ones
+//   node scripts/rig/limits.mjs --settle   only the settle check (npm run test:settle, a few seconds)
 import '../../src/characters/index.js';
 import { roster } from '../../src/characters/index.js';
 import { createFighter, MOVES, MOVE_DATA, RIG_KIT, setJointGuard, JOINT_LIMITS } from '../../src/fighter/index.js';
 import { createLife } from '../../src/fighter/life.js';
 import { POSES, carryPose } from '../../src/fx/perfect.js';
 
-const SHOW_ALL = process.argv.includes('--all');
+const SHOW_ALL = process.argv.includes('--all'), SETTLE_ONLY = process.argv.includes('--settle');
 const R2D = 180 / Math.PI, DT = 1 / 240;
 const { knee: KNEE, elbow: ELBOW, fold: FOLD } = JOINT_LIMITS;
 
@@ -74,6 +78,7 @@ function runClip(part, name, rig, label, opt, pre, drawn = false) {
   for (let t = 0; t <= dur; t += DT * 1000) {
     rig.update(DT);
     if (rig.airborne) break;
+    if (drawn && rig.limbsLoose()) continue;   // lying, rising, thrown: no limits there
     const p = rig.pose, J = drawn ? rig.joints : rig._solve(p);
     judge(part, label, J, rig.facing, rig.scale, p.spin || 0, `key ${rig.current.frame} t ${Math.round(t)}ms ${rig.charDef.id}`);
     if (rig.current.done && !(def && def.loop)) break;
@@ -84,6 +89,7 @@ const t0 = Date.now();
 let samples = 0;
 const strikes = MOVES.filter((n) => MOVE_DATA[n] && MOVE_DATA[n].limb);
 
+if (!SETTLE_ONLY) {   // (npm run test:settle runs part 3 alone)
 // ---- part 1: the clips, guard off ---------------------------------------------------------------------------------
 setJointGuard(false);
 for (const facing of [1, -1]) for (const c of chars) {
@@ -137,24 +143,6 @@ for (const c of chars) {
       for (let t = 0; t < 600; t += 1000 / 240) { rig.update(DT); judge('drawn', `${base} + react ${r}`, rig.joints, rig.facing, rig.scale, rig.pose.spin || 0, c.id); }
     }
   }
-  // the point simulation: launched every which way, splatted on a wall, bounced off the floor, until it lies still
-  for (const [vx, vy, spin, wall] of [[260, -620, 360, 'splat'], [-200, -800, -540, 'bounce'], [500, -300, 720, 'splat'], [60, -900, 200, 'bounce'], [0, -200, 0, 'splat']]) {
-    for (const facing of [1, -1]) {
-      rig.reset({ full: true }); rig.facing = facing; rig.walls = [100, 700]; rig.update(DT);
-      rig.play('hitBody'); rig.update(0.05);
-      rig.launch({ vx, vy, spin, wall });
-      let bounced = false;
-      for (let t = 0; t < 5; t += DT) {
-        rig.update(DT);
-        if (!bounced && t > 0.5 && rig.airborne) { rig.groundBounce(); bounced = true; }
-        if (rig.airborne) judge('rag', `ragdoll (launch ${vx},${vy} spin ${spin} ${wall})`, rig.joints, rig._ragFacing(), rig.scale, 0, c.id);
-        else { judge('rag', 'ragdoll -> knockdown fade', rig.joints, rig.facing, rig.scale, 0, c.id); }
-        samples++;
-      }
-      rig.reset({ full: true }); rig.facing = facing; rig.walls = [100, 700]; rig.update(DT); rig.launch({ vx: 0, vy: 0, spin: 0 }); rig.wallSplat(facing);
-      for (let t = 0; t < 3; t += DT) { rig.update(DT); if (rig.airborne) judge('rag', 'wall splat', rig.joints, rig._ragFacing(), rig.scale, 0, c.id); }
-    }
-  }
 }
 // the life layer: fatigue, the takes and habits on every character's signature, over idle, block and walk
 {
@@ -193,6 +181,35 @@ for (const c of chars) {
   }
 }
 
+}
+
+// ---- part 3: the settle check ----------------------------------------------------------------------------------------
+// every character, both facings, six launches; play('hitBody'), a moment, launch with a bouncing wall, then 1/120 s steps
+// until the point simulation lets go. ce3873b (before the limits): mean 1.53 s, median 1.51, p90 2.02, max 2.58.
+// The single slowest launch is chaos: moving the pre-hit moment from 0.05 s to 0.04-0.06 s swings it 2.3-2.7 s at
+// ce3873b and 2.1-2.9 s here, so the ceiling is 3.0 s (the locked limbs' worst was 3.72) and the mean and p90 must hold
+// too. Over 5 s is the unwedge fallback, never a real rest.
+const SETTLE_MAX = 3.0, SETTLE_CAP = 5, SETTLE_MEAN = 1.7, SETTLE_P90 = 2.2;
+const settle = [];
+for (const c of chars) for (const facing of [1, -1]) for (const [vx, vy, spin] of [[260, -620, 360], [400, -800, 540], [150, -400, 200], [600, -500, 720], [80, -900, -300], [300, -300, 0]]) {
+  const rig = rigOf(c, facing);
+  rig.reset({ full: true }); rig.facing = facing; rig.walls = [100, 700];
+  rig.play('hitBody'); rig.update(0.05);
+  rig.launch({ vx, vy, spin, wall: 'bounce' });
+  let t = 0;
+  while (rig.airborne && t < 10) { rig.update(1 / 120); t += 1 / 120; }
+  settle.push({ t, label: `${c.id} facing ${facing} [${vx},${vy},${spin}]` });
+}
+settle.sort((a, b) => a.t - b.t);
+const sT = settle.map((r) => r.t), q = (p) => sT[Math.min(sT.length - 1, Math.floor(p * sT.length))];
+const sMax = settle[settle.length - 1];
+console.log(`settle: ${settle.length} launches, mean ${(sT.reduce((a, b) => a + b, 0) / sT.length).toFixed(2)}s, median ${q(0.5).toFixed(2)}, p90 ${q(0.9).toFixed(2)}, max ${sMax.t.toFixed(2)} (${sMax.label}); ce3873b: mean 1.53, median 1.51, p90 2.02, max 2.58`);
+const slow = settle.filter((r) => r.t > SETTLE_MAX);
+const sMean = sT.reduce((a, b) => a + b, 0) / sT.length;
+if (sMean > SETTLE_MEAN) slow.push({ t: sMean, label: `the mean (over ${SETTLE_MEAN}s)` });
+if (q(0.9) > SETTLE_P90) slow.push({ t: q(0.9), label: `the p90 (over ${SETTLE_P90}s)` });
+if (slow.length) { console.log(`FAIL: ${slow.length} settle check(s) too slow (any launch over ${SETTLE_MAX}s, mean, p90):`); for (const r of slow) console.log(`  ${r.t.toFixed(2)}s  ${r.label}${r.t > SETTLE_CAP ? '  (the unwedge fallback)' : ''}`); }
+
 // ---- report ---------------------------------------------------------------------------------------------------------
 const rows = [...found.values()].sort((a, b) => b.d - a.d);
 const allowKey = (r) => `${r.name.replace(/ \(.*$/, '')} ${r.side}`;
@@ -200,10 +217,10 @@ const bad = rows.filter((r) => !ALLOW[allowKey(r)]), ok = rows.filter((r) => ALL
 const fmt = (r) => `  ${r.part.padEnd(6)} ${(r.name + ' ' + r.side).padEnd(52)} ${(r.side[1] === 'l' ? 'knee' : 'elbow').padEnd(5)} ${r.v.toFixed(1).padStart(7)} deg (${r.d.toFixed(1)} past)  ${r.where}`;
 if (SHOW_ALL && ok.length) { console.log(`allowlisted (${ok.length}):`); for (const r of ok) console.log(fmt(r) + `  -- ${ALLOW[allowKey(r)]}`); }
 const unused = Object.keys(ALLOW).filter((k) => !ok.some((r) => allowKey(r) === k));
-if (unused.length) console.log(`allowlist entries no longer needed: ${unused.join(', ')}`);
+if (unused.length && !SETTLE_ONLY) console.log(`allowlist entries no longer needed: ${unused.join(', ')}`);
 console.log(`joint limits: knee <= +${KNEE}, elbow >= ${ELBOW}; ${chars.length} bodies, ${MOVES.length} clips, ${samples} runs, ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-if (bad.length) {
-  console.log(`FAIL: ${bad.length} limb(s) bend the wrong way:`);
+if (bad.length || slow.length) {
+  if (bad.length) console.log(`FAIL: ${bad.length} limb(s) bend the wrong way:`);
   for (const r of bad) console.log(fmt(r));
   process.exit(1);
 }
