@@ -1942,7 +1942,34 @@ Read the work columns as the CPU cost (time inside the frame on the main thread)
 
 **The look at tier 3** is unchanged: `node scripts/perf/compare.mjs <main's dist> <out>` steps the same seeded scenes frame by frame in both builds, with `Math.random`, the particles and the arena clock seeded, and compares the screenshots. RMSE against main is 0.004 to 0.024 (main against itself: 0.0005 to 0.0075). The differences are sub-pixel: the cached background is sampled rather than drawn at the exact zoom, the city windows are antialiased as one path, and HUD text is stamped on whole device pixels. `scripts/perf/results/tier3-before-after.jpg` shows three scenes side by side. Fighters don't glow.
 
-**Not done, and worth doing with a real phone in hand:** a GPU trace on an actual Mali or Apple GPU (the SwiftShader numbers are relative only), the HUD's other `shadowBlur`s (the bars and the timer ring, which change size every frame), and pooling particle objects.
+**Not done, and worth doing with a real phone in hand:** a GPU trace on an actual Mali or Apple GPU (the SwiftShader numbers are relative only), and pooling particle objects. The HUD's other `shadowBlur`s (the bars and the timer ring) are gone at tiers 2 and under (the HUD at low tiers, below) but still live at tier 3.
+
+### The HUD at low tiers (2026-11-15)
+
+A Pixel Fold got hot on GRAPHICS › LOW, and the HUD cost the same at every tier: a canvas at the stage's full device px (up to 2560x1440), redrawn every frame, with about 20 live `shadowBlur` glows on it (the life-bar frames, the stamina strips and their refill and refund flashes, the timer ring, which pulses up to a 42 px blur in the last ten seconds, the round pips, the overhead bars, the title card's rules and the DEMO box).
+
+- **Tiers 1 and 0 draw the HUD canvas at 1x** (1280x720, scaled up by CSS). The text is plain and stays readable. `hud.draw({ tier })` gets the compositor's tier every frame, and a change (adaptive, or the GRAPHICS pick) resizes the canvas before anything is drawn. The overlay's `hud Nx` shows the scale it's drawing at. The band held upright keeps its own size: it's a thin strip.
+- **Tiers 2 to 0 have no live `shadowBlur` in the HUD.** Every glow goes through `glow(color, blur, lineWidth)` in `src/combat/hud.js`. At tier 3 it sets the shadow as before, so tier 3 looks the same (RMSE 0.00005 against before on the seeded frame). Under that, it strokes the same path three times, under the shape, wide and faint in the glow's color (widths of the shape's line plus 0.9, 0.55 and 0.25 of the blur, at 7%, 11% and 18%). A fill gets its path as a `rect()` so it can be stroked. The bars and the ring change size every frame, so the halo is redrawn every frame, not cached. It's a few strokes, never a blur. The blinks and colors mean the same things: low stamina blinks pink and its track's glow pulses, a refill flashes white, a refund flashes cyan, and the hurry clock turns pink and its halo swells with the pulse. A neon label under a scale (a banner's pop, the hurry clock's swell) is now its cached stamp scaled at these tiers, instead of a live blur.
+- Nothing new glows: fighters never glow, and readable text never glows.
+- `scripts/perf/results/hud-tiers.jpg` shows tiers 3, 2, 1 and 0 before and after, on a seeded mid-fight frame with P1's stamina low and the hurry clock just ticked (`node scripts/perf/hud-tiers.mjs <dir> [--dist <dir>] [--label before]`, at DPR 2).
+
+**Measured** (M3 Pro, emulated Pixel 7 sideways; this pass's HUD canvas there is 1.5x, so 1920x1080, before). The main thread's `hud` phase hardly moves, because the JS only records the draw calls. A blur's cost is in rasterizing them, which happens after the frame, off the main thread on a real GPU. So `run.mjs --hud` also times the raster: it forces P1's stamina low and the clock to pulse every frame, steps 240 frames, and after each reads one pixel back from the HUD canvas, which waits for the HUD to be rasterized. On SwiftShader the canvases raster on the CPU (`src/softcanvas.js`), so that wait reads as a relative stand-in for a phone GPU's fill cost, the same way the GPU tables above do.
+
+| Tier 1, `run.mjs` (Metal), close / horde | CPU | hud phase p50 / p95 ms, before → after | main-thread work p50 / p95 ms, before → after |
+|---|---|---|---|
+| close | 4x | 0.2 / 2.8 → 0.2 / 2.2 | 1.8 / 5.4 → 1.3 / 3.7 |
+| close | 6x | 0.2 / 3.5 → 0.2 / 2.7 | 1.7 / 6.1 → 1.9 / 5.6 |
+| horde | 4x | 0.2 / 2.8 → 0.2 / 2.1 | 2.2 / 4.8 → 2.1 / 4.3 |
+| horde | 6x | 0.1 / 3.5 → 0.2 / 4.6 | 2.6 / 7.3 → 3.0 / 8.3 |
+
+| HUD raster, `run.mjs --hud --angle swiftshader`, close | Tier | 1x CPU p50 / p95 ms, before → after | 4x CPU p50 / p95 ms, before → after |
+|---|---|---|---|
+| close | 3 | 3.1 / 8.9 → 3.2 / 10.0 | 12.0 / 34.3 → 12.2 / 28.4 |
+| close | 2 | 2.8 / 7.5 → 2.1 / 7.9 | 12.0 / 30.5 → 8.2 / 20.9 |
+| close | 1 | 3.0 / 7.6 → 1.1 / 6.9 | 10.8 / 23.9 → 4.0 / 11.3 |
+| close | 0 | 2.5 / 5.2 → 1.0 / 5.1 | 8.7 / 15.5 → 4.0 / 7.4 |
+
+Read the main-thread table as "no worse": its p95s swing from run to run on a shared machine. The raster table is the one this pass changed: at tier 1, the HUD costs about a third of what it did at 4x, and at tier 2 about two thirds. Tier 3 is unchanged on purpose. No real phone was measured: whether the Fold runs cooler on LOW is for `?perf=1` and a hand on the back of the phone to say.
 
 ### Chromebooks (2026-11-11)
 

@@ -5,12 +5,15 @@
 // DevTools. It reads the game's own profiler (src/perf.js, window.__perf) after a warm-up.
 //
 //   node scripts/perf/run.mjs [--throttle 1,4,6] [--tier 3,2,1|auto] [--secs 8] [--scenes close,horde,...]
-//                             [--device pixel7|pixel7up|desktop] [--gpu] [--rollback] [--load] [--json out.json]
+//                             [--device pixel7|pixel7up|desktop] [--gpu] [--rollback] [--hud] [--load] [--json out.json]
 //
 //   --gpu       per-frame GPU time with no CPU throttle: each frame is followed by a 1-pixel readPixels,
 //               which waits for the GPU to finish, so the step's time is CPU plus GPU (Apple M3 Pro here)
 //   --rollback  the worst rollback burst: load a snapshot and re-run 12 steps (src/net/rollback.js's
 //               MAX_ROLLBACK), saving a snapshot before each as the netcode does, timed in the page
+//   --hud       the HUD's cost on a frame with P1's stamina low and the hurry clock pulsing, at each --throttle:
+//               the hud phase (main thread inside hud.draw) and hud.draw plus a 1-pixel read of the HUD canvas,
+//               which waits for it to be rasterized (blurs included), 240 stepped frames
 //   --load      /play/ cold load: first frame drawn (__gauntlet.ready) and main-thread time, cache off
 //
 // The browser hides navigator.webdriver, so the game behaves as on a phone (its adaptive tier on unless
@@ -94,10 +97,10 @@ async function open(url, throttle, extra = {}) {
 const ms = (v) => +v.toFixed(2);
 function row(s) {
   return { fps: ms(s.fps), drawn: ms(s.drawnFps ?? s.fps), every: s.info.every || 1, p50: ms(s.iv.p50), p95: ms(s.iv.p95), p99: ms(s.iv.p99), longPerMin: Math.round(s.longPerMin), work50: ms(s.work.p50), work95: ms(s.work.p95),
-    sim50: ms(s.sim.p50), sim95: ms(s.sim.p95), draw50: ms(s.draw.p50), draw95: ms(s.draw.p95), gl50: ms(s.gl.p50), gl95: ms(s.gl.p95), hud50: ms(s.hud.p50), tier: s.info.tier };
+    sim50: ms(s.sim.p50), sim95: ms(s.sim.p95), draw50: ms(s.draw.p50), draw95: ms(s.draw.p95), gl50: ms(s.gl.p50), gl95: ms(s.gl.p95), hud50: ms(s.hud.p50), hud95: ms(s.hud.p95), tier: s.info.tier };
 }
 
-if (!flag('--gpu') && !flag('--rollback') && !flag('--load')) {
+if (!flag('--gpu') && !flag('--rollback') && !flag('--load') && !flag('--hud')) {
   for (const name of PICK) {
     const S = SCENARIOS[name];
     for (const throttle of THROTTLES) for (const tier of TIERS) {
@@ -150,6 +153,35 @@ if (flag('--gpu')) {
       return { cpu50: p(a, 0.5), synced50: p(t, 0.5), synced95: p(t, 0.95), gpuWait50: p(t.map((v, i) => v - a[i]), 0.5) };
     }, opt('--off', '').split(',').filter(Boolean));
     const out = { scenario: name, mode: 'gpu', angle: ANGLE, tier, off: opt('--off', ''), ...Object.fromEntries(Object.entries(r).map(([k, v]) => [k, ms(v)])) };
+    results.push(out); console.log(JSON.stringify(out));
+    await ctx.close();
+  }
+}
+
+if (flag('--hud')) {
+  for (const name of PICK) for (const throttle of THROTTLES) for (const tier of TIERS) {
+    const S = SCENARIOS[name];
+    const q = [`scene=${S.scene}`, S.q, `tier=${tier === 'auto' ? 3 : tier}`, QUERY].filter(Boolean).join('&');
+    const { ctx, page } = await open(base + '?' + q, throttle);
+    await page.goto(base + '?' + q);
+    await page.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 60000 });
+    await page.waitForTimeout(WARM * 1000);
+    const r = await page.evaluate(() => {
+      const g = window.__gauntlet, s = window.__game.sim, c = document.getElementById('hud').getContext('2d');
+      const t = [], p = (v, q) => v.slice().sort((x, y) => x - y)[Math.floor(q * v.length)];
+      window.__perf.reset();
+      for (let i = 0; i < 240; i++) {
+        const u = s.units[0];
+        u.stamina = (u.staminaMax || 100) * 0.2; s.timer = 9.99 - (i % 60) / 60;   // low stamina, the clock pulsing each second
+        window.__perf.begin(performance.now()); g.step(1000 / 60); window.__perf.end();   // so the hud phase is recorded
+        const t1 = performance.now();
+        c.getImageData(0, 0, 1, 1);
+        t.push(performance.now() - t1);
+      }
+      const h = window.__perf.summary().hud;
+      return { hud50: h.p50, hud95: h.p95, raster50: p(t, 0.5), raster95: p(t, 0.95), scale: document.getElementById('hud').width / 1280 };
+    });
+    const out = { scenario: name, mode: 'hud', throttle, tier, ...Object.fromEntries(Object.entries(r).map(([k, v]) => [k, ms(v)])) };
     results.push(out); console.log(JSON.stringify(out));
     await ctx.close();
   }

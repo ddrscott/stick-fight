@@ -30,6 +30,16 @@ const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade
 
 export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 1 } = {}) {
   const frameCtx = canvas.getContext('2d');
+  // The HUD's tier (draw({ tier }), the compositor's): at 2 and under no glow is a live shadowBlur (glow() below),
+  // and at 1 and under the frame canvas is drawn at 1x, 1280x720 scaled up by CSS (README, Performance, the HUD at
+  // low tiers). fullDpr is the screen's own (main.js sizes it); frameDpr is what the canvas is drawn at now.
+  const fullDpr = frameDpr;
+  let cheap = false, hudTier = 3;
+  function setTier(t) {
+    hudTier = t; cheap = t <= 2;
+    const s = t <= 1 ? 1 : fullDpr;
+    if (s !== frameDpr) { frameDpr = s; canvas.width = Math.round(width * s); canvas.height = Math.round(height * s); }
+  }
   // what's being drawn on: the frame, or (for the strip, held upright) the band's canvas. L is the strip's layout
   // and sw the width it's laid out across.
   let ctx = frameCtx, dpr = frameDpr, L = WIDE, sw = width;
@@ -66,7 +76,9 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
   function neonText(text, x, y, size, color, { font = DISPLAY, align = 'center', glow = 1, core = true, weight = '' } = {}) {
     const t = ctx.getTransform();
     const w = measure(text, size, font, weight);
-    if (typeof document !== 'undefined' && t.a === dpr && t.d === dpr && t.b === 0 && t.c === 0) {
+    const own = t.a === dpr && t.d === dpr && t.b === 0 && t.c === 0;
+    // at tiers 2 and under a scaled label (a banner's pop, the hurry clock's swell) is the stamp scaled too, never a live blur
+    if (typeof document !== 'undefined' && (own || cheap)) {
       const g = Math.round(glow * 20) / 20, key = `${text}|${size}|${color}|${font}|${weight}|${g}|${core ? 1 : 0}|${dpr}`;
       let e = textCache.get(key);
       if (e) { textCache.delete(key); textCache.set(key, e); }
@@ -82,6 +94,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
         if (textCache.size > 128) textCache.delete(textCache.keys().next().value);
       }
       const left = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+      if (!own) { ctx.drawImage(e.c, left - e.pad, y - e.oy, e.c.width / dpr, e.c.height / dpr); return w; }
       // on whole device pixels, so a stamp is as sharp as the text was
       const dx = Math.round((left - e.pad) * dpr) / dpr, dy = Math.round((y - e.oy) * dpr) / dpr;
       ctx.drawImage(e.c, dx, dy, e.c.width / dpr, e.c.height / dpr);
@@ -93,6 +106,21 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     return w;
   }
   const textCache = new Map(), widths = new Map();
+  // A glow around the current path, for the stroke or fill that follows it. Tier 3: a live shadowBlur (cleared by
+  // the caller's restore). Tiers 2 and under: no blur at all, the costliest thing a 2D canvas does on a phone's GPU:
+  // the path is stroked three times under the shape, wide and faint, in the glow's color (lw: the shape's own line width,
+  // 0 for a fill). The bars, stamina strips and the clock change size every frame, so this is redrawn, never cached.
+  function glow(color, blur, lw = 0) {
+    if (!cheap) { ctx.shadowColor = color; ctx.shadowBlur = blur; return; }
+    ctx.shadowBlur = 0;
+    if (!(blur > 0)) return;
+    const a = ctx.globalAlpha, ss = ctx.strokeStyle, w = ctx.lineWidth, j = ctx.lineJoin;
+    ctx.strokeStyle = color; ctx.lineJoin = 'round';
+    ctx.globalAlpha = a * 0.07; ctx.lineWidth = lw + blur * 0.9; ctx.stroke();
+    ctx.globalAlpha = a * 0.11; ctx.lineWidth = lw + blur * 0.55; ctx.stroke();
+    ctx.globalAlpha = a * 0.18; ctx.lineWidth = lw + blur * 0.25; ctx.stroke();
+    ctx.globalAlpha = a; ctx.strokeStyle = ss; ctx.lineWidth = w; ctx.lineJoin = j;
+  }
   if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { textCache.clear(); widths.clear(); });
   // Plain HUD text: a solid, slightly lightened fill inside a firm dark outline, no glow. Anything meant
   // to be read uses it (names, move hints, score, key hints, the move list, status tags over a fighter):
@@ -155,7 +183,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     if (w > 0) { ctx.save(); para(x, y, BAR_W, BAR_H, side); ctx.clip(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(side === 0 ? x + BAR_W - w : x - SKEW, y + BAR_H * 4 / 18, w + SKEW, BAR_H / 6); ctx.restore(); }
     // glowing frame
     ctx.save(); para(x - 2, y - 2, BAR_W + 4, BAR_H + 4, side);
-    ctx.shadowColor = color; ctx.shadowBlur = L.glow; ctx.lineWidth = L.frame; ctx.strokeStyle = color; ctx.stroke();
+    glow(color, L.glow, L.frame); ctx.lineWidth = L.frame; ctx.strokeStyle = color; ctx.stroke();
     ctx.shadowBlur = 0; ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.stroke(); ctx.restore();
 
     // stamina: a thin amber bar under the health bar. Under 35 (two jabs from fainting) it turns
@@ -164,22 +192,22 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     const faint = u.faint > 0, low = !faint && st < 0.35, blink = Math.floor(clock * 7) % 2 === 0;
     para(x + (side === 0 ? IN : 0), sy, BAR_W - IN, ST_H, side);
     ctx.fillStyle = low && blink ? 'rgba(255,43,214,0.28)' : 'rgba(14,4,30,0.7)'; ctx.fill();
-    if (low) { ctx.save(); ctx.shadowColor = NEON.pink; ctx.shadowBlur = blink ? 10 : 4; ctx.lineWidth = 1; ctx.strokeStyle = blink ? NEON.pink : 'rgba(255,43,214,0.45)'; ctx.stroke(); ctx.restore(); }
+    if (low) { ctx.save(); glow(NEON.pink, blink ? 10 : 4, 1); ctx.lineWidth = 1; ctx.strokeStyle = blink ? NEON.pink : 'rgba(255,43,214,0.45)'; ctx.stroke(); ctx.restore(); }
     const stw = (BAR_W - IN) * st;
     if (stw > 0) {
       ctx.save(); para(x + (side === 0 ? IN : 0), sy, BAR_W - IN, ST_H, side); ctx.clip();
       const ra = refillAt.get(u), refill = ra != null && clock - ra < 0.6, rflash = refill && Math.floor(clock * 14) % 2 === 0;   // knocked down: it refills with a flash
       const c = rflash ? NEON.white : faint ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
       ctx.globalAlpha = faint ? 0.6 : 1;
-      ctx.shadowColor = faint ? NEON.violet : low ? NEON.pink : NEON.amber; ctx.shadowBlur = faint ? 4 : low || refill ? 12 : 8; ctx.fillStyle = c;
-      ctx.fillRect(side === 0 ? x + IN + (BAR_W - IN) - stw : x - SKEW, sy, stw + SKEW, ST_H);
+      ctx.beginPath(); ctx.rect(side === 0 ? x + IN + (BAR_W - IN) - stw : x - SKEW, sy, stw + SKEW, ST_H);
+      glow(faint ? NEON.violet : low ? NEON.pink : NEON.amber, faint ? 4 : low || refill ? 12 : 8); ctx.fillStyle = c; ctx.fill();
       // a hit that connected gave some back: the gained piece flashes cyan (white-cyan on a hit, dimmer on a block)
       const rf = refundAt.get(u), rk = rf ? 1 - (clock - rf.at) / REFUND_FLASH : 0;
       if (rk > 0 && !faint && st > rf.from) {
         const gw = (BAR_W - IN) * (st - rf.from);
         ctx.globalAlpha = Math.min(1, rk * 1.6) * (rf.blocked ? 0.7 : 1);
-        ctx.shadowColor = NEON.cyan; ctx.shadowBlur = 14; ctx.fillStyle = Math.floor(clock * 16) % 2 === 0 ? NEON.white : NEON.cyan;
-        ctx.fillRect(side === 0 ? x + IN + (BAR_W - IN) - stw : x - SKEW + stw - gw, sy, gw + SKEW, ST_H);
+        ctx.beginPath(); ctx.rect(side === 0 ? x + IN + (BAR_W - IN) - stw : x - SKEW + stw - gw, sy, gw + SKEW, ST_H);
+        glow(NEON.cyan, 14); ctx.fillStyle = Math.floor(clock * 16) % 2 === 0 ? NEON.white : NEON.cyan; ctx.fill();
       }
       ctx.restore();
     }
@@ -249,7 +277,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
         const px = side === 0 ? x + BAR_W - L.pipIn - k * L.pipGap : x + L.pipIn + k * L.pipGap, py = ly;
         ctx.save(); ctx.beginPath(); ctx.arc(px, py, L.pipR, 0, Math.PI * 2);
         const won = sim.wins[i] > k;
-        ctx.shadowColor = won ? NEON.amber : color; ctx.shadowBlur = (won ? 12 : 4) * (L.band ? 0.5 : 1);
+        glow(won ? NEON.amber : color, (won ? 12 : 4) * (L.band ? 0.5 : 1), L.band ? 1.5 : 2);
         if (won) { ctx.fillStyle = NEON.amber; ctx.fill(); }
         ctx.lineWidth = L.band ? 1.5 : 2; ctx.strokeStyle = won ? '#fff1c9' : color; ctx.globalAlpha = won ? 1 : 0.7; ctx.stroke(); ctx.restore();
       }
@@ -442,8 +470,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
         if (st.bar != null) {
           const bx = s.x - bw / 2;
           ctx.fillStyle = 'rgba(14,4,30,0.8)'; ctx.fillRect(bx - 1, y - 1, bw + 2, 6);
-          ctx.save(); ctx.shadowColor = st.barColor; ctx.shadowBlur = 8; ctx.fillStyle = st.barColor;
-          ctx.fillRect(st.fill ? bx : s.x - bw / 2 * st.bar, y, bw * st.bar, 4);   // stun drains to the middle; a getup fills
+          ctx.save(); ctx.beginPath(); ctx.rect(st.fill ? bx : s.x - bw / 2 * st.bar, y, bw * st.bar, 4);   // stun drains to the middle; a getup fills
+          glow(st.barColor, 8); ctx.fillStyle = st.barColor; ctx.fill();
           ctx.restore();
           y += 7;
         }
@@ -452,7 +480,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
         plainText(t.text, s.x, y + tfs / 2 + 1, tfs, t.color, { font: DISPLAY, align: 'center', weight: '' });
         y += tfs + 1;
         ctx.save(); ctx.fillStyle = 'rgba(14,4,30,0.8)'; ctx.fillRect(s.x - bw / 2 - 1, y - 1, bw + 2, 4);
-        ctx.shadowColor = t.color; ctx.shadowBlur = 6; ctx.fillStyle = t.color; ctx.fillRect(s.x - bw / 2, y, bw * Math.max(0, Math.min(1, t.k)), 2); ctx.restore();
+        ctx.beginPath(); ctx.rect(s.x - bw / 2, y, bw * Math.max(0, Math.min(1, t.k)), 2); glow(t.color, 6); ctx.fillStyle = t.color; ctx.fill(); ctx.restore();
         y += 4;
       }
       if (s.stamShow) {
@@ -462,9 +490,9 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
         const flash = s.refill > 0 && Math.floor(clock * 14) % 2 === 0;   // a knockdown refill flashes it white
         const c = flash ? NEON.white : u.faint > 0 ? NEON.violet : low ? (blink ? NEON.white : NEON.pink) : NEON.amber;
         if (s.refill > 0) ctx.globalAlpha = Math.max(ctx.globalAlpha, 0.95);
-        ctx.shadowColor = c; ctx.shadowBlur = low || s.refill > 0 ? 10 : 4; ctx.fillStyle = c; ctx.fillRect(bx, y, bw * stam, 2);
+        ctx.beginPath(); ctx.rect(bx, y, bw * stam, 2); glow(c, low || s.refill > 0 ? 10 : 4); ctx.fillStyle = c; ctx.fill();
         const rf = refundAt.get(u), rk = rf ? 1 - (clock - rf.at) / REFUND_FLASH : 0;   // a refund: the gained piece flashes cyan
-        if (rk > 0 && !(u.faint > 0) && stam > rf.from) { ctx.globalAlpha = Math.max(ctx.globalAlpha, Math.min(1, rk * 1.6)); ctx.shadowColor = NEON.cyan; ctx.shadowBlur = 10; ctx.fillStyle = NEON.cyan; ctx.fillRect(bx + bw * rf.from, y - 0.5, bw * (stam - rf.from), 3); }
+        if (rk > 0 && !(u.faint > 0) && stam > rf.from) { ctx.globalAlpha = Math.max(ctx.globalAlpha, Math.min(1, rk * 1.6)); ctx.beginPath(); ctx.rect(bx + bw * rf.from, y - 0.5, bw * (stam - rf.from), 3); glow(NEON.cyan, 10); ctx.fillStyle = NEON.cyan; ctx.fill(); }
         ctx.restore();
         y += 6;
       }
@@ -472,8 +500,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
         for (let n = 0; n < pips.max; n++) {
           const px = s.x + (n - (pips.max - 1) / 2) * 12, py = y + 4, on = n < pips.left;
           ctx.save(); ctx.translate(px, py); ctx.rotate(Math.PI / 4);
-          ctx.shadowColor = NEON.cyan; ctx.shadowBlur = on ? 8 : 0; ctx.lineWidth = 1.5; ctx.strokeStyle = NEON.cyan; ctx.globalAlpha *= on ? 1 : 0.4;
-          if (on) { ctx.fillStyle = NEON.cyan; ctx.fillRect(-3, -3, 6, 6); } else ctx.strokeRect(-3, -3, 6, 6);
+          ctx.lineWidth = 1.5; ctx.strokeStyle = NEON.cyan; ctx.globalAlpha *= on ? 1 : 0.4;
+          if (on) { ctx.beginPath(); ctx.rect(-3, -3, 6, 6); glow(NEON.cyan, 8); ctx.fillStyle = NEON.cyan; ctx.fill(); } else ctx.strokeRect(-3, -3, 6, 6);
           ctx.restore();
         }
       }
@@ -481,10 +509,10 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     });
   }
   function sparkle(x, y, s, color) {
-    ctx.save(); ctx.translate(x, y); ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 6;
+    ctx.save(); ctx.translate(x, y); ctx.fillStyle = color;
     ctx.beginPath();
     for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, rr = k % 2 ? s * 0.3 : s; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
-    ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.closePath(); glow(color, 6); ctx.fill(); ctx.restore();
   }
 
   // the online win/loss tally, small under ROUND: flow.tally is { you, rival, draw, ... } from the local
@@ -513,10 +541,11 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     ctx.save();
     ctx.translate(cx, cy); ctx.scale(s, s);
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fillStyle = hurry ? `rgba(${40 + 50 * pulse | 0},4,40,0.82)` : 'rgba(14,4,30,0.78)'; ctx.fill();
-    ctx.shadowColor = hurry ? NEON.pink : NEON.violet; ctx.shadowBlur = (16 + 26 * pulse) * B; ctx.lineWidth = (3 + 2 * pulse) * (L.band ? 0.7 : 1); ctx.strokeStyle = hurry ? NEON.pink : NEON.violet; ctx.stroke();
+    const rw = (3 + 2 * pulse) * (L.band ? 0.7 : 1), aw = L.band ? 1.8 : 2.5;
+    glow(hurry ? NEON.pink : NEON.violet, (16 + 26 * pulse) * B, rw); ctx.lineWidth = rw; ctx.strokeStyle = hurry ? NEON.pink : NEON.violet; ctx.stroke();
     const f = limit ? Math.max(0, Math.min(1, sim.timer / sim.roundTime)) : 1;
-    ctx.shadowBlur = 8 * B; ctx.lineWidth = L.band ? 1.8 : 2.5; ctx.strokeStyle = hurry ? NEON.pink : '#e6d6ff';
-    ctx.beginPath(); ctx.arc(0, 0, r - (L.band ? 4 : 6), -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, r - (L.band ? 4 : 6), -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2);
+    glow(hurry ? NEON.pink : NEON.violet, 8 * B, aw); ctx.lineWidth = aw; ctx.strokeStyle = hurry ? NEON.pink : '#e6d6ff'; ctx.stroke();
     const text = limit ? String(secs).padStart(2, '0') : '∞';
     if (hurry) neonText(text, 0, L.band ? 1 : 2, size, NEON.pink, { glow: 0.35 + pulse });
     else plainText(text, 0, L.band ? 1 : 2, limit ? size : size + 4, NEON.white, { font: DISPLAY, align: 'center', weight: '' });
@@ -603,12 +632,12 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     const breathe = 0.75 + 0.25 * Math.sin(clock * 2.4);
     const ny = spot.y - 38, nw = measure('N E O N', 26, LABEL, 600);
     neonText('N E O N', spot.x, ny, 26, NEON.cyan, { font: LABEL, weight: 600, glow: 0.9 });
-    ctx.save(); ctx.strokeStyle = NEON.cyan; ctx.shadowColor = NEON.cyan; ctx.shadowBlur = 10; ctx.lineWidth = 2;
-    for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(spot.x + d * (nw / 2 + 14), ny); ctx.lineTo(spot.x + d * (nw / 2 + 120), ny); ctx.stroke(); }
+    ctx.save(); ctx.strokeStyle = NEON.cyan; ctx.lineWidth = 2;
+    for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(spot.x + d * (nw / 2 + 14), ny); ctx.lineTo(spot.x + d * (nw / 2 + 120), ny); glow(NEON.cyan, 10, 2); ctx.stroke(); }
     ctx.restore();
     neonText('STICK FIGHT', spot.x, spot.y + 12, 70, NEON.pink, { glow: 1.1 + 0.3 * breathe });
-    ctx.save(); ctx.globalAlpha *= 0.55 + 0.45 * breathe; ctx.strokeStyle = NEON.amber; ctx.shadowColor = NEON.amber; ctx.shadowBlur = 12; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(spot.x - titleW / 2 + 40, spot.y + 54); ctx.lineTo(spot.x + titleW / 2 - 40, spot.y + 54); ctx.stroke();
+    ctx.save(); ctx.globalAlpha *= 0.55 + 0.45 * breathe; ctx.strokeStyle = NEON.amber; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(spot.x - titleW / 2 + 40, spot.y + 54); ctx.lineTo(spot.x + titleW / 2 - 40, spot.y + 54); glow(NEON.amber, 12, 3); ctx.stroke();
     ctx.restore();
     ctx.restore();
 
@@ -627,8 +656,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     const dw = measure('DEMO', 22, LABEL, 600) + 22, dh = 28, dx = view.x1 - 30 - dw / 2, dy = height - 26;
     const covered = overlaps({ x0: dx - dw / 2, x1: dx + dw / 2, y0: dy - dh / 2, y1: dy + dh / 2 }, boxes);
     ctx.save(); ctx.globalAlpha = covered ? 0.15 : 0.9;
-    ctx.strokeStyle = NEON.violet; ctx.shadowColor = NEON.violet; ctx.shadowBlur = 10; ctx.lineWidth = 2;
-    ctx.strokeRect(dx - dw / 2, dy - dh / 2, dw, dh);
+    ctx.strokeStyle = NEON.violet; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.rect(dx - dw / 2, dy - dh / 2, dw, dh); glow(NEON.violet, 10, 2); ctx.stroke();
     ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(14,4,30,0.55)'; ctx.fillRect(dx - dw / 2 + 1, dy - dh / 2 + 1, dw - 2, dh - 2);
     neonText('DEMO', dx, dy + 2, 22, NEON.violet, { font: LABEL, weight: 600, glow: 0.7 });
     ctx.restore();
@@ -636,7 +665,8 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
 
   // flow (src/flow/, null for a ?scene= URL): { bare, score, bonus, names, hint }. bare = a menu is
   // up over a dimmed scene, so no HUD at all. Returns { prompt } on the title (see attractCard).
-  function draw({ sim, camera, dt = 0, debug = false, scene = '', paused = false, help = false, attract = null, flow = null, toast = null, found = null, under = null, bannerUp = false }) {
+  function draw({ sim, camera, dt = 0, debug = false, scene = '', paused = false, help = false, attract = null, flow = null, toast = null, found = null, under = null, bannerUp = false, tier = 3 }) {
+    if (tier !== hudTier) setTier(tier);   // a tier change (adaptive, or GRAPHICS) resizes the canvas, which clears it: before anything's drawn
     foundTech = found;
     clock += dt;
     layout = {};
@@ -810,7 +840,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     textCache.clear();
   }
 
-  return { draw, event, setSquare };
+  return { draw, event, setSquare, get scale() { return frameDpr; } };
 }
 
 function mix(a, b, t) {
