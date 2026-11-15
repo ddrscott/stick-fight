@@ -40,10 +40,10 @@ const SPLAT_STEPS = 48, BREAK_STEPS = 36, RISE_STEPS = 24, DASH_STEPS = DASH.att
 const CROUCH_SQUASH = 0.7;
 // a unit's stat-upgrade multiplier (setCharacter boost; src/career/upgrades.js): 1 when it has none, a horde goon included
 const up = (u, k) => (u && u[k]) || 1;
-const FLOOR_DMG = 10, VAULT_HOP_VY = 420;
-// stairs hurt (README, Floors): each new, lower tread a tumbling body touches costs STAIR_DMG (no combo decay);
+const FLOOR_DMG = 10, VAULT_HOP_VY = 420;   // landing damage after a floor break; the vault's hop
+// stairs hurt (README, Stairs hurt): each new, lower tread a tumbling body touches costs STAIR_DMG (no combo decay);
 // a joint within STAIR_CONTACT px above a flight's nosing line is touching the tread under it
-const STAIR_DMG = 3, STAIR_CONTACT = 14;   // landing damage after a floor break; the vault's hop   // a crouch drawn by squashing the standing pose, until the rig has crouch clips
+const STAIR_DMG = 5, STAIR_CONTACT = 14;
 const INVULN = new Set(['getup', 'ko', 'roll']);
 const OTG = { bounce: 4 };   // a ground hit's flinch: a 2-frame 6px pop; the body stays down
 // Hitting a body on the floor (README, Fundamentals): only a strike whose drawn limb touches the drawn lying body

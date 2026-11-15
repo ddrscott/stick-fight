@@ -726,7 +726,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     const cb = sim.combo || sim.lastCombo;
     if (cb && cb.count >= 2) items.push({ text: `${cb.count} HITS`, by: cb.by, color: cb.by === 0 ? NEON.cyan : NEON.pink, size: 26, alpha: sim.combo ? 1 : Math.min(1, (cb.t || 0) / 0.3), age: 1 });
     for (const c of (sim.callouts || []).slice().reverse()) {
-      if (c.kind === 'botch' || c.kind === 'stairs') continue;   // a botch's line, and DOWN THE STAIRS, are drawn over the fighter (tracks)   // a botch's line is drawn over the fighter who botched (tracks, botchOf)
+      if (c.kind === 'botch' || c.kind === 'stairs') continue;   // a botch's line, and DOWN THE STAIRS, are drawn over the fighter (tracks: botchOf, stairsOf)
       const color = KIND_COLOR[c.kind] || (c.by === 0 ? NEON.cyan : c.by === 1 || c.by > 1 ? NEON.pink : NEON.white);
       const age = c.max - c.t;
       items.push({ text: c.kind === 'counter' && c.text === 'COUNTER' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' || c.kind === 'accident' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
