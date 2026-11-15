@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The CPU never gets stuck (README, The CPU, Never stuck): `npm run test:ai:stuck`. Node, no browser.
+// The CPU never gets stuck (README, Arcade flow, Never stuck): `npm run test:ai:stuck`. Node, no browser.
 //   node scripts/ai/stuck.mjs [--secs 30] [--only main,stairs] [--seed 0] [--walk 3] [--stair 4] [--verbose] [--root DIR]
 // --seed shifts every bout's seed (another sample); --walk and --stair change the limits in seconds.
 // CPU against CPU, and the CPU against a dummy (one standing idle, one holding guard, one walking back and forth

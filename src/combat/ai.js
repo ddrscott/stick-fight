@@ -36,6 +36,11 @@
 // now and then (the habit guard) instead of blocking everything on sight. After a combo of 3+ hits, or
 // while it leads by 30% of the bar, it takes a breath (0.4-0.7 s of walking, guarding and spacing).
 // All of it runs on sim step counts and the sim's rng, so a scene replays identically.
+//
+// Never stuck (README, Arcade flow, Never stuck): a walk-in is a chase that steers at where he is now and runs or
+// gives up when the gap stops shrinking; on a flight's treads with him on a floor it steps off (stepOff); and as a
+// last resort the stick held one way 2.2 s with nothing else, or 2 s on the treads, drops the plan for something else.
+// `npm run test:ai:stuck` fails on any stuck stretch.
 
 import { EMPTY_INPUT } from './input.js';
 import { matchStrings } from './strings.js';
@@ -127,7 +132,7 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
   // falling: the air recovery out of a juggle (once per hit, the step to press it), a second jab on the way
   // down after a whiffed air attack (once per jump), an air attack out of the vault's drop (once per vault)
   let techFor = -1, techAt = -1, fallFor = -1, vaultFor = -1;
-  // never stuck (README, The CPU, Never stuck): the way the stick has been held since the last strike, jump, dash or
+  // never stuck (README, Arcade flow, Never stuck): the way the stick has been held since the last strike, jump, dash or
   // turn and since when, when I last broke out of that, and how long I've stood on a flight's treads with him off them
   // (steps I could act in: knocked down or stunned the clock waits)
   let runDir = 0, runSince = 0, lastBreak = -9999, stairT = 0;
@@ -794,7 +799,8 @@ export function createAI({ rng, difficulty = 0.6, reach, style = null }) {
     // way STUCK_STEPS with no strike, jump, dash or turn while the two of us can touch, or STAIR_STUCK on the treads
     // with him off them. Drop whatever plan re-picked itself and do something else: at him, a jump-in, a dash or a
     // swing; backing off, turn and come in (a swing when he's in reach); on the treads, step off.
-    if (MOVING.test(me.state) && me.grounded && !(me.faint > 0) && step - lastBreak > 60) {
+    // (a horde goon waiting its turn, going around him or making room keeps to that: those are the horde's own rules)
+    if (MOVING.test(me.state) && me.grounded && !(me.faint > 0) && step - lastBreak > 60 && !regrouping && !makingRoom && !waiting) {
       if (stairT > STAIR_STUCK && (!act || !act.offStair)) {
         lastBreak = step; tally.stairBreaks++; queue = stepOff(me, opp, sim); act = queue.shift();
       } else if (runDir && step - runSince > STUCK_STEPS) {
