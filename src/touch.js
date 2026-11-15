@@ -4,11 +4,12 @@
 //
 //   left thumb   floating stick: left/right move (away from the opponent walks back and guards a strike that's coming), past RUN_PX adds
 //                Shift, up = jump, down = crouch, down-away = crouching guard. A quick double flick the same way
-//                (out, back to the middle or off the glass, out again) is a dash, forward or back: see flick() below
+//                (out, back to the middle or off the glass, out again) is a dash, forward or back: see flick() below.
+//                On touch the stick is the only guard: no GUARD button, since B only ever meant holding back.
 //   right thumb  Tekken diamond of round arcade buttons, one per limb: 1 LP (U)  2 RP (I) /
-//                3 LK (J)  4 RK (K), plus GUARD (B), which means hold back (it walks back and guards what's coming). Stick + button gives
-//                the directional and crouch moves; two buttons together (1+3, 2+4) throw. With HAPTICS on (src/touchPrefs.js)
-//                a press of 1-4 in a fight ticks the phone (buzz() below), and a stick dash ticks a little longer.
+//                3 LK (J)  4 RK (K). Stick + button gives the directional and crouch moves; two buttons together
+//                (1+3, 2+4) throw. With nothing else on the right, the diamond is the whole bottom corner. With HAPTICS on
+//                (src/touchPrefs.js) a press of 1-4 in a fight ticks the phone (buzz() below), and a stick dash ticks a little longer.
 //   top corner   one row of pills, the same set and order as the desktop's (src/corner.js): pause (only in a fight
 //                you can pause; the flow listens for 'sf:pause'), the menu button (three bars: the SETTINGS panel in
 //                src/audio/ui.js, which also sets this layer's size) and fullscreen (src/fullscreen.js). In an
@@ -33,7 +34,7 @@ import { BAND, SQ_FIRST, SQ_FLOOR, FRAME_W, cropOf, setSquare } from './square.j
 const TARGET = window;                  // must match createInput(window) in main.js
 // the stick's travel in px at scale 1 with a 16px rem; it grows and shrinks with the drawn stick,
 // so the knob reaching the rim still means RUN at every size
-const DEAD_PX = 14, RUN_PX = 52, VERT_PX = 26, KNOB_MAX = 56;
+const DEAD_PX = 14, RUN_PX = 56, VERT_PX = 26, KNOB_MAX = 60;
 // the double flick (a dash): the second flick starts within FLICK_MS of the first, and the first was let go within FLICK_HOLD
 const FLICK_MS = 320, FLICK_HOLD = 220, DASH_CODE = 'TouchDash';   // DASH_CODE: src/combat/input.js reads it as the input's dash bit
 // HAPTICS (SETTINGS > CONTROLS, src/touchPrefs.js): a tick on an attack button's press and a longer one on a stick dash.
@@ -41,12 +42,10 @@ const FLICK_MS = 320, FLICK_HOLD = 220, DASH_CODE = 'TouchDash';   // DASH_CODE:
 const ATTACKS = new Set(['KeyU', 'KeyI', 'KeyJ', 'KeyK']), TICK_MS = 12, DASH_TICK_MS = 25;
 // The layout in rem at scale 1. The CSS below and fit() both read these, so they can't drift apart.
 const D = {
-  btn: 4.5,                 // a main button: 72px, about an adult thumb pad
+  btn: 5,                   // a main button: 80px, a thumb pad with room to spare (72 when GUARD shared the corner)
   gap: 0.625,               // between the buttons
-  base: 7.5, knob: 3.5,     // the stick
+  base: 8, knob: 3.75,      // the stick (7.5 and 3.5 before)
   hint: 1.375,              // room under the resting stick for MOVE
-  guardW: 4.5, guardH: 3,   // GUARD beside the diamond (landscape)
-  guardHP: 2.75,            // GUARD above it (portrait; its width is the button's times 1.05)
   miniW: MINI.w, miniH: MINI.h, miniGap: MINI.gap,   // the top-corner buttons
   edge: 0.75,               // the stick's distance from the screen edge
 };
@@ -80,9 +79,6 @@ function init() {
       <div class="tc-base"><div class="tc-knob"></div><span class="tc-hint">MOVE</span></div>
     </div>
     <div class="tc-cluster">
-      <div class="tc-small">
-        <button class="tc-btn tc-sm tc-guard" data-code="KeyB" aria-label="Guard (hold back)">GUARD</button>
-      </div>
       <div class="tc-grid">
         <button class="tc-btn tc-l1" data-code="KeyU" aria-label="1 left punch">${HAND}<i>1</i></button>
         <button class="tc-btn tc-l2" data-code="KeyI" aria-label="2 right punch">${HAND}<i>2</i></button>
@@ -143,7 +139,7 @@ function init() {
       const across = (vw - sl - sr) / (D.base + D.edge + 0.25 + grid);
       const strip = (vw - sl - sr) / minisAcross;
       const fixed = st + 0.5 * rem + 0.5 * rem + sb;                  // the insets, the strip's air and a gap over the controls
-      const per = D.miniH + D.guardHP + D.gap + grid;                 // scaled rem down the screen: the top buttons and the controls
+      const per = D.miniH + grid;                                      // scaled rem down the screen: the top buttons and the controls
       const k = Math.max(BAND.kMin, Math.min(BAND.kMax, vw / BAND.w));
       const full = Math.round(BAND.full * k), compact = Math.round(BAND.compact * k);
       let s = Math.max(MIN_SCALE, Math.min(want, across / rem, strip / rem));
@@ -167,7 +163,7 @@ function init() {
     } else {
       const stageW = Math.min(vw, vh * 16 / 9), stageH = stageW * 9 / 16;
       const gutter = (vw - stageW) / 2, stageTop = (vh - stageH) / 2;
-      const across = (vw - sl - sr) / (D.base + D.edge + 1 + D.guardW + D.gap + grid);
+      const across = (vw - sl - sr) / (D.base + D.edge + 1 + grid);
       const right = Math.max(0.5 * rem, env('right'));
       // the top buttons, three ways: a column in the gutter beside the stage when the gutter is
       // wide enough for it; otherwise under the HUD strip, as a column, or as a row when a column
@@ -399,7 +395,7 @@ function injectStyle() {
     color: var(--c); font: inherit;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
     box-shadow: 0 0 ${u(0.625)} var(--c), inset 0 0 ${u(0.625)} color-mix(in srgb, var(--c) 45%, transparent);
-    text-shadow: ${PLAIN}; transition: transform 60ms, box-shadow 60ms;   /* word labels (GUARD, HORDE, LEAVE) are read: no glow */
+    text-shadow: ${PLAIN}; transition: transform 60ms, box-shadow 60ms;   /* word labels (HORDE, LEAVE) are read: no glow */
     -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
   }
   .tc-btn svg { width: ${u(1.5)}; height: ${u(1.5)}; filter: drop-shadow(0 0 ${u(0.25)} var(--c)); }
@@ -439,9 +435,6 @@ function injectStyle() {
   /* right thumb */
   .tc-cluster { position: absolute; right: var(--sr); bottom: var(--sb); display: flex; flex-direction: column; align-items: flex-end; gap: var(--gap); }
   .tc-grid { display: grid; grid-template-columns: repeat(2, var(--btn)); grid-auto-rows: var(--btn); gap: var(--gap); }
-  .tc-small { display: flex; gap: var(--gap); }
-  .tc-sm { width: calc(var(--btn) * 1.05); height: ${u(D.guardHP)}; border-radius: ${u(D.guardHP / 2)}; font-size: ${u(0.8125)}; letter-spacing: 0.04em; }
-  .tc-guard { --c: var(--cyan); }
   .tc-sound { --c: var(--cyan); }
 
   /* top corner */
@@ -490,9 +483,6 @@ function injectStyle() {
        the corner in a row, above the menu's right-hand panel (a column ran onto MAIN MENU's profile card at 667x375) */
     html.flow-on:not(.fl-hud) .tc-top-hud .tc-top { top: var(--st); flex-direction: row; }
     .tc-mini { min-width: 0; width: ${u(D.miniW)}; padding: 0; font-size: ${u(0.625)}; justify-content: center; }
-    .tc-cluster { flex-direction: row; align-items: flex-end; }
-    .tc-small { flex-direction: column; }
-    .tc-sm { width: ${u(D.guardW)}; height: ${u(D.guardH)}; border-radius: ${u(D.guardH / 2)}; }
   }`;
   const s = document.createElement('style');
   s.id = 'touch-controls-style';

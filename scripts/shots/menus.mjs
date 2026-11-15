@@ -101,7 +101,7 @@ function audit({ upright, textMin, tapMin }) {
 
   // what nothing may sit under: the corner buttons, the HUD band in a fight, the touch controls where they show
   const blockers = [];
-  for (const n of document.querySelectorAll('.tc-top .tc-mini, .sf-corner button, .tc-cluster .tc-btn, .tc-cluster .tc-sm, .tc-base'))
+  for (const n of document.querySelectorAll('.tc-top .tc-mini, .sf-corner button, .tc-cluster .tc-btn, .tc-base'))
     if (shown(n) && n.getBoundingClientRect().width) blockers.push({ n, a: R(n.getBoundingClientRect()) });
   const band = document.getElementById('hudband');
   if (band && shown(band) && document.documentElement.classList.contains('fl-hud')) blockers.push({ n: band, a: R(band.getBoundingClientRect()) });
