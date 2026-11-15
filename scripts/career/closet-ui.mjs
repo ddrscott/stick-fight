@@ -90,7 +90,9 @@ try {
     const sil = await inks(p, K(P3)), full = await inks(p, `${F}:main`);
     check(`${label}: a locked figure is a one-color silhouette`, sil.drawn > 200 && sil.sil, JSON.stringify(sil));
     check(`${label}: an owned figure is drawn in its colors`, full.drawn > 200 && !full.sil && full.colors > 3, JSON.stringify(full));
-    check(`${label}: the screen is on screen, the shelf too`, !!(await inView(p, '.cl-shelf')) && !!(await inView(p, '.cl-head')), JSON.stringify(await p.locator('.cl-shelf').boundingBox()));
+    // upright the whole screen scrolls and the shelf runs past the bottom (every control's reach: npm run test:closet:reach)
+    const shelfTop = await p.evaluate(() => { const r = document.querySelector('.cl-shelf').getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight - 60 && r.left >= -1 && r.right <= innerWidth + 1; });
+    check(`${label}: the screen is on screen, the shelf too`, (touch ? shelfTop : !!(await inView(p, '.cl-shelf'))) && !!(await inView(p, '.cl-head')), JSON.stringify(await p.locator('.cl-shelf').boundingBox()));
     check(`${label}: no closet text glows`, (await plainOnly(p, '.cl-body')).length === 0, (await plainOnly(p, '.cl-body')).slice(0, 2).join(' | '));
     if (SHOTS) await p.screenshot({ path: `${SHOTS}/${label}-1-shelf.png` });
 

@@ -322,11 +322,14 @@ function init() {
   // box whose content fits is guarded like everything else, so a drag on it can't fall through to the page.
   // The box sets its own touch-action (pan-y or pan-x) and overscroll-behavior: contain, which is what stops
   // the scroll at its edges instead of handing it to the page.
+  // Boxes nest (the SUPPLY CLOSET's shelf inside a screen that scrolls as a whole on a phone): a box that fits hands
+  // the drag up to the next marked box out, so a finger on the shelf still moves the screen.
   const scrolls = (e) => {
     if (e.touches.length !== 1) return false;
-    const box = e.target instanceof Element ? e.target.closest('[data-scroll]') : null;
-    if (!(box instanceof HTMLElement)) return false;
-    return box.dataset.scroll === 'x' ? box.scrollWidth > box.clientWidth + 1 : box.scrollHeight > box.clientHeight + 1;
+    for (let box = e.target instanceof Element ? e.target.closest('[data-scroll]') : null; box instanceof HTMLElement; box = box.parentElement && box.parentElement.closest('[data-scroll]')) {
+      if (box.dataset.scroll === 'x' ? box.scrollWidth > box.clientWidth + 1 : box.scrollHeight > box.clientHeight + 1) return true;
+    }
+    return false;
   };
   document.addEventListener('touchmove', (e) => { if (e.cancelable && !scrolls(e)) e.preventDefault(); }, opts);
   document.addEventListener('gesturestart', (e) => e.preventDefault(), opts);   // iOS pinch

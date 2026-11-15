@@ -84,6 +84,8 @@ try {
     await press(card('power')); await press(card('power'));
     txt = await flowText(p);
     check(`${label}: a tier too dear says the price and spends nothing, pressed twice`, txt.includes('POWER TIER 1 COSTS 100 STICKS') && (await saved(p)).sticks === 50);
+    // upright the screen scrolls as a whole, so the last card may sit under the fold until it's scrolled to (a finger's drag: npm run test:closet:reach)
+    if (touch) await p.locator(card('speed')).scrollIntoViewIfNeeded().catch(() => {});
     check(`${label}: the upgrades are on screen`, !!(await inView(p, card('speed'))));
     check(`${label}: no upgrade text glows`, (await plainOnly(p, '.up-shelf')).length === 0, (await plainOnly(p, '.up-shelf')).slice(0, 2).join(' | '));
     if (SHOTS) await p.screenshot({ path: `${SHOTS}/${label}-1-closet.png` });

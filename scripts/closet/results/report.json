@@ -1,0 +1,122 @@
+[
+  {
+    "tag": "pixel7-side-shelf",
+    "count": 32,
+    "bad": []
+  },
+  {
+    "tag": "pixel7-side-slotA",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "pixel7-side-slotB",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "pixel7-up-shelf",
+    "count": 32,
+    "bad": []
+  },
+  {
+    "tag": "pixel7-up-slotA",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "pixel7-up-slotB",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "small-side-shelf",
+    "count": 32,
+    "bad": []
+  },
+  {
+    "tag": "small-side-slotA",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "small-side-slotB",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "small-up-shelf",
+    "count": 32,
+    "bad": []
+  },
+  {
+    "tag": "small-up-slotA",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "small-up-slotB",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "fold-side-shelf",
+    "count": 32,
+    "bad": []
+  },
+  {
+    "tag": "fold-side-slotA",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "fold-side-slotB",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "fold-up-shelf",
+    "count": 32,
+    "bad": []
+  },
+  {
+    "tag": "fold-up-slotA",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "fold-up-slotB",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "iphone-side-shelf",
+    "count": 32,
+    "bad": []
+  },
+  {
+    "tag": "iphone-side-slotA",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "iphone-side-slotB",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "iphone-up-shelf",
+    "count": 32,
+    "bad": []
+  },
+  {
+    "tag": "iphone-up-slotA",
+    "count": 26,
+    "bad": []
+  },
+  {
+    "tag": "iphone-up-slotB",
+    "count": 26,
+    "bad": []
+  }
+]
