@@ -48,6 +48,45 @@ export function drawStanding(canvas, c, look = null, silhouette = false, clip = 
   }
 }
 
+/** the screen follows the cursor: a focused card that's scrolled out of its box (the shelf's on a desktop, the slot
+ *  page's grid) or off a phone's screen (which scrolls as a whole) comes into view, by the least it can. Not a card
+ *  the mouse is resting on: it's already in view, and the card focused before it (a slot, back from its page) stays put. After a buy repaints the screen from its top, this puts the card back in view.
+ *  The closet's and the slot page's onFocus (src/flow/index.js).
+ *  Not scrollIntoView: under fit()'s CSS zoom (0.97 at 1280x720) Chrome judged a card flush with the box's edge as
+ *  out and scrolled it back out of view. This works in the box's own px (rects are zoomed, scrollTop isn't) and
+ *  keeps the box's scroll-padding (the corner bar). Run next frame and the one after, once fit() has settled. */
+let mouse = false;   // the last thing to move the cursor was a mouse (pointermove), not a key, a pad or a finger
+export function follow(it) {
+  const n = it && it.el;
+  if (!n) return;
+  if (typeof document !== 'undefined' && !document.documentElement.dataset.clFollow) {
+    document.documentElement.dataset.clFollow = '1';
+    document.addEventListener('pointermove', (e) => { mouse = e.pointerType === 'mouse'; }, { capture: true, passive: true });
+    document.addEventListener('keydown', () => { mouse = false; }, true);
+  }
+  // the card a resting mouse is over took the focus (a repaint put it there): it's where the player is looking.
+  // And not one the focus has already left.
+  later(() => { if (n.classList.contains('fl-focus') && !(mouse && n.matches(':hover'))) reveal(n); });
+}
+
+/** next frame and the one after, once fit() has settled (its zoom comes from a ResizeObserver, after this frame's rAF) */
+function later(fn) { if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { fn(); requestAnimationFrame(fn); }); else fn(); }
+
+/** scroll every box that holds n (inner first) by the least that shows it whole, inside the box's scroll-padding */
+function reveal(n) {
+  if (!n.isConnected) return;
+  for (let a = n.parentElement; a && a !== document.body; a = a.parentElement) {
+    const cs = getComputedStyle(a);
+    if (!/(auto|scroll)/.test(cs.overflowY) || a.scrollHeight <= a.clientHeight + 1) continue;
+    const ar = a.getBoundingClientRect(), z = a.offsetHeight ? ar.height / a.offsetHeight : 1;
+    const top = ar.top + (a.clientTop + (parseFloat(cs.scrollPaddingTop) || 0)) * z;
+    const bottom = ar.top + (a.clientTop + a.clientHeight - (parseFloat(cs.scrollPaddingBottom) || 0)) * z;
+    const r = n.getBoundingClientRect(), m = 6 * z;
+    const d = r.top < top - 1 ? r.top - top - m : r.bottom > bottom + 1 ? Math.min(r.bottom - bottom + m, r.top - top - m) : 0;
+    if (d) a.scrollTop += d / z;
+  }
+}
+
 /** @param {any} o */
 export function closetBody(o) {
   injectStyle();
@@ -125,8 +164,9 @@ export function closetBody(o) {
   if (ce.focus >= 0) focus = items.length + ce.focus;
   items.push(...ce.items);
   shelf.appendChild(ce.el);
-  // back from a slot's page: the shelf (its own scroll box) shows that slot, not its top
-  if (ce.focus >= 0 && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { const it = ce.items[ce.focus].el; if (it.isConnected) shelf.scrollTop += it.getBoundingClientRect().bottom - shelf.getBoundingClientRect().bottom + 12; });
+  // back from a slot's page: the shelf (or a phone's whole screen) shows that slot, not its top. Whatever the focus
+  // does: a resting mouse takes it to the card that lands under it.
+  if (ce.focus >= 0) { const it = ce.items[ce.focus].el; later(() => reveal(it)); }
   // stat upgrades: after the looks, their own section with its own count (the COLLECTED numbers are cosmetics only)
   const ups = upgradeShelf({ fighter: ch, focusKey: o.focusKey, repaint: o.repaint, note: o.note });
   if (ups.focus >= 0) focus = items.length + ups.focus;
@@ -178,7 +218,10 @@ function injectStyle() {
   #flow .cl-tab .cl-tcount { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 1.3cqw; color: rgba(234,220,255,0.8); }
   #flow .cl-tab.cl-full .cl-tcount { color: #9dffc0; }
   #flow .cl-tab.cl-on { border-color: #ffb02e; background: rgba(255,176,46,0.16); }
-  #flow .fl-screen:not(.fl-up) .cl-shelf { max-height: 60cqh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; }
+  /* A stage with room (a desktop, a big tablet sideways): the shelf scrolls in its own box under the tabs. A phone
+     sideways (a stage under 520 px, fit()'s SHORT) and every upright screen scroll as a whole instead: a shelf box
+     there ended below the screen, and a drag on it couldn't move the screen (its STAT UPGRADES out of reach). */
+  @container (min-height: 520px) { #flow .fl-screen:not(.fl-up) .cl-shelf { max-height: 60cqh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; } }
   .cl-shelf { display: flex; flex-direction: column; gap: 0.6cqh; padding: 1cqh 1.4cqw; border: 2px solid rgba(255,176,46,0.7); background: rgba(10,4,20,0.85); }
   .cl-stitle { display: flex; align-items: baseline; gap: 1.6cqw; }
   .cl-stitle b { font: 400 2.4cqw/1 'Bungee', sans-serif; color: #fff4d6; }
@@ -205,10 +248,14 @@ function injectStyle() {
   .cl-stitle b { font-size: max(15px, 2.4cqw); } .cl-stitle span, .cl-kind { font-size: max(12px, 1.8cqw); }
   #flow .cl-card .cl-name { font-size: max(12px, 1.6cqw); } #flow .cl-card .cl-how { font-size: max(12px, 1.6cqw); }
   #flow > .fl-up .cl-head { font-size: max(13px, 4cqw); flex-wrap: wrap; gap: 0.4em 1em; }
-  #flow > .fl-up .cl-tabs { grid-template-columns: repeat(3, 1fr); max-height: 25vh; overflow-y: auto; gap: 6px; }
+  #flow > .fl-up .cl-tabs { grid-template-columns: repeat(3, 1fr); gap: 6px; }
   #flow > .fl-up .cl-tab { font-size: max(13px, 3.8cqw); min-height: 44px; }
   #flow > .fl-up .cl-tab .cl-tcount { font-size: max(12px, 3.2cqw); }
-  #flow > .fl-up .cl-shelf { padding: 8px 3cqw; gap: 6px; max-height: calc(100vh - 380px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; pointer-events: auto; touch-action: pan-y; }   /* scrolls in its own box under the tabs (the stat upgrades sit at its foot) */
+  @container (min-width: 600px) { #flow > .fl-up .cl-tabs { grid-template-columns: repeat(5, 1fr); } #flow > .fl-up .cl-tab { font-size: max(13px, 2.6cqw); } #flow > .fl-up .cl-tab .cl-tcount { font-size: max(12px, 2.2cqw); } }   /* a big upright screen (a Fold): five across, so the tabs aren't six rows tall */
+  #flow > .fl-up .cl-shelf { padding: 8px 3cqw; gap: 6px; }
+  /* the screen scrolls, the shelf and tabs with it. Neither is a scroll box of its own here: one that fits but has
+     overscroll-behavior: contain (ui.js's upright [data-scroll] rule) swallows the drag instead of passing it out */
+  #flow > .fl-up .cl-shelf[data-scroll], #flow > .fl-up .cl-tabs[data-scroll] { overflow: visible; overscroll-behavior: auto; min-height: auto; }
   #flow > .fl-up .cl-stitle { flex-wrap: wrap; gap: 0.3em 1em; }
   #flow > .fl-up .cl-stitle b { font-size: max(15px, 5cqw); }
   #flow > .fl-up .cl-stitle span, #flow > .fl-up .cl-kind { font-size: max(12px, 3.6cqw); }

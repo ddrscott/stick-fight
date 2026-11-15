@@ -377,6 +377,9 @@ function injectStyle() {
   /* a screen taller than a short stage scrolls (fit() above): from the top, under the bar */
   #flow .fl-screen.fl-scroll { justify-content: flex-start; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; }
   #flow .fl-screen.fl-scroll:not(.fl-up) { padding-top: calc(1.4cqh + max(38px, 6.4cqh) + 1.2cqh); padding-bottom: 2cqh; }
+  /* the cursor scrolled into view (scrollIntoView) stops below the corner bar, not under it */
+  #flow .fl-screen.fl-scroll:not(.fl-up) { scroll-padding-top: calc(1.4cqh + max(38px, 6.4cqh) + 1.2cqh); scroll-padding-bottom: 2cqh; }
+  #flow > .fl-screen.fl-scroll.fl-up { scroll-padding-top: calc(var(--tc-strip, 3rem) + 0.5rem); scroll-padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   #flow .fl-screen.fl-scroll::-webkit-scrollbar { display: none; }
   #flow .fl-screen.fl-scroll > * { flex-shrink: 0; }
   #flow .fl-screen.fl-scroll > .lg-bar { display: none; }

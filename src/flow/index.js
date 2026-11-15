@@ -65,7 +65,7 @@ import { fetchLive, watchUrl } from '../net/watch.js';   // spectators: the LIVE
 import { blockedName, blockedInitials, PICK_ANOTHER } from '../namefilter.js';   // the name filter (README, Privacy and terms)
 import { rootUrl } from '../root.js';
 import { createTicker } from '../ticker.js';
-import { closetBody } from './closet.js';   // the Supply Closet (README, Progression)
+import { closetBody, follow } from './closet.js';   // the Supply Closet (README, Progression)
 import { slotPage, loadoutLine } from './customUI.js';   // the custom employee's move slots (README, Characters, Custom employee)
 import { earningsPanel, createCounter, nudgeBlock, withTitle, reviewBar, shiftsBlock, shiftCards, masteryChip, profileCard } from './careerUI.js';
 import { upTag, UP_KEY, upgradesLine } from './upgradesUI.js';   // stat upgrades (README, Progression, Stat upgrades)   // career and sticks (README, Progression)
@@ -874,7 +874,7 @@ export function createFlow(ctx) {
           note: (m) => { msg = m; note.textContent = m; },
           done: shelf });
         root.append(body.el, note);
-        return { items: body.items, focus: body.focus, back: () => shelf('PICK A SLOT TO CHANGE IT. A BORROWED MOVE IS YOURS FOR EVERY FIGHTER BUT ITS OWNER.'), backTo: 'SUPPLY CLOSET' };
+        return { items: body.items, focus: body.focus, back: () => shelf('PICK A SLOT TO CHANGE IT. A BORROWED MOVE IS YOURS FOR EVERY FIGHTER BUT ITS OWNER.'), backTo: 'SUPPLY CLOSET', onFocus: (k, it) => follow(it) };
       }
       root.append(el('h1', 'fl-h2', 'SUPPLY CLOSET'));
       const note = el('div', 'fl-small cl-note', msg);
@@ -886,7 +886,7 @@ export function createFlow(ctx) {
         note: (m) => { msg = m; note.textContent = m; },
       });
       root.append(body.el, note);
-      return { items: body.items, focus: body.focus, back: () => go(closetFrom), backTo: CLOSET_FROM[closetFrom] || 'MAIN MENU' };
+      return { items: body.items, focus: body.focus, back: () => go(closetFrom), backTo: CLOSET_FROM[closetFrom] || 'MAIN MENU', onFocus: (k, it) => follow(it) };
     });
     paint(`f:${closetSt.fighter}`);
   }

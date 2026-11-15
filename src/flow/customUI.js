@@ -207,7 +207,7 @@ function injectStyle() {
   #flow > .fl-up .ce-key, #flow > .fl-up .ce-how, #flow > .fl-up .ce-from { font-size: max(12px, 3.4cqw); }
   #flow > .fl-up .ce-name { font-size: max(13px, 3.8cqw); }
   #flow > .fl-up .ce-phead b { font-size: max(15px, 4.4cqw); } #flow > .fl-up .ce-phead span { font-size: max(13px, 3.6cqw); }
-  #flow > .fl-up .ce-grid { grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px 3cqw; max-height: calc(100vh - 300px); }
+  #flow > .fl-up .ce-grid { grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px 3cqw; max-height: calc(100vh - 300px); max-height: calc(100dvh - 300px); }   /* dvh: the room left with the browser's toolbars showing */
   #flow > .fl-up .ce-card { flex-direction: row; justify-content: flex-start; gap: 2cqw; padding: 4px 2cqw; text-align: left; }
   #flow > .fl-up .ce-card canvas { height: max(56px, 7vh); }
   #flow > .fl-up .ce-card .ce-text { align-items: flex-start; }

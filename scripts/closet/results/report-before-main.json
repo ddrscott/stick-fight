@@ -1,0 +1,486 @@
+[
+  {
+    "tag": "pixel7-side-shelf",
+    "count": 32,
+    "bad": [
+      "upgrade health: a drag on its scroll box moved nothing (off by 38px)",
+      "upgrade power: a drag on its scroll box moved nothing (off by 38px)",
+      "upgrade stamina: a drag on its scroll box moved nothing (off by 38px)",
+      "upgrade speed: a drag on its scroll box moved nothing (off by 38px)",
+      "card barista:pose:victory: focused but off screen by 81px",
+      "card barista:taunt:taunt: focused but off screen by 205px",
+      "slot 1: focused but off screen by 324px",
+      "slot 2: focused but off screen by 324px",
+      "upgrade health: focused but off screen by 450px",
+      "upgrade power: focused but off screen by 450px",
+      "upgrade stamina: focused but off screen by 450px",
+      "upgrade speed: focused but off screen by 450px"
+    ]
+  },
+  {
+    "tag": "pixel7-side-slotA",
+    "count": 26,
+    "bad": [
+      "move wetFloor: focused but off screen by 103px",
+      "move mopSpin: focused but off screen by 103px",
+      "move downsizing: focused but off screen by 103px",
+      "move finePrint: focused but off screen by 103px",
+      "move updraft: focused but off screen by 223px",
+      "move hr_writeUp: focused but off screen by 223px",
+      "move hr_training: focused but off screen by 223px",
+      "move sr_pitch: focused but off screen by 223px",
+      "move sr_closeDeal: focused but off screen by 330px",
+      "move chef_cleaver: focused but off screen by 330px",
+      "move chef_flambe: focused but off screen by 330px",
+      "move electrician_liveWire: focused but off screen by 330px",
+      "move electrician_groundFault: focused but off screen by 437px",
+      "move receptionist_transfer: focused but off screen by 437px",
+      "move lawyer_crossExam: focused but off screen by 437px",
+      "move ceo_parachute: focused but off screen by 437px",
+      "move ceo_takeover: focused but off screen by 544px"
+    ]
+  },
+  {
+    "tag": "pixel7-side-slotB",
+    "count": 26,
+    "bad": [
+      "move wetFloor: focused but off screen by 103px",
+      "move mopSpin: focused but off screen by 103px",
+      "move downsizing: focused but off screen by 103px",
+      "move finePrint: focused but off screen by 103px",
+      "move updraft: focused but off screen by 223px",
+      "move hr_writeUp: focused but off screen by 223px",
+      "move hr_training: focused but off screen by 223px",
+      "move sr_pitch: focused but off screen by 223px",
+      "move sr_closeDeal: focused but off screen by 330px",
+      "move chef_cleaver: focused but off screen by 330px",
+      "move chef_flambe: focused but off screen by 330px",
+      "move electrician_liveWire: focused but off screen by 330px",
+      "move electrician_groundFault: focused but off screen by 437px",
+      "move receptionist_transfer: focused but off screen by 437px",
+      "move lawyer_crossExam: focused but off screen by 437px",
+      "move ceo_parachute: focused but off screen by 437px",
+      "move ceo_takeover: focused but off screen by 544px"
+    ]
+  },
+  {
+    "tag": "pixel7-up-shelf",
+    "count": 32,
+    "bad": [
+      "tab chef: focused but off screen by 23px",
+      "tab wellness: focused but off screen by 23px",
+      "tab electrician: focused but off screen by 23px",
+      "tab receptionist: focused but off screen by 73px",
+      "tab lawyer: focused but off screen by 73px",
+      "tab ceo: focused but off screen by 73px",
+      "slot 1: focused but off screen by 162px",
+      "slot 2: focused but off screen by 255px",
+      "upgrade health: focused but off screen by 416px",
+      "upgrade power: focused but off screen by 416px",
+      "upgrade stamina: focused but off screen by 521px",
+      "upgrade speed: focused but off screen by 521px"
+    ]
+  },
+  {
+    "tag": "pixel7-up-slotA",
+    "count": 26,
+    "bad": [
+      "move updraft: focused but off screen by 36px",
+      "move hr_writeUp: focused but off screen by 36px",
+      "move hr_training: focused but off screen by 120px",
+      "move sr_pitch: focused but off screen by 120px",
+      "move sr_closeDeal: focused but off screen by 216px",
+      "move chef_cleaver: focused but off screen by 216px",
+      "move chef_flambe: focused but off screen by 300px",
+      "move electrician_liveWire: focused but off screen by 300px",
+      "move electrician_groundFault: focused but off screen by 397px",
+      "move receptionist_transfer: focused but off screen by 397px",
+      "move lawyer_crossExam: focused but off screen by 493px",
+      "move ceo_parachute: focused but off screen by 493px",
+      "move ceo_takeover: focused but off screen by 577px"
+    ]
+  },
+  {
+    "tag": "pixel7-up-slotB",
+    "count": 26,
+    "bad": [
+      "move updraft: focused but off screen by 36px",
+      "move hr_writeUp: focused but off screen by 36px",
+      "move hr_training: focused but off screen by 120px",
+      "move sr_pitch: focused but off screen by 120px",
+      "move sr_closeDeal: focused but off screen by 216px",
+      "move chef_cleaver: focused but off screen by 216px",
+      "move chef_flambe: focused but off screen by 300px",
+      "move electrician_liveWire: focused but off screen by 300px",
+      "move electrician_groundFault: focused but off screen by 397px",
+      "move receptionist_transfer: focused but off screen by 397px",
+      "move lawyer_crossExam: focused but off screen by 493px",
+      "move ceo_parachute: focused but off screen by 493px",
+      "move ceo_takeover: focused but off screen by 577px"
+    ]
+  },
+  {
+    "tag": "small-side-shelf",
+    "count": 32,
+    "bad": [
+      "upgrade health: a drag on its scroll box moved nothing (off by 50px)",
+      "upgrade power: a drag on its scroll box moved nothing (off by 50px)",
+      "upgrade stamina: a drag on its scroll box moved nothing (off by 50px)",
+      "upgrade speed: a drag on its scroll box moved nothing (off by 50px)",
+      "card barista:pose:victory: focused but off screen by 111px",
+      "card barista:taunt:taunt: focused but off screen by 223px",
+      "slot 1: focused but off screen by 332px",
+      "slot 2: focused but off screen by 332px",
+      "upgrade health: focused but off screen by 455px",
+      "upgrade power: focused but off screen by 455px",
+      "upgrade stamina: focused but off screen by 455px",
+      "upgrade speed: focused but off screen by 455px"
+    ]
+  },
+  {
+    "tag": "small-side-slotA",
+    "count": 26,
+    "bad": [
+      "move wetFloor: focused but off screen by 107px",
+      "move mopSpin: focused but off screen by 107px",
+      "move downsizing: focused but off screen by 107px",
+      "move finePrint: focused but off screen by 107px",
+      "move updraft: focused but off screen by 219px",
+      "move hr_writeUp: focused but off screen by 219px",
+      "move hr_training: focused but off screen by 219px",
+      "move sr_pitch: focused but off screen by 219px",
+      "move sr_closeDeal: focused but off screen by 318px",
+      "move chef_cleaver: focused but off screen by 318px",
+      "move chef_flambe: focused but off screen by 318px",
+      "move electrician_liveWire: focused but off screen by 318px",
+      "move electrician_groundFault: focused but off screen by 430px",
+      "move receptionist_transfer: focused but off screen by 430px",
+      "move lawyer_crossExam: focused but off screen by 430px",
+      "move ceo_parachute: focused but off screen by 430px",
+      "move ceo_takeover: focused but off screen by 542px"
+    ]
+  },
+  {
+    "tag": "small-side-slotB",
+    "count": 26,
+    "bad": [
+      "move wetFloor: focused but off screen by 107px",
+      "move mopSpin: focused but off screen by 107px",
+      "move downsizing: focused but off screen by 107px",
+      "move finePrint: focused but off screen by 107px",
+      "move updraft: focused but off screen by 219px",
+      "move hr_writeUp: focused but off screen by 219px",
+      "move hr_training: focused but off screen by 219px",
+      "move sr_pitch: focused but off screen by 219px",
+      "move sr_closeDeal: focused but off screen by 318px",
+      "move chef_cleaver: focused but off screen by 318px",
+      "move chef_flambe: focused but off screen by 318px",
+      "move electrician_liveWire: focused but off screen by 318px",
+      "move electrician_groundFault: focused but off screen by 430px",
+      "move receptionist_transfer: focused but off screen by 430px",
+      "move lawyer_crossExam: focused but off screen by 430px",
+      "move ceo_parachute: focused but off screen by 430px",
+      "move ceo_takeover: focused but off screen by 542px"
+    ]
+  },
+  {
+    "tag": "small-up-shelf",
+    "count": 32,
+    "bad": [
+      "tab hrRep: focused but off screen by 42px",
+      "tab salesRep: focused but off screen by 42px",
+      "tab barista: focused but off screen by 42px",
+      "tab chef: focused but off screen by 92px",
+      "tab wellness: focused but off screen by 92px",
+      "tab electrician: focused but off screen by 92px",
+      "tab receptionist: focused but off screen by 142px",
+      "tab lawyer: focused but off screen by 142px",
+      "tab ceo: focused but off screen by 142px",
+      "card barista:latteArt: focused but off screen by 24px",
+      "card barista:pose:victory: focused but off screen by 117px",
+      "card barista:taunt:taunt: focused but off screen by 210px",
+      "slot 1: focused but off screen by 367px",
+      "slot 2: focused but off screen by 451px",
+      "upgrade health: focused but off screen by 592px",
+      "upgrade power: focused but off screen by 592px",
+      "upgrade stamina: focused but off screen by 685px",
+      "upgrade speed: focused but off screen by 685px"
+    ]
+  },
+  {
+    "tag": "small-up-slotA",
+    "count": 26,
+    "bad": [
+      "move wetFloor: focused but off screen by 76px",
+      "move mopSpin: focused but off screen by 76px",
+      "move downsizing: focused but off screen by 165px",
+      "move finePrint: focused but off screen by 165px",
+      "move updraft: focused but off screen by 252px",
+      "move hr_writeUp: focused but off screen by 252px",
+      "move hr_training: focused but off screen by 341px",
+      "move sr_pitch: focused but off screen by 341px",
+      "move sr_closeDeal: focused but off screen by 429px",
+      "move chef_cleaver: focused but off screen by 429px",
+      "move chef_flambe: focused but off screen by 505px",
+      "move electrician_liveWire: focused but off screen by 505px",
+      "move electrician_groundFault: focused but off screen by 593px",
+      "move receptionist_transfer: focused but off screen by 593px",
+      "move lawyer_crossExam: focused but off screen by 695px",
+      "move ceo_parachute: focused but off screen by 695px",
+      "move ceo_takeover: focused but off screen by 783px"
+    ]
+  },
+  {
+    "tag": "small-up-slotB",
+    "count": 26,
+    "bad": [
+      "move wetFloor: focused but off screen by 76px",
+      "move mopSpin: focused but off screen by 76px",
+      "move downsizing: focused but off screen by 165px",
+      "move finePrint: focused but off screen by 165px",
+      "move updraft: focused but off screen by 252px",
+      "move hr_writeUp: focused but off screen by 252px",
+      "move hr_training: focused but off screen by 341px",
+      "move sr_pitch: focused but off screen by 341px",
+      "move sr_closeDeal: focused but off screen by 429px",
+      "move chef_cleaver: focused but off screen by 429px",
+      "move chef_flambe: focused but off screen by 505px",
+      "move electrician_liveWire: focused but off screen by 505px",
+      "move electrician_groundFault: focused but off screen by 593px",
+      "move receptionist_transfer: focused but off screen by 593px",
+      "move lawyer_crossExam: focused but off screen by 695px",
+      "move ceo_parachute: focused but off screen by 695px",
+      "move ceo_takeover: focused but off screen by 783px"
+    ]
+  },
+  {
+    "tag": "fold-side-shelf",
+    "count": 32,
+    "bad": [
+      "card barista:pose:victory: focused but off screen by 21px",
+      "card barista:taunt:taunt: focused but off screen by 189px",
+      "slot 1: focused but off screen by 329px",
+      "slot 2: focused but off screen by 329px",
+      "upgrade health: focused but off screen by 459px",
+      "upgrade power: focused but off screen by 459px",
+      "upgrade stamina: focused but off screen by 459px",
+      "upgrade speed: focused but off screen by 459px"
+    ]
+  },
+  {
+    "tag": "fold-side-slotA",
+    "count": 26,
+    "bad": [
+      "move updraft: focused but off screen by 81px",
+      "move hr_writeUp: focused but off screen by 81px",
+      "move hr_training: focused but off screen by 81px",
+      "move sr_pitch: focused but off screen by 81px",
+      "move sr_closeDeal: focused but off screen by 81px",
+      "move chef_cleaver: focused but off screen by 81px",
+      "move chef_flambe: focused but off screen by 236px",
+      "move electrician_liveWire: focused but off screen by 236px",
+      "move electrician_groundFault: focused but off screen by 236px",
+      "move receptionist_transfer: focused but off screen by 236px",
+      "move lawyer_crossExam: focused but off screen by 236px",
+      "move ceo_parachute: focused but off screen by 236px",
+      "move ceo_takeover: focused but off screen by 392px"
+    ]
+  },
+  {
+    "tag": "fold-side-slotB",
+    "count": 26,
+    "bad": [
+      "move updraft: focused but off screen by 81px",
+      "move hr_writeUp: focused but off screen by 81px",
+      "move hr_training: focused but off screen by 81px",
+      "move sr_pitch: focused but off screen by 81px",
+      "move sr_closeDeal: focused but off screen by 81px",
+      "move chef_cleaver: focused but off screen by 81px",
+      "move chef_flambe: focused but off screen by 236px",
+      "move electrician_liveWire: focused but off screen by 236px",
+      "move electrician_groundFault: focused but off screen by 236px",
+      "move receptionist_transfer: focused but off screen by 236px",
+      "move lawyer_crossExam: focused but off screen by 236px",
+      "move ceo_parachute: focused but off screen by 236px",
+      "move ceo_takeover: focused but off screen by 392px"
+    ]
+  },
+  {
+    "tag": "fold-up-shelf",
+    "count": 32,
+    "bad": [
+      "upgrade stamina: a drag on its scroll box moved nothing (off by 95px)",
+      "upgrade speed: a drag on its scroll box moved nothing (off by 95px)",
+      "tab receptionist: focused but off screen by 26px",
+      "tab lawyer: focused but off screen by 26px",
+      "tab ceo: focused but off screen by 26px",
+      "card barista:pose:victory: focused but off screen by 28px",
+      "card barista:taunt:taunt: focused but off screen by 178px",
+      "slot 1: focused but off screen by 480px",
+      "slot 2: focused but off screen by 606px",
+      "upgrade health: focused but off screen by 906px",
+      "upgrade power: focused but off screen by 906px",
+      "upgrade stamina: focused but off screen by 1094px",
+      "upgrade speed: focused but off screen by 1094px"
+    ]
+  },
+  {
+    "tag": "fold-up-slotA",
+    "count": 26,
+    "bad": [
+      "move updraft: focused but off screen by 154px",
+      "move hr_writeUp: focused but off screen by 154px",
+      "move hr_training: focused but off screen by 301px",
+      "move sr_pitch: focused but off screen by 301px",
+      "move sr_closeDeal: focused but off screen by 419px",
+      "move chef_cleaver: focused but off screen by 419px",
+      "move chef_flambe: focused but off screen by 537px",
+      "move electrician_liveWire: focused but off screen by 537px",
+      "move electrician_groundFault: focused but off screen by 686px",
+      "move receptionist_transfer: focused but off screen by 686px",
+      "move lawyer_crossExam: focused but off screen by 833px",
+      "move ceo_parachute: focused but off screen by 833px",
+      "move ceo_takeover: focused but off screen by 980px"
+    ]
+  },
+  {
+    "tag": "fold-up-slotB",
+    "count": 26,
+    "bad": [
+      "move updraft: focused but off screen by 154px",
+      "move hr_writeUp: focused but off screen by 154px",
+      "move hr_training: focused but off screen by 301px",
+      "move sr_pitch: focused but off screen by 301px",
+      "move sr_closeDeal: focused but off screen by 419px",
+      "move chef_cleaver: focused but off screen by 419px",
+      "move chef_flambe: focused but off screen by 537px",
+      "move electrician_liveWire: focused but off screen by 537px",
+      "move electrician_groundFault: focused but off screen by 686px",
+      "move receptionist_transfer: focused but off screen by 686px",
+      "move lawyer_crossExam: focused but off screen by 833px",
+      "move ceo_parachute: focused but off screen by 833px",
+      "move ceo_takeover: focused but off screen by 980px"
+    ]
+  },
+  {
+    "tag": "iphone-side-shelf",
+    "count": 32,
+    "bad": [
+      "upgrade health: a drag on its scroll box moved nothing (off by 44px)",
+      "upgrade power: a drag on its scroll box moved nothing (off by 44px)",
+      "upgrade stamina: a drag on its scroll box moved nothing (off by 44px)",
+      "upgrade speed: a drag on its scroll box moved nothing (off by 44px)",
+      "card barista:pose:victory: focused but off screen by 100px",
+      "card barista:taunt:taunt: focused but off screen by 219px",
+      "slot 1: focused but off screen by 333px",
+      "slot 2: focused but off screen by 333px",
+      "upgrade health: focused but off screen by 458px",
+      "upgrade power: focused but off screen by 458px",
+      "upgrade stamina: focused but off screen by 458px",
+      "upgrade speed: focused but off screen by 458px"
+    ]
+  },
+  {
+    "tag": "iphone-side-slotA",
+    "count": 26,
+    "bad": [
+      "move wetFloor: focused but off screen by 105px",
+      "move mopSpin: focused but off screen by 105px",
+      "move downsizing: focused but off screen by 105px",
+      "move finePrint: focused but off screen by 105px",
+      "move updraft: focused but off screen by 222px",
+      "move hr_writeUp: focused but off screen by 222px",
+      "move hr_training: focused but off screen by 222px",
+      "move sr_pitch: focused but off screen by 222px",
+      "move sr_closeDeal: focused but off screen by 325px",
+      "move chef_cleaver: focused but off screen by 325px",
+      "move chef_flambe: focused but off screen by 325px",
+      "move electrician_liveWire: focused but off screen by 325px",
+      "move electrician_groundFault: focused but off screen by 442px",
+      "move receptionist_transfer: focused but off screen by 442px",
+      "move lawyer_crossExam: focused but off screen by 442px",
+      "move ceo_parachute: focused but off screen by 442px",
+      "move ceo_takeover: focused but off screen by 546px"
+    ]
+  },
+  {
+    "tag": "iphone-side-slotB",
+    "count": 26,
+    "bad": [
+      "move wetFloor: focused but off screen by 105px",
+      "move mopSpin: focused but off screen by 105px",
+      "move downsizing: focused but off screen by 105px",
+      "move finePrint: focused but off screen by 105px",
+      "move updraft: focused but off screen by 222px",
+      "move hr_writeUp: focused but off screen by 222px",
+      "move hr_training: focused but off screen by 222px",
+      "move sr_pitch: focused but off screen by 222px",
+      "move sr_closeDeal: focused but off screen by 325px",
+      "move chef_cleaver: focused but off screen by 325px",
+      "move chef_flambe: focused but off screen by 325px",
+      "move electrician_liveWire: focused but off screen by 325px",
+      "move electrician_groundFault: focused but off screen by 442px",
+      "move receptionist_transfer: focused but off screen by 442px",
+      "move lawyer_crossExam: focused but off screen by 442px",
+      "move ceo_parachute: focused but off screen by 442px",
+      "move ceo_takeover: focused but off screen by 546px"
+    ]
+  },
+  {
+    "tag": "iphone-up-shelf",
+    "count": 32,
+    "bad": [
+      "tab chef: focused but off screen by 41px",
+      "tab wellness: focused but off screen by 41px",
+      "tab electrician: focused but off screen by 41px",
+      "tab receptionist: focused but off screen by 91px",
+      "tab lawyer: focused but off screen by 91px",
+      "tab ceo: focused but off screen by 91px",
+      "card barista:taunt:taunt: focused but off screen by 26px",
+      "slot 1: focused but off screen by 194px",
+      "slot 2: focused but off screen by 281px",
+      "upgrade health: focused but off screen by 434px",
+      "upgrade power: focused but off screen by 434px",
+      "upgrade stamina: focused but off screen by 534px",
+      "upgrade speed: focused but off screen by 534px"
+    ]
+  },
+  {
+    "tag": "iphone-up-slotA",
+    "count": 26,
+    "bad": [
+      "move updraft: focused but off screen by 78px",
+      "move hr_writeUp: focused but off screen by 78px",
+      "move hr_training: focused but off screen by 158px",
+      "move sr_pitch: focused but off screen by 158px",
+      "move sr_closeDeal: focused but off screen by 251px",
+      "move chef_cleaver: focused but off screen by 251px",
+      "move chef_flambe: focused but off screen by 331px",
+      "move electrician_liveWire: focused but off screen by 331px",
+      "move electrician_groundFault: focused but off screen by 424px",
+      "move receptionist_transfer: focused but off screen by 424px",
+      "move lawyer_crossExam: focused but off screen by 516px",
+      "move ceo_parachute: focused but off screen by 516px",
+      "move ceo_takeover: focused but off screen by 596px"
+    ]
+  },
+  {
+    "tag": "iphone-up-slotB",
+    "count": 26,
+    "bad": [
+      "move updraft: focused but off screen by 78px",
+      "move hr_writeUp: focused but off screen by 78px",
+      "move hr_training: focused but off screen by 158px",
+      "move sr_pitch: focused but off screen by 158px",
+      "move sr_closeDeal: focused but off screen by 251px",
+      "move chef_cleaver: focused but off screen by 251px",
+      "move chef_flambe: focused but off screen by 331px",
+      "move electrician_liveWire: focused but off screen by 331px",
+      "move electrician_groundFault: focused but off screen by 424px",
+      "move receptionist_transfer: focused but off screen by 424px",
+      "move lawyer_crossExam: focused but off screen by 516px",
+      "move ceo_parachute: focused but off screen by 516px",
+      "move ceo_takeover: focused but off screen by 596px"
+    ]
+  }
+]
