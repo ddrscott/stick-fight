@@ -1660,7 +1660,7 @@ function render() {
   if (toast) { toast.t -= lastFrameMs / 1000; if (toast.t <= 0) toast = null; }
   const layout = hud.draw({ sim, camera, dt: lastFrameMs / 1000, debug, scene: sceneName, paused: fl ? false : paused, help, toast, found: help ? techniques().filter(t => t.found) : null,
     attract: attract && (!fl || fl.card) ? { touch: touchUI(), domPrompt: !!fl } : null, flow: fl,
-    under: perfectFX.active || sim.perfectT >= 0 ? (c) => perfectFX.drawScreen(c, sim, camera, lastFrameMs / 1000) : null, bannerUp: sim.perfectT >= 0 && sim.perfectRel >= 0 });
+    under: perfectFX.active || sim.perfectT >= 0 ? (c) => perfectFX.drawScreen(c, sim, camera, lastFrameMs / 1000) : null, bannerUp: sim.perfectT >= 0 && sim.perfectRel >= 0, tier: fx.tier ?? 3 });
   if (fl) flow.frame(layout);
   perf.mark('hud');
 }
@@ -2027,7 +2027,7 @@ try {
 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 window.__gauntlet.ready = true;
 // what the profiler reports alongside the times: the tier, the DPR and the size the GL canvas draws at
-const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, every: fx.drawEvery, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height,
+const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, every: fx.drawEvery, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: hud.scale, w: glCanvas.width, h: glCanvas.height,
   device: `${device.os} ${device.gpu} cores ${device.cores} mem ${device.mem} start ${guessTier}` });
 perfInfo(); setInterval(perfInfo, 1000);
 // What real players get (README, Analytics, 'perf'): once a session, after 30 s on the page with the tier unchanged for
