@@ -22,6 +22,7 @@
     "test:qr": "node scripts/qr/check.mjs",
     "test:join": "node scripts/join/check.mjs",
     "test:ios": "node scripts/ios/check.mjs",
+    "test:haptics": "node scripts/touch/haptics.mjs",
     "test:movelist": "node scripts/movelist/check.mjs",
     "test:horde": "node scripts/horde/check.mjs",
     "test:ko": "node scripts/ko/guard.mjs",

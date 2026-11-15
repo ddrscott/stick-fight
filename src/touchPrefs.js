@@ -92,3 +92,27 @@ export function setTouchFit(scale, want) {
 }
 
 export function onTouchPref(fn) { subs.add(fn); return () => subs.delete(fn); }
+
+// ---- HAPTICS: a short tick on the attack buttons (src/touch.js), where the browser can vibrate ----------------
+// Kept in localStorage as stick-fight-haptics: '1' or '0', on this device only (whether a phone can vibrate is the
+// phone's business, so the account doesn't carry it). No entry means ON. Android Chrome has navigator.vibrate;
+// iPhone Safari doesn't, and there the panel shows the row as unavailable and nothing ever calls it.
+
+const HKEY = 'stick-fight-haptics';
+let hMemory = null;   // this page's choice (and the only copy when storage is off)
+
+/** whether this browser can vibrate at all */
+export function canVibrate() { return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function'; }
+
+/** the player's choice, ON by default; always false where the browser can't vibrate */
+export function hapticsOn() {
+  if (!canVibrate()) return false;
+  if (hMemory !== null) return hMemory;
+  try { if (localStorage.getItem(HKEY) === '0') return false; } catch { /* storage off: the default */ }
+  return true;
+}
+
+export function setHaptics(on) {
+  hMemory = !!on;
+  try { localStorage.setItem(HKEY, on ? '1' : '0'); } catch { /* storage off: this page only */ }
+}
