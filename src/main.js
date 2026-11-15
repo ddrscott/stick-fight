@@ -168,6 +168,12 @@ function onEvent(ev) {
       }
       if (ev.knockdown || ev.ko) fx.dust({ x: ev.defender.x, y: ev.defender.y, dir: ev.dir });
       break;
+    case 'stairHit':
+      // a step a tumbling body paid for (sim stairHurt): a small contact flash on the tread, a touch of shake
+      fx.hit({ x: ev.x, y: ev.y - 4, strength: 0.16, dir: 0, flashR: 16, debris: 'none', ring: false });
+      light(ev.x, ev.y - 6, 80, [1.0, 0.45, 0.3], 0.4, 0.14);
+      shake.trauma = Math.min(1, shake.trauma + 0.06);
+      break;
     case 'graze':
       // a strike that touches a body on the floor without hitting it (sim graze): a small spark on the touch, no ring, no shake
       fx.hit({ x: ev.x, y: ev.y, strength: 0.12, dir: ev.dir, flashR: 12, debris: 'none', ring: false });

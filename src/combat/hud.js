@@ -26,7 +26,7 @@ const WIDE = { band: false, edge: 44, barY: BAR_Y, barH: BAR_H, skew: SKEW, stH:
 const BAND_L = { band: true, edge: 10, barY: 8, barH: 13, skew: 7, stH: 4, stGap: 4, stIn: 16, tag: 11, nameDy: 13, name: 21, role: 15, roleGap: 6, hintDy: 20, info: 15, pipR: 4.5, pipGap: 14, pipIn: 6, frame: 1.6, glow: 7,
   timer: { cy: 23, r: 19, size: 23 }, round: 14, roundDy: 9, centre: 30, hint: 16, hintMin: 12.5, score: 15 };
 const SIDE = [NEON.cyan, NEON.pink];
-const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, clash: '#99bfff', break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a' };
+const KIND_COLOR = { ender: null, counter: NEON.amber, trick: NEON.violet, trade: NEON.white, clash: '#99bfff', break: NEON.cyan, faint: NEON.pink, finish: NEON.amber, botch: '#ff6a3d', accident: '#c8ff3a', stairs: '#ff5a4e' };
 
 export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 1 } = {}) {
   const frameCtx = canvas.getContext('2d');
@@ -366,12 +366,21 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     }
     return u.state === 'botch' && u.botchKind ? { kind: u.botchKind, age: 9 } : null;
   }
+  // DOWN THE STAIRS -24 (sim stairHurt): the total a tumble down the steps cost, over the fighter who took it, for
+  // as long as the sim's callout record lives (saved and restored with the sim, like the botch line)
+  function stairsOf(u, sim) {
+    const cs = sim.callouts || [];
+    for (let i = cs.length - 1; i >= 0; i--) { const c = cs[i]; if (c.kind === 'stairs' && c.on === u.id) return c; }
+    return null;
+  }
   function statusOf(u, s, sim) {
     const fd = u.state === 'attack' && u.move ? FRAME_DATA[u.move] : null;
     const stunK = Math.max(0, Math.min(1, u.stun / s.stunMax));
     if (s.counter > 0) return { text: 'COUNTER', color: NEON.white, glow: NEON.amber, bar: u.state === 'hitstun' ? stunK : null, barColor: '#ff2b4a', pop: s.counter };
     if (s.armor > 0) return { text: 'ARMOR', color: NEON.amber, pop: s.armor };
     if (s.parry > 0) return { text: 'PARRY', color: NEON.cyan, pop: s.parry };
+    const sc = stairsOf(u, sim);
+    if (sc) return { text: sc.text, color: KIND_COLOR.stairs, size: 22, pop: Math.max(0, 0.5 - (sc.max - sc.t)) };
     const bt = botchOf(u, sim);
     if (bt) return { text: botchLine(bt.kind, u.id, u.botchAt), color: BOTCH_COLOR, size: 22, pop: Math.max(0, 0.5 - bt.age), bar: u.state === 'hitstun' ? stunK : null, barColor: '#ff2b4a' };   // punished mid-stumble: the stun's bar under it
     if (u.faint > 0) return { text: 'FAINT', color: NEON.pink, bar: Math.min(1, u.faint / (1.5 * 120)), barColor: NEON.violet, dizzy: true };
@@ -717,7 +726,7 @@ export function createHUD(canvas, { width = 1280, height = 720, dpr: frameDpr = 
     const cb = sim.combo || sim.lastCombo;
     if (cb && cb.count >= 2) items.push({ text: `${cb.count} HITS`, by: cb.by, color: cb.by === 0 ? NEON.cyan : NEON.pink, size: 26, alpha: sim.combo ? 1 : Math.min(1, (cb.t || 0) / 0.3), age: 1 });
     for (const c of (sim.callouts || []).slice().reverse()) {
-      if (c.kind === 'botch') continue;   // a botch's line is drawn over the fighter who botched (tracks, botchOf)
+      if (c.kind === 'botch' || c.kind === 'stairs') continue;   // a botch's line, and DOWN THE STAIRS, are drawn over the fighter (tracks)   // a botch's line is drawn over the fighter who botched (tracks, botchOf)
       const color = KIND_COLOR[c.kind] || (c.by === 0 ? NEON.cyan : c.by === 1 || c.by > 1 ? NEON.pink : NEON.white);
       const age = c.max - c.t;
       items.push({ text: c.kind === 'counter' && c.text === 'COUNTER' ? 'COUNTER!' : c.text, by: c.by, color, size: c.kind === 'finish' ? 40 : c.kind === 'ender' || c.kind === 'accident' ? 30 : 24, alpha: Math.min(1, c.t / 0.25), age, kind: c.kind });
