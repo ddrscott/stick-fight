@@ -35,7 +35,7 @@ import { parseLoadout } from './career/moves.js';   // the custom employee's slo
 import { createBook, sendLeftovers } from './bookkeeping.js';   // match bookkeeping: one result per finished match (README, Analytics)
 import { track, trackAll } from './analytics.js';   // the tier a session settles on (README, Analytics)   // frame timing, and the ?perf=1 overlay (README, Performance)
 import { readDevice, startTier, perfLabels, boundBucket } from './device.js';   // the capability check: where AUTO starts, and the perf event's buckets
-import { gfxPick, onGfxPick, rememberedTier, rememberTier, setLiveTier } from './gfxPrefs.js';   // SETTINGS, GRAPHICS, and the tier this device settled on
+import { gfxPick, onGfxPick, rememberedTier, rememberTier, setLiveTier, fpsPick, onFpsPick } from './gfxPrefs.js';   // SETTINGS, GRAPHICS, and the tier this device settled on
 // horde-ko-test's state (installHordeKo, below): its results and the goons it saw go down
 const hordeKoTest = { results: [], done: false, phase: -1, koEvents: 0, onEvent: null };
 
@@ -1248,6 +1248,7 @@ function boostsFor(name, opts) {
 // the scenes the flow starts for a player's own fight: they run on the player's round time and best-of
 const PICKED_RULES = new Set(['arcade', 'horde', 'dummy']);
 function setScene(name, opts) {
+  wakeDraw();
   if (!scenes[name]) name = 'play';
   sceneName = name;
   hordeKoTest.onEvent = null;   // horde-ko-test stops following when the scene changes (its own scene sets it again)
@@ -1964,6 +1965,45 @@ input.onKey((code) => {
 
 // ---- loop + gauntlet hook ---------------------------------------------------------------------------
 let lastFrameMs = 16, drawTick = 0, drawMs = 0;
+// ---- which refreshes draw a picture (README, Performance, The draw cap) ----------------------------------------------
+// The sim steps on real elapsed time every refresh (a fixed 120 Hz step), however many pictures are drawn, so drawing
+// fewer changes nothing in the game or the netcode. Three rules decide, all in frame():
+// - The cap: FRAME RATE 60 (the default on touch) draws at most 60 pictures a second. A budget gains each refresh's
+//   time and a picture spends 1/60 s of it, drawn once the budget is within 4 ms of that (the slack), so a 120 Hz
+//   phone draws every other refresh, a 60 Hz screen never skips, and an uneven or 90 Hz refresh still averages 60
+//   (the remainder carries over, up to half a picture). MAX draws every refresh. ?fps=60|max beats both.
+// - fx.drawEvery 2: tier 0 at its last resort draws every other refresh (README, Chromebooks).
+// - A still scene: when the sim is held (a menu, pause, a stage card, SETTINGS over a fight) and nothing moved, the
+//   picture would come out the same, so after a second's settle (the HUD's fades finish) it's drawn 10 times a second,
+//   and at once on any change: a step, the camera, the tier, the screen size, a scene or flow screen, a key or a tap.
+//   Online, watching and the attract demo (its sim steps) never count as still.
+const CAP_MS = 1000 / 60, CAP_SLACK = 4, STILL_SETTLE_MS = 1000, STILL_TRICKLE_MS = 100;
+const fpsParam = params.get('fps');
+let capMs = 0, capBudget = 0;
+function applyFps() { capMs = (fpsParam === '60' || fpsParam === 'max' ? fpsParam : fpsPick()) === '60' ? CAP_MS : 0; capBudget = 0; }
+applyFps();
+onFpsPick(() => { applyFps(); wakeDraw(); });
+let stillMs = 0;
+var drawWake = true;   // (a var: setScene can run before this line, and wakeDraw must not hit the let dead zone)
+function wakeDraw() { drawWake = true; }
+for (const t of ['keydown', 'keyup', 'pointerdown', 'pointerup', 'wheel', 'resize', 'orientationchange']) window.addEventListener(t, wakeDraw, { capture: true, passive: true });
+document.addEventListener('visibilitychange', wakeDraw);
+try { document.fonts.addEventListener('loadingdone', wakeDraw); } catch (e) { /* no font API */ }
+// what the picture depends on besides the sim: when any of it changes, the scene isn't still
+const stillSig = [], stillNow = [];
+function sceneIsStill(stepsBefore) {
+  if (driven || online.active || watch.active || attract || sim.stepCount !== stepsBefore) return false;
+  if (toast || perfectFX.active || sim.perfectT >= 0) return false;   // these animate on render()'s own clock
+  const n = stillNow;
+  n[0] = camera.x; n[1] = camera.y; n[2] = camera.zoom; n[3] = camera.shakeX; n[4] = camera.shakeY; n[5] = !!camera.mirror;
+  n[6] = fx.tier; n[7] = fx.drawEvery; n[8] = flow && flow.on ? flow.state : ''; n[9] = paused; n[10] = help; n[11] = debug;
+  n[12] = sceneName; n[13] = window.innerWidth; n[14] = window.innerHeight; n[15] = document.documentElement.classList.contains('pad-ui');
+  n[16] = lights.length + blockSparks.length; n[17] = sim.units.length;
+  let same = !drawWake;
+  for (let i = 0; i < n.length; i++) if (stillSig[i] !== n[i]) { stillSig[i] = n[i]; same = false; }
+  drawWake = false;
+  return same;
+}
 let last = performance.now();
 if (attractHome) flow.start({ room: online.roomFromUrl() });   // plain index.html: the arcade flow (?room=CODE joins that room)
 else setScene(params.get('scene'));
@@ -2009,10 +2049,20 @@ function frame(now) {
   // (a spectator catching up runs the sim flat out and draws nothing until it's level)
   // fx.drawEvery 2: tier 0 still can't hold, so the sim steps every refresh and the picture is drawn every other one
   // (README, Performance, Chromebooks): the game keeps its speed instead of slowing down with the frame rate
+  // A capped phone and a still scene skip pictures the same way (the cap and the still-picture rule above)
   if (!driven && !idle) {
+    const steps = sim.stepCount;
     lastFrameMs = ms; advance(ms); perf.mark('sim'); drawTick++; drawMs += ms;
+    stillMs = sceneIsStill(steps) ? stillMs + ms : 0;
+    const still = stillMs > STILL_SETTLE_MS;
+    if (still) fx.holdTiming();   // a trickle isn't a slow frame: the adaptive tier doesn't judge it
+    capBudget += ms;
+    const due = still ? drawMs >= STILL_TRICKLE_MS : !capMs || capBudget >= capMs - CAP_SLACK;
     // render()'s own clocks (the life layer, the HUD, the status effects) get the time since the last drawn frame
-    if (!watch.catching && (fx.drawEvery < 2 || drawTick % 2 === 0)) { lastFrameMs = Math.min(100, drawMs); drawMs = 0; render(); }
+    if (!watch.catching && drawTick >= fx.drawEvery && due) {
+      capBudget = Math.max(-CAP_SLACK, Math.min(capMs / 2, capBudget - capMs));
+      lastFrameMs = Math.min(100, drawMs); drawMs = 0; drawTick = 0; render();
+    }
   }
   perf.end();
   requestAnimationFrame(frame);
@@ -2027,9 +2077,9 @@ try {
 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 window.__gauntlet.ready = true;
 // what the profiler reports alongside the times: the tier, the DPR and the size the GL canvas draws at
-const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, every: fx.drawEvery, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height,
+const perfInfo = () => perf.setInfo({ tier: fx.tier, adaptive: fx.adaptive, every: fx.drawEvery, cap: capMs ? 60 : 0, still: stillMs > STILL_SETTLE_MS, dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100, hud: dpr, w: glCanvas.width, h: glCanvas.height,
   device: `${device.os} ${device.gpu} cores ${device.cores} mem ${device.mem} start ${guessTier}` });
-perfInfo(); setInterval(perfInfo, 1000);
+perfInfo(); setInterval(perfInfo, 250);
 // What real players get (README, Analytics, 'perf'): once a session, after 30 s on the page with the tier unchanged for
 // the last 15 s, the tier it settled on, the one it started on, touch or mouse, the frame time p95 (ms, as a label),
 // the device's coarse buckets (src/device.js: os, GPU family, cores and memory; never the renderer string), what held
@@ -2044,8 +2094,10 @@ perfInfo(); setInterval(perfInfo, 1000);
     if (sent || performance.now() - t0 < 10000) return;
     sent = true;
     const s = perf.summary();
-    trackAll([{ e: 'perf', l: perfLabels({ tier: fx.tier, start: startTier, coarse: coarsePointer, p95: s.iv.p95, dev: device, bound: boundBucket(s.iv.p50, s.work.p50), pick: fx.pinned !== null ? 'url' : gfxPick() }),
-      v: r1(s.iv.p50), d: [r1(s.work.p50), r1(s.sim.p50), r1(s.draw.p50), r1(s.gl.p50), r1(s.hud.p50), fx.drawEvery] }]);
+    // the frame times are the drawn pictures' (the same as rAF's until the draw cap: README, Performance, The draw cap)
+    const iv50 = s.drawnIv.p50 || s.iv.p50, iv95 = s.drawnIv.p95 || s.iv.p95;
+    trackAll([{ e: 'perf', l: perfLabels({ tier: fx.tier, start: startTier, coarse: coarsePointer, p95: iv95, dev: device, bound: boundBucket(iv50, s.drawnWork.p50 || s.work.p50), pick: fx.pinned !== null ? 'url' : gfxPick() }),
+      v: r1(iv50), d: [r1(s.work.p50), r1(s.sim.p50), r1(s.draw.p50), r1(s.gl.p50), r1(s.hud.p50), fx.drawEvery] }]);
   };
   const tick = setInterval(() => {
     const now = performance.now();

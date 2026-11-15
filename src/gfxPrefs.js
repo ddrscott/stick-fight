@@ -1,7 +1,8 @@
 // The GRAPHICS setting and the tier this device settled on (README, Performance, Chromebooks). The settings
 // panel (src/audio/ui.js) changes the choice; src/main.js reads both at boot and tells the compositor.
 //
-// Kept in localStorage as stick-fight-gfx: { pick, tier }. pick is 'auto' (the default: the adaptive tier) or a
+// FRAME RATE lives here too ({ fps }: '60', 'max' or unset for the device's default).
+// Kept in localStorage as stick-fight-gfx: { pick, tier, fps }. pick is 'auto' (the default: the adaptive tier) or a
 // fixed tier, '3' to '0', which turns adaptation off. tier is where AUTO last settled on this device, so the
 // second visit starts there instead of at the capability check's guess. It stays on this device and isn't
 // carried to the account the way the touch size is: a Chromebook and a desktop want different answers.
@@ -20,13 +21,22 @@ export const GFX_CHOICES = [
 /** a tier's name in the panel's words */
 export const TIER_NAME = { 3: 'HIGH', 2: 'MEDIUM', 1: 'LOW', 0: 'LOWEST' };
 
+/** FRAME RATE's choices, left to right (README, Performance, The draw cap): at most 60 pictures a second, or one every
+ *  refresh the screen offers. Unset, it's 60 on a touch screen (a phone's 120 Hz panel draws twice the pictures for the
+ *  same game and heats up) and MAX with a mouse. */
+export const FPS_CHOICES = [
+  { id: '60', name: '60' },
+  { id: 'max', name: 'MAX' },
+];
+
 let memory = null;
 const subs = new Set();
 
 function clean(raw) {
-  const out = { pick: 'auto', tier: -1 };
+  const out = { pick: 'auto', tier: -1, fps: '' };
   if (raw && typeof raw === 'object') {
     if (GFX_CHOICES.some((c) => c.id === raw.pick)) out.pick = raw.pick;
+    if (FPS_CHOICES.some((c) => c.id === raw.fps)) out.fps = raw.fps;
     const t = Number(raw.tier);
     if (Number.isInteger(t) && t >= 0 && t <= 3) out.tier = t;
   }
@@ -59,6 +69,23 @@ export function rememberTier(t) {
   if (!Number.isInteger(t) || t < 0 || t > 3 || t === read().tier) return;
   write({ ...read(), tier: t });
 }
+/** FRAME RATE: '60' or 'max', the player's choice or this device's default (60 on touch) */
+export function fpsPick() {
+  const f = read().fps;
+  if (f) return f;
+  let coarse = false;
+  try { coarse = matchMedia('(pointer: coarse)').matches; } catch { /* no matchMedia: a mouse */ }
+  return coarse ? '60' : 'max';
+}
+const fpsSubs = new Set();
+/** the player picked a frame rate in the panel */
+export function setFpsPick(fps) {
+  if (!FPS_CHOICES.some((c) => c.id === fps) || fps === fpsPick()) return;
+  write({ ...read(), fps });
+  for (const fn of fpsSubs) { try { fn(fps); } catch { /* one listener never stops the rest */ } }
+}
+/** fn(fps) when the player changes it */
+export function onFpsPick(fn) { fpsSubs.add(fn); return () => fpsSubs.delete(fn); }
 /** fn(pick) when the player changes it */
 export function onGfxPick(fn) { subs.add(fn); return () => subs.delete(fn); }
 

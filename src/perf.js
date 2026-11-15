@@ -13,7 +13,12 @@ const N = 600;   // 10 s at 60 fps
 const PHASES = ['sim', 'draw', 'gl', 'hud'];
 const ring = { iv: new Float32Array(N), work: new Float32Array(N), drew: new Uint8Array(N) };
 for (const p of PHASES) ring[p] = new Float32Array(N);
-let n = 0, head = 0, last = 0, t0 = 0, tMark = 0;
+// the drawn pictures only: the interval since the last drawn picture and the work of a frame that drew. On a phone the
+// draw cap skips every other refresh of a 120 Hz screen and a still scene draws a trickle (README, Performance, The
+// draw cap), so the rAF rings above say how often the page ran and these say how often, and how hard, it drew.
+const dring = { iv: new Float32Array(N), work: new Float32Array(N) };
+let dn = 0, dhead = 0, lastDraw = 0;
+let n = 0, head = 0, last = 0, t0 = 0, tMark = 0, tBegin = 0;
 const cur = { sim: 0, draw: 0, gl: 0, hud: 0 };
 let drew = 0;   // this frame drew a picture (tier 0 at its last resort draws every other frame: README, Performance, Chromebooks)
 const rb = { last: 0, lastDepth: 0, max: 0, maxDepth: 0, count: 0, at: -1e9 };
@@ -36,7 +41,7 @@ export const perf = {
         if (iv > 25) { longAt[longHead] = now; longHead = (longHead + 1) % longAt.length; }
       }
     }
-    last = now; t0 = tMark = performance.now();
+    last = now; tBegin = now; t0 = tMark = performance.now();
     cur.sim = cur.draw = cur.gl = cur.hud = 0; drew = 0;
   },
   /** render() ran this frame */
@@ -48,13 +53,18 @@ export const perf = {
     for (const p of PHASES) ring[p][head] = cur[p];
     ring.drew[head] = drew;
     head = (head + 1) % N; if (n < N) n++;
+    if (drew) {
+      const iv = lastDraw ? tBegin - lastDraw : 0;
+      lastDraw = tBegin;
+      if (iv > 0 && iv < 500) { dring.iv[dhead] = iv; dring.work[dhead] = t - t0; dhead = (dhead + 1) % N; if (dn < N) dn++; }
+    }
   },
   rollback(ms, depth) {
     rb.last = ms; rb.lastDepth = depth; rb.count++; rb.at = performance.now();
     if (ms > rb.max) { rb.max = ms; rb.maxDepth = depth; }
   },
   setInfo(o) { info = { ...info, ...o }; },
-  reset() { n = 0; head = 0; last = 0; longHead = 0; longAt.fill(0); rb.last = rb.lastDepth = rb.max = rb.maxDepth = rb.count = 0; },
+  reset() { n = 0; head = 0; last = 0; dn = 0; dhead = 0; lastDraw = 0; longHead = 0; longAt.fill(0); rb.last = rb.lastDepth = rb.max = rb.maxDepth = rb.count = 0; },
   summary() {
     const out = { frames: n, info, rollback: { ...rb } };
     const now = performance.now();
@@ -66,6 +76,9 @@ export const perf = {
     // pictures drawn a second: the same as fps unless frames were skipped
     let d = 0; for (let i = 0; i < n; i++) d += ring.drew[i];
     out.drawnFps = n ? out.fps * d / n : 0;
+    // the drawn pictures' own interval and work (a capped phone's iv.p50 is its 120 Hz refresh, not its pictures)
+    out.drawnIv = { p50: pct(dring.iv, dn, 0.5), p95: pct(dring.iv, dn, 0.95) };
+    out.drawnWork = { p50: pct(dring.work, dn, 0.5), p95: pct(dring.work, dn, 0.95) };
     return out;
   },
 };
@@ -88,6 +101,7 @@ export function perfOverlay(parent) {
     const r = s.rollback, ago = (performance.now() - r.at) / 1000;
     el.textContent =
       `$ FRAME ${f(iv.p50)} p95${f(iv.p95)} p99${f(iv.p99)} ms  ${s.fps.toFixed(0)} fps${s.drawnFps < s.fps - 1 ? ` (${s.drawnFps.toFixed(0)} drawn)` : ''}\n`
+      + `  drawn ${f(s.drawnIv.p50)} p95${f(s.drawnIv.p95)} ms  ${s.drawnFps.toFixed(0)} a second, rAF ${s.fps.toFixed(0)}  cap ${s.info.cap || 'max'}${s.info.still ? '  still' : ''}\n`
       + `  work  ${f(work.p50)} p95${f(work.p95)}  long/min ${s.longPerMin.toFixed(0)}\n`
       + `  sim   ${f(sim.p50)} p95${f(sim.p95)}\n`
       + `  draw  ${f(draw.p50)} p95${f(draw.p95)}\n`
