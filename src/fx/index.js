@@ -359,7 +359,7 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     shafts: { on: false, x: 1400, y: -80, angle: 2.4, spacing: 120, width: 34, length: 1500, count: 6, color: [1.0, 0.82, 0.5], intensity: 0.55 },
     reflect: { y: 640, strength: 0.0, fade: 120, stretch: 4.0, ripple: 1.0, depth: 80, x0: -1e5, x1: 1e5, gaps: [] }, // depth: the wet floor's depth below y (the mirror fades out by then) // stretch > 1 compresses the mirror so a shallow strip of floor still shows the lights
     foreground: { on: true, blur: 0, opacity: 1.0, tint: [0.3, 0.25, 0.45] }, // crisp by default; opacity applies only where a figure is behind
-    options: { enabled: true, lighting: true, shadows: true, bloom: true, stars: true, fog: true, haze: true, shafts: true, vignette: true, grain: true, grade: true, particles: true, shake: true, aberration: true, reflect: true, foreground: true, motes: true },
+    options: { enabled: true, lighting: true, shadows: true, bloom: true, stars: true, fog: true, haze: true, shafts: true, vignette: true, grain: true, grade: true, particles: true, shake: true, aberration: true, reflect: true, foreground: true },
     tune: { bloomA: 1.0, bloomB: 0.05, bloomC: 0.03, star: 0.08, vignette: 0.26, grain: 0.03, haze: 0.03, shadow: 0.5, figAmb: 0.95, figGain: 0.25, rim: 0.6, emiGain: 1.0, coreWhite: 0.0, outline: 0.5, emiBloom: 1.5, shaftBloom: 0.5, hazeBloom: 0.2, blurRadius: 0.6, lift: [0.008, 0.004, 0.014], toe: 0.5, black: 0.0, lightGain: 1.0, maxDebris: 60, shakeMax: 24, punch: 16, punchHold: 0.045, aberration: 0.005, emiLight: 0.0, emiLightA: 0.5, emiLightC: 1.0, coreCap: 1.0, hiLift: 0, fgCut: 0.12, bodyAmb: 0.5, bodyGain: 0.8 },
     shake: { x: 0, y: 0 },
     skip: {},              // { layerName: true } = unchanged since the last frame, do not re-upload
@@ -460,9 +460,8 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
       time += dt;
       const z = lastCam.zoom || 1;
       const view = { x0: lastCam.x - W / 2 / z, x1: lastCam.x + W / 2 / z, y0: lastCam.y - H / 2 / z, y1: lastCam.y + H / 2 / z };
-      // tier 0 (lowCpu): no drifting motes, half the rain, a third of the debris a hit throws
+      // tier 0 (lowCpu): half the rain, a third of the debris a hit throws
       const lowCpu = !!TIERS[tier].lowCpu;
-      particles.setMotes(fx.options.motes && fx.options.particles && !lowCpu ? 70 : 0);
       particles.rainScale = lowCpu ? 0.5 : 1;
       particles.update(dt, view);
       trauma = Math.max(0, trauma - dt * 2.2);

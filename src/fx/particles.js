@@ -1,4 +1,4 @@
-// Particle system: sparks, debris, dust, motes, rain, trails. Pure JS, builds one
+// Particle system: sparks, debris, dust, rain, trails. Pure JS, builds one
 // vertex array per frame for the GL particle program. Deterministic given the RNG.
 
 export const SHAPE = { SOFT: 0, POLY: 1, STREAK: 2, DISC: 3, RING: 4, CHUNK: 5 };
@@ -24,8 +24,6 @@ export function createParticles() {
   const parts = [];
   const verts = new Float32Array(MAX_PARTICLES * 6 * FLOATS_PER_VERT);
   let rainRate = 0, rainWind = -0.08, rainAccum = 0, rainRegion = null;
-  let moteTarget = 0;
-  let moteCount = 0;
   // scratch for build(): screen points (toScreen(x, y, out) writes into out) and a light sample, so a frame's
   // particles make no garbage
   const S = Array.from({ length: 6 }, () => [0, 0]), Lbuf = [0, 0, 0];
@@ -39,12 +37,11 @@ export function createParticles() {
     seed(n) { rnd = mulberry32(n); },
     get count() { return parts.length; },
     rnd: () => rnd(),
-    clear() { parts.length = 0; moteCount = 0; rainAccum = 0; },
+    clear() { parts.length = 0; rainAccum = 0; },
     // region: optional world rect {x0,x1,y0,y1}. Rain then spawns along its top edge, falls inside it,
     // drifts with the wind, dies the moment it crosses a side, and splashes on its bottom edge. Each
     // streak is clipped to the rect when drawn, so nothing shows outside it.
     setRain(rate, wind, region) { rainRate = rate; if (wind !== undefined) rainWind = wind; rainRegion = region || null; },
-    setMotes(n) { moteTarget = n; },
     push(p) { if (parts.length < MAX_PARTICLES) parts.push(p); },
 
     hit({ x, y, strength = 1, dir = 1, color = null, flashR = 36, debris, maxDebris = 60, ring = true }) {
@@ -200,15 +197,6 @@ export function createParticles() {
     },
 
     update(dt, view) {
-      // Ambient motes: spawn up to target, drifting slowly, wrapping in view.
-      if (moteCount < moteTarget) {
-        const n = Math.min(moteTarget - moteCount, 6);
-        for (let i = 0; i < n; i++) {
-          sys.push({ kind: 'mote', x: view.x0 + rnd() * (view.x1 - view.x0), y: view.y0 + rnd() * (view.y1 - view.y0), vx: (rnd() - 0.5) * 14, vy: -4 - rnd() * 10, life: 1e9, age: rnd() * 10,
-            size: 0.9 + rnd() * 1.6, shape: SHAPE.SOFT, color: [1, 0.9, 0.7], alpha: 0.25 + rnd() * 0.45, emissive: true, wob: rnd() * 6.28, lit: true });
-          moteCount++;
-        }
-      }
       if (rainRate > 0) {
         rainAccum += rainRate * sys.rainScale * dt;   // rainScale: tier 0 rains half as hard (src/fx/index.js)
         while (rainAccum >= 1) {
@@ -227,16 +215,10 @@ export function createParticles() {
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
         p.age += dt;
-        if (p.age >= p.life) { if (p.kind === 'mote') moteCount--; parts[i] = parts[parts.length - 1]; parts.pop(); continue; }
+        if (p.age >= p.life) { parts[i] = parts[parts.length - 1]; parts.pop(); continue; }
         if (p.kind === 'trail') continue;
         if (p.gravity) p.vy += p.gravity * dt;
         if (p.drag) { const k = Math.max(0, 1 - p.drag * dt); p.vx *= k; p.vy *= k; }
-        if (p.kind === 'mote') {
-          p.vx += Math.sin(p.age * 0.7 + p.wob) * 8 * dt;
-          p.vy += Math.cos(p.age * 0.5 + p.wob) * 5 * dt;
-          if (p.x < view.x0) p.x = view.x1; else if (p.x > view.x1) p.x = view.x0;
-          if (p.y < view.y0) p.y = view.y1; else if (p.y > view.y1) p.y = view.y0;
-        }
         const px = p.x, py = p.y;
         p.x += p.vx * dt; p.y += p.vy * dt;
         if (p.rotV) p.rot += p.rotV * dt;
@@ -268,7 +250,7 @@ export function createParticles() {
             else { p.vy = -p.vy * p.bounce; p.vx *= p.friction !== undefined ? p.friction : 0.8; if (p.rotV) p.rotV *= 0.6; }
           }
         }
-        if (p.x < sys.bounds.x0 || p.x > sys.bounds.x1 || p.y > sys.bounds.y1) { if (p.kind === 'mote') moteCount--; parts[i] = parts[parts.length - 1]; parts.pop(); }
+        if (p.x < sys.bounds.x0 || p.x > sys.bounds.x1 || p.y > sys.bounds.y1) { parts[i] = parts[parts.length - 1]; parts.pop(); }
       }
     },
 
@@ -300,7 +282,7 @@ export function createParticles() {
           let a = p.alpha, c = p.color;
           if (p.lit && !p.flat) {
             const L = sys.lightAt(p.x, p.y, Lbuf);
-            if (p.emissive) { // rain and motes: visible in the dark, sparkle near lights
+            if (p.emissive) { // rain: visible in the dark, sparkle near lights
               const l = Math.min(2.2, 0.8 + (L[0] + L[1] + L[2]) * 0.3);
               tmp[0] = Math.min(1.6, c[0] * (0.5 + L[0]) * l); tmp[1] = Math.min(1.6, c[1] * (0.5 + L[1]) * l); tmp[2] = Math.min(1.6, c[2] * (0.5 + L[2]) * l);
               c = tmp;
@@ -363,7 +345,6 @@ export function createParticles() {
             case 'halo': a *= (1 - t) * (1 - t); quad(s[0], s[1], size, size, 0, c, a, p.shape); break;
             case 'dust': a *= t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85; quad(s[0], s[1], size, size, 0, c, a, p.shape); break;
             case 'debris': { const left = p.life - p.age, f = p.fadeIn || 0.5; a *= left < f ? left / f : 1; quad(s[0], s[1], size, size * p.aspect, p.rot, c, a, p.shape); break; }
-            case 'mote': { const tw = 0.7 + 0.3 * Math.sin(p.age * 2.1 + p.wob); quad(s[0], s[1], size * 1.6, size * 1.6, 0, c, a * tw, SHAPE.SOFT + BEHIND); break; }
             case 'splash': a *= 1 - t; quad(s[0], s[1], size, size, 0, c, a, SHAPE.DISC + BEHIND); break;
             default: quad(s[0], s[1], size, size, p.rot || 0, c, a, p.shape); break;
           }
