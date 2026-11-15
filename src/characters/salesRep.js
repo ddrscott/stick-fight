@@ -19,7 +19,7 @@ const coldCall = { blend: 40, limb: 'lHand', keys: [
   K({ ...F(10, HIP - 9, LF + 16, RF + 6, 3, 0), torso: 24, bend: 4, head: -10, tw: -6, la: [76, 96], ra: [32, 164] }, 60, 'linear'),
   K({ ...F(16, HIP - 10, LF + 16, RF + 6), torso: 32, bend: 6, head: -12, tw: -14, la: [94, 92], ra: [34, 162] }, 40, 'out', 'active'),
   K({ ...F(17, HIP - 10.5, LF + 16, RF + 6), torso: 33, bend: 6, head: -12, tw: -15, la: [95, 93], ra: [34, 162] }, 60, 'inOut'),
-  K({ ...F(16, HIP - 8, LF + 16, RF + 8), torso: 26, bend: 5, head: -10, tw: -12, la: [94, 76], ra: [34, 162] }, 100, 'in', 'recover'),
+  K({ ...F(16, HIP - 8, LF + 16, RF + 8), torso: 26, bend: 5, head: -10, tw: -12, la: [76, 94], ra: [34, 162] }, 100, 'in', 'recover'),
   K({ ...F(8, HIP - 3, LF + 8, RF + 6, 0, 6), torso: 12, bend: 1, head: -6, tw: -2, la: [60, 130], ra: [30, 164] }, 100, 'out', 'footstep'),
   K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4 }, 0, 'sine'),
 ] };
@@ -28,8 +28,8 @@ const coldCall = { blend: 40, limb: 'lHand', keys: [
 const pitch = { blend: 40, limb: 'lFoot', height: 'low', keys: [
   K({ hx: -2, rl: L(-2, 49, RF), ll: [40, -20], torso: 8, bend: 2, head: -2, tw: 4, la: [50, 140], ra: [30, 164] }, 50, 'in'),
   K({ hx: 4, rl: L(4, 47, RF), ll: [64, -4], torso: 14, bend: 3, head: -4, tw: 2, la: [56, 128], ra: [30, 164] }, 40, 'linear'),
-  K({ hx: 12, rl: L(12, 46, RF), ll: [60, 82], torso: 18, bend: 3, head: -6, tw: -4, la: [70, 112], ra: [30, 158] }, 40, 'out', 'active'),
-  K({ hx: 12, rl: L(12, 46, RF), ll: [61, 83], torso: 19, bend: 3, head: -6, tw: -4, la: [70, 112], ra: [30, 158] }, 60, 'inOut'),
+  K({ hx: 12, rl: L(12, 46, RF), ll: [82, 60], torso: 18, bend: 3, head: -6, tw: -4, la: [70, 112], ra: [30, 158] }, 40, 'out', 'active'),
+  K({ hx: 12, rl: L(12, 46, RF), ll: [83, 61], torso: 19, bend: 3, head: -6, tw: -4, la: [70, 112], ra: [30, 158] }, 60, 'inOut'),
   K({ hx: 8, rl: L(8, 48, RF), ll: [52, 6], torso: 12, bend: 2, head: -4, la: [60, 130], ra: [30, 162] }, 60, 'inOut', 'recover'),
   K({ hx: 3, rl: L(3, 51, RF), ll: [36, -14], torso: 6, head: -2, la: [54, 146], ra: [28, 166] }, 60, 'inOut'),
   K({ ...F(1, HIP, LF, RF), torso: 5, head: -4, la: [52, 152], ra: [28, 166] }, 60, 'out', 'footstep'),
@@ -42,8 +42,8 @@ const closeDeal = { blend: 40, limb: 'lHand', shift: 26, keys: [
   K({ ...F(-2, HIP - 3, LF, RF), torso: 6, bend: 0, head: -3, tw: 6, la: [60, 100], ra: [30, 160] }, 60, 'in'),
   K({ ...F(6, HIP - 6, LF + 12, RF, 6, 0), torso: 14, bend: 2, head: -5, tw: 2, la: [82, 90], ra: [36, 150] }, 50, 'out'),
   K({ ...F(12, HIP - 7, LF + 16, RF), torso: 20, bend: 3, head: -6, tw: -2, la: [92, 90], ra: [40, 140] }, 40, 'out', 'active'),
-  K({ ...F(4, HIP - 8, LF + 16, RF), torso: -6, bend: -3, head: 2, tw: -12, la: [58, 40], ra: [70, 118] }, 60, 'in'),
-  K({ ...F(18, HIP - 10, LF + 26, RF + 6), torso: 28, bend: 6, head: -10, tw: 16, la: [40, 100], ra: [96, 88] }, 50, 'out', 'recover'),
+  K({ ...F(4, HIP - 8, LF + 16, RF), torso: -6, bend: -3, head: 2, tw: -12, la: [40, 58], ra: [70, 118] }, 60, 'in'),
+  K({ ...F(18, HIP - 10, LF + 26, RF + 6), torso: 28, bend: 6, head: -10, tw: 16, la: [40, 100], ra: [88, 96] }, 50, 'out', 'recover'),
   K({ ...F(20, HIP - 6, LF + 26, RF + 6), torso: 16, bend: 3, head: -6, la: [50, 130], ra: [60, 120] }, 130, 'inOut'),
   K({ ...F(22, HIP - 2, LF + 26, RF + 26, 0, 8), torso: 8, head: -4, la: [54, 148], ra: [30, 162] }, 110, 'inOut', 'footstep'),
   K({ ...F(26, HIP - 1, LF + 26, RF + 26), torso: 6, head: -4 }, 0, 'sine'),
@@ -100,9 +100,9 @@ const dance = { keys: [
 const perfect = { name: 'CLOSE THE DEAL', note: 'The handshake: he takes it by the hand and pumps it three times, then closes the deal with the rising phone-hand uppercut that sends it at the camera; finger guns.', stamp: 'SOLD!', hand: 'rHand', hold: 'collar', fly: { spin: 1, arc: 160 }, keys: [
   ...stoop('rHand'),
   lift('collar', 'rHand', 200),
-  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),
+  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [76, 86] }, 100, 'sine'),
   K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [104, 118] }, 100, 'sine'),
-  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [86, 76] }, 100, 'sine'),
+  K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [76, 86] }, 100, 'sine'),
   K({ face: 0.3, ...F(2, HIP - 2, LF + 4, RF), torso: 6, head: -6, la: [40, 110], ra: [104, 118] }, 100, 'sine'),
   K({ face: 0.55, ...F(-2, HIP - 14, LF + 4, RF - 4), torso: 24, bend: 4, head: -2, la: [50, 100], ra: [10, 20] }, 160, 'in'),
   K({ face: 0.9, ...F(6, HIP + 2, LF + 8, RF - 4, 0, 6), torso: -12, bend: -6, head: -16, la: [30, 100], ra: [166, 178] }, 90, 'out', 'release'),
@@ -115,8 +115,8 @@ const perfect = { name: 'CLOSE THE DEAL', note: 'The handshake: he takes it by t
 // (registry `victory`, in place of the dance once it's unlocked and on): The closer: a step in, a hand stuck out for the handshake, a big grin up.
 const victory = { keys: [
   K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 2, la: [30, 60], ra: [12, 24] }, 180, 'in'),
-  K({ ...F(4, HIP - 1, LF + 10, RF), torso: 6, head: -6, la: [70, 80], ra: [30, -70] }, 240, 'out'),
-  K({ ...F(4, HIP - 1, LF + 10, RF), torso: 6, head: -8, la: [70, 80], ra: [30, -70] }, 460, 'sine'),
+  K({ ...F(4, HIP - 1, LF + 10, RF), torso: 6, head: -6, la: [70, 80], ra: [-67, 33] }, 240, 'out'),
+  K({ ...F(4, HIP - 1, LF + 10, RF), torso: 6, head: -8, la: [70, 80], ra: [-67, 33] }, 460, 'sine'),
 ] };
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). Call me: thumb and pinkie at the ear, then a point at them.

@@ -13,10 +13,10 @@ const { K, F, LF, RF, HIP } = RIG_KIT;
 // b+1: the clipboard (in the lead hand) goes up beside the head, a short step, and it swats down across
 // his face, the arm nearly straight at head height. Quick, a high: a croucher ducks it.
 const writeUp = { blend: 40, limb: 'lHand', shift: 14, keys: [
-  K({ ...F(-3, HIP - 2, LF, RF), torso: 0, bend: -2, head: -2, tw: 6, la: [138, 118], ra: [30, 162] }, 70, 'in'),
+  K({ ...F(-3, HIP - 2, LF, RF), torso: 0, bend: -2, head: -2, tw: 6, la: [118, 138], ra: [30, 162] }, 70, 'in'),
   K({ ...F(2, HIP - 4, LF + 8, RF, 7, 0), torso: 6, bend: -1, head: -4, tw: 8, la: [158, 156], ra: [30, 164] }, 60, 'linear'),
-  K({ ...F(10, HIP - 6, LF + 14, RF), torso: 20, bend: 4, head: -8, tw: -10, la: [100, 92], ra: [34, 160] }, 40, 'out', 'active'),
-  K({ ...F(11, HIP - 6.5, LF + 14, RF), torso: 21, bend: 4, head: -8, tw: -11, la: [96, 84], ra: [34, 160] }, 60, 'inOut'),
+  K({ ...F(10, HIP - 6, LF + 14, RF), torso: 20, bend: 4, head: -8, tw: -10, la: [92, 100], ra: [34, 160] }, 40, 'out', 'active'),
+  K({ ...F(11, HIP - 6.5, LF + 14, RF), torso: 21, bend: 4, head: -8, tw: -11, la: [84, 96], ra: [34, 160] }, 60, 'inOut'),
   K({ ...F(10, HIP - 4, LF + 14, RF), torso: 12, bend: 2, head: -6, tw: -4, la: [62, 112], ra: [32, 162] }, 90, 'inOut', 'recover'),
   K({ ...F(12, HIP - 2, LF + 14, RF + 14, 0, 8), torso: 7, head: -4, la: [54, 148], ra: [28, 166] }, 90, 'inOut', 'footstep'),
   K({ ...F(14, HIP - 1, LF + 14, RF + 14), torso: 6, head: -4 }, 0, 'sine'),
@@ -39,8 +39,8 @@ const training = { blend: 50, limb: 'rHand', shift: 34, keys: [
 // the reaction to Mandatory Training and the EXIT INTERVIEW (frame data react): the chest takes it, the
 // arms fly forward, and he backpedals two long steps (the root goes 64 px back with the clip, `shift`)
 const shoved = { blend: 30, shift: -64, keys: [
-  K({ ...F(-3, HIP - 2, LF, RF), torso: -12, bend: -10, head: -24, tw: 4, la: [70, 50], ra: [52, 30] }, 40, 'out'),
-  K({ ...F(-12, HIP - 4, LF, RF - 24, 0, 10), torso: -15, bend: -8, head: -18, tw: 2, la: [84, 62], ra: [-16, 14] }, 60, 'out'),
+  K({ ...F(-3, HIP - 2, LF, RF), torso: -12, bend: -10, head: -24, tw: 4, la: [50, 70], ra: [30, 52] }, 40, 'out'),
+  K({ ...F(-12, HIP - 4, LF, RF - 24, 0, 10), torso: -15, bend: -8, head: -18, tw: 2, la: [62, 84], ra: [-16, 14] }, 60, 'out'),
   K({ ...F(-26, HIP - 6, LF - 8, RF - 40), torso: -10, bend: -6, head: -14, la: [62, 72], ra: [-10, 30] }, 70, 'inOut', 'footstep'),
   K({ ...F(-40, HIP - 4, LF - 32, RF - 40, 10, 0), torso: -6, bend: -3, head: -10, la: [44, 90], ra: [8, 60] }, 80, 'inOut'),
   K({ ...F(-56, HIP - 3, LF - 64, RF - 40), torso: -2, head: -6, la: [34, 70], ra: [14, 56] }, 80, 'out', 'footstep'),
@@ -53,8 +53,8 @@ const shoved = { blend: 30, shift: -64, keys: [
 const exitInterview = { blend: 40, limb: 'rHand', shift: 28, keys: [
   K({ ...F(-4, HIP - 3, LF, RF), torso: -4, bend: -3, head: 4, tw: -18, la: [50, 150], ra: [118, 172] }, 70, 'in'),
   K({ ...F(4, HIP - 6, LF + 18, RF, 8, 0), torso: 6, bend: 0, head: 0, tw: -12, la: [46, 146], ra: [150, 160] }, 60, 'linear'),
-  K({ ...F(16, HIP - 9, LF + 28, RF), torso: 30, bend: 6, head: -12, tw: 18, la: [20, 136], ra: [96, 88] }, 40, 'out', 'active'),
-  K({ ...F(17, HIP - 10, LF + 28, RF), torso: 32, bend: 7, head: -12, tw: 19, la: [18, 134], ra: [94, 84] }, 90, 'inOut'),
+  K({ ...F(16, HIP - 9, LF + 28, RF), torso: 30, bend: 6, head: -12, tw: 18, la: [20, 136], ra: [88, 96] }, 40, 'out', 'active'),
+  K({ ...F(17, HIP - 10, LF + 28, RF), torso: 32, bend: 7, head: -12, tw: 19, la: [18, 134], ra: [84, 94] }, 90, 'inOut'),
   K({ ...F(16, HIP - 6, LF + 28, RF + 6), torso: 16, bend: 3, head: -8, tw: 8, la: [40, 140], ra: [52, 118] }, 110, 'inOut', 'recover'),
   K({ ...F(22, HIP - 2, LF + 28, RF + 28, 0, 8), torso: 7, head: -4, la: [54, 148], ra: [30, 162] }, 100, 'inOut', 'footstep'),
   K({ ...F(28, HIP - 1, LF + 28, RF + 28), torso: 6, head: -4 }, 0, 'sine'),
@@ -133,8 +133,8 @@ const perfect = { name: 'MANDATORY OFFBOARDING', note: 'Up by the collar, the pr
 // (registry `victory`, in place of the dance once it's unlocked and on): Open door policy: arms spread wide, palms up, a warm head tilt.
 const victory = { keys: [
   K({ ...F(0, HIP - 2, LF, RF), torso: 6, head: 6, la: [30, 90], ra: [30, 90] }, 200, 'in'),
-  K({ ...F(0, HIP, LF + 2, RF - 2), torso: -2, bend: -2, head: -10, la: [104, 120], ra: [-104, -120] }, 260, 'out'),
-  K({ ...F(0, HIP, LF + 2, RF - 2), torso: -2, bend: -2, head: -12, la: [104, 120], ra: [-104, -120] }, 460, 'sine'),
+  K({ ...F(0, HIP, LF + 2, RF - 2), torso: -2, bend: -2, head: -10, la: [104, 120], ra: [-120, -104] }, 260, 'out'),
+  K({ ...F(0, HIP, LF + 2, RF - 2), torso: -2, bend: -2, head: -12, la: [104, 120], ra: [-120, -104] }, 460, 'sine'),
 ] };
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). Let's circle back: a finger traces two slow circles in the air.

@@ -11,9 +11,9 @@ const { K, F, LF, RF, HIP, CH, crouchP } = RIG_KIT;
 // (frame data travel) and comes back up through a crouch. Low, under highs (tc), a knockdown.
 const expressSlide = { blend: 40, limb: 'lFoot', keys: [
   K({ ...crouchP, ...F(4, CH + 4, LF + 2, RF - 2), torso: 22, bend: 6, head: -10, la: [30, 120], ra: [-20, 60] }, 60, 'in'),
-  K({ hx: 10, ll: [70, 82], rl: [30, -70], torso: -18, bend: -6, head: 14, tw: 4, la: [-40, -10], ra: [-60, -40] }, 50, 'out'),
-  K({ hx: 14, ll: [84, 88], rl: [42, -80], torso: -36, bend: -8, head: 22, tw: 6, la: [-62, -30], ra: [-82, -60] }, 40, 'out', 'active'),
-  K({ hx: 15, ll: [85, 89], rl: [44, -82], torso: -38, bend: -8, head: 24, tw: 6, la: [-64, -32], ra: [-84, -62] }, 190, 'linear'),
+  K({ hx: 10, ll: [82, 70], rl: [30, -70], torso: -18, bend: -6, head: 14, tw: 4, la: [-40, -10], ra: [-60, -40] }, 50, 'out'),
+  K({ hx: 14, ll: [88, 84], rl: [42, -80], torso: -36, bend: -8, head: 22, tw: 6, la: [-62, -30], ra: [-82, -60] }, 40, 'out', 'active'),
+  K({ hx: 15, ll: [89, 85], rl: [44, -82], torso: -38, bend: -8, head: 24, tw: 6, la: [-64, -32], ra: [-84, -62] }, 190, 'linear'),
   K({ hx: 10, ll: [62, 24], rl: [42, -72], torso: -10, bend: -2, head: 6, la: [20, 80], ra: [0, 60] }, 90, 'inOut', 'recover'),
   K({ ...crouchP, ...F(4, CH + 2, LF + 2, RF - 2), torso: 16 }, 100, 'out'),
   K({ ...F(1, HIP - 2, LF, RF), torso: 7, head: -4, la: [54, 148], ra: [28, 166] }, 90, 'out', 'footstep'),
@@ -21,12 +21,13 @@ const expressSlide = { blend: 40, limb: 'lFoot', keys: [
 ] };
 
 // f,f+4: spring off the run, rear knee driving up and forward into the chest with the arms pulling
-// down, land on the kicking foot ahead. Airborne through startup and active (lows pass under), launches.
+// down, land on the kicking foot ahead. Airborne through startup and active (lows pass under), launches. The shin
+// hangs from the knee (2026-11-15: it pointed up past the thigh, a knee bent backward 40-58 deg).
 const dropOffKnee = { blend: 40, limb: 'rKnee', shift: 24, keys: [
   K({ ...F(-4, HIP - 8, LF, RF), torso: 20, bend: 4, head: -6, tw: -6, la: [-30, 20], ra: [60, 120] }, 50, 'in'),
-  K({ hx: 6, ll: [20, -40], rl: [80, 120], torso: 4, bend: 0, head: -4, la: [40, 100], ra: [-40, -10], air: 16 }, 50, 'out'),
-  K({ hx: 14, ll: [10, -70], rl: [116, 174], torso: -14, bend: -6, head: -10, la: [100, 140], ra: [-30, -70], air: 28 }, 40, 'out', 'active'),
-  K({ hx: 15, ll: [12, -72], rl: [118, 176], torso: -16, bend: -6, head: -10, la: [96, 132], ra: [-28, -66], air: 27 }, 80, 'inOut'),
+  K({ hx: 6, ll: [20, -40], rl: [82, -34], torso: 4, bend: 0, head: -4, la: [40, 100], ra: [-40, -10], air: 16 }, 50, 'out'),
+  K({ hx: 14, ll: [10, -70], rl: [116, -6], torso: -14, bend: -6, head: -10, la: [100, 140], ra: [-69, -29], air: 28 }, 40, 'out', 'active'),
+  K({ hx: 15, ll: [12, -72], rl: [118, -4], torso: -16, bend: -6, head: -10, la: [96, 132], ra: [-65, -27], air: 27 }, 80, 'inOut'),
   K({ hx: 14, ll: [24, -30], rl: [70, 20], torso: 4, head: -4, la: [40, 120], ra: [20, 110], air: 10 }, 80, 'in', 'recover'),
   K({ ...F(18, HIP - 8, LF + 10, 44), torso: 14, bend: 4, head: -6, la: [40, 120], ra: [24, 130] }, 80, 'out', 'land'),
   K({ ...F(20, HIP - 2, LF + 24, RF + 24, 0, 8), torso: 6, head: -4, la: [54, 148], ra: [28, 160] }, 100, 'inOut', 'footstep'),

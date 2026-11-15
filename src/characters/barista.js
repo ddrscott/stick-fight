@@ -48,7 +48,7 @@ const latteArt = { blend: 40, limb: 'lHand', shift: 14, keys: [
   K({ ...F(8, HIP - 6, LF + 8, RF + 10, 0, 8), torso: 16, bend: 3, head: -8, spin: 190, la: [100, 190], ra: [24, 140] }, 50, 'linear'),
   K({ ...F(14, HIP - 5, LF + 14, RF + 14), torso: 16, bend: 3, head: -6, tw: -14, spin: 345, la: [94, 98], ra: [22, 140] }, 40, 'out', 'active'),
   K({ ...F(14, HIP - 5, LF + 14, RF + 14), torso: 18, bend: 4, head: -6, tw: -15, spin: 360, la: [95, 92], ra: [22, 140] }, 70, 'inOut'),
-  K({ ...F(14, HIP - 5, LF + 14, RF + 14), torso: 14, bend: 3, head: -4, tw: -8, spin: 360, la: [70, 60], ra: [24, 140] }, 90, 'in', 'recover'),
+  K({ ...F(14, HIP - 5, LF + 14, RF + 14), torso: 14, bend: 3, head: -4, tw: -8, spin: 360, la: [60, 70], ra: [24, 140] }, 90, 'in', 'recover'),
   K({ ...F(14, HIP - 4, LF + 14, RF + 14), torso: 10, bend: 2, head: -3, spin: 360, la: [44, 100], ra: [26, 146] }, 140, 'sine'),
   K({ ...F(14, HIP - 1, LF + 14, RF + 14), torso: 6, head: -4, spin: 360, la: [54, 148], ra: [28, 162] }, 110, 'out', 'footstep'),
   K({ ...F(14, HIP - 1, LF + 14, RF + 14), torso: 6, head: -3, spin: 360 }, 0, 'sine'),
@@ -121,10 +121,10 @@ const perfect = { name: 'LATTE POUR', note: 'A latte pour: the body across both 
   ...stoop('both'),
   lift('chest', 'lHand', 200, 0.3),
   K({ face: 0.4, ...F(-2, HIP + 2, LF, RF - 2), torso: -12, bend: -6, head: -16, la: [150, 166], ra: [142, 160] }, 240, 'inOut'),
-  K({ face: 0.55, ...F(-2, HIP + 2, LF, RF - 2), torso: -10, bend: -6, head: -14, la: [150, 140], ra: [142, 134] }, 120, 'sine'),
-  K({ face: 0.9, ...F(4, HIP - 2, LF + 6, RF - 2), torso: 8, bend: 2, head: -8, la: [112, 88], ra: [104, 84] }, 90, 'out', 'release'),
-  K({ face: 0.9, ...F(4, HIP - 2, LF + 6, RF - 2), torso: 8, bend: 2, head: -8, la: [116, 100], ra: [108, 96] }, 80, 'sine'),
-  K({ face: 0.9, ...F(4, HIP - 2, LF + 6, RF - 2), torso: 8, bend: 2, head: -8, la: [108, 80], ra: [100, 78] }, 80, 'sine'),
+  K({ face: 0.55, ...F(-2, HIP + 2, LF, RF - 2), torso: -10, bend: -6, head: -14, la: [140, 150], ra: [134, 142] }, 120, 'sine'),
+  K({ face: 0.9, ...F(4, HIP - 2, LF + 6, RF - 2), torso: 8, bend: 2, head: -8, la: [89, 113], ra: [84, 104] }, 90, 'out', 'release'),
+  K({ face: 0.9, ...F(4, HIP - 2, LF + 6, RF - 2), torso: 8, bend: 2, head: -8, la: [100, 116], ra: [96, 108] }, 80, 'sine'),
+  K({ face: 0.9, ...F(4, HIP - 2, LF + 6, RF - 2), torso: 8, bend: 2, head: -8, la: [81, 109], ra: [78, 100] }, 80, 'sine'),
   K({ face: 0.6, ...F(2, HIP - 1, LF + 6, RF), torso: 2, head: -6, la: [120, 210], ra: [110, 200] }, 200, 'inOut'),
   K({ face: 0.6, ...F(2, HIP - 2, LF + 6, RF), torso: 2, head: -6, la: [132, 222], ra: [122, 212] }, 120, 'sine'),
   K({ face: 0.55, ...F(2, HIP - 1, LF + 6, RF), torso: 2, head: -6, la: [116, 206], ra: [106, 196] }, 120, 'sine'),
@@ -135,8 +135,8 @@ const perfect = { name: 'LATTE POUR', note: 'A latte pour: the body across both 
 // (registry `victory`, in place of the dance once it's unlocked and on): Order up: one hand presents the cup high, the other on the hip.
 const victory = { keys: [
   K({ ...F(0, HIP - 3, LF, RF), torso: 6, head: 4, la: [50, 110], ra: [20, 30] }, 180, 'in'),
-  K({ ...F(0, HIP, LF + 4, RF), torso: -4, bend: -3, head: -12, la: [150, 170], ra: [30, -70] }, 240, 'out'),
-  K({ ...F(0, HIP, LF + 4, RF), torso: -4, bend: -3, head: -14, la: [150, 170], ra: [30, -70] }, 460, 'sine'),
+  K({ ...F(0, HIP, LF + 4, RF), torso: -4, bend: -3, head: -12, la: [150, 170], ra: [-67, 33] }, 240, 'out'),
+  K({ ...F(0, HIP, LF + 4, RF), torso: -4, bend: -3, head: -14, la: [150, 170], ra: [-67, 33] }, 460, 'sine'),
 ] };
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). Name on the cup: holds up a cup, scribbles on it, squints at the name.

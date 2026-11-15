@@ -16,10 +16,10 @@ const { K, F, L, LF, RF, HIP, CH } = RIG_KIT;
 // recovery: he has to pull the leg back in and stand up.
 const wetFloor = { blend: 40, limb: 'lFoot', keys: [
   K({ hx: -4, rl: L(-4, CH + 6, RF - 2), ll: [36, -40], torso: 22, bend: 6, head: -8, tw: 4, la: [40, 110], ra: [-10, 70] }, 90, 'in'),
-  K({ hx: 2, rl: L(2, CH - 4, RF - 2), ll: [62, -50], torso: 36, bend: 8, head: -12, tw: 6, la: [62, 40], ra: [-30, 30] }, 70, 'linear'),
-  K({ hx: 14, rl: L(14, 30, RF), ll: [86, 88], torso: 44, bend: 9, head: -16, tw: 8, la: [76, 30], ra: [-52, -24] }, 40, 'out', 'active'),
-  K({ hx: 16, rl: L(16, 29, RF + 1), ll: [87, 89], torso: 45, bend: 9, head: -16, tw: 8, la: [78, 30], ra: [-54, -26] }, 150, 'linear'),
-  K({ hx: 12, rl: L(12, 31, RF + 1), ll: [76, 44], torso: 36, bend: 7, head: -12, tw: 4, la: [60, 40], ra: [-30, 20] }, 120, 'inOut', 'recover'),
+  K({ hx: 2, rl: L(2, CH - 4, RF - 2), ll: [62, -50], torso: 36, bend: 8, head: -12, tw: 6, la: [40, 62], ra: [-30, 30] }, 70, 'linear'),
+  K({ hx: 14, rl: L(14, 30, RF), ll: [86, 88], torso: 44, bend: 9, head: -16, tw: 8, la: [31, 77], ra: [-52, -24] }, 40, 'out', 'active'),
+  K({ hx: 16, rl: L(16, 29, RF + 1), ll: [87, 89], torso: 45, bend: 9, head: -16, tw: 8, la: [31, 79], ra: [-54, -26] }, 150, 'linear'),
+  K({ hx: 12, rl: L(12, 31, RF + 1), ll: [76, 44], torso: 36, bend: 7, head: -12, tw: 4, la: [40, 60], ra: [-30, 20] }, 120, 'inOut', 'recover'),
   K({ ...F(6, CH + 2, LF + 12, RF + 1), torso: 22, bend: 6, head: -8, la: [40, 120], ra: [20, 130] }, 130, 'inOut'),
   K({ ...F(4, HIP - 3, LF + 4, RF + 1, 0, 6), torso: 9, bend: 1, head: -5, la: [52, 146], ra: [28, 160] }, 110, 'out', 'footstep'),
   K({ ...F(1, HIP - 1, LF, RF), torso: 6, head: -4 }, 0, 'sine'),
@@ -79,20 +79,20 @@ function bucketHat(ctx, J, o) {
 // The celebration (registry `dance`, played by the match winner under the WINS banner): A mop shuffle: side to side with the hands low as if pushing the mop, then a twirl of it overhead.
 const dance = { keys: [
   K({ ...F(-6, HIP - 6, LF - 6, RF - 6), torso: 22, bend: 4, head: -6, la: [60, 60], ra: [40, 40] }, 220, 'inOut'),
-  K({ ...F(6, HIP - 4, LF + 6, RF + 6, 0, 6), torso: 22, bend: 4, head: -6, la: [80, 70], ra: [60, 54] }, 220, 'inOut'),
+  K({ ...F(6, HIP - 4, LF + 6, RF + 6, 0, 6), torso: 22, bend: 4, head: -6, la: [70, 80], ra: [54, 60] }, 220, 'inOut'),
   K({ ...F(-6, HIP - 6, LF - 6, RF - 6), torso: 22, bend: 4, head: -6, la: [60, 60], ra: [40, 40] }, 220, 'inOut'),
-  K({ ...F(6, HIP - 4, LF + 6, RF + 6, 0, 6), torso: 22, bend: 4, head: -6, la: [80, 70], ra: [60, 54] }, 220, 'inOut'),
-  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [160, 150], ra: [170, 200] }, 200, 'out'),
-  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [200, 220], ra: [130, 120] }, 200, 'sine'),
-  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [160, 150], ra: [170, 200] }, 220, 'sine'),
+  K({ ...F(6, HIP - 4, LF + 6, RF + 6, 0, 6), torso: 22, bend: 4, head: -6, la: [70, 80], ra: [54, 60] }, 220, 'inOut'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [150, 160], ra: [170, 200] }, 200, 'out'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [200, 220], ra: [120, 130] }, 200, 'sine'),
+  K({ ...F(0, HIP, LF, RF), torso: 0, bend: -3, head: -14, la: [150, 160], ra: [170, 200] }, 220, 'sine'),
 ] };
 
 // The perfect round finisher (registry `perfect`, README Perfect rounds): a mop-handle golf swing: he takes it by the ankle, addresses the ball, a full backswing and a drive at the camera, then holds the follow-through.
 const perfect = { name: 'MOP-HANDLE DRIVE', note: 'A mop-handle golf swing: he takes it by the ankle, addresses the ball, a full backswing and a drive at the camera, then holds the follow-through.', stamp: 'FORE!', hand: 'lHand', hold: 'ankle', fly: { spin: -2, arc: 140 }, keys: [
   ...stoop('both'),
-  K({ face: 0.35, ...F(-2, HIP - 8, LF + 6, RF - 6), torso: 24, bend: 4, head: 8, la: [10, 4], ra: [6, 0] }, 220, 'inOut'),
-  K({ face: 0.1, ...F(-4, HIP - 8, LF + 6, RF - 6), torso: 22, bend: 4, head: 10, tw: -10, la: [-120, -150], ra: [-110, -140] }, 300, 'inOut'),
-  K({ face: 0.05, ...F(-4, HIP - 9, LF + 6, RF - 6), torso: 22, bend: 4, head: 10, tw: -12, la: [-140, -170], ra: [-130, -160] }, 80, 'sine'),
+  K({ face: 0.35, ...F(-2, HIP - 8, LF + 6, RF - 6), torso: 24, bend: 4, head: 8, la: [4, 10], ra: [0, 6] }, 220, 'inOut'),
+  K({ face: 0.1, ...F(-4, HIP - 8, LF + 6, RF - 6), torso: 22, bend: 4, head: 10, tw: -10, la: [-149, -119], ra: [-139, -109] }, 300, 'inOut'),
+  K({ face: 0.05, ...F(-4, HIP - 9, LF + 6, RF - 6), torso: 22, bend: 4, head: 10, tw: -12, la: [-169, -139], ra: [-159, -129] }, 80, 'sine'),
   K({ face: 0.5, ...F(0, HIP - 10, LF + 6, RF - 6), torso: 20, bend: 4, head: 10, tw: 4, la: [-8, 0], ra: [-12, -4] }, 90, 'in'),
   K({ face: 0.9, ...F(4, HIP - 4, LF + 6, RF - 6, 0, 4), torso: 0, bend: -4, head: -6, tw: 10, la: [110, 140], ra: [100, 130] }, 70, 'out', 'release'),
   K({ face: 0.85, ...F(6, HIP, LF + 6, RF - 6, 0, 6), torso: -10, bend: -6, head: -18, tw: 12, la: [160, 214], ra: [150, 206] }, 220, 'out'),
@@ -109,10 +109,10 @@ const victory = { keys: [
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). Sweep it up: two wide sweeps along the floor at their feet.
 const taunt = { keys: [
-  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [70, 40], ra: [60, 30] }, 220, 'out'),
-  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [20, -20], ra: [10, -30] }, 200, 'inOut'),
-  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [70, 40], ra: [60, 30] }, 200, 'inOut'),
-  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [20, -20], ra: [10, -30] }, 200, 'inOut'),
+  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [41, 71], ra: [31, 61] }, 220, 'out'),
+  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [-19, 21], ra: [-29, 11] }, 200, 'inOut'),
+  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [41, 71], ra: [31, 61] }, 200, 'inOut'),
+  K({ ...F(2, HIP - 6, LF + 4, RF), torso: 24, bend: 6, head: 10, la: [-19, 21], ra: [-29, 11] }, 200, 'inOut'),
   K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
 ] };
 

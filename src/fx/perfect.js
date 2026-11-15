@@ -12,7 +12,7 @@
 // a finally), so it keeps its colors, pants and accessories, and stays flat solid color: only the glass marks
 // (the crack, the smear's streaks, the stamp) glow. Clock: frameData PERFECT, seconds after the release.
 
-import { RIG_KIT } from '../fighter/index.js';
+import { RIG_KIT, setJointGuard } from '../fighter/index.js';
 import { PERFECT } from '../combat/frameData.js';
 import { mulberry32 } from '../combat/rng.js';
 
@@ -24,24 +24,30 @@ const smooth = (a, b, v) => { const t = clamp01((v - a) / (b - a)); return t * t
 const lerp = (a, b, t) => a + (b - a) * t;
 
 // local poses: solved on the loser's rig, then taken relative to the hip with the facing taken out
-const POSES = {
-  hang: P({ torso: 0, bend: 6, head: 26, la: [8, 14], ra: [-6, 2], ll: [8, -2], rl: [-8, 4] }),
-  ankle: P({ torso: 0, bend: -6, head: -14, la: [172, 178], ra: [186, 194], ll: [0, 0], rl: [36, 66] }),
-  tumbleA: P({ torso: 10, bend: -10, head: -10, la: [150, 110], ra: [-70, -30], ll: [60, 100], rl: [-30, -70] }),
-  tumbleB: P({ torso: -10, bend: 8, head: 10, la: [-60, -100], ra: [140, 180], ll: [-20, 20], rl: [70, 40] }),
+// (2026-11-15, the joint limits: hang's near knee, ankle's free knee, the tumbles' far elbow and knee and carry's knees
+// bent the wrong way, and fold the right way now)
+export const POSES = {
+  hang: P({ torso: 0, bend: 6, head: 26, la: [8, 14], ra: [-6, 2], ll: [8, -2], rl: [-4, -10] }),
+  ankle: P({ torso: 0, bend: -6, head: -14, la: [172, 178], ra: [186, 194], ll: [0, 0], rl: [56, 26] }),
+  tumbleA: P({ torso: 10, bend: -10, head: -10, la: [150, 190], ra: [-70, -30], ll: [60, 20], rl: [-30, -70] }),
+  tumbleB: P({ torso: -10, bend: 8, head: 10, la: [-60, -20], ra: [140, 180], ll: [-20, -60], rl: [70, 40] }),
+  // on the glass the body is seen from the front, splayed left-right, so the side view's knee and elbow sense doesn't
+  // hold: these three are solved with the joint guard off (FRONT) and are on the limits check's allowlist
   splat: P({ torso: 0, bend: 0, head: 0, la: [124, 136], ra: [-124, -136], ll: [26, 20], rl: [-26, -20] }),
   smear: P({ torso: 0, bend: 0, head: 8, la: [152, 168], ra: [-152, -168], ll: [16, 8], rl: [-16, -8] }),
   peel: P({ torso: 0, bend: 10, head: 24, la: [96, 60], ra: [-96, -60], ll: [12, 2], rl: [-12, -2] }),
 };
 // carried across the hands: the limbs hang toward the floor (droop: their angle in the body's frame)
-const carryPose = (droop) => P({ torso: 0, bend: -4, head: -14, la: [droop + 12, droop + 22], ra: [droop - 10, droop], ll: [droop + 6, droop + 16], rl: [droop - 8, droop + 2] });
+export const carryPose = (droop) => P({ torso: 0, bend: -4, head: -14, la: [droop + 12, droop + 22], ra: [droop - 10, droop], ll: [droop + 16, droop + 6], rl: [droop + 2, droop - 8] });
+const FRONT = new Set(['splat', 'smear', 'peel']);
 
 const cache = new WeakMap();   // rig -> { body, poses }
-function localOf(rig, pose) {
+function localOf(rig, pose, front = false) {
   const s = rig.scale || 1, saveF = rig.facing, saveX = rig.x, saveY = rig.y;
   rig.facing = 1; rig.x = 0; rig.y = 0;
   let j;
-  try { j = rig._solve(pose); } finally { rig.facing = saveF; rig.x = saveX; rig.y = saveY; }
+  if (front) setJointGuard(false);
+  try { j = rig._solve(pose); } finally { rig.facing = saveF; rig.x = saveX; rig.y = saveY; if (front) setJointGuard(true); }
   const o = {}, hx = j.hip.x, hy = j.hip.y;
   for (const k in j) o[k] = { x: j[k].x - hx, y: j[k].y - hy };
   o._s = s;
@@ -51,7 +57,7 @@ function posesOf(rig) {
   const hit = cache.get(rig);
   if (hit && hit.body === rig.body && hit.scale === rig.scale) return hit.poses;
   const poses = {};
-  for (const k in POSES) poses[k] = localOf(rig, POSES[k]);
+  for (const k in POSES) poses[k] = localOf(rig, POSES[k], FRONT.has(k));
   // the splat's box (head circle and limb ends), for sizing it to the screen
   const sp = poses.splat, r = (rig.radius || 15);
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;

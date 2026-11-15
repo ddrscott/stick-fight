@@ -21,8 +21,8 @@ const airJump = { blend: 60, blendEase: 'out', keys: [
   K({ hx: 6, torso: 8, head: -4, ll: [76, -44], rl: [60, -60], la: [124, 152], ra: [104, 142], air: 48 }, 130, 'sine'),
   K({ hx: 6, torso: 8, head: -4, ll: [62, -30], rl: [42, -48], la: [112, 142], ra: [92, 132], air: 28 }, 140, 'sine'),
   K({ hx: 6, torso: 14, head: -6, ll: [24, 4], rl: [-10, -16], la: [110, 120], ra: [90, 100], air: 12 }, 90, 'out'),
-  K({ hx: 2, torso: 34, head: -8, ll: [52, -44], rl: [-4, -64], la: [60, 40], ra: [50, 30] }, 80, 'out', 'land'),
-  K({ hx: 0, torso: 10, head: -3, ll: [26, 8], rl: [-22, -16], la: [60, 140], ra: [36, 158] }, 160, 'back', 'recover'),
+  K({ hx: 2, torso: 34, head: -8, ll: [52, -44], rl: [-4, -64], la: [40, 60], ra: [30, 50] }, 80, 'out', 'land'),
+  K({ hx: 0, torso: 10, head: -3, ll: [26, 8], rl: [-16, -22], la: [60, 140], ra: [36, 158] }, 160, 'back', 'recover'),
   K({}, 0, 'sine'),
 ] };
 
@@ -43,8 +43,8 @@ const squeegeeDive = { blend: 80, blendEase: 'linear', limb: 'lFoot', air: true,
 const updraft = { blend: 40, limb: 'lFoot', shift: 10, keys: [
   K({ ...F(-3, HIP - 11, LF, RF), torso: 20, bend: 5, head: -8, la: [-24, 30], ra: [-34, 20] }, 60, 'in'),
   K({ hx: 2, ll: [84, 58], rl: [-4, -8], torso: -10, bend: -3, head: 4, la: [110, 150], ra: [94, 140], air: 28 }, 40, 'linear'),
-  K({ hx: 6, ll: [142, 154], rl: [26, -40], torso: -42, bend: -8, head: 16, la: [-30, 6], ra: [-50, -20], air: 42 }, 40, 'out', 'active'),
-  K({ hx: 8, ll: [170, 178], rl: [36, -36], torso: -52, bend: -10, head: 20, la: [-44, -10], ra: [-62, -32], air: 44 }, 70, 'out'),
+  K({ hx: 6, ll: [154, 142], rl: [26, -40], torso: -42, bend: -8, head: 16, la: [-30, 6], ra: [-50, -20], air: 42 }, 40, 'out', 'active'),
+  K({ hx: 8, ll: [178, 170], rl: [36, -36], torso: -52, bend: -10, head: 20, la: [-44, -10], ra: [-62, -32], air: 44 }, 70, 'out'),
   K({ hx: 10, ll: [120, 70], rl: [44, -24], torso: -24, bend: -4, head: 10, la: [20, 60], ra: [0, 50], air: 26 }, 90, 'in', 'recover'),
   K({ ...F(10, HIP - 12, LF + 10, RF + 6), torso: 18, bend: 5, head: -8, la: [40, 110], ra: [24, 110] }, 80, 'out', 'land'),
   K({ ...F(8, HIP - 3, LF + 10, RF + 6, 0, 6), torso: 8, head: -4, la: [54, 148], ra: [28, 160] }, 110, 'inOut', 'footstep'),
@@ -127,7 +127,7 @@ const perfect = { name: 'SQUEEGEE PUSH', note: 'Up by the collar, a wax-on circl
   lift('collar', 'lHand', 200),
   K({ face: 0.35, ...F(0, HIP - 4, LF + 4, RF), torso: 4, head: -6, la: [100, 110], ra: [120, 170] }, 130, 'sine'),
   K({ face: 0.4, ...F(0, HIP - 4, LF + 4, RF), torso: 4, head: -6, la: [104, 112], ra: [80, 130] }, 130, 'sine'),
-  K({ face: 0.6, ...F(-4, HIP - 8, LF + 2, RF - 2), torso: 6, head: -4, la: [70, 60], ra: [66, 56] }, 140, 'in'),
+  K({ face: 0.6, ...F(-4, HIP - 8, LF + 2, RF - 2), torso: 6, head: -4, la: [60, 70], ra: [56, 66] }, 140, 'in'),
   K({ face: 0.95, ...F(10, HIP - 4, LF + 16, RF - 2), torso: 18, bend: 2, head: -8, la: [92, 92], ra: [90, 90] }, 80, 'out', 'release'),
   K({ face: 0.9, ...F(12, HIP - 3, LF + 16, RF + 4, 0, 4), torso: 12, head: -6, la: [96, 96], ra: [94, 94] }, 180, 'out', 'footstep'),
   K({ face: 0.6, ...F(10, HIP - 1, LF + 16, RF + 6), torso: 4, head: -6, la: [40, 110], ra: [110, 160] }, 200, 'sine'),
@@ -139,8 +139,8 @@ const perfect = { name: 'SQUEEGEE PUSH', note: 'Up by the collar, a wax-on circl
 // (registry `victory`, in place of the dance once it's unlocked and on): Top floor view: one hand shading the eyes, gazing out over the city, the other on the hip.
 const victory = { keys: [
   K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 2, la: [60, 150], ra: [20, 30] }, 200, 'inOut'),
-  K({ ...F(2, HIP, LF + 6, RF - 2), torso: -4, bend: -3, head: -10, la: [128, 232], ra: [30, -70] }, 260, 'out'),
-  K({ ...F(2, HIP, LF + 6, RF - 2), torso: -4, bend: -3, head: -12, la: [128, 232], ra: [30, -70] }, 460, 'sine'),
+  K({ ...F(2, HIP, LF + 6, RF - 2), torso: -4, bend: -3, head: -10, la: [128, 232], ra: [-67, 33] }, 260, 'out'),
+  K({ ...F(2, HIP, LF + 6, RF - 2), torso: -4, bend: -3, head: -12, la: [128, 232], ra: [-67, 33] }, 460, 'sine'),
 ] };
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). Streaky: spots a smudge in the air, wipes it in two big arcs.

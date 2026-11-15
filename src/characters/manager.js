@@ -31,8 +31,8 @@ const performanceReview = { blend: 40, limb: 'rHand', shift: 22, keys: [
   K({ ...F(8, HIP - 6, LF + 14, RF + 4), torso: -6, bend: -4, head: 6, tw: -20, la: [60, 140], ra: [-30, 120] }, 70, 'inOut'),
   K({ ...F(6, HIP - 7, LF + 14, RF + 4), torso: -10, bend: -6, head: 8, tw: -22, la: [64, 136], ra: [-44, 130] }, 50, 'in'),
   // the overhand: lead foot steps, the fist comes over the top and through
-  K({ ...F(22, HIP - 12, LF + 30, RF + 4), torso: 36, bend: 8, head: -14, tw: 18, la: [30, 140], ra: [104, 84] }, 40, 'out', 'active'),
-  K({ ...F(24, HIP - 13, LF + 30, RF + 4), torso: 40, bend: 9, head: -14, tw: 20, la: [28, 140], ra: [96, 70] }, 90, 'inOut'),
+  K({ ...F(22, HIP - 12, LF + 30, RF + 4), torso: 36, bend: 8, head: -14, tw: 18, la: [30, 140], ra: [84, 104] }, 40, 'out', 'active'),
+  K({ ...F(24, HIP - 13, LF + 30, RF + 4), torso: 40, bend: 9, head: -14, tw: 20, la: [28, 140], ra: [71, 97] }, 90, 'inOut'),
   K({ ...F(22, HIP - 10, LF + 30, RF + 4), torso: 28, bend: 6, head: -12, tw: 12, la: [34, 146], ra: [70, 110] }, 110, 'inOut', 'recover'),
   K({ ...F(20, HIP - 4, LF + 30, RF + 22, 0, 10), torso: 12, bend: 2, head: -8, tw: 4, la: [48, 150], ra: [40, 150] }, 120, 'inOut', 'footstep'),
   K({ ...F(24, HIP + 1, LF + 30, RF + 22), torso: 4, head: -6, la: [54, 150], ra: [28, 166] }, 80, 'out'),
@@ -45,8 +45,8 @@ const performanceReview = { blend: 40, limb: 'rHand', shift: 22, keys: [
 const downsizing = { blend: 50, limb: 'lFoot', shift: 30, keys: [
   K({ hx: -6, rl: L(-6, HIP - 3, RF), ll: [44, -16], torso: 2, bend: 0, head: 4, tw: 4, la: [40, 120], ra: [30, 130] }, 90, 'in'),
   K({ hx: -7, rl: L(-7, HIP, RF), ll: [112, 104], torso: -12, bend: -5, head: 10, tw: 2, la: [10, 60], ra: [40, 110] }, 90, 'out'),
-  K({ hx: -6, rl: L(-6, HIP + 1, RF), ll: [144, 148], torso: -24, bend: -8, head: 16, tw: 0, la: [-24, 20], ra: [30, 96] }, 110, 'sine'),
-  K({ hx: -5, rl: L(-5, HIP + 1, RF), ll: [150, 154], torso: -27, bend: -9, head: 17, tw: 0, la: [-28, 14], ra: [26, 92] }, 60, 'in'),
+  K({ hx: -6, rl: L(-6, HIP + 1, RF), ll: [148, 144], torso: -24, bend: -8, head: 16, tw: 0, la: [-24, 20], ra: [30, 96] }, 110, 'sine'),
+  K({ hx: -5, rl: L(-5, HIP + 1, RF), ll: [154, 150], torso: -27, bend: -9, head: 17, tw: 0, la: [-28, 14], ra: [26, 92] }, 60, 'in'),
   // the chop: heel at head height, the body folding over it, the arms flung back
   K({ hx: 8, rl: L(8, HIP - 2, RF), ll: [112, 104], torso: 12, bend: 5, head: -4, tw: -4, la: [-40, -10], ra: [-10, 40] }, 40, 'out', 'active'),
   K({ hx: 12, rl: L(12, HIP - 6, RF), ll: [76, 66], torso: 24, bend: 8, head: -10, tw: -6, la: [-36, 0], ra: [-6, 50] }, 50, 'in'),
@@ -92,8 +92,8 @@ const perfect = { name: 'PERFORMANCE REVIEW FLING', note: 'A performance-review 
   K({ face: 0.4, ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: 10, la: [130, 138], ra: [44, 112] }, 140, 'sine'),
   K({ face: 0.4, ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -14, la: [128, 136], ra: [44, 112] }, 140, 'sine'),
   K({ face: 0.15, ...F(-6, HIP - 8, LF + 2, RF - 4), torso: 10, bend: 2, head: -4, tw: -18, la: [-50, -20], ra: [60, 120] }, 220, 'inOut'),
-  K({ face: 0.9, ...F(10, HIP - 4, LF + 16, RF - 4), torso: 18, bend: 4, head: -8, tw: 16, la: [100, 92], ra: [-20, 20] }, 80, 'out', 'release'),
-  K({ face: 0.85, ...F(12, HIP - 3, LF + 16, RF), torso: 14, bend: 2, head: -6, tw: 10, la: [70, 50], ra: [-10, 40] }, 200, 'out', 'footstep'),
+  K({ face: 0.9, ...F(10, HIP - 4, LF + 16, RF - 4), torso: 18, bend: 4, head: -8, tw: 16, la: [92, 100], ra: [-20, 20] }, 80, 'out', 'release'),
+  K({ face: 0.85, ...F(12, HIP - 3, LF + 16, RF), torso: 14, bend: 2, head: -6, tw: 10, la: [50, 70], ra: [-10, 40] }, 200, 'out', 'footstep'),
   K({ face: 0.6, ...F(10, HIP - 1, LF + 16, RF + 6), torso: 2, head: -6, la: [116, 206], ra: [104, 196] }, 260, 'inOut'),
   K({ face: 0.75, ...F(10, HIP, LF + 16, RF + 6), torso: 2, head: -8, la: [40, 110], ra: [94, 92] }, 220, 'inOut'),
   K({ face: 0.75, ...F(10, HIP, LF + 16, RF + 6), torso: 2, head: -10, la: [38, 112], ra: [96, 94] }, 0, 'sine'),
@@ -103,8 +103,8 @@ const perfect = { name: 'PERFORMANCE REVIEW FLING', note: 'A performance-review 
 // (registry `victory`, in place of the dance once it's unlocked and on): Hands on hips: chest out, both fists on the hips, surveying the floor.
 const victory = { keys: [
   K({ ...F(0, HIP - 2, LF, RF), torso: 4, head: 4, la: [20, 30], ra: [20, 30] }, 200, 'in'),
-  K({ ...F(0, HIP, LF + 4, RF - 4), torso: -4, bend: -4, head: -8, la: [30, -70], ra: [-30, 70] }, 260, 'out'),
-  K({ ...F(0, HIP, LF + 4, RF - 4), torso: -4, bend: -4, head: -10, la: [30, -70], ra: [-30, 70] }, 460, 'sine'),
+  K({ ...F(0, HIP, LF + 4, RF - 4), torso: -4, bend: -4, head: -8, la: [-67, 33], ra: [-30, 70] }, 260, 'out'),
+  K({ ...F(0, HIP, LF + 4, RF - 4), torso: -4, bend: -4, head: -10, la: [-67, 33], ra: [-30, 70] }, 460, 'sine'),
 ] };
 // The taunt (registry `taunt`): the last round's winner plays it under the next ROUND card, never in a fight, and it's
 // over by FIGHT (TAUNT_MAX_MS). My office. Now.: points at them, then crooks a finger to beckon.

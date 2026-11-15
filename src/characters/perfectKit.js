@@ -9,10 +9,10 @@ const { K, F, LF, RF, HIP } = RIG_KIT;
 // hand: 'lHand' (the lead arm), 'rHand' (the near arm) or 'both'
 export function stoop(hand = 'lHand', d = 220) {
   const lead = hand === 'lHand' || hand === 'both', near = hand === 'rHand' || hand === 'both';
-  const reach = [6, 0], idleL = [36, 86], idleR = [28, 96];
+  const reach = [0, 6], idleL = [36, 86], idleR = [28, 96];
   return [
-    K({ ...F(6, HIP - 16, LF + 12, RF - 2), torso: 46, bend: 8, head: -12, la: lead ? [18, 10] : idleL, ra: near ? [14, 8] : idleR }, d, 'inOut'),
-    K({ ...F(9, HIP - 22, LF + 14, RF - 2), torso: 56, bend: 10, head: -16, la: lead ? reach : idleL, ra: near ? [2, -4] : idleR }, 90, 'out', 'grab'),
+    K({ ...F(6, HIP - 16, LF + 12, RF - 2), torso: 46, bend: 8, head: -12, la: lead ? [10, 18] : idleL, ra: near ? [8, 14] : idleR }, d, 'inOut'),
+    K({ ...F(9, HIP - 22, LF + 14, RF - 2), torso: 56, bend: 10, head: -16, la: lead ? reach : idleL, ra: near ? [-4, 2] : idleR }, 90, 'out', 'grab'),
   ];
 }
 

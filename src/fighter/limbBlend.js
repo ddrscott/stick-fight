@@ -62,6 +62,16 @@ export function mixBotch(b, h) {
     const np = sample(nk, Math.min(tt, tc + hold)), nl = sample(nk, Math.max(0, Math.min(tt, tc + hold) - late));
     const p = { ...bp, la: [...bp.la], ra: [...bp.ra], ll: [...bp.ll], rl: [...bp.rl], spin: (bp.spin || 0) - spinOff };
     p[lk] = [lerp(bp[lk][0], np[lk][0], w), lerp(bp[lk][1], nl[lk][1], w * 0.85)];
+    // each segment in the same turn as it was a key ago (two clips can name one angle a turn apart), so the keys
+    // between never swing it the long way round
+    const prev = out.length ? out[out.length - 1].p[lk] : bp[lk];
+    for (let q = 0; q < 2; q++) p[lk][q] -= 360 * Math.round((p[lk][q] - prev[q]) / 360);
+    // the trailing far segment leaves the joint bent, never bent the wrong way (README, Joint limits): where the lag
+    // would swing a knee forward of the thigh or an elbow back past straight, the limb is straight there instead
+    // (and one the lag folded on past flat is held flat). The segments are in one turn now, so the raw bend is the bend.
+    const bend = p[lk][1] - p[lk][0], sg = lk[1] === 'l' ? -1 : 1;   // the way this joint folds
+    if (bend * sg < 0) p[lk][1] -= bend;
+    else if (bend * sg > 175) p[lk][1] -= bend - 175 * sg;
     const drag = w * 0.4;
     p.torso = lerp(bp.torso, np.torso, drag);
     p.tw = lerp(bp.tw || 0, np.tw || 0, drag);

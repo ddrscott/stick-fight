@@ -59,7 +59,7 @@ const exhale = { blend: 50, keys: [
 const sunSalutation = { blend: 40, limb: 'rFoot', shift: 18, keys: [
   K({ hx: 4, ll: L(4, HIP - 3, LF + 4), rl: [-30, -46], torso: 6, bend: 0, head: -2, tw: -6, la: [40, 120], ra: [30, 110] }, 60, 'in'),
   K({ hx: 0, ll: L(0, HIP - 6, LF + 4), rl: [60, 20], torso: -22, bend: -10, head: 16, tw: -2, la: [-30, -10], ra: [-40, -20] }, 70, 'out'),
-  K({ hx: -4, ll: L(-4, HIP - 9, LF + 4), rl: [156, 164], torso: -40, bend: -12, head: 22, tw: 2, la: [-70, -60], ra: [-80, -70] }, 70, 'out'),
+  K({ hx: -4, ll: L(-4, HIP - 9, LF + 4), rl: [164, 156], torso: -40, bend: -12, head: 22, tw: 2, la: [-70, -60], ra: [-80, -70] }, 70, 'out'),
   K({ hx: 4, ll: L(4, HIP - 7, LF + 4), rl: [122, 112], torso: -24, bend: -8, head: 16, tw: 4, la: [-60, -40], ra: [-70, -50] }, 40, 'in', 'active'),
   K({ hx: 8, ll: L(8, HIP - 8, LF + 4), rl: [96, 82], torso: -10, bend: -4, head: 8, tw: 4, la: [-30, 10], ra: [-40, 0] }, 60, 'out'),
   K({ ...F(12, HIP - 9, LF + 4, 40), torso: 8, bend: 2, head: -2, la: [10, 80], ra: [0, 70] }, 80, 'out', 'footstep'),

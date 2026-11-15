@@ -47,7 +47,7 @@ const perfect = { name: 'TWO-HANDED HEAVE', note: 'A clumsy two-handed heave: he
   K({ face: 0.55, ...F(-4, HIP - 18, LF, RF), torso: 32, bend: 6, head: -10, la: [-24, -12], ra: [-32, -22] }, 240, 'inOut'),
   K({ face: 0.85, ...F(6, HIP + 2, LF + 6, RF), torso: -12, bend: -6, head: -14, la: [150, 166], ra: [140, 160] }, 110, 'out', 'release'),
   K({ face: 0.8, ...F(9, HIP, LF + 8, RF), torso: -4, bend: -2, head: -10, la: [172, 190], ra: [160, 182] }, 170, 'out'),
-  K({ face: 0.6, ...F(14, HIP - 4, LF + 18, RF + 6, 0, 8), torso: 12, bend: 2, head: 4, la: [60, 140], ra: [104, 64] }, 230, 'inOut', 'footstep'),
+  K({ face: 0.6, ...F(14, HIP - 4, LF + 18, RF + 6, 0, 8), torso: 12, bend: 2, head: 4, la: [60, 140], ra: [65, 105] }, 230, 'inOut', 'footstep'),
   K({ face: 0.45, ...F(16, HIP - 1, LF + 18, RF + 16), torso: 4, head: -8, la: [152, 178], ra: [18, 30] }, 320, 'inOut', 'footstep'),
   K({ face: 0.45, ...F(16, HIP, LF + 18, RF + 16), torso: 2, head: -12, la: [162, 188], ra: [14, 26] }, 0, 'sine'),
 ] };

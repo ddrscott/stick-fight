@@ -17,6 +17,58 @@ import { clothItem, clothRest } from './cloth.js';   // what hangs off a charact
 import { jointRadii } from './ground.js';   // each joint's drawn radius: nothing drawn goes under the floor
 const DEG = Math.PI / 180;
 
+// Joint limits (README, "Joint limits", 2026-11-15). A knee only folds back (shin - thigh <= 0) and an elbow only
+// folds forward (forearm - upperArm >= 0), with a few degrees of slack for a straight limb. The clips obey them on
+// their own (npm run test:limits checks every one in drawn space); solve() clamps any pose that slips (a blend, an
+// adapt, a botch mix), and guardLimbs() does the same to joints moved after it (the springs, the point simulation,
+// the life layer). A bend past FOLD (a limb folded flat on itself) reads the same either way and is left alone.
+export const JOINT_LIMITS = { knee: 3, elbow: -5, fold: 170 };
+let guardOn = true;
+/** the runtime joint guard on or off (on in the game; scripts/rig/limits.mjs turns it off to check the clips themselves) */
+export function setJointGuard(v) { guardOn = !!v; }
+const wrap180 = a => a - 360 * Math.round(a / 360);
+// the far segment of a [near, far] limb turned back inside the limit; off: the drawn far-near offset a body's stance adds
+// how far to turn the far segment so a bend w (deg) is inside the limit: back to the straight limit, or on to the fold
+// when that's nearer (a limb already nearly flat on itself stays folded instead of whipping straight)
+const MID_K = (JOINT_LIMITS.knee + JOINT_LIMITS.fold) / 2, MID_E = (JOINT_LIMITS.elbow - JOINT_LIMITS.fold) / 2;
+const kneeFix = w => (w > JOINT_LIMITS.knee && w < JOINT_LIMITS.fold ? (w < MID_K ? JOINT_LIMITS.knee - w : JOINT_LIMITS.fold - w) : 0);
+const elbowFix = w => (w < JOINT_LIMITS.elbow && w > -JOINT_LIMITS.fold ? (w > MID_E ? JOINT_LIMITS.elbow - w : -JOINT_LIMITS.fold - w) : 0);
+function kneeIn(l, off) {
+  const d = kneeFix(wrap180(l[1] - l[0] + off));
+  return d ? [l[0], l[1] + d] : l;
+}
+function elbowIn(a) {
+  const d = elbowFix(wrap180(a[1] - a[0]));
+  return d ? [a[0], a[1] + d] : a;
+}
+const GUARD_LIMBS = [['lShoulder', 'lElbow', 'lHand', 0, 0], ['rShoulder', 'rElbow', 'rHand', 0, 1], ['hip', 'lKnee', 'lFoot', 1, -1], ['hip', 'rKnee', 'rFoot', 1, 1]];
+/**
+ * The joint limits on joints already in world space (moved after solve(): springs, the point simulation, the life layer).
+ * Turns a hand or foot about its elbow or knee, in place (the caller's own joint objects), so no limb bends the wrong way. fc: the facing; s: the scale;
+ * spin: the pose's spin (deg; its squash and the far/near shift are taken out first, so the bend is judged on the body's
+ * own shape); dz: px the spin shifts the near limbs (12 in solve()). Deterministic (dmath), so the sim may use it.
+ */
+export function guardLimbs(J, fc, s = 1, spin = 0, dz = 12) {
+  if (!guardOn || !J || !J.hip) return J;
+  const c = spin ? dm.cos(spin * DEG) : 1;
+  if (c > -0.1 && c < 0.1) return J;   // edge-on: every limb is a vertical line, nothing to judge
+  const sh = spin ? (dm.sin(spin * DEG) < 0 ? -dm.sin(spin * DEG) : dm.sin(spin * DEG)) * dz : 0, k = fc * s, hx = J.hip.x;
+  for (let i = 0; i < 4; i++) {
+    const [an, bn, cn, isLeg, side] = GUARD_LIMBS[i], A = J[an], B = J[bn], C = J[cn];
+    if (!A || !B || !C) continue;
+    const off = side * sh, ax = isLeg ? 0 : ((A.x - hx) / k - off) / c;   // body space (x forward), relative to the hip; a leg's root shifts with it
+    const bx = ((B.x - hx) / k - off) / c, cx = ((C.x - hx) / k - off) / c;
+    const ux = bx - (isLeg ? 0 : ax), uy = (B.y - A.y) / s, vx = cx - bx, vy = (C.y - B.y) / s;
+    const w = dm.atan2(uy * vx - ux * vy, ux * vx + uy * vy) / DEG;
+    const d = isLeg ? kneeFix(w) : elbowFix(w);
+    if (!d) continue;
+    // turn the far segment by d (the angle convention: from straight down, positive toward forward)
+    const r = d * DEG, cs = dm.cos(r), sn = dm.sin(r), nx = vx * cs + vy * sn, ny = -vx * sn + vy * cs;
+    C.x = hx + ((bx + nx) * c + off) * k; C.y = B.y + ny * s;   // in place: callers hand over joints they own
+  }
+  return J;
+}
+
 // Segment lengths, ~130px tall standing.
 export const RIG = {
   headR: 15, neck: 3, torso: 36, lowerTorso: 17, upperTorso: 19, upperArm: 24, lowerArm: 23, upperLeg: 31, lowerLeg: 30,
@@ -55,7 +107,10 @@ function leg(dx, dy) {
   const alpha = dm.acos(Math.max(-1, Math.min(1, (U * U + d * d - L * L) / (2 * U * d))));
   const a1 = phi + alpha;
   const kx = dm.sin(a1) * U, ky = dm.cos(a1) * U;
-  return [a1 / DEG, dm.atan2(dx - kx, dy - ky) / DEG];
+  // the shin in the same turn as the thigh, folded back from it (atan2 wraps at 180: a foot up behind the hip used to
+  // come out a turn off, which reads the same on its own but blends to the next key the long way, through a backward knee)
+  const sh = dm.atan2(dx - kx, dy - ky) / DEG;
+  return [a1 / DEG, sh > a1 / DEG ? sh - 360 : sh];
 }
 // Both legs from the hip offset hx, hip height H above the floor, and each foot's x in figure
 // space (so a foot keeps the same x across keys while hx changes). lift/rlift raise a foot.
@@ -175,8 +230,8 @@ function makeVault(d, railH) {
   const CHP = { ...F(56, 38, 58, 42), torso: 18, bend: 6, head: -10, la: [40, 160], ra: [26, 166] };
   vaultCache[k] = { blend: 60, shift: 56, drop: d, keys: [
     K({ ...F(2, HIP - 6, LF, RF), torso: 16, bend: 4, head: -4, la: [70, 96], ra: [60, 92] }, 80, 'in'),
-    K({ hx: 12, ll: [76, -40], rl: [66, -52], torso: 32, bend: 10, head: -8, la: [24, 6], ra: [14, -2], air: 12 + up }, 90, 'out'),
-    K({ hx: 28, ll: [112, 34], rl: [100, 22], torso: 40, bend: 12, head: -10, la: [10, -6], ra: [2, -12], air: 34 + up }, 90, 'sine'),
+    K({ hx: 12, ll: [76, -40], rl: [66, -52], torso: 32, bend: 10, head: -8, la: [6, 24], ra: [-2, 14], air: 12 + up }, 90, 'out'),
+    K({ hx: 28, ll: [112, 34], rl: [100, 22], torso: 40, bend: 12, head: -10, la: [-6, 10], ra: [-12, 2], air: 34 + up }, 90, 'sine'),
     K({ hx: 42, ll: [52, -6], rl: [34, -16], torso: 10, bend: 2, head: 0, la: [110, 150], ra: [96, 140], air: 22 + up }, 80, 'in'),
     K({ hx: 48, ll: [30, -24], rl: [14, -34], torso: 4, bend: 0, head: 4, la: [140, 168], ra: [126, 160], air: fall(0.45) }, 200, 'in'),
     K({ hx: 52, ll: [24, -10], rl: [8, -20], torso: 6, bend: 0, head: 2, la: [120, 150], ra: [110, 140], air: fall(0.85) }, 110, 'in'),
@@ -223,8 +278,8 @@ const MOVE_DEFS = {
     K({ hx: 6, torso: 10, head: -4, ll: [70, -50], rl: [55, -60], la: [120, 150], ra: [100, 140], air: 66 }, 140, 'sine'),
     K({ hx: 6, torso: 6, head: -4, ll: [70, -50], rl: [55, -60], la: [120, 150], ra: [100, 140], air: 76 }, 120, 'in'),
     K({ hx: 6, torso: 14, head: -6, ll: [24, 4], rl: [-10, -16], la: [110, 120], ra: [90, 100], air: 34 }, 60, 'linear'),
-    K({ hx: 2, torso: 34, head: -8, ll: [52, -44], rl: [-4, -64], la: [60, 40], ra: [50, 30] }, 80, 'out', 'land'),
-    K({ hx: 0, torso: 10, head: -3, ll: [26, 8], rl: [-22, -16], la: [60, 140], ra: [36, 158] }, 160, 'back', 'recover'),
+    K({ hx: 2, torso: 34, head: -8, ll: [52, -44], rl: [-4, -64], la: [40, 60], ra: [30, 50] }, 80, 'out', 'land'),
+    K({ hx: 0, torso: 10, head: -3, ll: [26, 8], rl: [-16, -22], la: [60, 140], ra: [36, 158] }, 160, 'back', 'recover'),
     K({}, 0, 'sine'),
   ] },
   // Jab, traced from the black figure's short staff thrust, Xiao Xiao f55-f60: one frame of
@@ -243,7 +298,7 @@ const MOVE_DEFS = {
     K({ ...F(3, HIP - 1, LF, RF), torso: 10, bend: 2, head: -3, tw: -4, la: [72, 104], ra: [32, 163] }, 40, 'linear'),
     K({ ...F(8, HIP - 1, LF, RF), torso: 16, bend: 3, head: -4, tw: -12, la: [92, 92], ra: [36, 160] }, 40, 'out', 'active'),
     K({ ...F(9, HIP - 1.5, LF, RF), torso: 17, bend: 4, head: -2, tw: -13, la: [93, 92], ra: [36, 160] }, 40, 'inOut'),
-    K({ ...F(9, HIP - 1, LF, RF), torso: 17, bend: 3, head: -3, tw: -12, la: [93, 80], ra: [36, 160] }, 100, 'in', 'recover'),
+    K({ ...F(9, HIP - 1, LF, RF), torso: 17, bend: 3, head: -3, tw: -12, la: [80, 93], ra: [36, 160] }, 100, 'in', 'recover'),
     K({ ...F(4, HIP + 1.5, LF, RF), torso: 8, bend: 0, head: -9, tw: -4, la: [60, 130], ra: [32, 163] }, 100, 'out'),
     K({ ...F(1, HIP + 2.5, LF, RF), torso: 3, bend: -1, head: -8, tw: 2, la: [57, 148], ra: [28, 168] }, 80, 'out'),
     K({}, 0, 'sine'),
@@ -262,7 +317,7 @@ const MOVE_DEFS = {
     K({ ...F(10, 44, 43, RF, 3, 0), torso: 18, bend: 4, head: 0, tw: 2, la: [24, 150], ra: [70, 92] }, 40, 'linear'),
     K({ ...F(24, 43, 43, RF), torso: 36, bend: 8, head: -16, tw: 16, la: [16, 150], ra: [96, 95] }, 40, 'out', 'active'),
     K({ ...F(25, 42.5, 43, RF), torso: 37, bend: 9, head: -14, tw: 17, la: [16, 150], ra: [97, 96] }, 80, 'inOut'),
-    K({ ...F(25, 42.5, 43, RF), torso: 36, bend: 9, head: -15, tw: 16, la: [18, 150], ra: [96, 68] }, 80, 'inOut', 'recover'),
+    K({ ...F(25, 42.5, 43, RF), torso: 36, bend: 9, head: -15, tw: 16, la: [18, 150], ra: [69, 97] }, 80, 'inOut', 'recover'),
     K({ ...F(24, 46, 43, RF), torso: 24, bend: 5, head: -15, tw: 10, la: [28, 150], ra: [78, 100] }, 80, 'inOut'),
     K({ ...F(22, 50, 43, 11, 0, 10), torso: 12, bend: 1, head: -14, tw: 4, la: [40, 150], ra: [60, 120] }, 100, 'inOut', 'footstep'),
     K({ ...F(25, HIP + 2, 43, 11), torso: 2, bend: -1, head: -8, tw: -2, la: [56, 148], ra: [26, 170] }, 80, 'out'),
@@ -321,8 +376,8 @@ const MOVE_DEFS = {
   lowKick: { blend: 40, limb: 'lFoot', height: 'low', keys: [
     K({ hx: -3, rl: L(-3, 51, RF), ll: [36, -24], torso: 2, bend: 2, head: 4, tw: 4, la: [36, 160], ra: [24, 168] }, 60, 'in'),
     K({ hx: 2, rl: L(2, 51, RF), ll: [70, -10], torso: -2, head: 8, tw: 2, la: [32, 160], ra: [22, 168] }, 40, 'linear'),
-    K({ hx: 12, rl: L(12, 52, RF), ll: [62, 76], torso: -10, bend: -2, head: 12, tw: -4, la: [24, 164], ra: [14, 170] }, 40, 'out', 'active'),
-    K({ hx: 12, rl: L(12, 52, RF), ll: [63, 77], torso: -11, bend: -2, head: 12, tw: -4, la: [24, 164], ra: [14, 170] }, 60, 'inOut'),
+    K({ hx: 12, rl: L(12, 52, RF), ll: [76, 62], torso: -10, bend: -2, head: 12, tw: -4, la: [24, 164], ra: [14, 170] }, 40, 'out', 'active'),
+    K({ hx: 12, rl: L(12, 52, RF), ll: [77, 63], torso: -11, bend: -2, head: 12, tw: -4, la: [24, 164], ra: [14, 170] }, 60, 'inOut'),
     K({ hx: 8, rl: L(8, 52, RF), ll: [56, 10], torso: -6, head: 8, la: [28, 162], ra: [18, 168] }, 60, 'inOut', 'recover'),
     K({ hx: 3, rl: L(3, 52, RF), ll: [40, -14], torso: 0, head: 2, la: [34, 160], ra: [22, 166] }, 60, 'inOut'),
     K({ ...F(1, HIP, LF, RF), torso: 4, head: -4, la: [52, 152], ra: [28, 166] }, 60, 'out', 'footstep'),
@@ -339,7 +394,7 @@ const MOVE_DEFS = {
     K({ ...F(26, 45, LF + 50, RF + 22, 3, 0), torso: 18, bend: 4, head: 0, tw: 2, la: [24, 150], ra: [70, 92] }, 40, 'linear'),
     K({ ...F(42, 43, LF + 50, RF + 22), torso: 36, bend: 8, head: -16, tw: 16, la: [16, 150], ra: [96, 95] }, 40, 'out', 'active'),
     K({ ...F(43, 42.5, LF + 50, RF + 22), torso: 37, bend: 9, head: -14, tw: 17, la: [16, 150], ra: [97, 96] }, 80, 'inOut'),
-    K({ ...F(43, 42.5, LF + 50, RF + 22), torso: 36, bend: 9, head: -15, tw: 16, la: [18, 150], ra: [96, 68] }, 80, 'inOut', 'recover'),
+    K({ ...F(43, 42.5, LF + 50, RF + 22), torso: 36, bend: 9, head: -15, tw: 16, la: [18, 150], ra: [69, 97] }, 80, 'inOut', 'recover'),
     K({ ...F(43, 46, LF + 50, RF + 22), torso: 24, bend: 5, head: -15, tw: 10, la: [28, 150], ra: [78, 100] }, 80, 'inOut'),
     K({ ...F(44, 50, LF + 50, RF + 50, 0, 10), torso: 12, bend: 1, head: -14, tw: 4, la: [40, 150], ra: [60, 120] }, 100, 'inOut', 'footstep'),
     K({ ...F(50, HIP + 2, LF + 50, RF + 50), torso: 2, bend: -1, head: -8, tw: -2, la: [56, 148], ra: [26, 170] }, 80, 'out'),
@@ -366,12 +421,12 @@ const MOVE_DEFS = {
   spinKick: { blend: 40, limb: 'rFoot', keys: [
     K({ ...F(4, HIP - 3, LF, RF), torso: 10, bend: 2, head: 4, tw: 8, la: [44, 156], ra: [24, 160] }, 60, 'in'),
     K({ hx: 14, ll: L(14, 51, 14), rl: [10, -40], torso: 14, bend: 2, head: 6, tw: 4, spin: 80, la: [30, 160], ra: [20, 160] }, 60, 'linear'),
-    K({ hx: 14, ll: L(14, 51, 14), rl: [-100, -20], torso: 20, bend: 4, head: -12, spin: 150, la: [50, 120], ra: [40, 110] }, 40, 'linear'),
-    K({ hx: 14, ll: L(14, 52, 14), rl: [-112, -16], torso: 26, bend: 4, head: -20, spin: 180, la: [56, 110], ra: [46, 100] }, 40, 'linear'),
-    K({ hx: 14, ll: L(14, 57, 14), rl: [-84, -80], torso: 50, bend: 6, head: -24, spin: 180, la: [64, 96], ra: [44, 80] }, 40, 'out', 'active'),
-    K({ hx: 14, ll: L(14, 57, 14), rl: [-85, -81], torso: 52, bend: 6, head: -24, spin: 180, la: [66, 94], ra: [46, 78] }, 60, 'inOut'),
-    K({ hx: 14, ll: L(14, 55, 14), rl: [-110, -12], torso: 30, bend: 4, head: -14, spin: 200, la: [100, 70], ra: [-80, -110] }, 80, 'inOut', 'recover'),
-    K({ hx: 12, ll: L(12, 53, 14), rl: [-40, -70], torso: 12, bend: 2, head: -4, spin: 270, la: [90, 60], ra: [-70, -100] }, 40, 'inOut'),
+    K({ hx: 14, ll: L(14, 51, 14), rl: [-22, -102], torso: 20, bend: 4, head: -12, spin: 150, la: [50, 120], ra: [40, 110] }, 40, 'linear'),
+    K({ hx: 14, ll: L(14, 52, 14), rl: [-18, -114], torso: 26, bend: 4, head: -20, spin: 180, la: [56, 110], ra: [46, 100] }, 40, 'linear'),
+    K({ hx: 14, ll: L(14, 57, 14), rl: [-80, -84], torso: 50, bend: 6, head: -24, spin: 180, la: [64, 96], ra: [44, 80] }, 40, 'out', 'active'),
+    K({ hx: 14, ll: L(14, 57, 14), rl: [-81, -85], torso: 52, bend: 6, head: -24, spin: 180, la: [66, 94], ra: [46, 78] }, 60, 'inOut'),
+    K({ hx: 14, ll: L(14, 55, 14), rl: [-14, -112], torso: 30, bend: 4, head: -14, spin: 200, la: [71, 101], ra: [-109, -79] }, 80, 'inOut', 'recover'),
+    K({ hx: 12, ll: L(12, 53, 14), rl: [-40, -70], torso: 12, bend: 2, head: -4, spin: 270, la: [61, 91], ra: [-99, -69] }, 40, 'inOut'),
     K({ ...F(8, 51, 14, RF, 0, 10), torso: 8, bend: 1, head: -4, spin: 340, la: [50, 148], ra: [28, 160] }, 80, 'inOut'),
     K({ ...F(2, HIP, LF, RF), torso: 4, head: -6, spin: 360, la: [54, 150], ra: [28, 166] }, 80, 'out', 'footstep'),
     K({ ...F(0, HIP - 1, LF, RF), torso: 5, head: -3, spin: 360 }, 0, 'sine'),
@@ -405,9 +460,9 @@ const MOVE_DEFS = {
     K({ hx: 8, torso: -6, bend: -4, head: 4, tw: -10, ll: [44, -34], rl: [-44, -44], la: [38, 148], ra: [-36, 116] }, 40, 'linear'),
     K({ hx: -2, torso: 36, bend: 6, head: -8, tw: -2, ll: [74, -70], rl: [10, -70], la: [-40, -14], ra: [-30, 10] }, 40, 'linear'),
     K({ hx: 4, torso: 44, bend: 8, head: -8, tw: 4, ll: [76, -72], rl: [70, 10], la: [-50, -24], ra: [40, 60] }, 40, 'linear'),
-    K({ hx: 12, torso: 52, bend: 10, head: -6, tw: 10, ll: [78, -74], rl: [82, 82], la: [-54, -30], ra: [66, 46] }, 40, 'out', 'active'),
-    K({ hx: 16, torso: 56, bend: 12, head: -2, tw: 12, ll: [78, -74], rl: [88, 90], la: [-56, -32], ra: [70, 50] }, 40, 'inOut'),
-    K({ hx: 13, torso: 53, bend: 10, head: -5, tw: 10, ll: [78, -74], rl: [84, 84], la: [-54, -30], ra: [67, 47] }, 40, 'in', 'recover'),
+    K({ hx: 12, torso: 52, bend: 10, head: -6, tw: 10, ll: [78, -74], rl: [82, 82], la: [-54, -30], ra: [46, 66] }, 40, 'out', 'active'),
+    K({ hx: 16, torso: 56, bend: 12, head: -2, tw: 12, ll: [78, -74], rl: [89, 88], la: [-56, -32], ra: [50, 70] }, 40, 'inOut'),
+    K({ hx: 13, torso: 53, bend: 10, head: -5, tw: 10, ll: [78, -74], rl: [84, 84], la: [-54, -30], ra: [47, 67] }, 40, 'in', 'recover'),
     K({ hx: 8, torso: 46, bend: 8, head: -8, tw: 6, ll: [76, -72], rl: [56, -20], la: [-46, -18], ra: [50, 60] }, 40, 'out'),
     K({ hx: 2, torso: 26, bend: 2, head: -8, tw: 2, ll: [60, -50], rl: [20, -50], la: [-20, 60], ra: [40, 90] }, 50, 'out'),
     K({ hx: 0, torso: 14, head: -6, ll: [32, 8], rl: [-22, -30] }, 90, 'back'),
@@ -473,12 +528,12 @@ const MOVE_DEFS = {
   // gut, a stumble step in, straighten past upright, settle.
   hitBody: { blend: 30, keys: [
     K({ ...F(-10, HIP - 4, LF, RF), torso: 12, bend: 8, head: 2, la: [2, 14], ra: [-8, 4] }, 40, 'out'),
-    K({ ...F(-12, HIP - 6, LF, -34, 0, 10), torso: 40, bend: 18, head: 18, la: [12, 0], ra: [2, -10] }, 40, 'out'),
-    K({ ...F(-16, HIP - 6, LF, -40), torso: 50, bend: 22, head: 26, la: [8, -6], ra: [-2, -14] }, 40, 'out', 'land'),
-    K({ ...F(-17, HIP - 6, LF, -40), torso: 52, bend: 22, head: 28, la: [6, -8], ra: [-4, -16] }, 80, 'sine'),
-    K({ ...F(-16, HIP - 6, LF, -40), torso: 46, bend: 20, head: 22, la: [50, -60], ra: [10, -10] }, 100, 'in', 'recover'),
-    K({ ...F(-10, HIP - 4, LF, -20, 0, 10), torso: 32, bend: 12, head: 14, la: [50, -60], ra: [20, 40] }, 80, 'out'),
-    K({ ...F(-4, HIP - 2, LF, -20), torso: 16, bend: 6, head: 6, la: [50, -40], ra: [30, 110] }, 80, 'out'),
+    K({ ...F(-12, HIP - 6, LF, -34, 0, 10), torso: 40, bend: 18, head: 18, la: [0, 12], ra: [-10, 2] }, 40, 'out'),
+    K({ ...F(-16, HIP - 6, LF, -40), torso: 50, bend: 22, head: 26, la: [-6, 8], ra: [-14, -2] }, 40, 'out', 'land'),
+    K({ ...F(-17, HIP - 6, LF, -40), torso: 52, bend: 22, head: 28, la: [-8, 6], ra: [-16, -4] }, 80, 'sine'),
+    K({ ...F(-16, HIP - 6, LF, -40), torso: 46, bend: 20, head: 22, la: [-57, 53], ra: [-10, 10] }, 100, 'in', 'recover'),
+    K({ ...F(-10, HIP - 4, LF, -20, 0, 10), torso: 32, bend: 12, head: 14, la: [-57, 53], ra: [20, 40] }, 80, 'out'),
+    K({ ...F(-4, HIP - 2, LF, -20), torso: 16, bend: 6, head: 6, la: [-38, 52], ra: [30, 110] }, 80, 'out'),
     K({ ...F(-2, HIP - 1, LF, RF, 0, 8), torso: 0, bend: -2, head: -8, la: [54, 120], ra: [30, 150] }, 80, 'out'),
     K({ ...F(0, HIP, LF, RF), torso: 6, bend: 0, head: -3, la: [54, 146], ra: [30, 162] }, 80, 'inOut'),
     K({ ...F(-1, HIP - 1, LF, RF), torso: 5, bend: 0, head: -3, la: [52, 146], ra: [30, 162] }, 0, 'sine'),
@@ -504,19 +559,19 @@ const MOVE_DEFS = {
   knockdown: { blend: 40, keys: [
     K({ hx: -10, torso: -8, bend: -6, head: -30, la: [-20, 20], ra: [-30, 10], ll: [30, 10], rl: [10, -10], air: 16 }, 40, 'linear'),
     K({ hx: -24, torso: -18, bend: -10, head: -24, la: [70, 120], ra: [30, 60], ll: [44, 34], rl: [16, -36], air: 38 }, 40, 'linear'),
-    K({ hx: -38, torso: -30, bend: -12, head: -18, la: [110, 160], ra: [60, 30], ll: [56, 46], rl: [26, -30], air: 52 }, 40, 'sine'),
-    K({ hx: -52, torso: -40, bend: -12, head: -12, la: [80, 40], ra: [120, 170], ll: [78, 66], rl: [48, -6], air: 58 }, 40, 'sine'),
-    K({ hx: -66, torso: -46, bend: -10, head: -8, la: [130, 180], ra: [70, 30], ll: [102, 92], rl: [74, 26], air: 55 }, 40, 'linear'),
-    K({ hx: -80, torso: -48, bend: -8, head: -6, la: [70, 30], ra: [140, 190], ll: [118, 108], rl: [98, 56], air: 42 }, 40, 'linear'),
-    K({ hx: -94, torso: -50, bend: -6, head: -4, la: [140, 190], ra: [80, 40], ll: [126, 116], rl: [112, 80], air: 22 }, 40, 'linear'),
-    K({ hx: -106, torso: -50, bend: -4, head: 0, la: [100, 150], ra: [60, 20], ll: [122, 110], rl: [110, 90], air: 0 }, 40, 'out', 'land'),
+    K({ hx: -38, torso: -30, bend: -12, head: -18, la: [110, 160], ra: [31, 61], ll: [56, 46], rl: [26, -30], air: 52 }, 40, 'sine'),
+    K({ hx: -52, torso: -40, bend: -12, head: -12, la: [41, 81], ra: [120, 170], ll: [78, 66], rl: [48, -6], air: 58 }, 40, 'sine'),
+    K({ hx: -66, torso: -46, bend: -10, head: -8, la: [130, 180], ra: [31, 71], ll: [102, 92], rl: [74, 26], air: 55 }, 40, 'linear'),
+    K({ hx: -80, torso: -48, bend: -8, head: -6, la: [31, 71], ra: [140, 190], ll: [118, 108], rl: [98, 56], air: 42 }, 40, 'linear'),
+    K({ hx: -94, torso: -50, bend: -6, head: -4, la: [140, 190], ra: [41, 81], ll: [126, 116], rl: [112, 80], air: 22 }, 40, 'linear'),
+    K({ hx: -106, torso: -50, bend: -4, head: 0, la: [100, 150], ra: [21, 61], ll: [122, 110], rl: [110, 90], air: 0 }, 40, 'out', 'land'),
     K({ hx: -114, torso: -78, bend: -12, head: 10, la: [-150, -112], ra: [80, 116], ll: [168, 124], rl: [158, 108], air: 2 }, 40, 'out'),
     K({ hx: -119, torso: -96, bend: -16, head: 22, la: [-150, -110], ra: [70, 110], ll: [232, 150], rl: [218, 134], air: 12 }, 40, 'in'),
     K({ hx: -124, torso: -94, bend: -10, head: 12, la: [-140, -120], ra: [80, 120], ll: [176, 120], rl: [148, 70], air: 6 }, 40, 'out'),
     K({ hx: -127, torso: -92, bend: -4, head: 16, la: [-128, -112], ra: [86, 112], ll: [112, 90], rl: [144, 54], air: 1 }, 40, 'out'),
     K({ hx: -128, torso: -91, bend: -2, head: 20, la: [-122, -100], ra: [90, 106], ll: [100, 78], rl: [142, 50], air: 0 }, 60, 'out'),
     K({ hx: -128, torso: -92, bend: -2, head: 20, la: [-120, -96], ra: [90, 104], ll: [98, 76], rl: [140, 50] }, 90, 'sine'),
-    K({ hx: -128, torso: -88, bend: -12, head: 32, la: [-112, -90], ra: [100, 86], ll: [100, 72], rl: [136, 54], air: 2 }, 90, 'sine'),
+    K({ hx: -128, torso: -88, bend: -12, head: 32, la: [-112, -90], ra: [86, 100], ll: [100, 72], rl: [136, 54], air: 2 }, 90, 'sine'),
     K({ hx: -128, torso: -92, bend: -2, head: 20, la: [-120, -96], ra: [90, 104], ll: [98, 76], rl: [140, 50] }, 0, 'sine'),
   ] },
   // Roll through: legs swing up, tuck forward to sit, hand down, hips rise before the head.
@@ -538,7 +593,7 @@ const MOVE_DEFS = {
     K({ hx: -118.7, torso: -12, head: 14, la: [-36, -16], ra: [56, 60], ll: [80, -66], rl: [72, -74] }, 90, 'out'),
     K({ hx: -116.8, torso: 18, bend: 6, head: 14, la: [-56, -44], ra: [30, 44], ll: [72, -64], rl: [20, -80] }, 80, 'inOut'),
     K({ ...F(-116, 29, -108, -152, 6, 0), torso: 24, bend: 4, head: 12, la: [-48, -42], ra: [40, 44] }, 80, 'out'),
-    K({ ...F(-115, 31, -108, -152), torso: 24, head: 10, la: [-40, -40], ra: [70, 50] }, 90, 'sine'),
+    K({ ...F(-115, 31, -108, -152), torso: 24, head: 10, la: [-40, -40], ra: [50, 70] }, 90, 'sine'),
     // Steps: a foot moves only while lifted (the lifted key already holds its new x), then lands.
     K({ ...F(-114, 38, -108, -128, 0, 12), torso: 22, head: 8, la: [40, 72], ra: [52, 64] }, 90, 'inOut'),
     K({ ...F(-113, 42, -108, -128), torso: 20, head: 8, la: [50, 90], ra: [50, 90] }, 80, 'inOut'),
@@ -549,16 +604,16 @@ const MOVE_DEFS = {
     K({ ...F(-110, HIP - 1, -92, -124), torso: 5, head: -3 }, 0, 'sine'),
   ] },
   block: { blend: 60, keys: [
-    K({ hx: -6, torso: 10, head: 6, la: [65, 180], ra: [45, 170], ll: [30, 18], rl: [-28, -24] }, 90, 'out'),
-    K({ hx: -4, torso: 8, head: 4, la: [62, 178], ra: [44, 168], ll: [28, 20], rl: [-25, -18] }, 0, 'sine'),
+    K({ hx: -6, torso: 10, head: 6, la: [65, 180], ra: [45, 170], ll: [30, 18], rl: [-24, -28] }, 90, 'out'),
+    K({ hx: -4, torso: 8, head: 4, la: [62, 178], ra: [44, 168], ll: [28, 20], rl: [-18, -25] }, 0, 'sine'),
   ] },
   // Knees give, body folds, falls forward with the arms lagging, hits face down, settles.
   ko: { blend: 50, keys: [
-    K({ hx: -8, torso: -15, head: -30, la: [10, 20], ra: [-5, 10], ll: [25, 15], rl: [-20, -10] }, 160, 'in'),
+    K({ hx: -8, torso: -15, head: -30, la: [10, 20], ra: [-5, 10], ll: [25, 15], rl: [-10, -20] }, 160, 'in'),
     K({ hx: 0, torso: 10, head: 10, la: [20, 30], ra: [10, 25], ll: [50, -55], rl: [20, -75] }, 140, 'in'),
     K({ hx: 15, torso: 60, head: 40, la: [40, 50], ra: [20, 30], ll: [60, -80], rl: [40, -85] }, 110, 'in'),
-    K({ hx: 40, torso: 92, head: 20, la: [100, 94], ra: [-40, -60], ll: [-85, -92], rl: [-80, -88] }, 70, 'out', 'land'),
-    K({ hx: 42, torso: 88, head: 30, la: [92, 86], ra: [-80, -84], ll: [-90, -90], rl: [-84, -86], air: 3 }, 120, 'out'),
+    K({ hx: 40, torso: 92, head: 20, la: [94, 100], ra: [-60, -40], ll: [-85, -92], rl: [-80, -88] }, 70, 'out', 'land'),
+    K({ hx: 42, torso: 88, head: 30, la: [86, 92], ra: [-80, -84], ll: [-90, -90], rl: [-84, -86], air: 3 }, 120, 'out'),
     K({ hx: 40, torso: 90, head: 15, la: [90, 86], ra: [-95, -92], ll: [-90, -90], rl: [-86, -88] }, 0, 'sine'),
   ] },
 };
@@ -606,18 +661,19 @@ Object.assign(MOVE_DEFS, {
   bodyBlow: { blend: 40, limb: 'lHand', height: 'mid', keys: [
     K({ ...F(-2, HIP - 4, LF, RF), torso: 6, bend: 2, head: -2, tw: 6, la: [38, 150], ra: [30, 166] }, 40, 'in'),
     K({ ...F(3, HIP - 8, LF, RF), torso: 18, bend: 5, head: -6, tw: -4, la: [56, 100], ra: [30, 166] }, 40, 'linear'),
-    K({ ...F(7, HIP - 10, LF, RF), torso: 26, bend: 7, head: -10, tw: -12, la: [74, 66], ra: [32, 164] }, 40, 'out', 'active'),
-    K({ ...F(7, HIP - 10, LF, RF), torso: 26, bend: 7, head: -10, tw: -12, la: [75, 67], ra: [32, 164] }, 60, 'inOut'),
+    K({ ...F(7, HIP - 10, LF, RF), torso: 26, bend: 7, head: -10, tw: -12, la: [66, 74], ra: [32, 164] }, 40, 'out', 'active'),
+    K({ ...F(7, HIP - 10, LF, RF), torso: 26, bend: 7, head: -10, tw: -12, la: [67, 75], ra: [32, 164] }, 60, 'inOut'),
     K({ ...F(5, HIP - 7, LF, RF), torso: 18, bend: 4, head: -6, tw: -6, la: [60, 120], ra: [30, 166] }, 80, 'inOut', 'recover'),
     K({ ...F(1, HIP - 2, LF, RF), torso: 7, head: -4, la: [54, 148], ra: [28, 166] }, 80, 'out'),
     K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4 }, 0, 'sine'),
   ] },
-  // rise+4: rising knee from the crouch, the rear knee driving up into the chest. Launcher.
+  // rise+4: rising knee from the crouch, the rear knee driving up into the chest. Launcher. The shin hangs from the
+  // knee as it rises (2026-11-15: it used to point up past the thigh, a knee bent backward 60-80 deg).
   risingKnee: { blend: 40, limb: 'rKnee', height: 'mid', effect: 'launch', keys: [
     K({ ...crouchP, ...F(-2, CH, LF + 2, RF - 2), torso: 14 }, 40, 'in'),
-    K({ hx: 6, ll: L(6, 50, LF), rl: [70, 150], torso: 4, bend: 2, head: -6, la: [20, 30], ra: [0, 10] }, 40, 'linear'),
-    K({ hx: 14, ll: L(14, 57, LF), rl: [112, 172], torso: -12, bend: -4, head: -8, la: [6, -30], ra: [-12, -44], air: 4 }, 40, 'out', 'active'),
-    K({ hx: 14, ll: L(14, 57, LF), rl: [114, 174], torso: -14, bend: -4, head: -8, la: [4, -32], ra: [-14, -46], air: 5 }, 60, 'inOut'),
+    K({ hx: 6, ll: L(6, 50, LF), rl: [74, -36], torso: 4, bend: 2, head: -6, la: [20, 30], ra: [0, 10] }, 40, 'linear'),
+    K({ hx: 14, ll: L(14, 57, LF), rl: [112, -8], torso: -12, bend: -4, head: -8, la: [-29, 7], ra: [-43, -11], air: 4 }, 40, 'out', 'active'),
+    K({ hx: 14, ll: L(14, 57, LF), rl: [114, -4], torso: -14, bend: -4, head: -8, la: [-31, 5], ra: [-45, -13], air: 5 }, 60, 'inOut'),
     K({ hx: 8, ll: L(8, 54, LF), rl: [70, 20], torso: 0, head: -6, la: [30, 90], ra: [14, 100] }, 80, 'inOut', 'recover'),
     K({ ...F(2, HIP - 2, LF, RF, 0, 8), torso: 5, head: -4, la: [54, 148], ra: [28, 166] }, 80, 'out', 'footstep'),
     K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -4 }, 0, 'sine'),
@@ -628,9 +684,9 @@ Object.assign(MOVE_DEFS, {
     K({ ...F(-2, HIP - 9, LF, RF), torso: 16, bend: 4, head: 2, la: [20, 120], ra: [0, 100] }, 80, 'in'),
     K({ hx: 2, ll: [30, -60], rl: [130, 90], torso: -6, bend: -2, head: 8, la: [120, 150], ra: [100, 140], air: 22 }, 60, 'out'),
     K({ hx: 4, ll: [34, -70], rl: [168, 160], torso: -14, bend: -4, head: 12, la: [150, 170], ra: [130, 160], air: 36 }, 60, 'sine'),
-    K({ hx: 9, ll: [30, -60], rl: [112, 108], torso: 10, bend: 5, head: 0, la: [70, 50], ra: [50, 34], air: 22 }, 40, 'in'),
-    K({ hx: 10, ll: [26, -40], rl: [100, 96], torso: 20, bend: 8, head: -6, la: [50, 30], ra: [30, 20], air: 14 }, 40, 'out', 'active'),
-    K({ hx: 11, ll: [24, -30], rl: [96, 93], torso: 22, bend: 8, head: -6, la: [48, 30], ra: [28, 20], air: 8 }, 40, 'in'),
+    K({ hx: 9, ll: [30, -60], rl: [112, 108], torso: 10, bend: 5, head: 0, la: [50, 70], ra: [34, 50], air: 22 }, 40, 'in'),
+    K({ hx: 10, ll: [26, -40], rl: [100, 96], torso: 20, bend: 8, head: -6, la: [30, 50], ra: [20, 30], air: 14 }, 40, 'out', 'active'),
+    K({ hx: 11, ll: [24, -30], rl: [96, 93], torso: 22, bend: 8, head: -6, la: [30, 48], ra: [20, 28], air: 8 }, 40, 'in'),
     K({ ...F(12, HIP - 8, LF, 44), torso: 16, bend: 5, head: -4, la: [40, 100], ra: [24, 110] }, 80, 'out', 'land'),
     K({ ...F(10, HIP - 6, LF, 44), torso: 12, bend: 3, head: -4, la: [46, 130], ra: [26, 140] }, 60, 'inOut', 'recover'),
     K({ ...F(4, HIP - 3, LF, RF, 0, 10), torso: 7, head: -4, la: [52, 146], ra: [28, 160] }, 80, 'inOut'),
@@ -655,9 +711,9 @@ Object.assign(MOVE_DEFS, {
   wallSlam: { blend: 40, limb: 'lHand', height: 'throw', effect: 'splat', keys: [
     K({ ...F(-2, HIP - 4, LF, RF), torso: 8, head: -2, la: [50, 120], ra: [40, 120] }, 40, 'in'),
     K({ ...F(8, HIP - 6, LF + 8, RF, 8, 0), torso: 16, bend: 3, head: -6, la: [84, 92], ra: [76, 92] }, 50, 'out', 'active'),
-    K({ ...F(10, HIP - 7, LF + 8, RF), torso: 18, bend: 4, head: -6, la: [86, 70], ra: [78, 70] }, 120, 'inOut'),
-    K({ ...F(4, HIP - 9, LF + 8, RF), torso: -8, bend: -4, head: 6, tw: 20, la: [140, 120], ra: [120, 110] }, 80, 'in'),
-    K({ ...F(10, HIP - 6, LF + 8, RF), torso: 24, bend: 6, head: -8, tw: -10, la: [50, 30], ra: [30, 20] }, 60, 'out', 'recover'),
+    K({ ...F(10, HIP - 7, LF + 8, RF), torso: 18, bend: 4, head: -6, la: [70, 86], ra: [70, 78] }, 120, 'inOut'),
+    K({ ...F(4, HIP - 9, LF + 8, RF), torso: -8, bend: -4, head: 6, tw: 20, la: [120, 140], ra: [110, 120] }, 80, 'in'),
+    K({ ...F(10, HIP - 6, LF + 8, RF), torso: 24, bend: 6, head: -8, tw: -10, la: [30, 50], ra: [20, 30] }, 60, 'out', 'recover'),
     K({ ...F(6, HIP - 3, LF + 8, RF, 0, 8), torso: 10, head: -4, la: [50, 140], ra: [28, 156] }, 100, 'inOut'),
     K({ ...F(8, HIP - 1, LF + 8, RF + 8), torso: 6, head: -4 }, 0, 'sine', 'footstep'),
   ] },
@@ -666,7 +722,7 @@ Object.assign(MOVE_DEFS, {
   throw: { blend: 40, limb: 'lHand', height: 'throw', effect: 'knockdown', keys: [
     K({ ...F(-2, HIP - 4, LF, RF), torso: 8, head: -2, la: [50, 120], ra: [40, 120] }, 40, 'in'),
     K({ ...F(8, HIP - 6, LF + 8, RF, 8, 0), torso: 16, bend: 3, head: -6, la: [84, 92], ra: [76, 92] }, 40, 'out', 'active'),
-    K({ ...F(9, HIP - 8, LF + 8, RF), torso: 18, bend: 4, head: -6, la: [86, 72], ra: [78, 72] }, 120, 'inOut'),
+    K({ ...F(9, HIP - 8, LF + 8, RF), torso: 18, bend: 4, head: -6, la: [72, 86], ra: [72, 78] }, 120, 'inOut'),
     K({ ...F(6, HIP - 12, LF + 8, RF), torso: 4, bend: -2, head: 0, la: [110, 120], ra: [100, 110] }, 80, 'in'),
     K({ ...F(10, HIP - 4, LF + 8, RF), torso: -10, bend: -6, head: 8, la: [170, 190], ra: [160, 180] }, 80, 'out', 'recover'),
     K({ ...F(8, HIP - 3, LF + 8, RF), torso: 4, bend: 0, head: -2, la: [90, 150], ra: [70, 150] }, 100, 'inOut'),
@@ -722,7 +778,7 @@ Object.assign(MOVE_DEFS, {
   blockHit: { blend: 20, keys: [
     K({ ...F(-6, HIP - 5, LF, RF), torso: 2, bend: -4, head: -2, la: [66, 182], ra: [48, 174] }, 40, 'out'),
     K({ ...F(-5, HIP - 4, LF, RF), torso: 4, bend: -2, head: 0, la: [65, 180], ra: [46, 172] }, 80, 'inOut', 'recover'),
-    K({ hx: -4, torso: 8, head: 4, la: [62, 178], ra: [44, 168], ll: [28, 20], rl: [-25, -18] }, 0, 'sine'),
+    K({ hx: -4, torso: 8, head: 4, la: [62, 178], ra: [44, 168], ll: [28, 20], rl: [-18, -25] }, 0, 'sine'),
   ] },
   crouchBlockHit: { blend: 20, keys: [
     K({ ...crouchP, ...F(-7, CH - 2, LF + 2, RF - 2), torso: 16, bend: 4, head: -6, la: [72, 178], ra: [58, 172] }, 40, 'out'),
@@ -830,7 +886,7 @@ Object.assign(MOVE_DEFS, {
 // Air recovery: out of a juggle the body snaps into a tuck (knees to the chest, arms wrapped), rolls upright
 // and opens into the jump's falling pose, feet under it, and holds there until the sim lands it (airLand).
 MOVE_DEFS.airTech = { blend: 50, blendEase: 'out', keys: [
-  K({ hx: -2, torso: 46, bend: 12, head: 14, ll: [120, -10], rl: [110, -20], la: [110, 30], ra: [90, 20], air: 4 }, 70, 'out'),
+  K({ hx: -2, torso: 46, bend: 12, head: 14, ll: [120, -10], rl: [110, -20], la: [32, 112], ra: [22, 92], air: 4 }, 70, 'out'),
   K({ hx: 2, torso: 18, bend: 4, head: -2, ll: [70, -40], rl: [56, -56], la: [130, 160], ra: [110, 150], air: 4 }, 80, 'out'),
   K({ hx: 4, torso: 10, head: -4, ll: [24, 4], rl: [-10, -16], la: [110, 120], ra: [90, 100], air: 0 }, 90, 'out'),
   K({ hx: 4, torso: 8, head: -4, ll: [22, 2], rl: [-10, -14], la: [100, 120], ra: [84, 100], air: 0 }, 0, 'sine'),
@@ -893,8 +949,8 @@ Object.assign(MOVE_DEFS, {
 MOVE_DEFS.lowKick = { blend: 40, limb: 'lFoot', keys: [
   K({ ...crouchP, hx: -3, rl: L(-3, CH, RF - 2), ll: [40, -40], torso: 20 }, 60, 'in'),
   K({ ...crouchP, hx: 2, rl: L(2, CH, RF - 2), ll: [70, -10], torso: 14, head: -4 }, 40, 'linear'),
-  K({ ...crouchP, hx: 10, rl: L(10, CH, RF - 2), ll: [76, 84], torso: 8, bend: 2, head: -2, la: [30, 160], ra: [16, 166] }, 40, 'out', 'active'),
-  K({ ...crouchP, hx: 10, rl: L(10, CH, RF - 2), ll: [77, 85], torso: 8, bend: 2, head: -2, la: [30, 160], ra: [16, 166] }, 60, 'inOut'),
+  K({ ...crouchP, hx: 10, rl: L(10, CH, RF - 2), ll: [84, 76], torso: 8, bend: 2, head: -2, la: [30, 160], ra: [16, 166] }, 40, 'out', 'active'),
+  K({ ...crouchP, hx: 10, rl: L(10, CH, RF - 2), ll: [85, 77], torso: 8, bend: 2, head: -2, la: [30, 160], ra: [16, 166] }, 60, 'inOut'),
   K({ ...crouchP, hx: 6, rl: L(6, CH, RF - 2), ll: [70, 0], torso: 14, la: [34, 160] }, 60, 'inOut', 'recover'),
   K({ ...crouchP, ...F(2, CH, LF + 2, RF - 2, 6, 0) }, 60, 'inOut'),
   K({ ...crouchP }, 0, 'sine', 'footstep'),
@@ -903,12 +959,12 @@ MOVE_DEFS.lowKick = { blend: 40, limb: 'lFoot', keys: [
 
 // Variants built from existing moves.
 MOVE_DEFS.risingUppercut = { ...MOVE_DEFS.uppercut, keys: [K({ ...crouchP, ...F(-2, CH - 2, LF + 2, RF - 2), torso: 18, ra: [-10, 20] }, 60, 'in'), ...deepKeys(MOVE_DEFS.uppercut).slice(1)] };
-MOVE_DEFS.spinHeel = { ...MOVE_DEFS.spinKick, keys: deepKeys(MOVE_DEFS.spinKick).map(k => k.ev === 'active' ? { ...k, p: { ...k.p, rl: [-108, -104], torso: 56 } } : k) };
-{ const sh = MOVE_DEFS.spinHeel.keys, ai = sh.findIndex(k => k.ev === 'active'); sh[ai + 1] = { ...sh[ai + 1], p: { ...sh[ai + 1].p, rl: [-109, -105], torso: 57 } }; }
+MOVE_DEFS.spinHeel = { ...MOVE_DEFS.spinKick, keys: deepKeys(MOVE_DEFS.spinKick).map(k => k.ev === 'active' ? { ...k, p: { ...k.p, rl: [-104, -108], torso: 56 } } : k) };
+{ const sh = MOVE_DEFS.spinHeel.keys, ai = sh.findIndex(k => k.ev === 'active'); sh[ai + 1] = { ...sh[ai + 1], p: { ...sh[ai + 1].p, rl: [-105, -109], torso: 57 } }; }
 MOVE_DEFS.crescent = { ...MOVE_DEFS.roundhouse, adapt: 'kick', keys: deepKeys(MOVE_DEFS.roundhouse).map((k, i, a) => {
   const ai = a.findIndex(kk => kk.ev === 'active');
-  if (i === ai - 2) return { ...k, p: { ...k.p, rl: [130, 150], torso: -20 } };      // leg rises outside, high
-  if (i === ai - 1) return { ...k, p: { ...k.p, rl: [124, 128], torso: -30 } };
+  if (i === ai - 2) return { ...k, p: { ...k.p, rl: [150, 130], torso: -20 } };      // leg rises outside, high
+  if (i === ai - 1) return { ...k, p: { ...k.p, rl: [128, 124], torso: -30 } };
   if (i === ai + 1) return { ...k, p: { ...k.p, rl: [80, 70], torso: -36 } };        // sweeps down across
   return k;
 }) };
@@ -984,10 +1040,12 @@ function makeBotch(b, cur) {
   const half = { ...P({}), torso: lerpN(c0.torso, ap.torso, 0.6), bend: lerpN(c0.bend, ap.bend, 0.6), head: lerpN(c0.head, ap.head, 0.6), tw: lerpN(c0.tw, ap.tw, 0.6),
     hx: lerpN(c0.hx, ap.hx, 0.6), la: [lerpN(c0.la[0], ap.la[0], 0.5), lerpN(c0.la[1], ap.la[1], 0.5)], ra: [lerpN(c0.ra[0], ap.ra[0], 0.5), lerpN(c0.ra[1], ap.ra[1], 0.5)],
     ll: [lerpN(c0.ll[0], ap.ll[0], 0.6), lerpN(c0.ll[1], ap.ll[1], 0.6)], rl: [lerpN(c0.rl[0], ap.rl[0], 0.6), lerpN(c0.rl[1], ap.rl[1], 0.6)] };
-  const reach = [ap[lk][0] * 0.8 + c0[lk][0] * 0.2, ap[lk][0] * 0.8 + c0[lk][0] * 0.2 - 38 - 4 * alt];
-  half[lk] = reach;
+  // the far segment lags by 38+ deg: a knee still folded back, an elbow still folded forward (the arm's lag used to go
+  // the knee's way, a backward elbow)
   const kick = lk === 'll' || lk === 'rl', dir = kick ? -1 : 1;   // a kick throws the body back over the standing leg, a punch forward
-  const over = { ...half, hx: half.hx + 6, torso: half.torso + 12 * dir, bend: half.bend + 4 * dir, [lk]: [reach[0] + 10, reach[1] - 14] };
+  const r0 = ap[lk][0] * 0.8 + c0[lk][0] * 0.2, reach = [r0, r0 - dir * (38 + 4 * alt)];
+  half[lk] = reach;
+  const over = { ...half, hx: half.hx + 6, torso: half.torso + 12 * dir, bend: half.bend + 4 * dir, [lk]: [reach[0] + 10, reach[1] - 14 * dir] };
   const sag = { ...P(F(4, HIP - 8, LF + 4, RF)), torso: 14 + (kick ? -6 : 10), bend: 4, head: 8, tw: half.tw * 0.5, la: half.la, ra: half.ra };
   if (!kick) sag[lk] = [reach[0] - 34, reach[1] - 50];
   return { blend: 30, blendEase: 'out', keys: [
@@ -1008,8 +1066,8 @@ function makeFlail(b) {
     K({ ...F(-4, HIP - 4, LF, RF), torso: -8 - lean, bend: -4, head: 8, tw: -10, la: [130 + w, 160], ra: [150 - w, 176] }, 60, 'in'),
     K({ ...F(6, HIP - 7, LF, RF, 0, 4), torso: 22 + lean, bend: 6, head: -10, tw: 12, la: [-40 + w, -10], ra: [86, 112] }, 50, 'out', 'active'),
     K({ ...F(8, HIP - 9, LF, RF, 0, 6), torso: 30 + lean, bend: 8, head: -6, tw: 10, la: [40, 84 + w], ra: [30 + w, 58] }, 70, 'linear'),
-    K({ ...F(4, HIP - 6, LF, RF), torso: 14, bend: 2, head: -8, tw: -12, la: [140 - w, 168], ra: [96, 72] }, 50, 'out', 'active'),
-    K({ ...F(3, HIP - 9, LF, RF), torso: 28 + lean, bend: 8, head: 12, tw: -2, la: [8, 16], ra: [12 + w * 0.5, 10] }, 80, 'inOut', 'recover'),
+    K({ ...F(4, HIP - 6, LF, RF), torso: 14, bend: 2, head: -8, tw: -12, la: [140 - w, 168], ra: [73, 97] }, 50, 'out', 'active'),
+    K({ ...F(3, HIP - 9, LF, RF), torso: 28 + lean, bend: 8, head: 12, tw: -2, la: [8, 16], ra: [12 + w * 0.5, 14 + w * 0.5] }, 80, 'inOut', 'recover'),
     K({ ...F(2, HIP - 8, LF, RF, 0, 5), torso: 22, bend: 6, head: 10, la: [4, 12], ra: [8, 6] }, 200, 'sine'),
     K({ ...F(0, HIP - 2, LF, RF), torso: 8, head: -2, la: [46, 130], ra: [26, 140] }, 120, 'out'),
     K({ ...F(0, HIP - 1, LF, RF), torso: 6, head: -3 }, 0, 'sine'),
@@ -1132,6 +1190,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     play, update, draw, react, launch, wallSplat, groundBounce, reset,
   };
   f._solve = p => solve(p);
+  f._ragFacing = () => (rag ? rag.fc : 0);   // which way the point simulation's body faces (scripts/rig/limits.mjs)
   // A character's body: proportions, scale, lean, stance and accessory (null: the baseline rig). The sim
   // sizes hitboxes and the drawn silhouette from f.scale and f.shape (1 at the baseline).
   function setBody(b, opt = {}) {
@@ -1297,7 +1356,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     // instead of snapping to the side view (it's on the key, never on f.pose, so solve() and the joints never see it)
     if (faceWas > 0.001) start.face = faceWas / (m.turn && m.turn.face ? m.turn.face : 1);
     if (vel) for (const c of ['torso', 'bend', 'head', 'tw']) start[c] += clamp(vel[c] * 0.05, -18, 18);
-    if (vel) for (const c of ['la', 'ra']) start[c] = [start[c][0] + clamp(vel[c][0] * 0.05, -20, 20), start[c][1] + clamp(vel[c][1] * 0.05, -20, 20)];
+    // (the arms' carry never folds an elbow back past straight: the blend's first key is built inside the joint limits)
+    if (vel) for (const c of ['la', 'ra']) start[c] = elbowIn([start[c][0] + clamp(vel[c][0] * 0.05, -20, 20), start[c][1] + clamp(vel[c][1] * 0.05, -20, 20)]);
     if (m.air) start.hipLock = lastHipLock = hipNow;   // the hip height the air move eases onto the arc from (update)
     keys = [{ p: start, d: m.blend, ease: m.blendEase || 'out', ev: null }, ...m.keys];
     limbHot = !!m.limb;
@@ -1419,6 +1479,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
       for (const j in f.joints) f.joints[j] = { x: lerp(f.joints[j].x, fadeFrom[j].x, w), y: lerp(f.joints[j].y, fadeFrom[j].y, w) };
       if (!fadeT) fadeFrom = null;
     }
+    // the springs and the crossfade move hands and feet after solve(): keep those inside the joint limits too
+    guardLimbs(f.joints, f.facing, f.scale, f.pose.spin || 0);
     if (strikeTimer > 0 && !strikeDir && move.limb && prevJoints[move.limb]) {
       const a = prevJoints[move.limb], b = f.joints[move.limb];
       const vx = b.x - a.x, vy = b.y - a.y, v = dm.hypot(vx, vy);
@@ -1490,7 +1552,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     // vx > 0 sends the body backward (away from where it faces); spin > 0 tips the head back.
     const J = f.joints, wv = -f.facing * vx * f.scale, om = -f.facing * spin * DEG, hip = J.hip;
     if (!rag) {
-      rag = { pts: {}, len: [], t: 0, rest: 0, splat: 0, bounceNext: false, landed: false, wall };
+      rag = { pts: {}, len: [], t: 0, rest: 0, splat: 0, bounceNext: false, landed: false, wall, fc: f.facing };   // fc: which way its front faces (a turn keeps it), for the joint limits
       for (const k in J) rag.pts[k] = { x: J[k].x, y: J[k].y, px: J[k].x, py: J[k].y, r: f.radii[k] };   // each joint as thick as it's drawn
       rag.len = BONES.map(([a, b]) => dm.hypot(J[a].x - J[b].x, J[a].y - J[b].y));
       f.airborne = true; reactL = null; landEase = null;
@@ -1529,7 +1591,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const sh = v(lerp(neck.x, chest.x, 0.2), lerp(neck.y, chest.y, 0.2));
     const pose = { hip, chest, neck, head, lShoulder: sh, rShoulder: sh,
       lElbow: add(sh, 165, 24), rElbow: add(sh, 130, 24), lKnee: add(hip, 22, 31), rKnee: add(hip, 12, 31) };
-    pose.lHand = add(pose.lElbow, 172, 23); pose.rHand = add(pose.rElbow, 112, 23);
+    pose.lHand = add(pose.lElbow, 172, 23); pose.rHand = add(pose.rElbow, 148, 23);   // elbows fold toward the head (148, was 112: a backward elbow)
     pose.lFoot = add(pose.lKnee, 4, 30); pose.rFoot = add(pose.rKnee, -4, 30);
     // Slide the whole shape so its wall-side edge touches the wall and nothing is below the floor.
     let edge = -Infinity, low = -Infinity;
@@ -1537,7 +1599,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const dx = wx - s2 * edge, dy = Math.min(0, gnd - low);
     for (const k in pose) { const q = P[k]; q.x = q.px = pose[k].x + dx; q.y = q.py = pose[k].y + dy; }
     rag.len = BONES.map(([a2, b2]) => dm.hypot(P[a2].x - P[b2].x, P[a2].y - P[b2].y));
-    rag.splat = 0.4; rag.wallDone = true; rag.wallSide = s2;
+    rag.splat = 0.4; rag.wallDone = true; rag.wallSide = s2; rag.fc = -s2;   // back to the wall: its front faces away
     f.events.push({ type: 'wall', move: 'airborne', side: s2 });
   }
   function groundBounce() {
@@ -1603,6 +1665,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
             }
           }
         }
+        guardLimbs(P, rag.fc, f.scale);   // knees and elbows hold their limits while it tumbles (last, so what's drawn obeys them)
       }
     }
     if (wallHit && !rag.wallDone) {
@@ -1675,11 +1738,14 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     const sh = { x: lerp(neck.x, chest.x, 0.2), y: lerp(neck.y, chest.y, 0.2) };
     const lShoulder = { x: sh.x - p.tw * 0.5, y: sh.y };
     const rShoulder = { x: sh.x + p.tw * 0.5, y: sh.y };
-    const lElbow = seg(lShoulder, p.la[0], R.upperArm), lHand = seg(lElbow, p.la[1], R.lowerArm);
-    const rElbow = seg(rShoulder, p.ra[0], R.upperArm), rHand = seg(rElbow, p.ra[1], R.lowerArm);
+    // the joint limits (JOINT_LIMITS): a pose that slips past them is turned back here, a clean one is untouched
+    const la = guardOn ? elbowIn(p.la) : p.la, ra = guardOn ? elbowIn(p.ra) : p.ra;
+    const ll = guardOn ? kneeIn(p.ll, -stance * 0.5) : p.ll, rl = guardOn ? kneeIn(p.rl, stance * 0.5) : p.rl;
+    const lElbow = seg(lShoulder, la[0], R.upperArm), lHand = seg(lElbow, la[1], R.lowerArm);
+    const rElbow = seg(rShoulder, ra[0], R.upperArm), rHand = seg(rElbow, ra[1], R.lowerArm);
     // stance: the legs spread by that many degrees each (0 at the baseline)
-    const lKnee = seg(hip, stance ? p.ll[0] + stance : p.ll[0], R.upperLeg), lFoot = seg(lKnee, stance ? p.ll[1] + stance * 0.5 : p.ll[1], R.lowerLeg);
-    const rKnee = seg(hip, stance ? p.rl[0] - stance : p.rl[0], R.upperLeg), rFoot = seg(rKnee, stance ? p.rl[1] - stance * 0.5 : p.rl[1], R.lowerLeg);
+    const lKnee = seg(hip, stance ? ll[0] + stance : ll[0], R.upperLeg), lFoot = seg(lKnee, stance ? ll[1] + stance * 0.5 : ll[1], R.lowerLeg);
+    const rKnee = seg(hip, stance ? rl[0] - stance : rl[0], R.upperLeg), rFoot = seg(rKnee, stance ? rl[1] - stance * 0.5 : rl[1], R.lowerLeg);
     const j = { head, neck, chest, hip, lShoulder, rShoulder, lElbow, rElbow, lHand, rHand, lKnee, rKnee, lFoot, rFoot };
     if (p.spin) {
       const c = dm.cos(p.spin * DEG), dz = Math.abs(dm.sin(p.spin * DEG)) * 12;

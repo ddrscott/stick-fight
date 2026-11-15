@@ -28,7 +28,7 @@ const objection = { blend: 40, limb: 'lHand', keys: [
 // (the catch is the clip's first pose, since the grab freezes it there for the hold), then the shared
 // throw's sink, turn and heave over in front of him. The victim takes the rig's thrown reaction.
 const sustained = { blend: 30, limb: 'lHand', keys: [
-  K({ ...F(4, HIP - 5, LF + 6, RF, 6, 0), torso: 12, bend: 3, head: -6, tw: -4, la: [88, 78], ra: [72, 86] }, 40, 'out', 'active'),
+  K({ ...F(4, HIP - 5, LF + 6, RF, 6, 0), torso: 12, bend: 3, head: -6, tw: -4, la: [78, 88], ra: [72, 86] }, 40, 'out', 'active'),
   ...deepKeys(base('throw')).slice(2).map((k) => ({ ...k, p: { ...k.p, hx: k.p.hx - 2 } })),
 ] };
 
@@ -108,8 +108,8 @@ const perfect = { name: 'CASE CLOSED', note: 'Up by the collar in the pointing h
   lift('collar', 'lHand', 200),
   K({ face: 0.3, ...F(-4, HIP - 6, LF, RF - 4), torso: 0, bend: -2, head: -6, tw: -14, la: [100, 108], ra: [-70, -50] }, 220, 'inOut'),
   K({ face: 0.35, ...F(-4, HIP - 7, LF, RF - 4), torso: 0, bend: -2, head: -6, tw: -16, la: [100, 108], ra: [-80, -60] }, 80, 'sine'),
-  K({ face: 0.9, ...F(8, HIP - 4, LF + 12, RF - 4), torso: 18, bend: 4, head: -8, tw: 14, la: [60, 80], ra: [100, 90] }, 80, 'out', 'release'),
-  K({ face: 0.85, ...F(10, HIP - 3, LF + 12, RF), torso: 14, head: -8, tw: 12, la: [50, 90], ra: [120, 110] }, 200, 'out', 'footstep'),
+  K({ face: 0.9, ...F(8, HIP - 4, LF + 12, RF - 4), torso: 18, bend: 4, head: -8, tw: 14, la: [60, 80], ra: [90, 100] }, 80, 'out', 'release'),
+  K({ face: 0.85, ...F(10, HIP - 3, LF + 12, RF), torso: 14, head: -8, tw: 12, la: [50, 90], ra: [110, 120] }, 200, 'out', 'footstep'),
   K({ face: 0.8, ...F(8, HIP - 1, LF + 12, RF + 4), torso: 0, head: -8, la: [95, 92], ra: [30, 120] }, 240, 'inOut'),
   K({ face: 0.6, ...F(8, HIP, LF + 12, RF + 4), torso: -2, head: -10, la: [70, 150], ra: [30, 120] }, 260, 'inOut'),
   K({ face: 0.6, ...F(8, HIP, LF + 12, RF + 4), torso: -2, head: -12, la: [72, 152], ra: [30, 120] }, 0, 'sine'),

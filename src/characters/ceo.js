@@ -86,9 +86,9 @@ const perfect = { name: 'GOLDEN PARACHUTE', note: 'The golden-parachute shove: h
   ...stoop('lHand'),
   K({ face: 0.15, ...F(2, HIP - 1, LF + 4, RF), torso: 0, bend: -4, head: -10, la: [100, 100], ra: [30, 120] }, 220, 'inOut'),
   K({ face: 0.25, ...F(2, HIP, LF + 4, RF), torso: -2, bend: -4, head: -12, la: [100, 98], ra: [110, 200] }, 220, 'inOut'),
-  K({ face: 0.45, ...F(0, HIP, LF + 2, RF), torso: -2, bend: -4, head: -12, la: [94, 120], ra: [80, 70] }, 120, 'in'),
-  K({ face: 0.8, ...F(4, HIP - 1, LF + 6, RF), torso: 4, head: -12, la: [96, 96], ra: [92, 70] }, 80, 'out', 'release'),
-  K({ face: 0.75, ...F(4, HIP - 1, LF + 6, RF), torso: 2, head: -12, la: [60, 110], ra: [96, 80] }, 220, 'out'),
+  K({ face: 0.45, ...F(0, HIP, LF + 2, RF), torso: -2, bend: -4, head: -12, la: [94, 120], ra: [70, 80] }, 120, 'in'),
+  K({ face: 0.8, ...F(4, HIP - 1, LF + 6, RF), torso: 4, head: -12, la: [96, 96], ra: [70, 92] }, 80, 'out', 'release'),
+  K({ face: 0.75, ...F(4, HIP - 1, LF + 6, RF), torso: 2, head: -12, la: [60, 110], ra: [80, 96] }, 220, 'out'),
   K({ face: 0.5, ...F(4, HIP, LF + 6, RF), torso: 0, head: -10, la: [116, 210], ra: [106, 200] }, 280, 'inOut'),
   K({ face: 0.5, ...F(4, HIP, LF + 6, RF), torso: 0, head: -14, la: [118, 212], ra: [108, 202] }, 0, 'sine'),
 ] };
@@ -105,8 +105,8 @@ const victory = { keys: [
 const taunt = { keys: [
   K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -10, la: [40, 120], ra: [12, 24] }, 240, 'out'),
   K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -10, la: [70, 150], ra: [12, 24] }, 140, 'in'),
-  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -10, la: [90, 60], ra: [12, 24] }, 120, 'snap'),
-  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -12, la: [90, 62], ra: [12, 24] }, 260, 'sine'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -10, la: [61, 91], ra: [12, 24] }, 120, 'snap'),
+  K({ ...F(0, HIP - 1, LF, RF), torso: -2, head: -12, la: [63, 91], ra: [12, 24] }, 260, 'sine'),
   K({ ...F(0, HIP, LF, RF), torso: 2, head: 0, la: [12, 24], ra: [8, 20] }, 240, 'inOut'),
 ] };
 
