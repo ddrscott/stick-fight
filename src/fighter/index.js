@@ -46,9 +46,11 @@ const GUARD_LIMBS = [['lShoulder', 'lElbow', 'lHand', 0, 0], ['rShoulder', 'rElb
  * The joint limits on joints already in world space (moved after solve(): springs, the point simulation, the life layer).
  * Turns a hand or foot about its elbow or knee, in place (the caller's own joint objects), so no limb bends the wrong way. fc: the facing; s: the scale;
  * spin: the pose's spin (deg; its squash and the far/near shift are taken out first, so the bend is judged on the body's
- * own shape); dz: px the spin shifts the near limbs (12 in solve()). Deterministic (dmath), so the sim may use it.
+ * own shape); dz: px the spin shifts the near limbs (12 in solve()). memo (the point simulation's): each limb's last
+ * bend, so a limb that swung far past a limit in one step goes back to the side it came from (straight or folded)
+ * instead of the nearer one, which flipped it end over end. Deterministic (dmath), so the sim may use it.
  */
-export function guardLimbs(J, fc, s = 1, spin = 0, dz = 12) {
+export function guardLimbs(J, fc, s = 1, spin = 0, dz = 12, memo = null) {
   if (!guardOn || !J || !J.hip) return J;
   const c = spin ? dm.cos(spin * DEG) : 1;
   if (c > -0.1 && c < 0.1) return J;   // edge-on: every limb is a vertical line, nothing to judge
@@ -60,7 +62,15 @@ export function guardLimbs(J, fc, s = 1, spin = 0, dz = 12) {
     const bx = ((B.x - hx) / k - off) / c, cx = ((C.x - hx) / k - off) / c;
     const ux = bx - (isLeg ? 0 : ax), uy = (B.y - A.y) / s, vx = cx - bx, vy = (C.y - B.y) / s;
     const w = dm.atan2(uy * vx - ux * vy, ux * vx + uy * vy) / DEG;
-    const d = isLeg ? kneeFix(w) : elbowFix(w);
+    let d = isLeg ? kneeFix(w) : elbowFix(w);
+    if (memo) {
+      if (d) {   // back to the limit on the side it was on a step ago
+        const was = memo[i], straightSide = isLeg ? was > MID_K - 180 && was <= MID_K : was >= MID_E && was < MID_E + 180;
+        d = isLeg ? (straightSide ? JOINT_LIMITS.knee - w : (w > 0 ? JOINT_LIMITS.fold - w : -JOINT_LIMITS.fold - w))
+          : (straightSide ? JOINT_LIMITS.elbow - w : (w < 0 ? -JOINT_LIMITS.fold - w : JOINT_LIMITS.fold - w));
+      }
+      memo[i] = w + d;
+    }
     if (!d) continue;
     // turn the far segment by d (the angle convention: from straight down, positive toward forward)
     const r = d * DEG, cs = dm.cos(r), sn = dm.sin(r), nx = vx * cs + vy * sn, ny = -vx * sn + vy * cs;
@@ -1607,6 +1617,22 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     rag.bounceNext = true;
     for (const k in rag.pts) rag.pts[k].py -= 900 * f.scale / 120;   // drive it down hard
   }
+  // the joint limits on the point simulation, as a joint stop: a hand or foot turned back inside them stops dead against
+  // its elbow or knee (it takes that joint's velocity), so the stop soaks up the swing instead of bouncing it back (a
+  // springy stop kept the limbs flailing for seconds and a body jittering on the floor, never at rest)
+  const RAG_ENDS = [['lHand', 'lElbow', 'lShoulder'], ['rHand', 'rElbow', 'rShoulder'], ['lFoot', 'lKnee', 'hip'], ['rFoot', 'rKnee', 'hip']];
+  const ragWas = { lHand: { x: 0, y: 0 }, rHand: { x: 0, y: 0 }, lFoot: { x: 0, y: 0 }, rFoot: { x: 0, y: 0 } };
+  function ragLimits(P) {
+    for (const [k] of RAG_ENDS) { ragWas[k].x = P[k].x; ragWas[k].y = P[k].y; }
+    guardLimbs(P, rag.fc, f.scale, 0, 12, rag.lb || (rag.lb = [0, 0, 0, 0]));
+    for (const [k, m, rn] of RAG_ENDS) {
+      const q = P[k], b = P[m], a = P[rn];
+      if (q.x === ragWas[k].x && q.y === ragWas[k].y) continue;
+      // the stopped limb swings on with its root: the elbow or knee gives up half its own swing too
+      const ax = a.x - a.px, ay = a.y - a.py, bx = (b.x - b.px + ax) * 0.5, by = (b.y - b.py + ay) * 0.5;
+      b.px = b.x - bx; b.py = b.y - by; q.px = q.x - bx; q.py = q.y - by;
+    }
+  }
   function stepRag(dt) {
     const h = 1 / 120, P = rag.pts, n = Math.max(1, Math.round(dt / h));
     let wallHit = 0;
@@ -1630,6 +1656,7 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
           const A2 = P[a], B2 = P[b], dx = B2.x - A2.x, dy = B2.y - A2.y, d = dm.hypot(dx, dy) || 1, k2 = (d - rag.len[i]) / d * 0.5;
           A2.x += dx * k2; A2.y += dy * k2; B2.x -= dx * k2; B2.y -= dy * k2;
         });
+        ragLimits(P);   // knees and elbows hold their limits while it tumbles
         const ground = f.floorY != null ? f.floorY : f.y;
         for (const k in P) {
           const q = P[k], fl = groundAt(q.x, ground) - q.r;
@@ -1665,8 +1692,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
             }
           }
         }
-        guardLimbs(P, rag.fc, f.scale);   // knees and elbows hold their limits while it tumbles (last, so what's drawn obeys them)
       }
+      ragLimits(P);   // and once more after the floor and walls, so what's drawn obeys them
     }
     if (wallHit && !rag.wallDone) {
       rag.wallDone = true;
@@ -1993,7 +2020,8 @@ export function createFighter({ color = '#111', x = 0, y = 640, facing = 1, scal
     for (const k in r.pts) { const q = r.pts[k], o = dp[k] || (dp[k] = {}); o.x = q.x; o.y = q.y; o.px = q.px; o.py = q.py; o.r = q.r; }
     for (const k in dp) if (!(k in r.pts)) delete dp[k];
     d.len = r.len; d.t = r.t; d.rest = r.rest; d.splat = r.splat; d.bounceNext = r.bounceNext; d.landed = r.landed; d.wall = r.wall;
-    d.wallDone = r.wallDone; d.wallSide = r.wallSide; d.surf = r.surf; d.stall = r.stall;
+    d.wallDone = r.wallDone; d.wallSide = r.wallSide; d.surf = r.surf; d.stall = r.stall; d.fc = r.fc;
+    if (r.lb) { d.lb = d.lb || [0, 0, 0, 0]; for (let i = 0; i < 4; i++) d.lb[i] = r.lb[i]; } else d.lb = undefined;
     d.treadT = r.treadT ? { ...r.treadT } : undefined;   // only while tumbling down the stairs
     return d;
   }

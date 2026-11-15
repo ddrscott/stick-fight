@@ -17,7 +17,7 @@ const coffeeRun = { blend: 40, limb: 'lElbow', shift: 26, keys: [
   K({ ...F(4, HIP - 9, LF + 16, RF, 7, 0), torso: 24, bend: 5, head: -10, tw: -2, la: [-33, 75], ra: [40, 176] }, 50, 'linear'),
   K({ ...F(16, HIP - 10, LF + 28, RF + 2), torso: 30, bend: 6, head: -12, tw: -14, la: [96, 266], ra: [44, 178] }, 40, 'out', 'active'),
   K({ ...F(17, HIP - 10, LF + 28, RF + 2), torso: 31, bend: 6, head: -12, tw: -15, la: [97, 267], ra: [44, 178] }, 80, 'inOut'),
-  K({ ...F(18, HIP - 7, LF + 28, RF + 8), torso: 20, bend: 4, head: -8, tw: -6, la: [31, 65], ra: [40, 170] }, 110, 'inOut', 'recover'),
+  K({ ...F(18, HIP - 7, LF + 28, RF + 8), torso: 20, bend: 4, head: -8, tw: -6, la: [36, 176], ra: [40, 170] }, 110, 'inOut', 'recover'),   // the elbow stays folded as it comes back
   K({ ...F(22, HIP - 2, LF + 28, RF + 26, 0, 8), torso: 8, head: -4, la: [54, 148], ra: [30, 164] }, 110, 'inOut', 'footstep'),
   K({ ...F(26, HIP - 1, LF + 26, RF + 26), torso: 6, head: -4 }, 0, 'sine'),
 ] };

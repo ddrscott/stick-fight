@@ -31,7 +31,7 @@ const ticketReversal = { blend: 30, limb: 'rElbow', shift: 10, keys: [
   K({ ...F(5, HIP - 8, LF + 8, RF, 6, 0), torso: 14, bend: 3, head: -6, tw: 2, la: [10, 16], ra: [-91, 59] }, 40, 'linear'),
   K({ ...F(12, HIP - 9, LF + 10, RF), torso: 26, bend: 6, head: -10, tw: 16, la: [4, 20], ra: [94, 200] }, 40, 'out', 'active'),
   K({ ...F(13, HIP - 9, LF + 10, RF), torso: 27, bend: 6, head: -10, tw: 17, la: [2, 22], ra: [96, 198] }, 70, 'inOut'),
-  K({ ...F(10, HIP - 5, LF + 10, RF), torso: 14, bend: 3, head: -6, tw: 8, la: [30, 110], ra: [50, 60] }, 90, 'inOut', 'recover'),
+  K({ ...F(10, HIP - 5, LF + 10, RF), torso: 14, bend: 3, head: -6, tw: 8, la: [30, 110], ra: [40, 170] }, 90, 'inOut', 'recover'),   // the elbow stays folded as it comes back
   K({ ...F(9, HIP - 2, LF + 10, RF + 10, 0, 8), torso: 7, head: -4, la: [54, 148], ra: [30, 162] }, 100, 'inOut', 'footstep'),
   K({ ...F(10, HIP - 1, LF + 10, RF + 10), torso: 6, head: -4 }, 0, 'sine'),
 ] };
