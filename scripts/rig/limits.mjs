@@ -185,7 +185,8 @@ for (const c of chars) {
 
 // ---- part 3: the settle check ----------------------------------------------------------------------------------------
 // every character, both facings, six launches; play('hitBody'), a moment, launch with a bouncing wall, then 1/120 s steps
-// until the point simulation lets go. ce3873b (before the limits): mean 1.53 s, median 1.51, p90 2.02, max 2.58.
+// until the point simulation lets go. ce3873b (before the limits) on this script: mean 1.57 s, median 1.54, p90 2.02, max 2.68
+// (the card measured 1.53 / 1.51 / 2.02 / 2.58 its own way).
 // The single slowest launch is chaos: moving the pre-hit moment from 0.05 s to 0.04-0.06 s swings it 2.3-2.7 s at
 // ce3873b and 2.1-2.9 s here, so the ceiling is 3.0 s (the locked limbs' worst was 3.72) and the mean and p90 must hold
 // too. Over 5 s is the unwedge fallback, never a real rest.
@@ -203,7 +204,7 @@ for (const c of chars) for (const facing of [1, -1]) for (const [vx, vy, spin] o
 settle.sort((a, b) => a.t - b.t);
 const sT = settle.map((r) => r.t), q = (p) => sT[Math.min(sT.length - 1, Math.floor(p * sT.length))];
 const sMax = settle[settle.length - 1];
-console.log(`settle: ${settle.length} launches, mean ${(sT.reduce((a, b) => a + b, 0) / sT.length).toFixed(2)}s, median ${q(0.5).toFixed(2)}, p90 ${q(0.9).toFixed(2)}, max ${sMax.t.toFixed(2)} (${sMax.label}); ce3873b: mean 1.53, median 1.51, p90 2.02, max 2.58`);
+console.log(`settle: ${settle.length} launches, mean ${(sT.reduce((a, b) => a + b, 0) / sT.length).toFixed(2)}s, median ${q(0.5).toFixed(2)}, p90 ${q(0.9).toFixed(2)}, max ${sMax.t.toFixed(2)} (${sMax.label}); ce3873b on this script: mean 1.57, median 1.54, p90 2.02, max 2.68`);
 const slow = settle.filter((r) => r.t > SETTLE_MAX);
 const sMean = sT.reduce((a, b) => a + b, 0) / sT.length;
 if (sMean > SETTLE_MEAN) slow.push({ t: sMean, label: `the mean (over ${SETTLE_MEAN}s)` });
