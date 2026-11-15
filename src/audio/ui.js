@@ -4,7 +4,7 @@
 //   CONTROLS  on a touch screen the size of the stick and buttons with a picture of them; then the fight and menu
 //             tables, keyboard and gamepad (src/flow/controls.js), and the notes on dash, parry, getups and stairs
 //   AUDIO     SOUND, MUSIC, the TRACK playing, MUSIC VOLUME and EFFECTS VOLUME
-//   DISPLAY   GRAPHICS (src/gfxPrefs.js), and FULLSCREEN where the browser can do it (src/fullscreen.js)
+//   DISPLAY   GRAPHICS and FRAME RATE (src/gfxPrefs.js), and FULLSCREEN where the browser can do it (src/fullscreen.js)
 // with the credits and the privacy and house rules links at the foot of DISPLAY. One page, opened four ways: the gear in
 // the top-right corner on desktop (src/corner.js), the touch layer's gear (touch.js sends 'sf:settings'), and
 // SETTINGS on MAIN MENU and in the pause menu (src/flow/index.js calls open()). Opened over a fight you can pause, the
@@ -33,7 +33,7 @@ import { rootUrl } from '../root.js';   // the privacy and house rules pages, at
 import { TOUCH_STEPS, TOUCH_DEFAULT, touchPref, touchStep, setTouchScale, touchFit, onTouchPref } from '../touchPrefs.js';
 import { PLAIN } from '../plaintext.js';   // readable text never glows: the shared dark outline
 import { MENU_ICON, cornerButton, cornerRow } from '../corner.js';
-import { GFX_CHOICES, TIER_NAME, gfxPick, setGfxPick, onGfxPick, liveTier, onLiveTier } from '../gfxPrefs.js';   // GRAPHICS (README, Performance, Chromebooks)
+import { GFX_CHOICES, TIER_NAME, gfxPick, setGfxPick, onGfxPick, liveTier, onLiveTier, FPS_CHOICES, fpsPick, setFpsPick, onFpsPick } from '../gfxPrefs.js';   // GRAPHICS (README, Performance, Chromebooks)
 import { bestOf, roundTime, stepBestOf, stepRoundTime, timeLabel, versusUpgrades, stepVersusUpgrades } from '../flow/rules.js';   // GAME: the match rules
 import { botchEnabled, setBotchEnabled } from '../flow/techniques.js';                       // GAME: the botch switch
 import { controlsTable, legend, FIGHT, MENUS } from '../flow/controls.js';                   // CONTROLS: the tables, and the legend
@@ -106,6 +106,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
         </div>
         <div class="sf-page" data-p="display">
           ${opt('gfx', 'GRAPHICS', 'LOWER RUNS SMOOTHER ON A SLOW DEVICE')}
+          ${opt('fps', 'FRAME RATE', '60 KEEPS A PHONE COOLER. THE GAME PLAYS THE SAME')}
           ${canFullscreen ? opt('fullscreen', 'FULLSCREEN', 'THE GAME FILLS THE SCREEN (F11 TOO)') : ''}
           <p class="sf-note sf-gfx-note"></p>
           <h3 class="sf-h3">CREDITS</h3>
@@ -185,7 +186,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     const pick = gfxPick(), live = liveTier();
     $('.sf-gfx-note').textContent = pick === 'auto' ? (live >= 0 ? `AUTO PICKS FOR THIS DEVICE. DRAWING AT ${TIER_NAME[live]} NOW.` : 'AUTO PICKS FOR THIS DEVICE.') : 'FIXED: IT STAYS HERE EVEN IF THE GAME SLOWS DOWN.';
   };
-  onGfxPick(() => paintOpts()); onLiveTier(() => paintOpts());
+  onGfxPick(() => paintOpts()); onLiveTier(() => paintOpts()); onFpsPick(() => paintOpts());
   for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => paintOpts());
 
   // ---- the rows: how each steps and what it shows ----------------------------------------------------------
@@ -198,6 +199,7 @@ export function createSoundUI({ settings, music, actions, isUnlocked }) {
     botch: { step: () => setBotchEnabled(!botchEnabled()), text: () => (botchEnabled() ? 'ON' : 'OFF') },
     upgrades: { step: () => stepVersusUpgrades(), text: () => (versusUpgrades() === 'even' ? 'EVEN' : 'OFF') },
     gfx: { quiet: true, step: (d) => { const at = GFX_CHOICES.findIndex((c) => c.id === gfxPick()), to = GFX_CHOICES[(at + d + GFX_CHOICES.length) % GFX_CHOICES.length]; pickGfx(to.id); }, text: () => (GFX_CHOICES.find((x) => x.id === gfxPick()) || GFX_CHOICES[0]).name },
+    fps: { quiet: true, step: (d) => { const at = FPS_CHOICES.findIndex((c) => c.id === fpsPick()), to = FPS_CHOICES[(at + d + FPS_CHOICES.length) % FPS_CHOICES.length]; actions.click(to.id === '60' ? 'off' : 'on'); setFpsPick(to.id); }, text: () => (FPS_CHOICES.find((x) => x.id === fpsPick()) || FPS_CHOICES[0]).name },
     size: { quiet: true, step: (d) => pickStep(touchStep() + d), text: () => TOUCH_STEPS[touchStep()].name, ends: () => [touchStep() === 0, touchStep() === TOUCH_STEPS.length - 1] },
     fullscreen: { step: () => toggleFullscreen(), text: () => (isFullscreen() ? 'ON' : 'OFF') },
     sound: { quiet: true, step: () => { const on = !settings.sound; actions.click(on ? 'on' : 'off'); actions.setSound(on); }, text: () => (settings.sound ? 'ON' : 'OFF') },

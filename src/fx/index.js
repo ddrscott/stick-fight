@@ -252,6 +252,11 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
   // tier below the ceiling is climbed back to after 5 good seconds, and a failed tier gets one retry after a good
   // minute at the ceiling. The window after a
   // change is skipped (resizing the canvases takes a frame or two).
+  // The draw cap (README, Performance, The draw cap) draws at most 60 pictures a second on a phone's 120 Hz screen, so
+  // the intervals judged here are the drawn pictures' (this runs from render()), and the thresholds are already 60 fps
+  // ones: a capped 60 reads ~16.7 ms, under the 17.5 ms median that makes a window slow, the same as a 60 Hz screen.
+  // A still scene drawn at a trickle (main.js skips render() when nothing moved) isn't slow: main.js calls
+  // fx.holdTiming() on every frame it skips for that, so the gap before the next drawn picture is never judged.
   // A tier change resizes canvases (which clears them), so it is applied after the frame is composited.
   let tierPending = false, slowRun = 0, veryRun = 0, skipWindow = 1, everyNeed = 0;
   const retried = new Set();
@@ -371,6 +376,8 @@ export function createFX(glCanvas, { width = 1280, height = 720, layerScaling = 
     },
     /** 1, or 2 when tier 0 still can't hold and the caller should draw every other frame */
     get drawEvery() { return drawEvery; },
+    /** main.js skipped a picture because nothing moved: the time until the next one isn't a frame interval */
+    holdTiming() { adapt.last = 0; },
     /** the tier asks the caller to cut CPU work too (tier 0) */
     get lowCpu() { return !!TIERS[tier].lowCpu; },
     /** what the caller's tier names mean, for the SETTINGS note */
