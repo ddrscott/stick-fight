@@ -55,6 +55,7 @@ import { ROUND_TIMES, DEFAULT_ROUND_TIME, DEFAULT_BEST_OF, winsFor } from '../fl
 import { track, analyticsOn } from '../analytics.js';
 import { howEnded } from '../bookkeeping.js';
 import { createLink, createRoom } from './link.js';
+import { LOST_MS } from './budget.js';
 import { createRollback } from './rollback.js';
 import { createWatchFeed } from './watchfeed.js';
 import { hashSim } from './hash.js';
@@ -70,10 +71,12 @@ const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the r
 const WATCH_KEY = 'stick-fight-watch';   // localStorage: '0' when the host has turned spectators off for their rooms
 const PID_KEY = 'stick-fight-pid', RIVALS_KEY = 'stick-fight-rivals';   // this browser's random id, and the all-time record per rival id
 const END_HOLD = 150;     // frames of the WINS card after the result shows (the sim's own hold, 216, would reset the match)
-const AUTO_MS = 5000, AGREE_MS = 3000, GRACE_MS = 20000, ALIVE_MS = 3000, SILENT_MS = 15000;
-// a match that can't go on is dropped as CONNECTION LOST on both sides: stalled (WAITING FOR RIVAL) this long with
-// packets still arriving, or at the end this long without the other side agreeing on the final state
-const STALL_LOST_MS = 20000, END_WAIT_MS = 15000;
+// the network clocks are the shared budget (src/net/budget.js): SILENT_MS without a word between matches, stalled
+// (WAITING FOR RIVAL) STALL_LOST_MS with packets still arriving, or END_WAIT_MS at the end without the other side
+// agreeing on the final state, and the match is dropped as CONNECTION LOST on both sides. GRACE_MS is the pick
+// screen's patience with a rival who hasn't picked, not a network clock
+const AUTO_MS = 5000, AGREE_MS = 3000, GRACE_MS = 20000, ALIVE_MS = 3000, SILENT_MS = LOST_MS;
+const STALL_LOST_MS = LOST_MS, END_WAIT_MS = LOST_MS;
 const WANTS = new Set(['rematch', 'chars', 'wait']);
 
 /** this browser's id for the all-time record (random, kept in localStorage; '' when storage is off) */
@@ -203,7 +206,8 @@ export function createOnline(game) {
     // a room socket (ours or theirs) dropped and came back (link.js): what the dead socket may have swallowed goes again
     l.on('rejoined', ({ who, ms }) => {
       track('online_rejoin', [who, crewMode ? 'crew' : 'quick', l.mode, lockstep ? 'match' : state], ms);
-      resend();
+      if (who !== 'p2p') resend();   // a DataChannel back after a redial lost no control messages
+      readout.render();
     });
     l.on('closed', (reason, code) => {
       if (lockstep || between()) finish(reason === 'closed' ? 'peer-left' : 'lost', `ws:${reason}:${code || 0}`);
@@ -631,6 +635,15 @@ function netsimLink(link, spec) {
   };
 }
 
+/** The HUD says RECONNECTING the whole time anything is being repaired (README, Multiplayer, Reconnecting): our room
+ *  socket, the rival's (away), a DataChannel being redialed while the match waits on it, or simply no packets for a
+ *  second while the sim waits. s: net.stats(); link: net.link (scripts/netsim/handoff.mjs checks the same call) */
+export function showsReconnecting(s, link) {
+  const waiting = (s.stalledMs || 0) > 300 || (s.endWaitMs || 0) > 300;
+  if (waiting && (s.lostMs || 0) > 1000) return true;
+  return !!link && (!!link.reconnecting || !!link.peerAway || (!!link.recovering && (waiting || (s.lostMs || 0) > 1000)));
+}
+
 // ---- the connection readout: bottom-left corner during a match --------------------------------
 function createReadout(net, stage) {
   injectStyle();
@@ -650,8 +663,11 @@ function createReadout(net, stage) {
     render() {
       const s = net.stats();
       if (!mode || !ping) return;
-      mode.textContent = net.link && net.link.reconnecting ? 'RECONNECTING' : s.mode === 'p2p' ? 'P2P' : s.mode === 'relay' ? 'RELAY' : '...';
-      el.classList.toggle('nf-relay', s.mode === 'relay');
+      // RECONNECTING the whole time anything is being repaired (showsReconnecting)
+      const re = showsReconnecting(s, net.link);
+      mode.textContent = re ? 'RECONNECTING' : s.mode === 'p2p' ? 'P2P' : s.mode === 'relay' ? 'RELAY' : '...';
+      el.classList.toggle('nf-relay', s.mode === 'relay' && !re);
+      el.classList.toggle('nf-reconnecting', re);
       // the round trip, how many frames the last correction re-ran, and the input delay
       ping.textContent = `${Math.round(s.rtt || 0)} MS · RB ${s.lastDepth || 0} · DELAY ${s.delay || 0}`;
       // a resync just put this side back on the host's state: a brief note. DESYNC only for a mismatch nothing has
@@ -661,7 +677,7 @@ function createReadout(net, stage) {
       if (watch) { watch.hidden = !w; if (w) watch.textContent = `WATCHING ${w}`; }
       resync.hidden = !(s.sinceResync < 1500);
       desync.hidden = !(s.desync && performance.now() - (s.desync.at || 0) > 3000);
-      wait.hidden = !(s.stalledMs > 300 || s.endWaitMs > 300);
+      wait.hidden = re || !(s.stalledMs > 300 || s.endWaitMs > 300);
     },
   };
   return r;
@@ -889,6 +905,7 @@ function injectStyle() {
     text-shadow: ${PLAIN}; display: flex; gap: 0.6em; align-items: baseline; white-space: nowrap; }
   .nf-readout[hidden] { display: none; }
   .nf-readout.nf-relay { color: #ffe0a8; }
+  .nf-readout.nf-reconnecting .nf-mode { color: #E85D00; }
   .nf-readout b { font-weight: 600; }
   .nf-desync { color: #ffc2f3; }
   .nf-resync { color: #ffe0a8; }

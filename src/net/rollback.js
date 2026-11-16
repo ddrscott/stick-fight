@@ -33,7 +33,8 @@
 import { hashSim, dumpSim, diffDumps } from './hash.js';
 import { encodeState, decodeState } from './state.js';
 import { encodeInput, decodeInput, inputPacket, clockPacket, parsePacket, PKT_INPUT, PKT_PING, PKT_PONG, NO_FRAME, MAX_INPUTS_PER_PACKET } from './codec.js';
-import { perf as profiler } from '../perf.js';   // the worst re-sim burst, for the ?perf=1 overlay
+import { perf as profiler } from '../perf.js';
+import { LOST_MS } from './budget.js';   // the worst re-sim burst, for the ?perf=1 overlay
 
 const STEP_MS = 1000 / 120;          // the sim's fixed step
 const HISTORY = 1024;                // frames of input history kept per player (8.5 s)
@@ -45,7 +46,7 @@ const HASH_EVERY = 30;               // frames between state hash exchanges (4 a
 const DUMPS_KEPT = 8;
 const PING_MS = 500;
 const SEND_GAP_MS = 1000 / 60;       // inputs go out at most this often (and every frame stepped)
-const LOST_MS = 15000;               // no packet for this long: the other side is gone (a 10 s cellular dropout rides out as a stall)
+// no packet for LOST_MS (src/net/budget.js, 30 s): the other side is gone (a 10 to 20 s cellular dropout rides out as a stall)
 const SYNC_CHUNK = 12000;            // characters of state per control message (the room drops messages over 16 KB)
 const SYNC_GAP_MS = 700;             // the host sends a resync at most this often
 const ASK_GAP_MS = 1000;             // the guest asks for one at most this often
