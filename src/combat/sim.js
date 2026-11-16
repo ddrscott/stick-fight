@@ -429,6 +429,8 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       holdL: null, holdR: null,   // on a flight: the tread top each planted foot stands on (stairLegs), null when it's lifted or off the steps
       footXL: null, footXR: null, footSL: 0, footSR: 0,   // on a flight: each foot's x as the clip had it last update, and how much it's swinging by its speed
       footDL: null, footDR: null,   // on a flight: how far each foot is moved from where the clip has it (followed: FOOT_ACC)
+      stairUp: 0,   // on a flight: how far the whole body is held up after fitToGround lifted it (eased back down)
+      stairHY: null,   // on a flight: the clip's hip last update (a jump of it goes into stairDrop)
       footVL: 0, footVR: 0, footTL: null, footTR: null,   // on a flight: how fast each foot's offset moves, and the goal it followed last update
       stairDrop: 0,   // on a flight: how far the hip is let down so the lower foot reaches its tread (eased)
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
@@ -941,8 +943,15 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     else clearHolds(u);
     if (!rad) return;
     const lying = LYING.has(u.state) || wakeLying(u);
-    const fit = fitToGround(j, rad, groundUnder(u), { planted: !lying, side: u.facing });
+    const hy = j.hip.y, fit = fitToGround(j, rad, groundUnder(u), { planted: !lying, side: u.facing });
     if (fit !== j) for (const k in fit) j[k] = fit[k];
+    // On its feet on a flight, a lift of the whole body (an arm or the head that couldn't clear a step: fitToGround's last
+    // resort) comes back down eased (UP_RATE of the gap per second, u.stairUp) instead of dropping in one tick.
+    if (stair && u.grounded && lie < 1) {
+      const lifted = Math.max(0, hy - j.hip.y), held = dt > 0 ? (u.stairUp || 0) * Math.max(0, 1 - dt * UP_RATE) : u.stairUp || 0;
+      if (held > lifted + 0.01) { const dy = held - lifted; for (const k in j) j[k] = { x: j[k].x, y: j[k].y - dy }; }
+      u.stairUp = Math.max(lifted, held);
+    }
   }
   // The legs on the treads (README, Floors: The stairs, Legs on the steps). The clip stands on a flat floor at the root,
   // which rides the walking line through the treads' middles. Each foot near that floor gets a target: where the clip
@@ -970,7 +979,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   //    hip rises from the drop just as far as that takes (softTread, found by halving, so it moves smoothly).
   // Every input is the pose, the position and those unit fields, which the rollback snapshot carries with the unit.
   // k: how much of the fit applies (1 standing, 0 lying along the slope; getting up blends).
-  const STAIR_LIFT = 22, LIFT_LO = 2, LIFT_MID = 10, LEG_SLACK = 1, FOOT_HOLD = 8, KNEE_EPS = 0.01, KNEE_SOFT = 8, DROP_RATE = 20, DROP_IN = 45, SWING_RATE = 20, FOOT_RATE = 480, FOOT_ACC = +(globalThis.process?.env?.FACC || 2.5) * 14400, FOOT_SOFT = +(globalThis.process?.env?.FSOFT ?? 30), FOOT_LAND = +(globalThis.process?.env?.FLAND ?? 0.3), SWING_V0 = 50, SWING_V1 = 150;
+  const STAIR_LIFT = 22, LIFT_LO = 2, LIFT_MID = 10, LEG_SLACK = 1, FOOT_HOLD = 8, KNEE_EPS = 0.01, KNEE_SOFT = 8, DROP_RATE = 20, DROP_IN = 45, UP_RATE = +(globalThis.process?.env?.UPR ?? 20), HIP_JUMP = +(globalThis.process?.env?.HJ ?? 10), SWING_RATE = 20, FOOT_RATE = 480, FOOT_VMAX = +(globalThis.process?.env?.FVMAX ?? 420), FOOT_ACC = +(globalThis.process?.env?.FACC || 2.5) * 14400, FOOT_SOFT = +(globalThis.process?.env?.FSOFT ?? 30), FOOT_LAND = +(globalThis.process?.env?.FLAND ?? 0.3), SWING_V0 = 50, SWING_V1 = 150;
   const smooth01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
   let slopeHook = null;   // tests only (scripts/rig/stairlegs.mjs): sees each pose before and after the fit
   sim.onStairLegs = (fn) => { slopeHook = fn; };
@@ -980,7 +989,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (t <= st.top || e >= KNEE_SOFT) return t;
     return t - st.rise + st.rise * smooth01(e / KNEE_SOFT);
   }
-  function clearHolds(u) { u.holdL = u.holdR = u.footXL = u.footXR = u.footDL = u.footDR = u.footTL = u.footTR = null; u.footVL = u.footVR = 0; u.footSL = u.footSR = u.stairDrop = 0; }
+  function clearHolds(u) { u.holdL = u.holdR = u.footXL = u.footXR = u.footDL = u.footDR = u.footTL = u.footTR = u.stairHY = null; u.footVL = u.footVR = 0; u.footSL = u.footSR = u.stairDrop = u.stairUp = 0; }
   // the tread a planted foot stands on, and where (x): see FOOT_HOLD
   function heldTread(u, hk, x) {
     const st = stairsNow()[u.stair], under = treadY(u.stair, x);
@@ -1002,6 +1011,11 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const fd = u.state === 'attack' ? FRAME_DATA[u.move] : null, strike = fd && fd.joint && /Foot|Knee/.test(fd.joint) ? fd.joint[0] + 'Foot' : null;
     const legs = [];
     let drop = 0;
+    // The clip's hip jumping in one update (an attack ends and the sim puts the root back onto the walking line, up to a
+    // rise at once) goes into the drop, so the hip stays where it was and eases over with it; the planted feet keep their
+    // treads (u.stairHY: the clip's hip last update).
+    if (u.stairHY != null && Math.abs(hip.y - u.stairHY) > HIP_JUMP) u.stairDrop = (u.stairDrop || 0) - (hip.y - u.stairHY);
+    u.stairHY = hip.y;
     for (const [ft, kn] of FEET) {
       const F = j[ft], K = j[kn], l = ft === 'lFoot', hk = l ? 'holdL' : 'holdR', xk = l ? 'footXL' : 'footXR', sk = l ? 'footSL' : 'footSR', dk = l ? 'footDL' : 'footDR';
       if (!F || !K) continue;
@@ -1053,7 +1067,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       if (u[dk] == null || !(dt > 0)) { d = u[dk] == null ? want : u[dk]; dv = u[dk] == null ? 0 : u[vk] || 0; }
       else {
         const h = Math.min(dt, 1 / 120), acc = FOOT_ACC, t0 = u[tk] == null ? want : u[tk], tv = (want - t0) / h, e = want - u[dk];
-        const vd = tv + Math.sign(e) * Math.min(FOOT_RATE, Math.sqrt(2 * acc * Math.abs(e)), Math.abs(e) / h);
+        const vd = Math.max(-FOOT_VMAX, Math.min(FOOT_VMAX, tv + Math.sign(e) * Math.min(FOOT_RATE, Math.sqrt(2 * acc * Math.abs(e)), Math.abs(e) / h)));
         dv = (u[vk] || 0) + Math.max(-acc * h, Math.min(acc * h, vd - (u[vk] || 0)));
         d = u[dk] + dv * h;
         if (d > dmax) { dv = Math.max(-FOOT_RATE, Math.min(FOOT_RATE, (dmax - u[dk]) / h)); d = dmax; }
