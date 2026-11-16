@@ -72,7 +72,7 @@ import { isFighter } from "./roster";
 
 // the events the page may send (src/analytics.js); anything else is dropped. `match` and `pick` also
 // update the D1 rollups, so they're checked field by field (worker/stats.ts) instead of passed through
-const EVENT_NAMES = new Set(["visit", "mode", "stage", "arcade_end", "horde_end", "online_match", "online_drop", "install", "technique", "move", "perf"]);
+const EVENT_NAMES = new Set(["visit", "mode", "stage", "arcade_end", "horde_end", "online_match", "online_drop", "online_rejoin", "install", "technique", "move", "perf"]);
 const MAX_BATCH = 12;   // events in one POST (a match's end sends its result and its move counts together)
 type PageEvent = { e?: unknown; l?: unknown; v?: unknown; d?: unknown; m?: unknown };
 
@@ -106,6 +106,8 @@ async function nowCount(env: Env): Promise<Response> {
 // have been in it and everyone has left, it's cleared after ROOM_EMPTY_MS (long enough to reload).
 const ROOM_IDLE_MS = 30 * 60 * 1000;
 const ROOM_EMPTY_MS = 5 * 60 * 1000;
+// a player whose socket the network lost keeps their seat this long (src/net/budget.js LOST_MS, with room to spare)
+const AWAY_HOLD_MS = 60 * 1000;
 // Per socket: the biggest message passed on (an SDP offer is a few KB), and a token bucket for
 // the message rate. A match sends about 60 packets a second each way plus control messages, so
 // the bucket allows 4x that with room for a burst of ICE candidates. Over it, messages are
@@ -589,11 +591,15 @@ export class Room extends DurableObject<Env> {
     // the seat token (src/net/link.js): a page whose socket dropped comes back with the same one and takes its own
     // seat again, even mid-match. A dropped socket often isn't closed here for many minutes (the network lost it,
     // nobody said goodbye), so the room would otherwise call the seat taken.
+    // The room also remembers each seat's token, and when its socket died without a goodbye ('away', below), so a
+    // page that comes back after the room noticed the drop still gets its seat, and nobody else takes it meanwhile.
     const seat = (url.searchParams.get("seat") || "").slice(0, 32);
-    const back = !!seat && mine.some((w) => (w.deserializeAttachment() as Att | null)?.seat === seat);
+    const kept = await this.ctx.storage.get<string | number>([`seat:${role}`, `away:${role}`]);
+    const awayAt = Number(kept.get(`away:${role}`) || 0), held = !!awayAt && Date.now() - awayAt < AWAY_HOLD_MS && peer.length > 0;
+    const back = !!seat && (mine.some((w) => (w.deserializeAttachment() as Att | null)?.seat === seat) || kept.get(`seat:${role}`) === seat);
     // a second host is the same player in a new tab, and takes the seat, but only while the room is
     // waiting: once both seats are taken the code may be public (the LIVE list), and nobody takes one
-    const reason = !live ? "no-room" : !back && mine.length && (role === "guest" || peer.length) ? "full" : "";
+    const reason = !live ? "no-room" : !back && (held || (mine.length && (role === "guest" || peer.length))) ? "full" : "";
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     // refused sockets are accepted too, so the page can read why (a failed handshake has no
@@ -615,7 +621,11 @@ export class Room extends DurableObject<Env> {
     const att: Att = { seat };
     try { const email = await currentEmail(req, this.env); if (email) att.email = email; } catch { /* no award, the match still plays */ }
     server.serializeAttachment(att);
-    server.send(JSON.stringify({ t: "sys", ev: "welcome", role, peer: peer.length > 0 }));
+    await this.ctx.storage.put(`seat:${role}`, seat);
+    if (awayAt) await this.ctx.storage.delete(`away:${role}`);
+    // away: the other seat's socket died without a goodbye and its page may be on its way back (src/net/link.js)
+    const otherAway = !peer.length && Number(await this.ctx.storage.get<number>(`away:${other(role)}`) || 0) > Date.now() - AWAY_HOLD_MS;
+    server.send(JSON.stringify({ t: "sys", ev: "welcome", role, peer: peer.length > 0, ...(otherAway ? { away: true } : {}) }));
     // back: the same player on a new socket. The other page keeps its match and resends what may have been lost
     for (const w of peer) w.send(JSON.stringify({ t: "sys", ev: "peer", present: true, ...(back ? { back: true } : {}) }));
     const fl = await this.getFlags();
@@ -729,19 +739,32 @@ export class Room extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
-    await this.left(ws);
+    // 1006 / 1005 / 1011: the network lost it (nobody said goodbye); 1000 after a 'bye', or 1001 for a closed tab, is leaving
+    await this.left(ws, code === 1005 || code === 1006 || code === 1011);
     try { ws.close(code === 1005 || code === 1006 ? 1000 : code, reason); } catch { /* already closed */ }
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
-    await this.left(ws);
+    await this.left(ws, true);
   }
 
-  private async left(ws: WebSocket) {
+  private async left(ws: WebSocket, dropped = false) {
     if ((ws.deserializeAttachment() as Att | null)?.replaced) return;   // its player is already back on a new socket
     const role = this.ctx.getTags(ws)[0];
     if (role === "spectator") { await this.getFlags(); this.desk.count(ws); return; }
     if (role !== "host" && role !== "guest") return;
+    // A player's socket the network lost, with the other player still here: 'away', not gone. Their page is most
+    // likely reopening it with the same seat token (src/net/link.js), and their DataChannel may still be carrying
+    // the match. The other page keeps playing; the session's own clocks (src/net/budget.js LOST_MS) end it if
+    // they never come back, and that page's leaving settles the room as below.
+    if (dropped && this.players(ws).length > 0) {
+      await this.ctx.storage.put(`away:${role}`, Date.now());
+      for (const w of this.ctx.getWebSockets(other(role))) {
+        try { w.send(JSON.stringify({ t: "sys", ev: "peer", present: false, away: true })); } catch { /* closing */ }
+      }
+      return;
+    }
+    await this.ctx.storage.delete(`away:${role}`);
     for (const w of this.ctx.getWebSockets(other(role))) {
       try { w.send(JSON.stringify({ t: "sys", ev: "peer", present: false })); } catch { /* closing */ }
     }
