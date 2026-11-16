@@ -272,8 +272,10 @@ function init() {
       } else if (btn && btn.dataset.role === 'settings') {
         window.dispatchEvent(new CustomEvent('sf:settings')); flash(btn);   // src/audio/ui.js opens the SETTINGS panel
       } else if (btn && btn.dataset.role === 'fullscreen') {
-        if (canFullscreen) toggleFullscreen(); else openHomescreenHelp();
-        flash(btn);
+        // lit now, acted on at touchend (onEnd): Chrome doesn't count a touchstart as a user activation, so a
+        // requestFullscreen() here was refused on a fresh page, and only the second tap worked
+        touches.set(t.identifier, { kind: 'fs', el: btn });
+        btn.classList.add('tc-on');
       } else if (btn && btn.dataset.role === 'stick' && !stick) {
         // the stick floats: its centre jumps to wherever the thumb lands in the zone
         const r = zone.getBoundingClientRect();
@@ -299,13 +301,16 @@ function init() {
       if (!rec) continue;
       touches.delete(t.identifier);
       if (rec.kind === 'stick') endStick();
-      else { rec.el.classList.remove('tc-on'); release(rec.code); }
+      else if (rec.kind === 'fs') {
+        rec.el.classList.remove('tc-on'); flash(rec.el);   // a quick tap still shows its flash
+        if (e.type === 'touchend') { if (canFullscreen) toggleFullscreen(); else openHomescreenHelp(); }
+      } else { rec.el.classList.remove('tc-on'); release(rec.code); }
     }
     if (e.cancelable) e.preventDefault();
   }
   function releaseAll() {
     if (stick) endStick();
-    for (const rec of touches.values()) if (rec.kind === 'btn') rec.el.classList.remove('tc-on');
+    for (const rec of touches.values()) if (rec.kind === 'btn' || rec.kind === 'fs') rec.el.classList.remove('tc-on');
     touches.clear();
     for (const code of [...held.keys()]) { held.delete(code); send('keyup', code); }
   }

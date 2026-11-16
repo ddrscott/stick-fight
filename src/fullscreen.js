@@ -26,15 +26,17 @@ export const isFullscreen = () => !!doc && !!(doc.fullscreenElement || /** @type
 /** the four corner brackets, and the same turned inward while fullscreen is on (html.fs-on swaps them) */
 export const FS_ICON = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path class="fs-enter" d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/><path class="fs-exit" d="M2 6h4V2M10 2v4h4M14 10h-4v4M6 14v-4H2"/></svg>';
 
-/** into fullscreen, or back out. Needs a user gesture (a key, a click, a touch). */
+/** into fullscreen, or back out. Needs a user activation: a keydown, a click, a mousedown or a touchend. Not a
+ *  touchstart: Chrome refuses one on a page nobody has touched yet, which made the touch pill take two taps. A
+ *  refusal is logged as [fs], so the next one like it shows in the console. */
 export function toggleFullscreen() {
   if (!canFullscreen) return;
+  const on = isFullscreen();
+  const refused = (/** @type {any} */ err) => console.warn(`[fs] ${on ? 'exit' : 'request'} refused: ${err && err.name ? `${err.name}: ${err.message}` : err}`);
   try {
-    let p;
-    if (isFullscreen()) p = exit.call(doc);
-    else p = request.call(de, { navigationUI: 'hide' });   // no orientation lock: the phone stays the way it's held (upright or sideways)
-    Promise.resolve(p).catch(() => {});
-  } catch { /* refused: nothing to do */ }
+    const p = on ? exit.call(doc) : request.call(de, { navigationUI: 'hide' });   // no orientation lock: the phone stays the way it's held (upright or sideways)
+    Promise.resolve(p).catch(refused);
+  } catch (err) { refused(err); }
 }
 
 if (doc && typeof window !== 'undefined') {
