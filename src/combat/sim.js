@@ -1058,9 +1058,41 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       solveAt(drop);
       u.stairDrop = drop;
     }
+    if (legs.length) swingKnees(u, { x: hip.x, y: hip.y + drop }, legs, rad);
     if (drop !== 0) for (const q in j) j[q] = { x: j[q].x, y: j[q].y + drop };
     for (const g of legs) { j[g.kn] = g.r.knee; j[g.ft] = g.r.foot; }
     if (slopeHook) slopeHook(u, before, j, drop, strike, legs);
+  }
+  // A swinging leg's knee stays out of the steps (README, Floors: Legs on the steps, Swing knees). The hip is set by
+  // the standing legs; a lifted leg's knee, hanging under the hip while its foot swings up behind (backing up a flight
+  // facing down), drifts back past the riser of the tread above and would be inside that step, where fitToGround turned
+  // the thigh up in one tick: a 10 to 15 px pop of the foot. Here the knee turns about the hip toward the bottom of the
+  // flight just as far as it takes to clear (back past that riser, or up off a tread it's over), and the shin points from
+  // there at the foot's target, so the foot moves by a few px at most. The turn grows with how far past the riser the
+  // knee would be, so it's as smooth as the stride. The knee keeps its side of the leg (the joint limit), and a leg
+  // standing on its foot is left to the hip (solveAt): the turn comes in between SWING_KNEE_W0 and SWING_KNEE_W1.
+  const SWING_KNEE_W0 = +(globalThis.process?.env?.SKW0 ?? 0.2), SWING_KNEE_W1 = +(globalThis.process?.env?.SKW1 ?? 0.5), SWING_KNEE_MAX = 1.2;
+  function swingKnees(u, H, legs, rad) {
+    const st = stairsNow()[u.stair], dn = st.dir;
+    for (const g of legs) {
+      const wk = smooth01((g.w1 - SWING_KNEE_W0) / (SWING_KNEE_W1 - SWING_KNEE_W0));
+      if (!(wk > 0) || !g.r) continue;
+      const kr = rad ? rad[g.kn] || 0 : 0, K0 = g.r.knee, T = g.r.foot;
+      const pen = (P) => P.y + kr - treadY(u.stair, P.x);
+      if (pen(K0) <= KNEE_EPS) continue;
+      const a0 = dm.atan2((K0.x - H.x) * dn, K0.y - H.y);   // the thigh's angle from straight down, + toward the bottom of the flight
+      const at = (a) => {
+        const K = { x: H.x + dm.sin(a) * g.U * dn, y: H.y + dm.cos(a) * g.U }, vx = T.x - K.x, vy = T.y - K.y, m = dm.hypot(vx, vy) || 1;
+        return { knee: K, foot: { x: K.x + vx / m * g.L, y: K.y + vy / m * g.L } };
+      };
+      const ok = (a) => { const q = at(a); return pen(q.knee) <= KNEE_EPS && (kneeSide(H, q.knee, q.foot) || g.sgn) === g.sgn; };
+      // the first angle toward the bottom of the flight that clears (scanned, then refined so it moves smoothly)
+      let bad = a0, good = null;
+      for (let a = a0 + 0.04; a <= a0 + SWING_KNEE_MAX; a += 0.04) { if (ok(a)) { good = a; break; } bad = a; }
+      if (good == null) continue;   // nothing clears: fitToGround's
+      for (let i = 0; i < 10; i++) { const m = (good + bad) / 2; if (ok(m)) good = m; else bad = m; }
+      g.r = at(a0 + (good - a0) * wk);
+    }
   }
   // the vault's drop: the clip comes down the opening onto the flight under it, its legs reaching the steps first;
   // they stop on the treads (the slab either side, the treads, the floor below: the topmost under each joint)

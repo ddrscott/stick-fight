@@ -33,7 +33,7 @@ const { EMPTY_INPUT } = await import(ROOT + 'src/combat/input.js');
 const { createFighter, MOVES, MOVE_DATA, JOINT_LIMITS } = await import(ROOT + 'src/fighter/index.js');
 
 const FLAT = process.argv.includes('--flat'), VERBOSE = process.argv.includes('--verbose');
-const LEN = 0.5, ABOVE = 2, INSIDE = 0.5, JUMP = 18, HOLD = 8, POP_BINS = [4, 6, 10, 18];
+const LEN = 0.5, ABOVE = 2, INSIDE = 0.5, JUMP = 18, HOLD = 8, KINK = 6, POP_BINS = [4, 6, 10, 18];
 const R2D = 180 / Math.PI;
 
 function makeSim(ids) {
@@ -110,7 +110,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const fails = new Map();   // kind -> [{...}]
 const worst = { len: 0, knee: 0, inside: 0, above: 0, jump: 0, drop: 0 };
 let ticks = 0, liftedTicks = 0;
-const jumpBy = { fit: 0, legs: 0 }, pops = POP_BINS.map(() => 0);
+const jumpBy = { fit: 0, legs: 0 }, pops = POP_BINS.map(() => 0), kinkBy = new Map(), kinkEx = new Map();   // kinks over KINK by facing and input
 function fail(kind, v, where) {
   if (!fails.has(kind)) fails.set(kind, []);
   fails.get(kind).push({ v, where });
@@ -133,6 +133,7 @@ for (const c of roster().filter((x) => !ONLY || ONLY.includes(x.id))) {
     for (let t = 0; t < 30; t++) { press(EMPTY_INPUT); sim.tick(); }
     for (let t = 0; t < len; t++) {
       before = null;
+      globalThis.__on = process.env.FOCUS && `${c.id} flight ${k} @${along} ${down ? 'down' : 'up'} ${name}` === process.env.FOCUS && t >= 50 && t <= 58;
       press(act(fc, t)); sim.tick();
       if (!before || !(u.stair >= 0) || !u.grounded || u.rag) { for (const q in hist) delete hist[q]; continue; }
       ticks++;
@@ -177,16 +178,18 @@ for (const c of roster().filter((x) => !ONLY || ONLY.includes(x.id))) {
         // walking line) and less what the slope accounts for when the foot speeds up or slows down along the flight.
         const h = hist[ft] || (hist[ft] = []);
         h.fm = h.length && Math.hypot(h[h.length - 1].y - h[h.length - 1].my, h[h.length - 1].x - h[h.length - 1].mx) > 0.5;   // fitToGround moved it last tick
-        h.push({ y: J[ft].y, x: J[ft].x, w: before[ft].y, r: before[ft].y - u.rig.y, my: mid[ft].y, mx: mid[ft].x });
+        const gg = fitted && fitted.find((q) => q.ft === ft);
+        h.push({ y: J[ft].y, x: J[ft].x, w: before[ft].y, r: before[ft].y - u.rig.y, my: mid[ft].y, mx: mid[ft].x, cl: gg ? gg.cl > 0 : false, rl: gg ? gg.rl : false, rch: gg ? Math.hypot(mid[ft].x - gg.T.x, mid[ft].y - gg.T.y) > 0.05 : false, off: !gg, w1: gg ? gg.w1 : -1 });
         if (h.length > 3) h.shift();
         if (h.length === 3) {
           const d2 = (q) => h[2][q] - 2 * h[1][q] + h[0][q];
           const jmp = Math.min(Math.abs(d2('y') - d2('w')), Math.abs(d2('y') - d2('r'))) - st.slope * Math.abs(d2('x'));
           worst.jump = Math.max(worst.jump, jmp);
           POP_BINS.forEach((b, i) => { if (jmp > b) pops[i]++; });
+          if (jmp > KINK) { const kk = `${down ? 'down' : 'up'} ${name}` + (process.env.KINKS ? ` ${Math.hypot(J[ft].x - mid[ft].x, J[ft].y - mid[ft].y) > 0.5 || h.fm ? 'fit' : h.some((q) => q.off) && !h.every((q) => q.off) ? 'offEdge' : h.some((q) => q.cl) ? 'clamp' : h.some((q) => q.rl) ? 'rate' : h.some((q) => q.rch) ? 'reach' : 'blend'}` : ''); kinkBy.set(kk, (kinkBy.get(kk) || 0) + 1); if (process.env.KINKS) { const ex = kinkEx.get(kk) || []; ex.push(`${jmp.toFixed(1)} ${where} ${side}`); kinkEx.set(kk, ex); } }
           if (jmp > POP_BINS[0]) { const fm = Math.hypot(J[ft].x - mid[ft].x, J[ft].y - mid[ft].y) > 0.5 || h.fm; jumpBy[fm ? 'fit' : 'legs']++; }
           if (jmp > JUMP) fail('foot pops in one tick', jmp, `${where} ${side}`);
-          if (process.env.FOCUS && where.startsWith(process.env.FOCUS)) { const g = fitted && fitted.find((q) => q.ft === ft); console.log(where, side, 'jmp', jmp.toFixed(2), 'clip', before[ft].x.toFixed(1), before[ft].y.toFixed(1), 'legs', mid[ft].x.toFixed(1), mid[ft].y.toFixed(1), 'final', J[ft].x.toFixed(1), J[ft].y.toFixed(1), 'tread', arena.treadY(k, J[ft].x), 'y0', u.rig.y.toFixed(1), 'drop', drop.toFixed(1), g ? `w1 ${g.w1.toFixed(2)} T ${g.T.y.toFixed(1)}` : 'unfit', 'hipFit', (J.hip.y - mid.hip.y).toFixed(1)); }
+          if (process.env.FOCUS && where.startsWith(process.env.FOCUS)) { const g = fitted && fitted.find((q) => q.ft === ft); console.log(where, side, 'jmp', jmp.toFixed(2), 'clip', before[ft].x.toFixed(1), before[ft].y.toFixed(1), 'legs', mid[ft].x.toFixed(1), mid[ft].y.toFixed(1), 'final', J[ft].x.toFixed(1), J[ft].y.toFixed(1), 'tread', arena.treadY(k, J[ft].x), 'y0', u.rig.y.toFixed(1), 'drop', drop.toFixed(1), g ? `w1 ${g.w1.toFixed(2)} T ${g.T.y.toFixed(1)}` : 'unfit', 'hipFit', (J.hip.y - mid.hip.y).toFixed(1), 'knee', mid[kn].x.toFixed(1), mid[kn].y.toFixed(1), 'in', (mid[kn].y + (rad[kn] || 0) - arena.treadY(k, mid[kn].x)).toFixed(1), 'kneeFinal', J[kn].x.toFixed(1), J[kn].y.toFixed(1), 'hip', J.hip.x.toFixed(1), J.hip.y.toFixed(1), 'd', (ft === 'lFoot' ? u.footDL : u.footDR)?.toFixed(2), 'reach', g ? Math.hypot(mid[ft].x - g.T.x, mid[ft].y - g.T.y).toFixed(1) : '-'); }
         }
       }
     }
@@ -202,6 +205,8 @@ for (const [kind, list] of fails) {
 }
 console.log(`${ticks} ticks on the stairs checked; worst: bone length ${worst.len.toFixed(3)} px, knee past limit ${worst.knee.toFixed(2)} deg, foot inside ${worst.inside.toFixed(2)} px, planted foot above ${worst.above.toFixed(2)} px, foot jump ${worst.jump.toFixed(2)} px/tick, hip drop ${worst.drop.toFixed(1)} px`);
 console.log(`foot kinks (px off a smooth path in one tick, of ${ticks * 2} foot-ticks): ${POP_BINS.map((b, i) => `over ${b}: ${pops[i]}`).join(', ')}; of those over ${POP_BINS[0]}, fitToGround's turn of a limb moved the foot in ${jumpBy.fit}, the leg fit alone ${jumpBy.legs}`);
+console.log(`kinks over ${KINK} by facing and input: ${[...kinkBy].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}`);
+if (process.env.KINKS) for (const [k, ex] of kinkEx) console.log(`  ${k}:\n    ${ex.slice(0, +process.env.KINKS || 3).join('\n    ')}`);
 console.log(`${liftedTicks} ticks the body was lifted off its feet by an arm or the head against a step (not counted against the legs)`);
 console.log(bad ? `FAIL (${bad})` : 'PASS');
 process.exit(bad ? 1 : 0);
