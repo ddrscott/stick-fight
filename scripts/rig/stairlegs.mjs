@@ -133,7 +133,7 @@ for (const c of roster().filter((x) => !ONLY || ONLY.includes(x.id))) {
     for (let t = 0; t < 30; t++) { press(EMPTY_INPUT); sim.tick(); }
     for (let t = 0; t < len; t++) {
       before = null;
-      globalThis.__on = process.env.FOCUS && `${c.id} flight ${k} @${along} ${down ? 'down' : 'up'} ${name}` === process.env.FOCUS && t >= 50 && t <= 58;
+      globalThis.__on = process.env.FOCUS && `${c.id} flight ${k} @${along} ${down ? 'down' : 'up'} ${name}` === process.env.FOCUS && t >= +(process.env.T0 || 50) && t <= +(process.env.T1 || 58);
       press(act(fc, t)); sim.tick();
       if (!before || !(u.stair >= 0) || !u.grounded || u.rag) { for (const q in hist) delete hist[q]; continue; }
       ticks++;
