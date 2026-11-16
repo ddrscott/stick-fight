@@ -967,19 +967,25 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   //    the walk's back step slides a foot along the floor before it lifts). A swinging foot's ground blends to the line
   //    through the nosings, which runs smoothly from the tread it left to the tread it lands on and never dips into a
   //    step, so it crosses a tread's edge in the air; the hold lets go, and the tread it lands on takes over.
-  //  - Off the floor (STAIR_LIFT over the root's line and the tread under it: a kick, a knee) a foot keeps its height,
-  //    as on a flat floor. Between LIFT_MID and STAIR_LIFT its ground blends to the root's own line.
-  //  - The offset each foot gets moves at most FOOT_RATE px/s (u.footDL / DR), so a change of ground is travelled, not
-  //    snapped; the target is never inside a step all the same (a planted foot on its tread, a moving one over the nosings).
+  //  - Off the floor (STAIR_LIFT over the root's line and the tread under it: a kick, a knee) a foot keeps its place on
+  //    the body, as on a flat floor (it goes down with the hip's drop). Between LIFT_MID and STAIR_LIFT its ground blends
+  //    to the root's own line.
+  //  - The offset each foot gets follows its goal with its acceleration held to FOOT_ACC (u.footDL / DR, footVL / VR,
+  //    footTL / TR), so a change of ground is travelled and never started or stopped at full speed; the goal is kept to
+  //    where the leg reaches, and a foot taking its weight is blended onto it. The target is never inside a step all the
+  //    same (a planted foot on its tread, a moving one over the nosings; a kick coming down onto them eases on: FOOT_SOFT).
   //  - If a planted foot's target is further than its leg reaches (the lower foot, going down), the hip drops just enough
   //    and the whole upper body with it (u.stairDrop), weighted by how much the foot is standing and eased (DROP_IN
   //    down, DROP_RATE back up). A kick's striking foot pulls it as if it were standing (a stomp reaches down the steps
   //    onto a body lying along them: on the old fit the leg just stretched 30 px to get there).
   //  - A planted leg's knee may not go into a step (facing up the flight, a bent knee is out over the steps above): the
-  //    hip rises from the drop just as far as that takes (softTread, found by halving, so it moves smoothly).
+  //    hip rises from the drop just as far as that takes (softTread, found by halving, so it moves smoothly). A swinging
+  //    leg's knee turns toward the bottom of the flight instead (swingKnees: backing up a flight facing down).
+  //  - The clip's hip jumping in one update (an attack ending, the root put back on the walking line) goes into the drop
+  //    and eases out (HIP_JUMP), and a lift of the whole body by fitToGround comes back down eased (UP_RATE, u.stairUp).
   // Every input is the pose, the position and those unit fields, which the rollback snapshot carries with the unit.
   // k: how much of the fit applies (1 standing, 0 lying along the slope; getting up blends).
-  const STAIR_LIFT = 22, LIFT_LO = 2, LIFT_MID = 10, LEG_SLACK = 1, FOOT_HOLD = 8, KNEE_EPS = 0.01, KNEE_SOFT = 8, DROP_RATE = 20, DROP_IN = 45, UP_RATE = +(globalThis.process?.env?.UPR ?? 20), HIP_JUMP = +(globalThis.process?.env?.HJ ?? 10), SWING_RATE = 20, FOOT_RATE = 480, FOOT_VMAX = +(globalThis.process?.env?.FVMAX ?? 420), FOOT_ACC = +(globalThis.process?.env?.FACC || 2.5) * 14400, FOOT_SOFT = +(globalThis.process?.env?.FSOFT ?? 30), FOOT_LAND = +(globalThis.process?.env?.FLAND ?? 0.3), SWING_V0 = 50, SWING_V1 = 150;
+  const STAIR_LIFT = 22, LIFT_LO = 2, LIFT_MID = 10, LEG_SLACK = 1, FOOT_HOLD = 8, KNEE_EPS = 0.01, KNEE_SOFT = 8, DROP_RATE = 20, DROP_IN = 45, UP_RATE = 20, HIP_JUMP = 10, SWING_RATE = 20, FOOT_RATE = 480, FOOT_VMAX = 420, FOOT_ACC = 2.5 * 14400 /* 2.5 px per tick per tick */, FOOT_SOFT = 30, FOOT_LAND = 0.5, SWING_V0 = 50, SWING_V1 = 150;
   const smooth01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
   let slopeHook = null;   // tests only (scripts/rig/stairlegs.mjs): sees each pose before and after the fit
   sim.onStairLegs = (fn) => { slopeHook = fn; };
@@ -1025,7 +1031,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const w1 = Math.max(smooth01((lift - LIFT_LO) / (LIFT_MID - LIFT_LO)), u[sk]);
       if (w1 >= 0.98 || ft === strike || k < 1) u[hk] = null;   // (the eased speed weight only nears 1)
       // off the floor (STAIR_LIFT over the root's line and the tread under it, whichever is higher: a kick, a knee) it
-      // keeps its height, once its offset has eased back to nothing
+      // keeps its place on the body: its goal is the hip's drop (below)
       const off = Math.min(y0, treadY(u.stair, F.x)) - r - F.y >= STAIR_LIFT - r;
       const vk = l ? 'footVL' : 'footVR', tk = l ? 'footTL' : 'footTR';
       const w2 = smooth01((lift - LIFT_MID) / (STAIR_LIFT - r - LIFT_MID));
@@ -1072,7 +1078,6 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
         d = u[dk] + dv * h;
         if (d > dmax) { dv = Math.max(-FOOT_RATE, Math.min(FOOT_RATE, (dmax - u[dk]) / h)); d = dmax; }
       }
-      if (globalThis.__dbg) globalThis.__dbg(u, g.ft, { want0: g.want, want, dreach, dmax, d, dv, w1: g.w1, Fy: F.y });
       u[dk] = d; u[vk] = dv; u[tk] = want;
       if (g.w1 < FOOT_LAND) d = Math.min(dmax, want + (d - want) * smooth01(g.w1 / FOOT_LAND));
       g.T = { x: g.tx, y: Math.min(F.y + d, g.ceil - g.rr) };
@@ -1115,7 +1120,7 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
   // there at the foot's target, so the foot moves by a few px at most. The turn grows with how far past the riser the
   // knee would be, so it's as smooth as the stride. The knee keeps its side of the leg (the joint limit), and a leg
   // standing on its foot is left to the hip (solveAt): the turn comes in between SWING_KNEE_W0 and SWING_KNEE_W1.
-  const SWING_KNEE_W0 = +(globalThis.process?.env?.SKW0 ?? 0.2), SWING_KNEE_W1 = +(globalThis.process?.env?.SKW1 ?? 0.5), SWING_KNEE_MAX = 1.2;
+  const SWING_KNEE_W0 = 0.2, SWING_KNEE_W1 = 0.5, SWING_KNEE_MAX = 1.2;
   function swingKnees(u, H, legs, rad) {
     const st = stairsNow()[u.stair], dn = st.dir;
     for (const g of legs) {

@@ -57,7 +57,7 @@ function run(L) {
   return { out, arena, st };
 }
 
-const CW = 150, CH = 250, ZOOM = 1.6, HEAD = 70, ROWH = CH + 40;
+const CW = 150, CH = 270, ZOOM = 1.3, HEAD = 70, ROWH = CH + 40;
 const rows = [];
 if (OLD) rows.push(['main', run(await load(resolve(OLD)))]);
 rows.push([OLD ? 'this branch' : 'now', run(await load(NEW))]);
@@ -73,11 +73,12 @@ ctx.fillText(`trails: each foot's path over the whole run (white near foot, grey
 for (const [ri, [label, r]] of rows.entries()) {
   const y0 = HEAD + ri * ROWH, fs = frames(r), all = r.out.filter((f) => f.t >= FROM && f.t < TO);
   const n = all.reduce((a, f) => a + Object.values(f.kink).filter((v) => v > KINK).length, 0);
+  console.log(`${label}: ${n} foot kinks over ${KINK} px in t${FROM}-${TO}${n ? ` (at ${all.filter((f) => Object.values(f.kink).some((v) => v > KINK)).map((f) => 't' + f.t).join(' ')})` : ''}`);
   ctx.font = 'bold 16px monospace'; ctx.fillStyle = n ? '#ff6b6b' : '#7fd88f';
   ctx.fillText(`${label}: ${n} foot kinks over ${KINK} px in these ${all.length} ticks`, 16, y0 + 18);
   for (const [ci, f] of fs.entries()) {
     const cx = 10 + ci * CW + CW / 2, cy = y0 + 30 + CH / 2, hip = f.J.hip;
-    const X = (x) => cx + (x - hip.x) * ZOOM, Y = (y) => cy + (y - hip.y - 25) * ZOOM;
+    const X = (x) => cx + (x - hip.x) * ZOOM, Y = (y) => cy + (y - hip.y + 2) * ZOOM;
     ctx.save(); ctx.beginPath(); ctx.rect(cx - CW / 2 + 2, y0 + 28, CW - 4, CH); ctx.clip();
     ctx.fillStyle = '#140c24'; ctx.fillRect(cx - CW / 2, y0 + 28, CW, CH);
     for (let x = hip.x - CW; x < hip.x + CW; x += 0.5) { ctx.fillStyle = '#2a1a4a'; ctx.fillRect(X(x), Y(r.arena.treadY(FLIGHT, x)), ZOOM * 0.5 + 0.5, 400); }
