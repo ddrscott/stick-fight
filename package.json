@@ -38,6 +38,7 @@
     "test:unfurl": "node scripts/og/check.mjs",
     "test:move": "node scripts/move/check.mjs",
     "test:crew": "node scripts/crew/check.mjs && node scripts/crew/lobby.mjs",
+    "test:crew:qr": "node scripts/crew/qrjoin.mjs",
     "test:names": "node scripts/names/check.mjs",
     "test:admin": "node scripts/admin/check.mjs",
     "test:delete": "node scripts/delete/check.mjs",

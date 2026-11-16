@@ -24,10 +24,12 @@
 
 import { apiUrl } from './link.js';
 import { touchPref, mergeTouchPref, onTouchPref } from '../touchPrefs.js';
+import { blockedName } from '../namefilter.js';
 
 const KEY = 'stick-fight-player';
 const MAX_CREWS = 20;
 let memory = null;   // when storage is off
+let stuck = false;   // a write to storage failed (blocked, or full): this page's copy is the one to read
 
 function newId() { return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join(''); }
 const ID_RE = /^[0-9a-f]{32}$/;
@@ -41,7 +43,9 @@ export function cleanName(raw, min = 3, max = 12) {
 function read() {
   let p = null;
   try { const raw = localStorage.getItem(KEY); if (raw) p = JSON.parse(raw); } catch { p = null; }
-  if (!p && memory) p = memory;
+  // a full or blocked storage keeps an older copy: read what this page last wrote, or a handed-out name
+  // would be lost and a crew link would ask for one
+  if (memory && (stuck || !p)) p = memory;
   if (!p || typeof p !== 'object' || !ID_RE.test(p.id)) p = { id: newId(), name: '', email: '', crews: [] };
   p.name = cleanName(p.name) || '';
   p.auto = !!p.auto && !!p.name;   // the name was handed out by guestName(), not picked
@@ -51,7 +55,7 @@ function read() {
 }
 function write(p) {
   memory = p;
-  try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* storage off: this page only */ }
+  try { localStorage.setItem(KEY, JSON.stringify(p)); stuck = false; } catch { stuck = true; /* storage off: this page only */ }
 }
 
 /** the profile (made and saved the first time it's asked for) */
@@ -90,7 +94,10 @@ export function setName(name) {
 export function guestName() {
   const p = read();
   if (p.name) return p.name;
-  p.name = `GUEST ${100 + Math.floor(Math.random() * 900)}`; p.auto = true; write(p);
+  // never one the name filter blocks (the leetspeak fold reads GUEST 455 and GUEST 717 as words), or the
+  // crew would refuse the hello and the link would land on an error instead of the lobby
+  do p.name = `GUEST ${100 + Math.floor(Math.random() * 900)}`; while (blockedName(p.name));
+  p.auto = true; write(p);
   return p.name;
 }
 

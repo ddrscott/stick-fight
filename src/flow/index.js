@@ -328,7 +328,10 @@ export function createFlow(ctx) {
       case 'enterInitials': return screenInitials();
       case 'ending': return screenEnding();
       case 'paused': return screenPause();
-      case 'onlineMenu': mode = null; ensureDemo(); return screenOnline();
+      // VERSUS ONLINE asks for a name before it comes here (toOnline). Any other way in without one is a BACK
+      // from the name or sign-in screens, so the player said "not now": hand out a guest name rather than
+      // send them back to the name screen (that was a loop with no way out)
+      case 'onlineMenu': mode = null; ensureDemo(); guestName(); return screenOnline();
       case 'onlineHost': ensureDemo(); return screenHost();
       case 'onlineJoin': ensureDemo(); return screenJoin();
       case 'onlineConnecting': return screenConnecting();
@@ -1865,7 +1868,8 @@ export function createFlow(ctx) {
       valid: (v) => !!cleanName(v),
       okLabel: 'OK',
       // a returning player on a new device signs in instead (the name comes back with the profile)
-      more: p.name || p.email ? [] : [button('SIGN IN', () => { signInReturn = { then: nameThen, back: nameBack, backTo: nameBackTo }; nameThen = null; nameBack = null; go('ageCheck'); }, 'fl-amber')],
+      // (shown to a handed-out GUEST name too, so it's one tap from the crew lobby's SET YOUR NAME)
+      more: (p.name && !p.auto) || p.email ? [] : [button('SIGN IN', () => { signInReturn = { then: nameThen, back: nameBack, backTo: nameBackTo }; nameThen = null; nameBack = null; go('ageCheck'); }, 'fl-amber')],
       submit: (v) => {
         if (blockedName(v)) { teSay(`${PICK_ANOTHER}: THAT ONE ISN'T ALLOWED`); return; }   // the name filter (src/namefilter.js)
         saveName(v);
@@ -2084,9 +2088,10 @@ export function createFlow(ctx) {
   }
   function openCrew(slug) {
     crewSlug = slug; crewFail = '';
-    const from = state;
-    if (from === 'off') guestName();   // straight from a link: nothing to type first (a name is handed out)
-    if (!profile().name) { askName(() => go('crewLobby'), () => go('onlineMenu'), 'ONLINE'); return; }
+    // Nothing to type first, whatever screen the link, the crew button or JOIN A CREW came from: a player
+    // without a name is handed one (GUEST 427, profile.js guestName), as a room link does. Picking a name and
+    // signing in are SET YOUR NAME in the lobby, never a step on the way in.
+    guestName();
     go('crewLobby');
   }
   /** the address bar: the crew's clean link while you're in it, play/ once you've left (so a reload doesn't pull you back in) */
