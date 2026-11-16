@@ -14,7 +14,7 @@
 import * as dm from '../combat/dmath.js';   // bit-identical trig on every engine: online play runs this rig on both machines
 import { mixBotch } from './limbBlend.js';   // a botch mixes the two moves per limb
 import { clothItem, clothRest } from './cloth.js';   // what hangs off a character (drawn only)
-import { jointRadii } from './ground.js';   // each joint's drawn radius: nothing drawn goes under the floor
+import { jointRadii, twoBone } from './ground.js';   // each joint's drawn radius: nothing drawn goes under the floor
 const DEG = Math.PI / 180;
 
 // Joint limits (README, "Joint limits", 2026-11-15). A knee only folds back (shin - thigh <= 0) and an elbow only
@@ -103,14 +103,9 @@ const EASE = {
 // Two-bone leg IK. dx forward and dy down from the hip to the foot (body space); returns
 // [upper, lower] angles with the knee ahead of the hip-foot line. Lets a key pin a foot by
 // position so it stays put while the hip moves, instead of sliding with the angles.
-function leg(dx, dy) {
-  const U = RIG.upperLeg, L = RIG.lowerLeg, max = U + L - 0.5;
-  let d = dm.hypot(dx, dy);
-  if (d > max) { dx *= max / d; dy *= max / d; d = max; }
-  const phi = dm.atan2(dx, dy);
-  const alpha = dm.acos(Math.max(-1, Math.min(1, (U * U + d * d - L * L) / (2 * U * d))));
-  const a1 = phi + alpha;
-  const kx = dm.sin(a1) * U, ky = dm.cos(a1) * U;
+function leg(dx0, dy0) {
+  // the solve is shared with the stair fit (twoBone in ./ground.js: same ops, same bits)
+  const { a1, kx, ky, dx, dy } = twoBone(dx0, dy0, RIG.upperLeg, RIG.lowerLeg);
   // the shin in the same turn as the thigh, folded back from it (atan2 wraps at 180: a foot up behind the hip used to
   // come out a turn off, which reads the same on its own but blends to the next key the long way, through a backward knee)
   const sh = dm.atan2(dx - kx, dy - ky) / DEG;

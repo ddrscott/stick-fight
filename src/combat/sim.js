@@ -9,7 +9,7 @@ import { EMPTY_INPUT } from './input.js';
 import { createAI } from './ai.js';
 import { mulberry32 } from './rng.js';
 import * as dm from './dmath.js';   // bit-identical hypot on every engine (online play)
-import { fitToGround } from '../fighter/ground.js';   // a pose kept on top of the steps (src/fighter/ground.js)
+import { fitToGround, legTo, kneeSide } from '../fighter/ground.js';   // a pose kept on top of the steps (src/fighter/ground.js)
 import { saveSim, loadSim, touchReach } from './snapshot.js';
 import { characterOr, canUse, colorFor, pantsFor, TEMP_ID } from '../characters/registry.js';   // per-character stats, moves, strings (src/characters/)
 import { BOTCH_GRACE, BOTCH_CALLOUT, ACCIDENTS, chooseBotch, botchCost, accidentFor, sideOf, isFoot } from './botch.js';   // mistimed presses (src/combat/botch.js)
@@ -426,6 +426,10 @@ export function createCombat({ fighters, arena, input, onEvent: emitEvent = () =
       wakeUp: 0,   // a wake-up strike from the floor: 1 lying, 2 rising (sim.js isWake)
       stair: -1,   // the flight he's on (arena.stairs index), -1 on a floor
       stairPaid: null, stairDmg: 0, stairN: 0, stairBy: -1,   // stairs hurt: the lowest tread paid this tumble (its y), the damage, treads, who sent him
+      holdL: null, holdR: null,   // on a flight: the tread top each planted foot stands on (stairLegs), null when it's lifted or off the steps
+      footXL: null, footXR: null, footSL: 0, footSR: 0,   // on a flight: each foot's x as the clip had it last update, and how much it's swinging by its speed
+      footDL: null, footDR: null,   // on a flight: how far each foot is moved from where the clip has it (rate limited)
+      stairDrop: 0,   // on a flight: how far the hip is let down so the lower foot reaches its tread (eased)
       botchKind: '', botchSev: 0, botchShift: 0, botchFwd: 0, botchAt: -1, activeAt: -1, recoverAt: -1, grabTo: null,
       clashUntil: 0,   // the step a clash's bounce back ends (physics lets it slide; the draw leaves the guard off)
       shockT: 0, shockUsed: false, rootT: 0,   // character hooks: shock (extra stun), root (no walk or jump)
@@ -888,17 +892,17 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
       const j = u.rig.joints, y0 = u.rig.y;
       for (const k in j) j[k] = { x: j[k].x, y: y0 + (j[k].y - y0) * CROUCH_SQUASH };
     }
-    slopePose(u);
+    slopePose(u, dt);
   }
   // On a flight the rig's pose (made for a flat floor) is fitted to the steps, joints included, so the
-  // hurtboxes and hitboxes are where the body is drawn: each foot near the floor line goes down or up onto
-  // the tread under it (its knee half as far); a body lying on the floor is laid along the slope, turned
+  // hurtboxes and hitboxes are where the body is drawn: the feet go onto the treads and the legs are re-solved to
+  // them, the hips let down when a foot can't reach (stairLegs); a body lying on the floor is laid along the slope, turned
   // about its hip and set on the line through the treads' front edges (the nosings: a body on steps rests on
   // them, and on the walking line through the treads' middles it sank into the front of every step). In
   // between (getting up) it blends by how high the hip is. Then whatever is still under a tread (a long stride's
   // rear foot up the steps, a kick's knee, the head of a body lying along them) is fitted back on top of the
   // real tread tops (fitToGround, src/fighter/ground.js): the limb turns up off the step, a planted foot is set
-  // on its tread. A body on the lower floor gets the same at a flight's foot (lying with its head toward the
+  // on its tread with its leg re-solved. A body on the lower floor gets the same at a flight's foot (lying with its head toward the
   // steps, it's propped up against them instead of lying through them). Only on the ground: in the air the
   // root is no floor line.
   const nosingY = (k, x) => { const st = stairsNow()[k]; return Math.max(st.top, Math.min(st.bottom, st.top + st.slope * (x - st.head) * st.dir - st.rise / 2)); };
@@ -910,7 +914,8 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     const fy = floorYOf(u.floor), S = stairsNow();
     return (x) => { for (let k = 0; k < S.length; k++) if (inFlight(k, x)) return Math.min(fy, treadY(k, x)); return fy; };
   }
-  function slopePose(u) {
+  function slopePose(u, dt = 0) {
+    if ((u.holdL != null || u.holdR != null || u.footXL != null || u.stairDrop) && !(onStair(u) && u.grounded)) clearHolds(u);   // a foot holds a tread only on its feet on a flight
     if (u.rag && u.rig.airborne) return;   // the point simulation keeps its own joints on the floor (a body it has just set down is fitted here)
     const j = u.rig.joints, y0 = u.rig.y, hip = j && j.hip;
     if (!hip) return;
@@ -919,24 +924,143 @@ u.home = 0;     u.staminaMax = STAMINA.max * u.char.stats.stamina; u.stamina = u
     if (!stair && !((u.floor || 0) > 0 && stairsNow().length)) return;
     // in the air (a jump, a keyframed knockdown's fall) the root is no floor line: nothing is laid along the slope
     // or set on a tread, but a pose coming down onto the steps still stops on them
-    const lie = !u.grounded ? 0 : Math.max(0, Math.min(1, (70 - (y0 - hip.y)) / 50));
+    // Only a body that's down is laid along the slope (lying, getting up, rolling, a wake-up strike, set down by the
+    // point simulation), by how low its hip is. A fighter on its feet stays upright however low its hip goes (a crouch,
+    // a lunge, a sweep): it used to be tipped up to a third of the way along the slope with its feet fitted only by
+    // what was left, so they hung off the treads.
+    const down = u.rag || LYING.has(u.state) || isWake(u) || (!!u.rig.limbsLoose && u.rig.limbsLoose());
+    const lie = !u.grounded || !down ? 0 : Math.max(0, Math.min(1, (70 - (y0 - hip.y)) / 50));
     if (stair && lie > 0) {
       const th = stairAngle(u.stair) * lie, c = dm.cos(th), sn = dm.sin(th);
       const hx = hip.x, hy = hip.y, dyHip = (nosingY(u.stair, hx) - y0) * lie;
       for (const k in j) { const dx = j[k].x - hx, dy = j[k].y - hy; j[k] = { x: hx + dx * c - dy * sn, y: hy + dx * sn + dy * c + dyHip }; }
     }
-    if (stair && u.grounded && lie < 1) for (const [ft, kn] of FEET) {
-      const F = j[ft];
-      if (!F || F.y < y0 - 22) continue;   // a foot off the floor (a kick, a knee) keeps its height
-      const d = (treadY(u.stair, F.x) - y0) * (1 - lie);
-      j[ft] = { x: F.x, y: F.y + d };
-      if (j[kn]) j[kn] = { x: j[kn].x, y: j[kn].y + d * 0.5 };
-    }
     const rad = u.rig.radii;
+    if (stair && u.grounded && lie < 1) stairLegs(u, j, y0, 1 - lie, rad, dt);
+    else clearHolds(u);
     if (!rad) return;
     const lying = LYING.has(u.state) || wakeLying(u);
     const fit = fitToGround(j, rad, groundUnder(u), { planted: !lying, side: u.facing });
     if (fit !== j) for (const k in fit) j[k] = fit[k];
+  }
+  // The legs on the treads (README, Floors: The stairs, Legs on the steps). The clip stands on a flat floor at the root,
+  // which rides the walking line through the treads' middles. Each foot near that floor gets a target: where the clip
+  // has it, moved by the height of the ground under it, and each leg is then re-solved from the hip to its target
+  // (legTo, src/fighter/ground.js) with the thigh and shin at the lengths the clip drew them and the knee on the side
+  // it was (forward, for a straight leg), so nothing stretches, squashes or bends backward.
+  //  - A planted foot's ground is its tread. It holds the tread it landed on (u.holdL / holdR) while the clip or a slide
+  //    drifts it a little: past the tread's front edge it rests its toe on the nosing for FOOT_HOLD px, easing down onto
+  //    the tread below as it slides on; back into the riser above, it stays against the riser for FOOT_HOLD px, and only
+  //    a longer slide back (a block's pushback) steps it up.
+  //  - A foot is swinging when it's lifted (LIFT_LO to LIFT_MID px off the clip's floor) or moving over the ground
+  //    (SWING_V0 to SWING_V1 px/s as the clip has it, eased: a planted foot stays put while the body walks over it, and
+  //    the walk's back step slides a foot along the floor before it lifts). A swinging foot's ground blends to the line
+  //    through the nosings, which runs smoothly from the tread it left to the tread it lands on and never dips into a
+  //    step, so it crosses a tread's edge in the air; the hold lets go, and the tread it lands on takes over.
+  //  - Off the floor (STAIR_LIFT over the root's line and the tread under it: a kick, a knee) a foot keeps its height,
+  //    as on a flat floor. Between LIFT_MID and STAIR_LIFT its ground blends to the root's own line.
+  //  - The offset each foot gets moves at most FOOT_RATE px/s (u.footDL / DR), so a change of ground is travelled, not
+  //    snapped; the target is never inside a step all the same (a planted foot on its tread, a moving one over the nosings).
+  //  - If a planted foot's target is further than its leg reaches (the lower foot, going down), the hip drops just enough
+  //    and the whole upper body with it (u.stairDrop), weighted by how much the foot is standing and eased (DROP_IN
+  //    down, DROP_RATE back up). A kick's striking foot pulls it as if it were standing (a stomp reaches down the steps
+  //    onto a body lying along them: on the old fit the leg just stretched 30 px to get there).
+  //  - A planted leg's knee may not go into a step (facing up the flight, a bent knee is out over the steps above): the
+  //    hip rises from the drop just as far as that takes (softTread, found by halving, so it moves smoothly).
+  // Every input is the pose, the position and those unit fields, which the rollback snapshot carries with the unit.
+  // k: how much of the fit applies (1 standing, 0 lying along the slope; getting up blends).
+  const STAIR_LIFT = 22, LIFT_LO = 2, LIFT_MID = 10, LEG_SLACK = 1, FOOT_HOLD = 8, KNEE_EPS = 0.01, KNEE_SOFT = 8, DROP_RATE = 20, DROP_IN = 45, SWING_RATE = 20, FOOT_RATE = 480, SWING_V0 = 50, SWING_V1 = 150;
+  const smooth01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+  let slopeHook = null;   // tests only (scripts/rig/stairlegs.mjs): sees each pose before and after the fit
+  sim.onStairLegs = (fn) => { slopeHook = fn; };
+  // the treads with each riser eased over the KNEE_SOFT px in front of it (continuous, and never below the real steps)
+  function softTread(k, x) {
+    const st = stairsNow()[k], t = treadY(k, x), a = (x - st.back0) * st.dir, i = Math.floor(a / st.run), e = a - i * st.run;
+    if (t <= st.top || e >= KNEE_SOFT) return t;
+    return t - st.rise + st.rise * smooth01(e / KNEE_SOFT);
+  }
+  function clearHolds(u) { u.holdL = u.holdR = u.footXL = u.footXR = u.footDL = u.footDR = null; u.footSL = u.footSR = u.stairDrop = 0; }
+  // the tread a planted foot stands on, and where (x): see FOOT_HOLD
+  function heldTread(u, hk, x) {
+    const st = stairsNow()[u.stair], under = treadY(u.stair, x);
+    let held = u[hk];
+    if (held == null) { u[hk] = under; return { y: under, x }; }
+    const n = (st.bottom - st.top) / st.rise, i = Math.round((held - st.top) / st.rise);
+    const a = (x - st.back0) * st.dir, lo = i <= 0 ? -Infinity : i * st.run, hi = i >= n ? Infinity : (i + 1) * st.run;
+    if (a >= lo && a <= hi) return { y: held, x };
+    const out = a < lo ? lo - a : a - hi;
+    if (out > FOOT_HOLD) { u[hk] = under; return { y: under, x }; }
+    if (a > hi) return { y: held + (under - held) * smooth01(out / FOOT_HOLD), x };   // over the tread below: the toe on the nosing
+    return { y: held, x: st.back0 + (lo + 0.5) * st.dir };   // into the riser above: held against it
+  }
+  function stairLegs(u, j, y0, k, rad, dt) {
+    const hip = j.hip, sp = u.rig.pose && u.rig.pose.spin ? dm.cos(u.rig.pose.spin * Math.PI / 180) : 1;
+    const fwd = (sp < 0 ? -1 : 1) * u.facing;   // the effective facing (a spin past side-on turns the body round)
+    const before = slopeHook ? JSON.parse(JSON.stringify(j)) : null;
+    // a kick's striking foot: no tread hold (it's not standing on anything), and it pulls the hip down after it in full
+    const fd = u.state === 'attack' ? FRAME_DATA[u.move] : null, strike = fd && fd.joint && /Foot|Knee/.test(fd.joint) ? fd.joint[0] + 'Foot' : null;
+    const legs = [];
+    let drop = 0;
+    for (const [ft, kn] of FEET) {
+      const F = j[ft], K = j[kn], l = ft === 'lFoot', hk = l ? 'holdL' : 'holdR', xk = l ? 'footXL' : 'footXR', sk = l ? 'footSL' : 'footSR', dk = l ? 'footDL' : 'footDR';
+      if (!F || !K) continue;
+      if (dt > 0) { const v = u[xk] == null ? 0 : smooth01((Math.abs(F.x - u[xk]) / dt - SWING_V0) / (SWING_V1 - SWING_V0)); u[sk] = (u[sk] || 0) + (v - (u[sk] || 0)) * Math.min(1, dt * SWING_RATE); }
+      u[xk] = F.x;
+      const r = rad ? rad[ft] || 0 : 0, lift = y0 - F.y - r;
+      const w1 = Math.max(smooth01((lift - LIFT_LO) / (LIFT_MID - LIFT_LO)), u[sk]);
+      if (w1 >= 0.98 || ft === strike || k < 1) u[hk] = null;   // (the eased speed weight only nears 1)
+      // off the floor (STAIR_LIFT over the root's line and the tread under it, whichever is higher: a kick, a knee) it
+      // keeps its height, once its offset has eased back to nothing
+      const off = Math.min(y0, treadY(u.stair, F.x)) - r - F.y >= STAIR_LIFT - r;
+      if (off && !u[dk]) { u[dk] = 0; continue; }
+      const w2 = smooth01((lift - LIFT_MID) / (STAIR_LIFT - r - LIFT_MID));
+      const line = nosingY(u.stair, F.x), swing = line + (y0 - line) * w2;
+      const tr = w1 < 0.98 && ft !== strike && k >= 1 && (u[hk] != null || w1 < 0.5) ? heldTread(u, hk, F.x) : { y: treadY(u.stair, F.x), x: F.x };
+      // the offset moves at most FOOT_RATE px/s (a foot going from the steps' height to the root's, or from one tread to
+      // the next, travels rather than snaps), except that it's never left inside a step (below)
+      const want = off ? 0 : (tr.y + (swing - tr.y) * w1 - y0) * k, had = u[dk] == null ? want : u[dk];
+      const step = FOOT_RATE * dt;
+      const d = u[dk] = dt > 0 ? had + Math.max(-step, Math.min(step, want - had)) : had;
+      const U = dm.hypot(K.x - hip.x, K.y - hip.y), L = dm.hypot(F.x - K.x, F.y - K.y);
+      // never into a step: a planted foot stays on top of its tread, a moving one over the line through the nosings (so a
+      // kick or a stride out over the steps above clears them smoothly instead of being pushed up each riser in turn)
+      const tx = tr.x, ceil = tr.y + (Math.min(treadY(u.stair, F.x), nosingY(u.stair, F.x)) - tr.y) * w1;
+      const T = { x: tx, y: Math.min(F.y + d, ceil - r) }, reach = Math.min(U + L, Math.max(dm.hypot(F.x - hip.x, F.y - hip.y), U + L - LEG_SLACK));
+      const dx = T.x - hip.x, need = T.y - hip.y - Math.sqrt(Math.max(0, reach * reach - dx * dx));
+      const wt = ft === strike ? 1 : 1 - w1;   // only the weight on a foot pulls the hip down, and a striking foot (a stomp reaches down the steps)
+      if (!off && need * wt > drop) drop = need * wt;
+      legs.push({ ft, kn, T, U, L, w1, sgn: kneeSide(hip, K, F) || fwd, r: null });
+    }
+    // eased (down at DROP_IN, back up at DROP_RATE per second of the gap) (a foot taking or giving up the weight would snap it)
+    const was = u.stairDrop || 0;
+    drop = u.stairDrop = dt > 0 ? was + (drop - was) * Math.min(1, dt * (drop > was ? DROP_IN : DROP_RATE)) : was;
+    // the legs re-solved with the hip moved down by dy; returns how far the deepest knee is inside a step
+    const solveAt = (dy) => {
+      const H = { x: hip.x, y: hip.y + dy };
+      let pen = 0;
+      for (const g of legs) {
+        g.r = legTo(H, g.T, g.U, g.L, g.sgn);
+        const kr = rad ? rad[g.kn] || 0 : 0, p = (g.r.knee.y + kr - softTread(u.stair, g.r.knee.x)) * (1 - g.w1);   // a swinging leg's knee has no say
+        if (p > pen) pen = p;
+      }
+      return pen;
+    };
+    // A knee may not go into a step (facing up the flight, a bent leg's knee is out over the steps above), judged against
+    // softTread so the answer doesn't jump at each tread's edge: the hip rises from the drop just as far as that takes,
+    // the feet staying on their targets while the legs can still reach them. Found by halving, so it moves as smoothly
+    // as the pose does (fitToGround's turn of the thigh, left for whatever this can't clear, snapped a leg up as much as
+    // 90 deg in one tick).
+    if (legs.length && solveAt(drop) > KNEE_EPS) {
+      let top = drop;
+      for (const g of legs) { const dx = g.T.x - hip.x, m = g.U + g.L, t = g.T.y - hip.y - Math.sqrt(Math.max(0, m * m - dx * dx)); top = Math.min(top, t + (drop - t) * g.w1); }
+      if (solveAt(top) > KNEE_EPS) drop = top;
+      else { let lo = top, hi = drop; for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (solveAt(m) > KNEE_EPS) hi = m; else lo = m; } drop = lo; }
+      solveAt(drop);
+      u.stairDrop = drop;
+    }
+    if (drop !== 0) for (const q in j) j[q] = { x: j[q].x, y: j[q].y + drop };
+    for (const g of legs) { j[g.kn] = g.r.knee; j[g.ft] = g.r.foot; }
+    if (slopeHook) slopeHook(u, before, j, drop, strike, legs);
   }
   // the vault's drop: the clip comes down the opening onto the flight under it, its legs reaching the steps first;
   // they stop on the treads (the slab either side, the treads, the floor below: the topmost under each joint)

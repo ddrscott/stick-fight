@@ -30,6 +30,7 @@
     "test:stairs:dmg": "node scripts/stairs/dmg.mjs",
     "test:limits": "node scripts/rig/limits.mjs",
     "test:settle": "node scripts/rig/limits.mjs --settle",
+    "test:stairs:legs": "node scripts/rig/stairlegs.mjs",
     "test:books": "node scripts/books/flow.mjs",
     "test:books:worker": "node scripts/books/worker.mjs",
     "test:select": "node scripts/select/check.mjs",

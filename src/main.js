@@ -678,7 +678,9 @@ const PHASES = {
       p1: [], hold1: { down: true }, dur: 120 },
     { name: 'on the steps: the higher man\'s 1,2,4 knocks him down the flight', abs: true, setup: () => { onFlight(0, 0, stairX(0, 110), 1); onFlight(1, 0, stairX(0, 190), -1); },
       p1: [[10, B('rp')], [32, B('lp')], [50, B('rk')]], dur: 320 },
-    { name: 'on the steps: he guards a jab and a cross from above', abs: true, setup: () => { onFlight(0, 0, stairX(0, 120), 1); onFlight(1, 0, stairX(0, 196), -1); },
+    // (182, not 196: with the hips let down on the steps, 2026-11-15, the jab from 76 px up the flight passed just over his
+    // guard; on the old fit it grazed it by a pixel. README, Floors: Legs on the steps)
+    { name: 'on the steps: he guards a jab and a cross from above', abs: true, setup: () => { onFlight(0, 0, stairX(0, 120), 1); onFlight(1, 0, stairX(0, 182), -1); },
       p2: { back: true }, p1: [[10, B('lp')], [40, B('rp')]], dur: 160 },
     { name: 'from below: a sweep up the steps (the foot follows the treads)', abs: true, setup: () => { onFlight(0, 0, stairX(0, 300), -1); onFlight(1, 0, stairX(0, 228), 1); },
       p1: [[10, D('rk')]], dur: 260 },
