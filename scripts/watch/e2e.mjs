@@ -63,7 +63,9 @@ const drive = (p, draw) => p.evaluate((n) => {
     if (ls) { const h = L.host[net.match] = L.host[net.match] || { f: [], t: [] }; if (!h.f.length || ls.frame > h.f[h.f.length - 1]) { h.f.push(ls.frame); h.t.push(t); } }
     if (w && w.active && !w.catching && w.state === 'live') { const v = w.view(); if (v.frame > (L.lastF || 0) || v.n !== L.lastN) { L.lastF = v.frame; L.lastN = v.n; L.spec.push([v.n, v.frame, t]); } }
   };
-  window.__pump = setInterval(() => { const now = performance.now(), ms = Math.min(100, now - last); last = now; if (n && ++k % n === 0) window.__gauntlet.step(ms); else window.__game.advance(ms); rec(); }, 8);
+  // (lost: the time the pump didn't hand the game because a pass took over 100 ms, as main.js caps a frame; drawMs: the drawn passes)
+  L.lost = L.lost || 0; L.wall = L.wall || 0; L.drawMs = L.drawMs || 0; L.draws = L.draws || 0;
+  window.__pump = setInterval(() => { const now = performance.now(), ms = Math.min(100, now - last); L.lost += now - last - ms; L.wall += now - last; last = now; if (n && ++k % n === 0) { const t0 = performance.now(); window.__gauntlet.step(ms); L.drawMs += performance.now() - t0; L.draws++; } else window.__game.advance(ms); rec(); }, 8);
 }, draw);
 // the host's frames against a spectator's: ms from the frame showing on the host to the same frame on the spectator
 const pct = (a, p) => { if (!a.length) return NaN; const b = Float64Array.from(a).sort(); return Math.round(b[Math.min(b.length - 1, Math.floor(b.length * p / 100))]); };
@@ -82,7 +84,8 @@ async function latency(host, spec, fromT = 0) {
 const latRows = [];
 async function reportLatency(label, host, spec, fromT = 0) {
   const a = await latency(host, spec, fromT).catch(() => []);
-  latRows.push({ label, a });
+  const pg = await spec.evaluate(() => { const L = window.__lat; return { lost: L.lost, wall: L.wall, drawMs: L.draws ? L.drawMs / L.draws : 0 }; }).catch(() => ({ lost: 0, wall: 1, drawMs: 0 }));
+  latRows.push({ label, a, pg });
   const p50 = pct(a, 50), p95 = pct(a, 95);
   check(`${label}: a frame reaches the spectator's screen under 300 ms after the host's (median) and under 450 ms at the 95th percentile`, a.length > 200 && p50 < 300 && p95 < 450, `${a.length} frames, median ${p50} ms, 95th ${p95} ms`);
 }
@@ -464,7 +467,7 @@ try {
 }
 if (latRows.length) {
   console.log('\nhost-to-spectator latency (ms from a frame on the host\'s screen to the same frame on the spectator\'s)');
-  for (const r of latRows) console.log(`  ${r.label.padEnd(52)} ${String(r.a.length).padStart(6)} frames  median ${pct(r.a, 50)}  95th ${pct(r.a, 95)}  max ${pct(r.a, 100)}`);
+  for (const r of latRows) console.log(`  ${r.label.padEnd(52)} ${String(r.a.length).padStart(6)} frames  median ${pct(r.a, 50)}  95th ${pct(r.a, 95)}  max ${pct(r.a, 100)}  (the page lost ${(100 * r.pg.lost / Math.max(1, r.pg.wall)).toFixed(1)}% of its time to passes over 100 ms; a drawn pass ${r.pg.drawMs.toFixed(0)} ms)`);
 }
 const bad = results.filter((r) => !r.ok);
 console.log(`\n${results.length - bad.length} of ${results.length} checks passed`);
