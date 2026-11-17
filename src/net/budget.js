@@ -10,15 +10,22 @@
 // Recovering (fast; these only decide how soon the link notices and repairs, never when it gives up):
 //   RTC_TIMEOUT_MS   5 s    first dial: no DataChannel this long and the room socket carries the packets (relay);
 //                           the dial keeps going in the background and the match moves to p2p once it opens
+//   DIRECT_TRY_MS    3.5 s  with TURN servers in hand, the first dial (every candidate allowed) gets this long, then a
+//   TURN_TRY_MS      3.5 s  TURN-only dial (Cloudflare's TURN over UDP) gets this long before the relay takes over.
+//                           A redial after a failed direct one tries TURN-only next (README, Reconnecting: TURN)
+//   ICE_REFETCH_MS   10 s   api/ice that timed out (public STUN only, no TURN): asked again before a dial, this often
 //   REDIAL_TRY_MS    8 s    one redial (a fresh RTCPeerConnection, signaled over the room socket) that hasn't
 //                           opened in this long is dropped and the next one starts
 //   REDIAL_MAX_GAP_MS 15 s  redials back off 1, 2, 4, 8 s up to this, and keep going while the link is up
 //   DISCONNECT_MS    2.5 s  the peer connection reports 'disconnected' this long: redial
-//   BEAT_MS          0.5 s  each side sends a 1-byte beat down the DataChannel (old builds ignore it)
-//   DC_STALE_MS      1.2 s  nothing on the DataChannel this long: packets also go over the room socket
+//   BEAT_MS          0.5 s  each side sends a probe down the packet path (the DataChannel, or the relay), and the
+//                           other echoes it: the link's own round trip, jitter and loss, between matches too
+//   DC_STALE_MS      1.2 s  nothing on the DataChannel this long: packets also go over the room socket. A channel
+//                           that has never delivered anything (opened, but silent) counts as in doubt from the start
 //   DC_DEAD_MS       4 s    nothing on the DataChannel this long: it's dead, redial
 //   PING_MS          4 s    the page pings the room socket ('ping'; the room auto-answers 'pong' without waking)
-//   PONG_MS          9 s    nothing heard on the room socket this long: it's dead (half-open), reopen it
+//   PONG_MS          9 s    no pong on the room socket this long: it's dead, reopen it. Only a pong counts: a socket
+//                           whose sends vanish still receives (weak wifi hears the access point but isn't heard)
 //   PROBE_MS         2 s    after a network change (online, a wifi/cellular switch, the page coming back): a ping
 //                           that isn't answered this fast means the socket died with the old network
 //   CONNECT_TRY_MS   4 s    one try to reopen the room socket that hasn't been welcomed in this long is dropped
@@ -32,6 +39,9 @@
 // hasn't picked before starting with the rival's current card.
 
 export const RTC_TIMEOUT_MS = 5000;
+export const DIRECT_TRY_MS = 3500;
+export const TURN_TRY_MS = 3500;
+export const ICE_REFETCH_MS = 10000;
 export const REDIAL_TRY_MS = 8000;
 export const REDIAL_MAX_GAP_MS = 15000;
 export const DISCONNECT_MS = 2500;

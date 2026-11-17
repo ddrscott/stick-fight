@@ -67,7 +67,7 @@ class El {
   querySelector() { return new El(); }
   querySelectorAll() { return []; }
   addEventListener() {} removeEventListener() {}
-  focus() {} blur() {} click() {} remove() {} setSelectionRange() {}
+  focus() {} blur() {} click() {} remove() {} setSelectionRange() {} setAttribute() {} removeAttribute() {}
   contains() { return false; }
   getBoundingClientRect() { return { x: 0, y: 0, width: 0, height: 0, left: 0, top: 0, right: 0, bottom: 0 }; }
 }

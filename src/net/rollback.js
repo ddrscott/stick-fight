@@ -9,8 +9,14 @@
 //   inputs need no snapshot: nothing can roll back into them.
 // - Depth: at most MAX_ROLLBACK frames are ever run on guesses. Past that the sim waits for the
 //   other side's inputs (a stall, shown as WAITING FOR RIVAL after a moment).
-// - Delay: LOCAL_DELAY frames normally. When the one-way trip is longer than the rollback window
-//   covers, the delay grows (one frame a second) so the guesses stay inside it.
+// - Delay: LOCAL_DELAY frames normally. When the one-way trip plus its jitter is longer than the rollback
+//   window covers, the delay grows (a frame a second, two when it's far short or stalling a lot) so the guesses
+//   stay inside it, up to DELAY_MAX (200 ms): a bad link costs input lag before it costs a frozen fight. On the
+//   relay (TCP holds every packet behind a late one) the jitter counts double. It comes back down a frame a second
+//   once the link has been good for 3 s.
+// - Shaky: when the other side's acks run late, nothing has come for a while, the jitter is high or the link's
+//   probes are being lost, every input packet goes over both paths (the DataChannel and the room) for 3 s
+//   (shaky()). Duplicates cost nothing: an input already held is skipped.
 // - Time sync: the side that's ahead of the other gives a little time back, so neither runs far
 //   ahead and pays for it in rollbacks while the other waits.
 // - Effects: a frame's events (sounds, sparks, shake, callouts, scoring) fire the first time the
@@ -40,7 +46,11 @@ const STEP_MS = 1000 / 120;          // the sim's fixed step
 const HISTORY = 1024;                // frames of input history kept per player (8.5 s)
 const MASK = HISTORY - 1;
 export const MAX_ROLLBACK = 12;      // frames that may run on a guess (100 ms); past that, stall
-export const LOCAL_DELAY = 2, DELAY_MAX = 10;
+export const LOCAL_DELAY = 2, DELAY_MAX = 24;   // DELAY_MAX was 10 (83 ms) until [t6sye7]
+const QUIET_MS = 3000;               // the delay comes down only after this long with no stall
+const SHAKY_MS = 3000;               // both paths for this long after the last sign of a shaky link
+const SHAKY_JITTER_MS = 30;          // round-trip jitter past this: shaky
+const SHAKY_LOSS = 0.05;             // the link's probes lost past this share: shaky
 const SNAPS = MAX_ROLLBACK + 2;      // snapshot ring
 const HASH_EVERY = 30;               // frames between state hash exchanges (4 a second)
 const DUMPS_KEPT = 8;
@@ -67,11 +77,12 @@ function eventSig(ev) {
  *   sim: any, localIndex: number, link: { sendPacket(b: ArrayBuffer): void, sendControl(o: object): void },
  *   sampleLocal: (frame: number) => any, now?: () => number, delay?: number, adaptDelay?: boolean,
  *   maxRollback?: number, match?: number, endHold?: number,
+ *   hint?: () => { path?: string, loss?: number },
  *   onDesync?: (info: { frame: number, local: string, remote: string, diff?: string[] }) => void,
  *   onResync?: (info: { frame: number, role: 'sent' | 'applied', bytes: number }) => void,
  * }} o
  */
-export function createRollback({ sim, localIndex, link, sampleLocal, now = () => performance.now(), delay = LOCAL_DELAY, adaptDelay = true, maxRollback = MAX_ROLLBACK, match = 0, endHold = Infinity, onDesync, onResync }) {
+export function createRollback({ sim, localIndex, link, sampleLocal, now = () => performance.now(), delay = LOCAL_DELAY, adaptDelay = true, maxRollback = MAX_ROLLBACK, match = 0, endHold = Infinity, onDesync, onResync, hint = () => ({}) }) {
   const remoteIndex = 1 - localIndex;
   const maxRb = Math.max(1, Math.min(MAX_ROLLBACK, maxRollback | 0));
   const hist = [ring(), ring()];              // per player: frame -> input code (real inputs only)
@@ -92,6 +103,11 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
   let acc = 0, lastSend = -1e9, lastPing = -1e9, lastPacket = now(), lastAdapt = now();
   let stalledMs = 0, stallFrames = 0, stalls = 0, stalling = false;
   let rtt = 0, jitter = 0, rttSamples = 0;
+  // shaky: both paths until shakyUntil; when the other side last acked something new; the last stall (the delay's quiet clock)
+  let shakyUntil = 0, lastAckMove = now(), lastStallAt = -1e9;
+  // measurements for the HUD and the online_link event: time run and time frozen, packets sent and how many went both ways,
+  // the delay summed per adapt (its average), the rollbacks' depth
+  const meter = { playMs: 0, frozenMs: 0, sent: 0, both: 0, delaySum: 0, delayN: 0 };
   let nextHash = HASH_EVERY - 1;              // the next hash frame to send once confirmed
   const hashes = new Map(), remoteHashes = new Map(), dumps = new Map();
   /** @type {null | { frame: number, local: string, remote: string, diff?: string[], at?: number }} */
@@ -290,21 +306,39 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     const last = Math.min(localTop, first + MAX_INPUTS_PER_PACKET - 1);
     const codes = [];
     for (let f = first; f <= last; f++) codes.push(get(localIndex, f));
-    link.sendPacket(inputPacket(first, codes, remoteTop < 0 ? NO_FRAME : remoteTop, frame, tag));
-    lastSend = t;
+    const both = shaky(t);
+    link.sendPacket(inputPacket(first, codes, remoteTop < 0 ? NO_FRAME : remoteTop, frame, tag), both);
+    lastSend = t; meter.sent++; if (both) meter.both++;
+  }
+
+  /** Is the link shaky right now? Then input packets go over both paths for SHAKY_MS. The signs: the other side's acks
+   *  are late (what we send isn't getting there: the 2026-11-16 20:11 drop, where one phone's sends vanished while it
+   *  still heard the other), nothing has come from the other side for a while, the round trip's jitter is high, or the
+   *  link's own probes are going missing (src/net/link.js quality). */
+  function shaky(t) {
+    if (!rttSamples && t - lastPacket < 1000) return t < shakyUntil;
+    const late = Math.max(250, rtt + 3 * jitter + 100);
+    const ackLate = localTop > ackedByRemote + delay + 1 && t - lastAckMove > late;
+    const quiet = t - lastPacket > Math.max(200, 3 * jitter + 100);
+    const h = hint() || {};
+    if (ackLate || quiet || jitter > SHAKY_JITTER_MS || (h.loss || 0) > SHAKY_LOSS) shakyUntil = t + SHAKY_MS;
+    return t < shakyUntil;
   }
 
   function adapt(t) {
     if (!adaptDelay || t - lastAdapt < 1000) return;
     lastAdapt = t;
-    // the guesses cover maxRb frames of the trip; the delay covers the rest (one way across plus
-    // the jitter), and a second with stalls while not ahead asks for one more frame
-    let want = Math.ceil((rtt / 2 + jitter) / STEP_MS) - maxRb + 1;
-    if (stallFrames > 6) want = Math.max(want, delay + 1);
+    // the guesses cover maxRb frames of the trip; the delay covers the rest (one way across plus the jitter, twice
+    // the jitter on the relay, where TCP holds packets behind a late one), and a second with stalls while not
+    // ahead asks for one more frame
+    const relay = (hint() || {}).path === 'relay';
+    let want = Math.ceil((rtt / 2 + jitter * (relay ? 2 : 1)) / STEP_MS) - maxRb + 1;
+    if (stallFrames > 6) want = Math.max(want, delay + (stallFrames > 30 ? 2 : 1));
     want = Math.max(LOCAL_DELAY, Math.min(DELAY_MAX, want));
-    if (want > delay) delay++;                       // up one frame a second
-    else if (want < delay - 1 && stallFrames === 0) delay--;   // down only with headroom and no stalls
+    if (want > delay) delay = Math.min(want, delay + (want - delay > 3 || stallFrames > 30 ? 2 : 1));   // up a frame or two a second
+    else if (want < delay - 1 && stallFrames === 0 && t - lastStallAt > QUIET_MS) delay--;   // down only with headroom, after 3 quiet seconds
     stallFrames = 0;
+    meter.delaySum += delay; meter.delayN++;
   }
 
   // how far ahead of the other side this side's sim is, in frames (+: ahead)
@@ -338,10 +372,11 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
       // short of remote inputs: the time waited is given up, not banked (a banked burst would put
       // this side right back ahead and stalling again); if this side isn't ahead, the delay may grow,
       // though not over a dropout (nothing arriving at all isn't a long trip)
-      if (stalling) { acc = Math.min(acc, STEP_MS); if (ld < 1 && t - lastPacket < 300) stallFrames++; }
+      if (stalling) { acc = Math.min(acc, STEP_MS); lastStallAt = t; if (ld < 1 && t - lastPacket < 300) stallFrames++; }
       stalling = stalling && !stepped;   // waiting with no frame run at all: shown after a moment
       if (stalling) { stalledMs += ms; if (!wasStalling) stalls++; }
       else stalledMs = 0;
+      if (frame < endAt()) { meter.playMs += ms; if (stalling) meter.frozenMs += ms; }
       sendInputs(stepped > 0);
       confirmHashes();
       trySync();
@@ -379,7 +414,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
       // a frame whose guess came from an input that has since been replaced can't happen (real
       // inputs never change once held)
       while (has(remoteIndex, remoteTop + 1)) remoteTop++;
-      if (p.ack !== NO_FRAME) ackedByRemote = Math.max(ackedByRemote, /** @type {number} */ (p.ack));
+      if (p.ack !== NO_FRAME && /** @type {number} */ (p.ack) > ackedByRemote) { ackedByRemote = /** @type {number} */ (p.ack); lastAckMove = t; }
       if (/** @type {number} */ (p.frame) > remoteFrame) { remoteFrame = /** @type {number} */ (p.frame); remoteFrameAt = t; }
     },
     /** control messages that belong to the netcode: state hashes, desync dumps and resyncs */
@@ -421,6 +456,8 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
         rollbacks: rb.count, rollbackFrames: rb.frames, avgDepth: rb.count ? rb.frames / rb.count : 0, maxDepth: rb.maxDepth, lastDepth: rb.lastDepth,
         rollbackMs: rb.ms, rollbackMaxMs: rb.maxMs, saves: rb.saves, saveMs: rb.saveMs, predictedFrames: rb.predictedFrames,
         eventsHeld: rb.eventsHeld, eventsLate: rb.eventsLate, advanceAvgMs: rb.advN ? rb.advMs / rb.advN : 0, advanceMaxMs: rb.advMax,
+        shaky: t < shakyUntil, playMs: meter.playMs, frozenMs: meter.frozenMs, sent: meter.sent, sentBoth: meter.both,
+        avgDelay: meter.delayN ? meter.delaySum / meter.delayN : delay,
       };
     },
     /** after the match is over: keep sending our inputs and acks (no simulating), so the other side

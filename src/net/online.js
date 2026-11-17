@@ -57,6 +57,7 @@ import { howEnded } from '../bookkeeping.js';
 import { createLink, createRoom } from './link.js';
 import { LOST_MS } from './budget.js';
 import { createRollback } from './rollback.js';
+import { createMeter, bars, WEAK_AT } from './meter.js';
 import { createWatchFeed } from './watchfeed.js';
 import { hashSim } from './hash.js';
 import { legend, watchDevice } from '../flow/controls.js';
@@ -65,7 +66,7 @@ import { linkFromUrl, linkUrl, setLinkInBar } from '../links.js';
 
 /** the longest look a side may send: a palette, the mastery flags and two move ids */
 export const LOOK_MAX = 100;
-export const NET_VERSION = 32;   // bump when the sim or the netcode changes in a way old builds can't play against (32: the leftover knee kinks on the stairs: each foot's offset followed with its acceleration held (u.footVL/R, footTL/R), a swinging knee turned off the steps, the clip hip's jumps and fitToGround's whole-body lift eased (u.stairHY, stairUp; README, Floors: Legs on the steps, Smooth feet), which moves the joints, the hitboxes; 31: the legs on the stairs: two-bone IK to the treads with the bones' lengths kept, the hip let down for the lower foot, a swinging foot over the nosings, a fighter on its feet never tipped along the slope (u.holdL/R, footXL/R, footSL/R, footDL/R, stairDrop; README, Floors: Legs on the steps), which moves the joints, the hitboxes; 30: stairs hurt: every lower tread a tumbling body touches costs 5 HP credited to whoever sent it down (u.stairPaid, stairDmg, stairN, stairBy; README, Stairs hurt), and the CPU steers off the top of a flight; 29: the joint limits apply to a fighter on its feet only: the point simulation lost its joint stop (rag.fc, rag.lb gone from the state) and lying, rising, rolling and thrown bodies are loose again (README, Joint limits); 28: the joint limits: knees and elbows never bend the wrong way, the clips reposed and solve() / the point simulation clamping any that slip (README, Joint limits), which moves the rig's joints, the hitboxes; 27: the custom employee: each side's look carries its fighter's two move slots after a '~' (other fighters' moves on ↓ 1+3 and ↓ 2+4, u.borrow, 'loadout' in the state hash), and a borrowed move's reach is measured on the borrower's body the first time it's slotted there; 26: stat upgrades: the host's rules carry `upgrades` ('off' or 'even'), and EVEN puts every stat's top tier on both fighters (u.upHp, upDmg, upRegen, upWalk, in the state hash); 25: fighter mastery: the look in ready, pick and start carries '+p' / '+t' for the victory pose (it replaces the dance on the WINS card) and the taunt (the last round's winner, the 'taunt' state under the ROUND card), both sim state; 24: dashes: a double tap is a forward or a back dash (the 'dash' state, u.dashDir / dashT, the tap count u.tapDir / tapAt / tapN in place of the old tap timer), the input's 12th bit `dash` (the touch stick's double flick), a dash attack on every button and a rising attack on every limb with the rise read out of a crouching attack too (u.lowStance), the 'r' string token and RISE AND SHINE; 23: the clash: two live strikes whose striking limbs touch stop each other with no damage, both bounce back and recover on the same step (u.clashUntil, in the state hash with tradeUntil / tradeLimb), a much heavier strike breaks through and bats the lighter aside (frame data CLASH), and a striking limb on its way is no longer body to another strike; 22: the perfect round finisher, a sim stage inside the KO phase (sim.perfectT, the winner's 'perfect' state, the body thrown at the camera) that only the winner's press skips; 21: getups by the sides (u.home fixed at touchdown, rolls away / toward with a cross under a man standing near, u.roll* fields, rig.rebase and the roll clips), a body on the floor held off to its drawn feet and short of its hip, lows that touch a floored body as its one ground hit and grazes (u.grazeId), the stomp on down+4 only; 'home', 'rollT' and 'otgHit' in the state hash; 20: a fainted fighter is rooted and shakes it off with alternating left/right presses (u.shakeDir, u.shakeAt, u.faintCut, in the state hash), the CPU's faint shake; 19: bodies never sink into the floor: the ground snap and the point simulation use each joint's drawn radius, the stairs' solid line runs through the nosings, tumbling joints stop at the risers, poses on and beside a flight are fitted to its treads, the vault faces the opening; all of it moves the rig's joints, which are the hitboxes and are hashed; 18: stamina refunds on contact and the no-faint save on a connecting strike (u.paid, u.faintPending, u.refundMove/refundRep/refundAt), so an old build's sim drifts from a new one's; 17: resync (the host sends its confirmed state on a hash mismatch), the end of a match agreed by state hash, a character's reach measured on a reset rig (it depended on what the rig was doing the first time that phone saw the character), the rng and the reach table in the state hash; 16: quick rooms from the menus open on the pick screen too (pickFirst, the 'go' at match 0), which an old guest would ignore; 15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
+export const NET_VERSION = 33;   // bump when the sim or the netcode changes in a way old builds can't play against (33: the link's probes and their echo (0xf1 / 0xf2: round trip, jitter and loss on the packet path, and the DataChannel's proof that it delivers), dial kinds with a TURN-only dial (k in the offer), inputs over both paths while the link is shaky, the input delay up to 24 frames (README, Reconnecting: Weak cellular); an older page doesn't echo, so its rival's meter would read every probe as lost; 32: the leftover knee kinks on the stairs: each foot's offset followed with its acceleration held (u.footVL/R, footTL/R), a swinging knee turned off the steps, the clip hip's jumps and fitToGround's whole-body lift eased (u.stairHY, stairUp; README, Floors: Legs on the steps, Smooth feet), which moves the joints, the hitboxes; 31: the legs on the stairs: two-bone IK to the treads with the bones' lengths kept, the hip let down for the lower foot, a swinging foot over the nosings, a fighter on its feet never tipped along the slope (u.holdL/R, footXL/R, footSL/R, footDL/R, stairDrop; README, Floors: Legs on the steps), which moves the joints, the hitboxes; 30: stairs hurt: every lower tread a tumbling body touches costs 5 HP credited to whoever sent it down (u.stairPaid, stairDmg, stairN, stairBy; README, Stairs hurt), and the CPU steers off the top of a flight; 29: the joint limits apply to a fighter on its feet only: the point simulation lost its joint stop (rag.fc, rag.lb gone from the state) and lying, rising, rolling and thrown bodies are loose again (README, Joint limits); 28: the joint limits: knees and elbows never bend the wrong way, the clips reposed and solve() / the point simulation clamping any that slip (README, Joint limits), which moves the rig's joints, the hitboxes; 27: the custom employee: each side's look carries its fighter's two move slots after a '~' (other fighters' moves on ↓ 1+3 and ↓ 2+4, u.borrow, 'loadout' in the state hash), and a borrowed move's reach is measured on the borrower's body the first time it's slotted there; 26: stat upgrades: the host's rules carry `upgrades` ('off' or 'even'), and EVEN puts every stat's top tier on both fighters (u.upHp, upDmg, upRegen, upWalk, in the state hash); 25: fighter mastery: the look in ready, pick and start carries '+p' / '+t' for the victory pose (it replaces the dance on the WINS card) and the taunt (the last round's winner, the 'taunt' state under the ROUND card), both sim state; 24: dashes: a double tap is a forward or a back dash (the 'dash' state, u.dashDir / dashT, the tap count u.tapDir / tapAt / tapN in place of the old tap timer), the input's 12th bit `dash` (the touch stick's double flick), a dash attack on every button and a rising attack on every limb with the rise read out of a crouching attack too (u.lowStance), the 'r' string token and RISE AND SHINE; 23: the clash: two live strikes whose striking limbs touch stop each other with no damage, both bounce back and recover on the same step (u.clashUntil, in the state hash with tradeUntil / tradeLimb), a much heavier strike breaks through and bats the lighter aside (frame data CLASH), and a striking limb on its way is no longer body to another strike; 22: the perfect round finisher, a sim stage inside the KO phase (sim.perfectT, the winner's 'perfect' state, the body thrown at the camera) that only the winner's press skips; 21: getups by the sides (u.home fixed at touchdown, rolls away / toward with a cross under a man standing near, u.roll* fields, rig.rebase and the roll clips), a body on the floor held off to its drawn feet and short of its hip, lows that touch a floored body as its one ground hit and grazes (u.grazeId), the stomp on down+4 only; 'home', 'rollT' and 'otgHit' in the state hash; 20: a fainted fighter is rooted and shakes it off with alternating left/right presses (u.shakeDir, u.shakeAt, u.faintCut, in the state hash), the CPU's faint shake; 19: bodies never sink into the floor: the ground snap and the point simulation use each joint's drawn radius, the stairs' solid line runs through the nosings, tumbling joints stop at the risers, poses on and beside a flight are fitted to its treads, the vault faces the opening; all of it moves the rig's joints, which are the hitboxes and are hashed; 18: stamina refunds on contact and the no-faint save on a connecting strike (u.paid, u.faintPending, u.refundMove/refundRep/refundAt), so an old build's sim drifts from a new one's; 17: resync (the host sends its confirmed state on a hash mismatch), the end of a match agreed by state hash, a character's reach measured on a reset rig (it depended on what the rig was doing the first time that phone saw the character), the rng and the reach table in the state hash; 16: quick rooms from the menus open on the pick screen too (pickFirst, the 'go' at match 0), which an old guest would ignore; 15: the building twice as wide with a stair at each end, walkable both ways (u.stair, slopes on the rig), floor breaks over either rail; 14: the winner's celebration dance; 13: the host's round time and best-of in the start message, 99s rounds, sim.roundClock; 12: getup options, wake-up strikes, the stomp, air recovery, falling attacks, the universal parry; 11: nine more characters, pants, status/stance/invuln/throw-counter hooks; 2: rollback, 3: stamina faint and combo decay, 4: side keeping and knockback away from the attacker, 5: characters, and holding back walks back, 7: botches and happy accidents, the host's botch setting in the start message, 8: the room session: matches end on a confirmed frame, the post-match and pick messages, the match number on packets and hashes, the tally, no mirrored guest, 9: player names in the ready message, and crew matches that open on the pick screen: a 'go' at match 0, 10: no side swaps without motion (the root follows a clip's step, pushbox separation toward each body's own side and capped per step, the grab pulls the victim in), faster stamina regen and a knockdown refill)
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const STORE = 'stick-fight-net';   // localStorage: { relay: true } forces the relay (testing)
 const WATCH_KEY = 'stick-fight-watch';   // localStorage: '0' when the host has turned spectators off for their rooms
@@ -76,6 +77,9 @@ const END_HOLD = 150;     // frames of the WINS card after the result shows (the
 // agreeing on the final state, and the match is dropped as CONNECTION LOST on both sides. GRACE_MS is the pick
 // screen's patience with a rival who hasn't picked, not a network clock
 const AUTO_MS = 5000, AGREE_MS = 3000, GRACE_MS = 20000, ALIVE_MS = 3000, SILENT_MS = LOST_MS;
+const HEARD_MS = 3500;    // the host starts a match only with a word from the rival this recent (the guest's alive is every 3 s)
+const LINK_EVERY_MS = 30000;
+const WEAK_SHOW_MS = 2000, GOOD_HIDE_MS = 4000;   // the fight's readout: weak this long before the meter shows, good this long before it goes   // online_link: a sample of the link's quality this often during a match
 const STALL_LOST_MS = LOST_MS, END_WAIT_MS = LOST_MS;
 const WANTS = new Set(['rematch', 'chars', 'wait']);
 
@@ -129,7 +133,9 @@ export function createOnline(game) {
   let cd = /** @type {null | { kind: string, until: number }} */ (null), autoOff = false;
   let pendingResult = /** @type {any} */ (null), pendingGo = false;
   /** @type {any} */ let drain = null;   // the finished match's netcode: keeps sending acks until the next start
-  let timer = 0, heardAt = 0, aliveAt = 0;
+  let timer = 0, heardAt = 0, aliveAt = 0, rivalQuiet = false;
+  // online_link (README, Analytics): what the last sample saw, so each one covers the 30 s since
+  let linkAt = 0, linkBase = /** @type {any} */ (null);
   // the end of the match: what this side last said ({t:'end'}), the other side's word, and since when we wait
   let endSent = '', rivalEnd = /** @type {null | { n: number, f: number, h: string, e: number }} */ (null), endWait = 0;
   // the player's display name (rides the ready message; the only thing about a player the other sees),
@@ -259,6 +265,8 @@ export function createOnline(game) {
     cd = null; autoOff = false; pendingGo = false;
     lockstep = createRollback({
       sim: game.sim, localIndex, link: netsimLink(link, params.get('netsim')), match: m, endHold: END_HOLD,
+      // which path carries the packets and what share of the link's probes go missing (the delay and shaky() read them)
+      hint: () => { const l = link; if (!l) return {}; const q = l.quality; return { path: l.path || (l.mode === 'relay' ? 'relay' : ''), loss: q ? q.loss : 0 }; },
       sampleLocal: (f) => (localSource ? localSource(f) : game.input.snapshot()),
       onDesync: (d) => { emit('desync', d); readout.render(); },
       onResync: (r) => { emit('resync', r); readout.render(); },
@@ -308,6 +316,7 @@ export function createOnline(game) {
   }
   function matchOver() {
     const sim = game.sim, ls = lockstep;
+    sampleLink(true);
     lockstep = null; drain = ls;
     const wins = [sim.wins[0] | 0, sim.wins[1] | 0];
     const winner = wins[0] > wins[1] ? 0 : wins[1] > wins[0] ? 1 : -1;
@@ -426,7 +435,11 @@ export function createOnline(game) {
       if (drain) drain.keepalive();
       if (t - aliveAt > ALIVE_MS) { aliveAt = t; if (link) link.sendControl({ t: 'alive' }); }
       if (t - heardAt > SILENT_MS) { finish('lost', 'silent'); return; }
-      if (role === 'host' && cd && t >= cd.until) { cd = null; startNext(); }
+      // the countdown runs out: start, unless nothing has come from the rival for a while (their uplink may be gone:
+      // a match started into that silence only waits out LOST_MS and drops, as on 2026-11-16 20:11). It holds at
+      // zero until they're heard from again; the silent clock still ends the room if they never are
+      if (role === 'host' && cd && t >= cd.until) { if (t - heardAt < HEARD_MS) { cd = null; startNext(); } else rivalQuiet = true; }
+      else rivalQuiet = false;
     }, 100);
   }
   function stopTimer() { if (timer) { clearInterval(timer); timer = 0; } }
@@ -444,17 +457,38 @@ export function createOnline(game) {
       mine: { ...mine }, rival: { ...rival, silentMs: now() - rival.at },
       cd: cd ? { kind: cd.kind, left: Math.max(0, cd.until - now()) } : null,
       autoOff, canStart: canStart(), allTime: crewMode ? null : rivalRecord(rivalPid),
-      name: myName, rivalName, rivalTitle, crew: crewMode,
+      name: myName, rivalName, rivalTitle, crew: crewMode, rivalQuiet,
       // the room's rules as this side knows them (the host's own; what the host last told a guest, or null), and the
       // rules the last match was played on
       rules: role === 'host' ? hostRules() : heardRules, played: playedRules,
     };
   }
 
+  /** online_link (README, Analytics): every LINK_EVERY_MS of a match, and at its end, what the link was like over
+   *  that stretch: the path, round trip and jitter, how much of the time the fight was frozen, the input delay and
+   *  rollback depth, the share of packets sent both ways, the link's probe loss, and resyncs. No player data. */
+  function sampleLink(final) {
+    const ls = lockstep || (final ? drain : null);
+    if (!ls || !link) return;
+    const t = now();
+    const s = ls.stats();
+    if (!linkBase || linkBase.ls !== ls) { linkBase = { ls, at: t, playMs: 0, frozenMs: 0, sent: 0, sentBoth: 0, rollbacks: 0, rollbackFrames: 0, resyncs: 0 }; linkAt = t; return; }
+    if (!final && t - linkAt < LINK_EVERY_MS) return;
+    const b = linkBase, play = s.playMs - b.playMs;
+    if (play < 2000) return;
+    const q = link.quality || { loss: 0 }, rb = s.rollbacks - b.rollbacks;
+    track('online_link', [link.path || link.mode || '-', crewMode ? 'crew' : 'quick', link.candidate || '-', final ? 'end' : 'mid'], Math.round(s.rtt || 0),
+      [Math.round(s.jitter || 0), Math.round(1000 * (s.frozenMs - b.frozenMs) / play) / 10, Math.round((s.avgDelay || s.delay || 0) * 10) / 10, rb ? Math.round(10 * (s.rollbackFrames - b.rollbackFrames) / rb) / 10 : 0,
+        s.sent > b.sent ? Math.round(1000 * (s.sentBoth - b.sentBoth) / (s.sent - b.sent)) / 10 : 0, Math.round(1000 * (q.loss || 0)) / 10, s.resyncs - b.resyncs, Math.round(play / 1000)]);
+    linkBase = { ls, at: t, playMs: s.playMs, frozenMs: s.frozenMs, sent: s.sent, sentBoth: s.sentBoth, rollbacks: s.rollbacks, rollbackFrames: s.rollbackFrames, resyncs: s.resyncs };
+    linkAt = t;
+  }
+
   // why: which check gave up ('no-packets', 'broken:history', 'stalled', 'silent', 'end-wait', 'ws:<reason>:<close code>',
   // or 'rival:<the other side's why>'), so a drop in the analytics says more than "lost"
   function finish(reason, why = '') {
     const was = !!lockstep || between();
+    if (lockstep) sampleLink(true);
     if (lockstep && (reason === 'peer-left' || reason === 'lost')) {   // a match that never got a result
       const s = lockstep.stats(), path = link ? `${link.mode}:${link.candidate || '-'}` : 'gone';
       console.warn(`[net] match dropped: ${reason} (${why || '?'}) on ${path}, frame ${s.frame}`, s);
@@ -524,6 +558,7 @@ export function createOnline(game) {
       // the link is gone, or can't carry this match any more: both sides end it, never two different fights
       if (lockstep && (lockstep.lost || lockstep.broken || lockstep.stalledMs > STALL_LOST_MS)) { finish('lost', lockstep.lost ? 'no-packets' : lockstep.broken ? 'broken:' + lockstep.broken : 'stalled'); return k; }
       checkEnd();
+      sampleLink(false);
       readout.tick();
       return k;
     },
@@ -604,6 +639,20 @@ export function createOnline(game) {
     get lockstep() { return lockstep; },   // the netcode (rollback); the old name stays for callers
     get netcode() { return lockstep; },
     shareUrl,
+    /** the link's quality for the meter (src/net/meter.js): round trip, jitter, loss and path, from the netcode's own
+     *  pings during a match and the link's probes otherwise; null with no link to the rival */
+    quality() {
+      const l = link;
+      if (!l || !l.peerPresent) return null;
+      const q = l.quality || { rtt: 0, jitter: 0, loss: 0, samples: 0 };
+      const s = lockstep ? lockstep.stats() : null;
+      const fromMatch = !!(s && s.rtt);
+      return { rtt: fromMatch ? s.rtt : q.rtt, jitter: fromMatch ? s.jitter : q.jitter, loss: q.loss || 0, samples: fromMatch ? 9 : q.samples || 0,
+        path: l.path || (l.mode === 'relay' ? 'relay' : l.mode === 'p2p' ? 'direct' : ''), delay: s ? s.delay : 0, frozen: s ? s.stalledMs > 300 : false,
+        reconnecting: s ? showsReconnecting(net.stats(), l) : !!l.recovering };
+    },
+    /** this page's own connection to the room (its pings), for the host screen's meter while it waits */
+    serverQuality() { return link && link.server ? link.server : null; },
     stats() {
       const s = lockstep ? lockstep.stats() : null;
       return { state, role, code, mode: link ? link.mode : '', endWaitMs: endWait ? now() - endWait : 0, ...(s || {}) };
@@ -631,7 +680,7 @@ function netsimLink(link, spec) {
   console.info(`[net] netsim: +${lat} ms one way, ±${jit} ms jitter, ${loss}% packet loss`);
   const later = (fn) => setTimeout(fn, Math.max(0, lat + (Math.random() * 2 - 1) * jit));
   return {
-    sendPacket(buf) { if (Math.random() * 100 < loss) return; later(() => link.sendPacket(buf)); },
+    sendPacket(buf, both) { if (Math.random() * 100 < loss) return; later(() => link.sendPacket(buf, both)); },
     sendControl(msg) { later(() => link.sendControl(msg)); },
   };
 }
@@ -652,6 +701,12 @@ function createReadout(net, stage) {
   el.className = 'nf-readout';
   el.hidden = true;
   el.innerHTML = '<span class="nf-mode"></span> <span class="nf-ping"></span><b class="nf-watch" hidden></b><b class="nf-resync" hidden>RESYNC</b><b class="nf-desync" hidden>DESYNC</b><b class="nf-wait" hidden>WAITING FOR RIVAL</b>';
+  // the connection meter (src/net/meter.js) takes the readout's place while the link is weak: the bars and
+  // WEAK CONNECTION: EXPECT LAG, after WEAK_SHOW_MS of it, gone after GOOD_HIDE_MS of a better link
+  const meter = createMeter({ cls: 'nf-meter' });
+  meter.el.hidden = true;
+  el.appendChild(meter.el);
+  let weakSince = 0, goodSince = 0, weakOn = false;
   (stage || document.body).appendChild(el);
   const mode = el.querySelector('.nf-mode'), ping = el.querySelector('.nf-ping');
   const desync = /** @type {HTMLElement} */ (el.querySelector('.nf-desync')), wait = /** @type {HTMLElement} */ (el.querySelector('.nf-wait'));
@@ -666,6 +721,13 @@ function createReadout(net, stage) {
       if (!mode || !ping) return;
       // RECONNECTING the whole time anything is being repaired (showsReconnecting)
       const re = showsReconnecting(s, net.link);
+      const q = net.quality(), b = bars(q), t = performance.now();
+      if (b > 0 && b <= WEAK_AT) { goodSince = 0; if (!weakSince) weakSince = t; if (t - weakSince > WEAK_SHOW_MS) weakOn = true; }
+      else { weakSince = 0; if (!goodSince) goodSince = t; if (t - goodSince > GOOD_HIDE_MS) weakOn = false; }
+      const showMeter = weakOn && !re;
+      if (showMeter) meter.update(q);
+      meter.el.hidden = !showMeter;
+      el.classList.toggle('nf-weak', showMeter);
       mode.textContent = re ? 'RECONNECTING' : s.mode === 'p2p' ? 'P2P' : s.mode === 'relay' ? 'RELAY' : '...';
       el.classList.toggle('nf-relay', s.mode === 'relay' && !re);
       el.classList.toggle('nf-reconnecting', re);
@@ -678,7 +740,7 @@ function createReadout(net, stage) {
       if (watch) { watch.hidden = !w; if (w) watch.textContent = `WATCHING ${w}`; }
       resync.hidden = !(s.sinceResync < 1500);
       desync.hidden = !(s.desync && performance.now() - (s.desync.at || 0) > 3000);
-      wait.hidden = re || !(s.stalledMs > 300 || s.endWaitMs > 300);
+      wait.hidden = re || showMeter || !(s.stalledMs > 300 || s.endWaitMs > 300);
     },
   };
   return r;
@@ -908,6 +970,8 @@ function injectStyle() {
   .nf-readout.nf-relay { color: #ffe0a8; }
   .nf-readout.nf-reconnecting .nf-mode { color: #E85D00; }
   .nf-readout b { font-weight: 600; }
+  .nf-readout.nf-weak .nf-mode, .nf-readout.nf-weak .nf-ping { display: none; }
+  .nf-readout .nf-meter { font-size: 1em; }
   .nf-desync { color: #ffc2f3; }
   .nf-resync { color: #ffe0a8; }
   .nf-wait { color: #fff4fd; animation: nf-blink 1.1s steps(1) infinite; }

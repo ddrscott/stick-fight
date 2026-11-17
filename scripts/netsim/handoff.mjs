@@ -54,7 +54,7 @@ function weakCellPlan(r, from = 12000, until = 40 * 60000) {
   return evs;
 }
 const JITTERY = { base: 60, jitter: 200, jitterSwing: 200, loss: 0.05 };
-/** @type {Record<string, { legs?: [any, any], relay?: boolean, slow?: boolean, matches?: number, seeds?: number, judgeFrozen?: number, plan?: (r: () => number) => { at: number, dur: number, kind: string }[], setup?: (w: any) => void, events: { at: number, run: (w: any) => void }[], note: string }>} */
+/** @type {Record<string, { legs?: [any, any], relay?: boolean, slow?: boolean, matches?: number, seeds?: number, rehost?: boolean, judgeFrozen?: number, plan?: (r: () => number) => { at: number, dur: number, kind: string }[], setup?: (w: any) => void, events: { at: number, run: (w: any) => void }[], note: string }>} */
 const SCENARIOS = {
   'drop-3s':    { note: 'guest loses all network for 3 s (TCP holds)', events: [{ at: 20000, run: (w) => w.dropout(1, 3000, 'survive') }] },
   'drop-10s':   { note: 'guest loses all network for 10 s (its socket dies half-open)', events: [{ at: 20000, run: (w) => w.dropout(1, 10000, 'die') }] },
@@ -67,10 +67,10 @@ const SCENARIOS = {
   // often and takes longer (README, Reconnecting: the relay on a jittery phone)
   // the bar for [t6sye7]: ten matches in a row on 5 seeds, nothing dropped, the fight frozen under 5% of the time
   // outside the dropouts themselves (judgeFrozen), hashes and results agreeing
-  'weak-cell': { note: 'guest on weak cellular (~280 ms, ~100 ms jitter, 3% loss) with a 2-5 s dropout every 20-30 s (some half-open, some a network switch); host on wifi; 10 matches', legs: [WIFI, WEAK_CELL], matches: 10, seeds: 5, judgeFrozen: 0.05, plan: (r) => weakCellPlan(r), events: [] },
+  'weak-cell': { note: 'guest on weak cellular (~280 ms, ~100 ms jitter, 3% loss) with a 2-5 s dropout every 20-30 s (some half-open, some a network switch); host on wifi; 10 matches', legs: [WIFI, WEAK_CELL], matches: 10, rehost: true, seeds: 5, judgeFrozen: 0.05, plan: (r) => weakCellPlan(r), events: [] },
   // carrier-grade NAT on the weak phone: no direct path at all, and api/ice slow enough on that signal that the first
   // fetch can time out (then the link has public STUN only, which can't reach TURN)
-  'turn-cell': { note: 'guest on weak cellular behind a symmetric NAT (no direct path; TURN works) with a slow api/ice; host on wifi', legs: [WIFI, WEAK_CELL], setup: (w) => w.nat(1, 1800), events: [] },
+  'turn-cell': { note: 'weak-cell behind a symmetric NAT (no direct path, TURN works) with a slow api/ice; 4 matches', legs: [WIFI, WEAK_CELL], matches: 4, rehost: true, judgeFrozen: 0.05, plan: (r) => weakCellPlan(r), setup: (w) => w.nat(1, 2000), events: [] },
   'relay-jitter': { note: 'the jitter scenario on the relay (no DataChannel): the lag numbers for the slow path', legs: [CALM, JITTERY], relay: true, slow: true, events: [] },
 };
 
@@ -96,11 +96,12 @@ async function session(name, seed, matchesArg) {
   const ids = roster().map((c) => c.id);
   const pickRng = mulberry32(seed + 99);
   const seenLinks = new WeakSet();
+  let rooms = 0;   // rooms opened this session (a rehost opens another)
   for (const c of both) {
     let pickedFor = '';
     c.net.on('session', (v) => {
-      if (v.phase === 'select' && !v.mine.ready && pickedFor !== `${v.n}`) {
-        pickedFor = `${v.n}`;
+      if (v.phase === 'select' && !v.mine.ready && pickedFor !== `${rooms}:${v.n}`) {
+        pickedFor = `${rooms}:${v.n}`;
         const id = ids[Math.floor(pickRng() * ids.length)];
         setTimeout(() => { c.net.pick(id, false); setTimeout(() => c.net.pick(id, true), 300 + pickRng() * 1500); }, 400 + pickRng() * 1500);
       }
@@ -127,9 +128,34 @@ async function session(name, seed, matchesArg) {
   }
   A.start(0); B.start(7 + r() * 9);
   const hostAt = 2000 + r() * 2000, joinAt = hostAt + 1000 + r() * 2000;
-  let code = '';
-  at(hostAt, () => { A.net.host({ pickFirst: true, crew: true }).then((o) => { code = o.code; }); }, A, 'timer');
-  at(joinAt, () => { if (code) B.net.join(code, { pickFirst: true, crew: true }); }, B, 'timer');
+  const open = (t0) => {
+    rooms++;
+    let code = '';
+    at(t0, () => { A.net.host({ pickFirst: true, crew: true }).then((o) => { code = o.code; }); }, A, 'timer');
+    at(t0 + (joinAt - hostAt), () => { if (code) B.net.join(code, { pickFirst: true, crew: true }); }, B, 'timer');
+  };
+  open(hostAt);
+  // rehost (weak-cell): a dropped match doesn't end the session. The two players make a new room and play on, as
+  // the kids would, so a before number reads as drops per ten matches rather than stopping at the first one
+  const bank = { checks: 0, diffs: 0, finished: 0, resultDiffs: 0, endDiverged: 0, drops: 0, why: /** @type {string[]} */ ([]) };
+  const settle = () => {
+    const e = tally(A, B);
+    for (const k of ['checks', 'diffs', 'finished', 'resultDiffs', 'endDiverged']) bank[k] += e[k];
+    A.results = {}; B.results = {}; A.confirmed.clear(); B.confirmed.clear();
+  };
+  if (sc.rehost) {
+    const watchDrop = () => {
+      if (A.ended || B.ended) {
+        bank.drops++; bank.why.push(`${A.ended || '-'}/${B.ended || '-'}`);
+        for (const c of both) { try { c.net.leave(); } catch { /* gone */ } }
+        settle();
+        A.ended = null; B.ended = null;
+        open(sched.t + 3000);
+      }
+      at(sched.t + 200, watchDrop, null, 'net');
+    };
+    at(hostAt, watchDrop, null, 'net');
+  }
   // what the HUD would show, every 100 ms, on each phone that's in a match and on screen
   const sample = () => {
     for (const c of both) {
@@ -151,11 +177,12 @@ async function session(name, seed, matchesArg) {
   };
   at(100, sample, null, 'net');
   for (const c of both) c.net.on('resync', () => { m.resyncs++; });
-  const done = () => (Object.keys(A.results).length >= matches && Object.keys(B.results).length >= matches) || !!A.ended || !!B.ended;
+  const played = () => bank.finished + Math.min(Object.keys(A.results).length, Object.keys(B.results).length);
+  const done = () => played() >= matches || (!sc.rehost && (!!A.ended || !!B.ended));
   const limit = joinAt + matches * (sc.slow ? 600000 : 260000);
   await runUntil(limit, done);
   await runUntil(sched.t + 3000);
-  const rep = evaluate(name, seed, A, B, matches, m, wire);
+  const rep = evaluate(name, seed, A, B, matches, m, wire, bank);
   if (!rep.pass || process.env.NETSIM_DEBUG) for (const c of both) {
     const s = c.net.stats();
     console.error(`  [${c.name}] state ${s.state} frame ${s.frame} confirmed ${s.confirmed} stalledMs ${Math.round(s.stalledMs || 0)} lostMs ${Math.round(s.lostMs || 0)} mode ${s.mode} ended ${c.ended} link ${JSON.stringify(c.net.link && c.net.link.debug)}`);
@@ -164,7 +191,8 @@ async function session(name, seed, matchesArg) {
   return rep;
 }
 
-function evaluate(name, seed, A, B, matches, m, wire) {
+/** one room's worth: hash checks and finished matches agreeing on both phones */
+function tally(A, B) {
   let checks = 0, diffs = 0;
   for (const [k, h] of A.confirmed) { if (!B.confirmed.has(k)) continue; checks++; if (B.confirmed.get(k) !== h) diffs++; }
   let finished = 0, resultDiffs = 0, endDiverged = 0;
@@ -175,7 +203,15 @@ function evaluate(name, seed, A, B, matches, m, wire) {
     if (a.winner !== b.winner || a.wins.join() !== b.wins.join()) resultDiffs++;
     if (a.hash !== b.hash || a.frame !== b.frame) endDiverged++;
   }
-  const dropped = [A.ended, B.ended].filter(Boolean).length;
+  return { checks, diffs, finished, resultDiffs, endDiverged };
+}
+
+function evaluate(name, seed, A, B, matches, m, wire, bank) {
+  const e = tally(A, B);
+  const checks = e.checks + bank.checks, diffs = e.diffs + bank.diffs, finished = e.finished + bank.finished;
+  const resultDiffs = e.resultDiffs + bank.resultDiffs, endDiverged = e.endDiverged + bank.endDiverged;
+  const dropped = bank.drops + ([A.ended, B.ended].some(Boolean) ? 1 : 0);
+  const endedWhy = [...bank.why, ...(A.ended || B.ended ? [`${A.ended || '-'}/${B.ended || '-'}`] : [])];
   const frozenPct = m.outSamples ? m.outFrozen / m.outSamples : 0;
   const frozenOk = !SCENARIOS[name].judgeFrozen || frozenPct < SCENARIOS[name].judgeFrozen;
   const pass = finished >= matches && !dropped && diffs === 0 && !resultDiffs && !endDiverged && m.unlabeled === 0 && frozenOk;

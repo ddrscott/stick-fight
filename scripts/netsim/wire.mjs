@@ -79,7 +79,7 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
     if (sock.replaced || r.sock[sock.role] !== sock) return;
     r.sock[sock.role] = null;
     const peer = r.sock[other(sock.role)];
-    if (roomFlags.away && code === 1006 && peer) {
+    if (roomFlags.away && (code === 1005 || code === 1006 || code === 1011 || code === 4100) && peer) {
       r.away[sock.role] = sched.t; stats.roomAway++;
       peer.down(JSON.stringify({ t: 'sys', ev: 'peer', present: false, away: true }));
       return;
@@ -166,7 +166,7 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
         this.side.sockets.delete(this);
         if (this.onclose) this.onclose({ code });
       }
-      close(code = 1000) {
+      close(code = 1005) {   // (a close() with no code sends no status: the room sees 1005)
         if (this.readyState === 3) return;
         const wasOpen = this.readyState === 1;
         this.readyState = 3;

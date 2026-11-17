@@ -73,7 +73,7 @@ import { isFighter } from "./roster";
 
 // the events the page may send (src/analytics.js); anything else is dropped. `match` and `pick` also
 // update the D1 rollups, so they're checked field by field (worker/stats.ts) instead of passed through
-const EVENT_NAMES = new Set(["visit", "mode", "stage", "arcade_end", "horde_end", "online_match", "online_drop", "online_rejoin", "install", "technique", "move", "perf"]);
+const EVENT_NAMES = new Set(["visit", "mode", "stage", "arcade_end", "horde_end", "online_match", "online_drop", "online_rejoin", "online_link", "install", "technique", "move", "perf"]);
 const MAX_BATCH = 12;   // events in one POST (a match's end sends its result and its move counts together)
 type PageEvent = { e?: unknown; l?: unknown; v?: unknown; d?: unknown; m?: unknown };
 
@@ -761,8 +761,9 @@ export class Room extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
-    // 1006 / 1005 / 1011: the network lost it (nobody said goodbye); 1000 after a 'bye', or 1001 for a closed tab, is leaving
-    await this.left(ws, code === 1005 || code === 1006 || code === 1011);
+    // 1006 / 1005 / 1011: the network lost it (nobody said goodbye); 4100: the page gave up on a socket that went quiet
+    // and is already opening another (src/net/link.js abandon); 1000 after a 'bye', or 1001 for a closed tab, is leaving
+    await this.left(ws, code === 1005 || code === 1006 || code === 1011 || code === 4100);
     try { ws.close(code === 1005 || code === 1006 ? 1000 : code, reason); } catch { /* already closed */ }
   }
 

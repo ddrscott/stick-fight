@@ -594,6 +594,11 @@ function injectStyle() {
   /* the room rule for stat upgrades (README, Progression, Stat upgrades) on the pick and post-match screens: plain, read once */
   .fl-selstatus { flex-wrap: wrap; justify-content: center; row-gap: 0.6cqh; }
   .fl-selstatus .fl-uprule-line { flex-basis: 100%; text-align: center; font-size: 0.8em; color: #9dffc0; }
+  /* the connection meter (src/net/meter.js): its own line on the pick screen, under the host's info and in the crew's PLAY column */
+  .fl-selstatus .fl-pickmeter { flex-basis: 100%; font-size: 0.85em; }
+  .fl-hostinfo .fl-meter { font-size: 2.2cqw; }
+  .fl-crewbtns .fl-crewmeter { font-size: 1.7cqw; align-self: center; }
+  #flow .fl-tall .fl-hostinfo .fl-meter, #flow .fl-tall .fl-crewbtns .fl-crewmeter { font-size: 3.6cqw; }
   .fl-uprule-line { color: #9dffc0; }
   .fl-post { gap: 1.3cqh; }
   .fl-set { display: flex; align-items: baseline; gap: 2.4cqw; font-family: 'Bungee', 'Arial Black', sans-serif; line-height: 1; }
