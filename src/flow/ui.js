@@ -759,6 +759,22 @@ function injectStyle() {
   .fl-standings .fl-goalwho .fl-goalmore, .fl-standings .fl-goalwho .fl-goalnone { border-color: transparent; color: rgba(214,190,255,0.7); }
   .fl-standings .fl-goalnote { font-size: 1.4cqw; font-weight: 500; letter-spacing: 0.08em; color: rgba(214,190,255,0.8); white-space: normal; }
   .fl-standings .fl-goalmet .fl-goalnote { color: #9dffc0; }
+  /* Champ of the Court (README, Crew rooms): who's on, the champ's streak, the line. Plain text, square, no glow */
+  .fl-court, .fl-court * { text-shadow: none; box-shadow: none; }
+  .fl-court { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 0.5cqh; padding: 0.5cqw 0.8cqw 0.6cqw; margin-bottom: 0.6cqh; border: 2px solid rgba(46,242,255,0.5); background: rgba(10,4,20,0.7); }
+  .fl-court .fl-goalhead .fl-goalsl { color: var(--amber); flex: none; }
+  .fl-standings .fl-court .fl-goalhead .fl-goalkey { color: rgba(214,190,255,0.75); }
+  .fl-courtrow, .fl-courtline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4cqw 0.8cqw; min-width: 0; font-size: 1.7cqw; letter-spacing: 0.08em; color: #eafcff; }
+  .fl-standings .fl-courtkey { flex: none; min-width: 5.5cqw; color: rgba(214,190,255,0.75); font-size: 0.85em; }
+  .fl-standings .fl-courtvs { color: rgba(214,190,255,0.75); }
+  .fl-standings .fl-courtwho { display: inline-flex; align-items: baseline; gap: 0.5cqw; color: #ffffff; }
+  .fl-standings .fl-courtwho.fl-me, .fl-standings .fl-linechip.fl-me { color: #ffc2f3; }
+  .fl-standings .fl-champ { padding: 0.15cqw 0.45cqw 0.05cqw; border: 2px solid #ffd23f; color: #ffd23f; font-weight: 600; font-size: 0.85em; letter-spacing: 0.1em; white-space: nowrap; }
+  .fl-standings .fl-linechip { display: inline-flex; align-items: baseline; gap: 0.3cqw; padding: 0.2cqw 0.5cqw 0.1cqw; border: 2px solid rgba(46,242,255,0.45); color: #d9fbff; white-space: nowrap; }
+  .fl-standings .fl-linechip.fl-me { border-color: rgba(255,43,214,0.6); }
+  .fl-standings .fl-linechip > b:first-child { color: var(--amber); font-variant-numeric: tabular-nums; }
+  .fl-standings .fl-courtnone { color: rgba(214,190,255,0.7); font-size: 0.85em; }
+  .fl-crewwatch .fl-wspot { color: #ffc2f3; text-shadow: none; }
   .fl-eotm { display: flex; align-items: baseline; gap: 0.8cqw; min-width: 0; padding-top: 0.4cqh; border-top: 2px solid rgba(255,176,46,0.25); font-size: 1.6cqw; letter-spacing: 0.08em; }
   .fl-standings .fl-eotm .fl-eotmstar, .fl-standings .fl-star { color: #ffd23f; flex: none; }
   .fl-standings .fl-eotm .fl-eotmkey { color: #ffd98f; flex: none; font: 400 1.1cqw/1 'Bungee', sans-serif; }
@@ -1146,6 +1162,9 @@ function injectStyle() {
   #flow > .fl-up.fl-crew .fl-goalwho { font-size: max(12px, 3.4cqw); gap: 1.4cqw 1.6cqw; }
   #flow > .fl-up.fl-crew .fl-standings .fl-goalnote { font-size: max(12px, 3.3cqw); }
   #flow > .fl-up.fl-crew .fl-eotm { font-size: max(12px, 3.5cqw); gap: 1.6cqw; flex-wrap: wrap; }
+  #flow > .fl-up.fl-crew .fl-court { gap: 0.4em; padding: 0.5em 2.4cqw 0.6em; margin: 0.4em 0 0.2em; }
+  #flow > .fl-up.fl-crew .fl-courtrow, #flow > .fl-up.fl-crew .fl-courtline { font-size: max(13px, 3.7cqw); gap: 1.2cqw 1.8cqw; }
+  #flow > .fl-up.fl-crew .fl-standings .fl-courtkey { min-width: 12cqw; }
 
   /* the LIVE list: every match, scrolling past what fits */
   #flow > .fl-up .fl-livelist { width: 100%; flex: 0 1 auto; padding: 1cqw; margin: -1cqw; }

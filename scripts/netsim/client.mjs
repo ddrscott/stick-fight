@@ -271,7 +271,7 @@ export function createSpectator({ name, seed, network, frames, createWatch }) {
   let n = 0;
   const watch = createWatch({
     sim, now: () => sched.t,
-    openSocket: (code) => network.watchSocket(code, me),
+    openSocket: (code, ticket) => network.watchSocket(code, me, ticket),
     // main.js setScene('online', o), exactly as a player's page does it
     startMatch(o) {
       demoRunning = false;

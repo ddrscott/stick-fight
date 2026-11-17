@@ -8,7 +8,7 @@
 
 import { head, topbar, footer, script } from './templates.mjs';
 
-export const UPDATED = '2026-11-14';
+export const UPDATED = '2026-11-16';
 export const CONTACT = 'hey@neonstickfight.com';
 const mail = (subject) => `<a href="mailto:${CONTACT}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}">${CONTACT}</a>`;
 
@@ -113,7 +113,7 @@ export function privacyPage() {
 
       q('names', 'Who can see my name?', `    <ul>
       <li><b>Your rival</b> in an online match sees your nickname, your job title (like MANAGER) and the colors your fighter wears.</li>
-      <li><b>Spectators.</b> A quick match can show up under LIVE NOW on the homepage and under WATCH in the game, with both nicknames, for anyone to watch. The host can switch SPECTATORS off on the HOST A GAME screen, and then nobody can watch. Crew matches can never be watched.</li>
+      <li><b>Spectators.</b> A quick match can show up under LIVE NOW on the homepage and under WATCH in the game, with both nicknames, for anyone to watch. The host can switch SPECTATORS off on the HOST A GAME screen, and then nobody can watch. A crew match is never listed anywhere: only that crew's members who are waiting in its line to play next can watch it, and nobody with just the room code can.</li>
       <li><b>Your crew.</b> Everyone with the crew link sees each member's nickname, record and time played, the crew's high score tables with the initials on them, and the weekly goal and Employee of the Month by initials and job title.</li>
       <li><b>Link previews.</b> When someone pastes a crew link into a chat app, the preview shows the crew's name and how many members it has. Anyone who gets that link can see this. It never shows members' names.</li>
       <li><b>High scores.</b> The initials you put on the arcade and horde tables stay on your device, unless you're in a crew: then the crew's tables show them to everyone with that crew's link.</li>
@@ -171,7 +171,7 @@ export function privacyPage() {
 
       q('parents', 'For parents', `    <p>Neon Stick Fight is made for middle schoolers and up, and for fighting game fans of any age. Here's what a child's play leaves behind:</p>
     <ul>
-      <li><b>Nothing tied to who they are, unless they saved a profile with an email.</b> The game counts are anonymous. Their nickname and match records show up only to the people they play with, in the crews they join, and to spectators of public quick matches.</li>
+      <li><b>Nothing tied to who they are, unless they saved a profile with an email.</b> The game counts are anonymous. Their nickname and match records show up only to the people they play with, in the crews they join, to spectators of public quick matches, and to crew members waiting in line to play.</li>
       <li><b>Under 13, no email.</b> Before the game ever asks for an email, it asks the player's age. A player who answers under 13 isn't asked for an email: their profile stays on their device, and everything in the game still works.</li>
       <li><b>Nicknames.</b> The game tells players to use a nickname, not their real name, and blocks some words in names. Talk with your child about not sharing their real name, school or other details in names or crew names.</li>
       <li><b>Online play</b> connects two devices directly, so the other player's device can see your internet address, as in most online games. Playing online with friends they know is a good habit.</li>

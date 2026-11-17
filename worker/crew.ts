@@ -24,13 +24,19 @@
 // ready or playing), PLAY, and the standings. When two members are ready the room opens a quick room
 // (worker/index.ts Room) for them and tells each its role; the match itself runs there as any
 // online match does (WebRTC or the relay). The host's page reports each match's result here, once.
-// If someone else is waiting when a match ends, the winner stays on: the room tells both players, the
-// loser goes back to the lobby and the winner plays the one waiting.
 //
-// Messages (JSON). From the page: hello {pid, name, title?}, name {name}, play {on, stay?}, lobby {title?},
+// Champ of the Court (README, Crew rooms, Champ of the Court): one match at a time. PLAY puts a member at the
+// end of the line; the first two in line play. When a match ends with a winner and someone is waiting, the
+// winner stays on at the front and the loser goes to the back of the line by itself (still ready, a fresh
+// readyAt). A draw changes nothing. Whoever leaves the line (LEAVE LINE, a closed socket) is out of it and the
+// rest move up; a champ who leaves lets the first two in line play each other. The champ's run of wins is the
+// streak. Members in line (and only them) watch the match on the court: each gets a ticket for its match room,
+// which that private room checks with this crew (watchOk) before it lets a spectator in.
+//
+// Messages (JSON). From the page: hello {pid, name, title?}, name {name}, play {on}, lobby {title?},
 // result {match, n, winner (0 host, 1 guest, -1 draw), wins, chars}. From the room: welcome {you}, state
-// {...}, match {id, code, role, rival}, rotate {match, stay, next}, goalpay {week, award, career?},
-// error {reason}.
+// {...}, match {id, code, role, rival}, rotate {match, stay, next, spot}, watch {match, code, ticket} (to a
+// member in line while a match is on; match '' when not), goalpay {week, award, career?}, error {reason}.
 //
 // Crew goals are paid here, server-side: when the week's goal is met, each member who played that week is
 // paid GOAL_PAY once (gcontrib.paid). A signed-in member (the session cookie came with the socket) is paid
@@ -58,6 +64,8 @@ const MAX_MESSAGE = 4096;
 const MSG_RATE = 10, MSG_BURST = 30, MSG_STRIKES = 200;
 const LIVE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_SECS = 3600;                     // the longest match length a result may report
+const HOLD_MS = 12000;                     // after a rotation, how long the line waits for the champ's and the loser's pages to come back
+const SPOT_MS = 20000;                     // a member whose socket dropped gets their place in line back if they're back this soon
 // crew high scores (README, Crew rooms, High scores): the page reports a finished run; these keep it plausible
 export const SCORE_KINDS = ["arcade", "horde"] as const;
 export type ScoreKind = (typeof SCORE_KINDS)[number];
@@ -72,7 +80,9 @@ export type ScoreRow = { initials: string; score: number; char: string; reach: n
 
 type Status = "lobby" | "ready" | "match";
 // email: the signed-in account behind this socket (from the session cookie at the upgrade), for the goal's pay
-type Att = { mid: string; name: string; status: Status; readyAt: number; match: string; email?: string; pid?: string };
+// hold: when a rotation put this member back in line while their page was still on the result screen (0 once it's back)
+// ticket / tmatch: the watch ticket this member holds for the match on the court (in line only)
+type Att = { mid: string; name: string; status: Status; readyAt: number; match: string; email?: string; pid?: string; hold?: number; ticket?: string; tmatch?: string };
 type Counts = { matches: number; rounds: number; wins: number };
 type Goal = { week: string; kind: keyof Counts; target: number; progress: number; met_at: number };
 type Live = { id: string; code: string; host: string; guest: string; at: number };
@@ -80,6 +90,9 @@ type Live = { id: string; code: string; host: string; guest: string; at: number 
 export class Crew extends DurableObject<Env> {
   private schema = false;
   private buckets = new WeakMap<WebSocket, { tokens: number; at: number; strikes: number }>();
+  private spots = new Map<string, { readyAt: number; at: number }>();   // places in line kept for a dropped socket (memory only)
+  private pairing = false;
+  private pairAgain = false;
 
   private sql<T extends Record<string, SqlStorageValue>>(q: string, ...b: unknown[]): T[] {
     return this.ctx.storage.sql.exec<T>(q, ...b).toArray();
@@ -138,7 +151,14 @@ export class Crew extends DurableObject<Env> {
   private async touch() {
     const at = Date.now() + CREW_TTL_MS;
     this.setMeta("expires", at);
-    await this.ctx.storage.setAlarm(at);
+    const hold = this.holdEnds();
+    await this.ctx.storage.setAlarm(hold && hold < at ? hold : at);
+  }
+  /** when the soonest rotation hold runs out (the alarm pairs the line then), or 0 */
+  private holdEnds(): number {
+    let t = 0;
+    for (const w of this.sockets()) { const h = this.att(w).hold || 0; if (h && (!t || h + HOLD_MS < t)) t = h + HOLD_MS + 250; }
+    return t;
   }
   private exists(): boolean { this.ensure(); return this.meta("name") !== null && Number(this.meta("expires") || 0) > Date.now(); }
 
@@ -224,12 +244,25 @@ export class Crew extends DurableObject<Env> {
       this.broadcast();
     } else if (m.t === "play") {
       if (a.status === "match") return;
-      this.setAtt(ws, { ...a, status: m.on ? "ready" : "lobby", readyAt: m.on ? (m.stay ? 1 : Date.now()) : 0 });
+      if (m.on) {
+        // the end of the line (already in it: the place stays; back within SPOT_MS of a dropped socket: the old place).
+        // The page's old `stay` is ignored: the room knows who the champ is
+        if (a.status !== "ready") {
+          const kept = this.spots.get(a.mid);
+          this.spots.delete(a.mid);
+          const readyAt = kept && Date.now() - kept.at < SPOT_MS ? kept.readyAt : Date.now();
+          this.setAtt(ws, { ...a, status: "ready", readyAt, hold: 0 });
+        }
+      } else this.setAtt(ws, { ...a, status: "lobby", readyAt: 0, hold: 0 });   // LEAVE LINE
       await this.pair();
       this.broadcast();
     } else if (m.t === "lobby") {
-      this.setAtt(ws, { ...a, status: "lobby", readyAt: 0, match: "" });
+      // back from a match: out of it. A rotation already put them in line, so they stay there (the hold ends); a
+      // page coming back from some other screen (the name screen) keeps whatever it had
+      if (a.status === "match") this.setAtt(ws, { ...a, status: "lobby", readyAt: 0, match: "", hold: 0 });
+      else if (a.hold) this.setAtt(ws, { ...a, hold: 0, match: "" });
       this.setTitle(a.mid, m.title);   // a promotion during the match shows by the time they're back
+      await this.pair();
       this.broadcast();
     } else if (m.t === "result") {
       await this.result(ws, a, m);
@@ -261,21 +294,105 @@ export class Crew extends DurableObject<Env> {
     await this.payOwed(att);   // a goal met while they were away: paid now
   }
 
-  /** two ready members (the longest waiting first; a winner staying on goes to the front) play */
+  /** the line: members waiting their turn, in order (a member with two sockets counts once, at the earlier place).
+   *  The champ staying on has readyAt 1, so it's first. */
+  private line(): { w: WebSocket; a: Att }[] {
+    const seen = new Set<string>();
+    return this.sockets().map((w) => ({ w, a: this.att(w) })).filter((x) => x.a.mid && x.a.status === "ready")
+      .sort((x, y) => x.a.readyAt - y.a.readyAt).filter((x) => !seen.has(x.a.mid) && !!seen.add(x.a.mid));
+  }
+  /** the match on the court: both its players are still in it (one gone back to the crew ends it), or null */
+  private court(): Live | null {
+    const by = new Map<string, Set<string>>();
+    for (const w of this.sockets()) {
+      const a = this.att(w);
+      if (a.mid && a.status === "match" && a.match) { const s = by.get(a.match) || new Set<string>(); s.add(a.mid); by.set(a.match, s); }
+    }
+    for (const [id, who] of by) {
+      const l = this.sql<Live>("SELECT id, code, host, guest, at FROM live WHERE id = ?", id)[0];
+      if (l && who.has(l.host) && who.has(l.guest)) return l;
+    }
+    return null;
+  }
+  /** each member's place in line: 0 for the two up now (the court is free and they're first), else 1, 2, 3... */
+  private spotsNow(court = this.court(), line = this.line()): Map<string, number> {
+    const out = new Map<string, number>();
+    line.forEach((x, i) => out.set(x.a.mid, court ? i + 1 : Math.max(0, i - 1)));
+    return out;
+  }
+  /** the champ and their streak (meta "champ"), or null */
+  private champ(): { mid: string; streak: number } | null {
+    try { const c = JSON.parse(this.meta("champ") || "null"); return c && typeof c.mid === "string" ? { mid: c.mid, streak: Number(c.streak) || 0 } : null; } catch { return null; }
+  }
+  private setChamp(c: { mid: string; streak: number } | null) {
+    if (c) this.setMeta("champ", JSON.stringify(c));
+    else this.ctx.storage.sql.exec("DELETE FROM meta WHERE k = 'champ'");
+  }
+
+  /** the court is free: the first two in line play (the champ is first; a rotation's pages get HOLD_MS to come back) */
   private async pair() {
-    const ready = this.sockets().map((w) => ({ w, a: this.att(w) })).filter((x) => x.a.mid && x.a.status === "ready").sort((x, y) => x.a.readyAt - y.a.readyAt);
-    const first = ready[0], second = first && ready.find((x) => x.a.mid !== first.a.mid);
+    if (this.pairing) { this.pairAgain = true; return; }
+    this.pairing = true;
+    try {
+      do { this.pairAgain = false; await this.pairOnce(); } while (this.pairAgain);
+    } finally { this.pairing = false; }
+  }
+  private async pairOnce() {
+    if (this.court()) return;   // one match at a time
+    const [first, second] = this.line();
     if (!first || !second) return;
-    const code = await claimRoom(this.env, true);   // private: a crew match is never open to spectators
-    if (!code) return;   // no free code: they stay ready, the next press tries again
-    const id = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, 10);
     const now = Date.now();
+    if ([first, second].some((x) => x.a.hold && now - x.a.hold < HOLD_MS)) return;   // still on the result screen
+    const code = await claimRoom(this.env, true, this.meta("slug") || "");   // private: only this crew's line may watch it
+    if (!code) return;   // no free code: they stay in line, the next change tries again
+    // (the claim took a moment: they're both still here and in line, and the court is still free)
+    const still = (x: { w: WebSocket; a: Att }) => x.w.readyState === 1 && this.att(x.w).status === "ready";
+    if (!still(first) || !still(second) || this.court()) { this.pairAgain = true; return; }
+    const a1 = this.att(first.w), a2 = this.att(second.w);
+    const id = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, 10);
     this.ctx.storage.sql.exec("DELETE FROM live WHERE at < ?", now - LIVE_TTL_MS);
-    this.ctx.storage.sql.exec("INSERT INTO live (id, code, host, guest, at) VALUES (?, ?, ?, ?, ?)", id, code, first.a.mid, second.a.mid, now);
-    this.setAtt(first.w, { ...first.a, status: "match", readyAt: 0, match: id });
-    this.setAtt(second.w, { ...second.a, status: "match", readyAt: 0, match: id });
-    this.send(first.w, { t: "match", id, code, role: "host", rival: { id: second.a.mid, name: second.a.name } });
-    this.send(second.w, { t: "match", id, code, role: "guest", rival: { id: first.a.mid, name: first.a.name } });
+    this.ctx.storage.sql.exec("INSERT INTO live (id, code, host, guest, at) VALUES (?, ?, ?, ?, ?)", id, code, a1.mid, a2.mid, now);
+    // a champ who isn't in this match (they left) has lost the crown
+    const c = this.champ();
+    if (c && c.mid !== a1.mid && c.mid !== a2.mid) this.setChamp(null);
+    this.setAtt(first.w, { ...a1, status: "match", readyAt: 0, match: id, hold: 0 });
+    this.setAtt(second.w, { ...a2, status: "match", readyAt: 0, match: id, hold: 0 });
+    this.send(first.w, { t: "match", id, code, role: "host", rival: { id: a2.mid, name: a2.name } });
+    this.send(second.w, { t: "match", id, code, role: "guest", rival: { id: a1.mid, name: a1.name } });
+  }
+
+  /** Watch tickets: every member in line (not up now) while a match is on the court holds one for its room; anyone
+   *  else holds none. A member who leaves the line while the match is on has their ticket revoked in the match room,
+   *  which closes their spectator socket. Runs after every change (broadcast). */
+  private tickets() {
+    const court = this.court(), spots = this.spotsNow(court);
+    for (const w of this.sockets()) {
+      const a = this.att(w);
+      if (!a.mid) continue;
+      const want = court && a.status === "ready" && (spots.get(a.mid) || 0) >= 1 ? court.id : "";
+      if (want === (a.tmatch || "")) continue;
+      if (a.ticket && a.tmatch && court && a.tmatch === court.id) this.revoke(court.code, a.ticket);
+      if (want && court) {
+        const ticket = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+        this.setAtt(w, { ...a, ticket, tmatch: want });
+        this.send(w, { t: "watch", match: want, code: court.code, ticket });
+      } else {
+        this.setAtt(w, { ...a, ticket: "", tmatch: "" });
+        this.send(w, { t: "watch", match: "" });
+      }
+    }
+  }
+  private revoke(code: string, ticket: string) {
+    const p = this.env.ROOMS.get(this.env.ROOMS.idFromName(code)).revokeWatch(ticket).catch(() => {});
+    try { this.ctx.waitUntil(p); } catch { /* runs anyway */ }
+  }
+  /** The match room asks (worker/index.ts Room.watch): may the holder of this ticket watch the match in room `code`?
+   *  Only a member of this crew who is in its line right now, for the match on the court now. */
+  async watchOk(code: string, ticket: string): Promise<boolean> {
+    if (typeof ticket !== "string" || ticket.length !== 32 || !this.exists()) return false;
+    const court = this.court();
+    if (!court || court.code !== code) return false;
+    return this.sockets().some((w) => { const a = this.att(w); return a.status === "ready" && a.ticket === ticket && a.tmatch === court.id; });
   }
 
   private async result(ws: WebSocket, a: Att, m: Record<string, unknown>) {
@@ -331,14 +448,26 @@ export class Crew extends DurableObject<Env> {
     if (recorded === false) return;
     if (recorded === "met") await this.payMet();
     track(this.env, null, "crew_match", [hc, gc, winner < 0 ? "draw" : "win"]);   // analytics: fighters, no ids
-    await this.touch();
+    // the champ: the winner's run of wins on the court (a draw changes nothing)
+    if (winner >= 0) {
+      const wm = winner === 0 ? live.host : live.guest, c = this.champ();
+      this.setChamp({ mid: wm, streak: c && c.mid === wm ? c.streak + 1 : 1 });
+    }
+    // winner stays on: someone is waiting, so the winner goes to the front of the line and the loser to the back,
+    // both still ready (the pages get HOLD_MS on the result screen before the line goes on without them)
+    const waiting = winner < 0 ? [] : this.line().filter((x) => x.a.mid !== live.host && x.a.mid !== live.guest);
+    if (waiting.length) {
+      const stay = winner === 0 ? live.host : live.guest;
+      for (const w of this.sockets()) {
+        const b = this.att(w);
+        if (b.match !== id || b.status !== "match") continue;
+        this.setAtt(w, { ...b, status: "ready", readyAt: b.mid === stay ? 1 : now + 1, match: "", hold: now });
+      }
+      // the loser's place: behind everyone waiting, once the first of them steps up to play the champ
+      for (const w of this.sockets()) if (this.att(w).mid === live.host || this.att(w).mid === live.guest) this.send(w, { t: "rotate", match: id, stay, next: waiting[0].a.name, spot: waiting.length });
+    }
+    await this.touch();   // (arms the alarm for the hold too)
     this.broadcast();
-    // winner stays on: someone else is waiting, so the loser makes room
-    if (winner < 0) return;
-    const waiting = this.sockets().map((w) => this.att(w)).filter((b) => b.mid && b.status === "ready" && b.mid !== live.host && b.mid !== live.guest).sort((p, q) => p.readyAt - q.readyAt)[0];
-    if (!waiting) return;
-    const stay = winner === 0 ? live.host : live.guest;
-    for (const w of this.sockets()) if (this.att(w).match === id) this.send(w, { t: "rotate", match: id, stay, next: waiting.name });
   }
 
   // ---- crew goals (README, Crew rooms, Crew goals) and Employee of the Month ----
@@ -479,7 +608,19 @@ export class Crew extends DurableObject<Env> {
       scores: this.boards(true),
       goal: this.goalState(),
       eotm: this.eotm(),
+      ...this.courtState(),
     });
+  }
+  /** Champ of the Court as the lobby shows it: the match on the court, the champ and their streak (while they're on
+   *  the court or first in line), and the line in order with each member's place (0: up now) */
+  private courtState() {
+    const court = this.court(), line = this.line(), spots = this.spotsNow(court, line), c = this.champ();
+    const champOn = !!c && ((!!court && (court.host === c.mid || court.guest === c.mid)) || (!court && line.length > 0 && line[0].a.mid === c.mid));
+    return {
+      court: court ? { match: court.id, host: court.host, guest: court.guest } : null,
+      champ: champOn && c ? { id: c.mid, streak: c.streak } : null,
+      line: line.map((x) => ({ id: x.a.mid, spot: spots.get(x.a.mid) || 0 })),
+    };
   }
   /** the crew's stats (README, Crew rooms, Stats): time played, matches, the most-picked fighters, its matchup table */
   private stats(members: { w: number; l: number; d: number }[]) {
@@ -548,21 +689,40 @@ export class Crew extends DurableObject<Env> {
   private broadcast() {
     const s = this.state();
     for (const w of this.sockets()) if (this.att(w).mid) this.send(w, s);
+    this.tickets();   // who in line may watch the court
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
     try { ws.close(code === 1005 || code === 1006 ? 1000 : code, reason); } catch { /* already closed */ }
-    if (this.ctx.getTags(ws)[0] === "crew") { this.ensure(); if (this.exists()) this.broadcast(); }   // presence: one fewer
+    await this.gone(ws);
   }
   async webSocketError(ws: WebSocket): Promise<void> {
     try { ws.close(1011, "error"); } catch { /* already closed */ }
-    if (this.ctx.getTags(ws)[0] === "crew") { this.ensure(); if (this.exists()) this.broadcast(); }
+    await this.gone(ws);
+  }
+  /** a lobby socket closed: presence drops it, it's out of the line (its place kept SPOT_MS for a reconnect), its
+   *  watch ticket goes, and the line moves up (a champ who left lets the first two in line play) */
+  private async gone(ws: WebSocket) {
+    if (this.ctx.getTags(ws)[0] !== "crew") return;
+    this.ensure();
+    if (!this.exists()) return;
+    const a = this.att(ws);
+    if (a.mid && a.status === "ready" && !this.sockets().some((w) => this.att(w).mid === a.mid && this.att(w).status === "ready")) this.spots.set(a.mid, { readyAt: a.readyAt, at: Date.now() });
+    if (a.ticket && a.tmatch) { const l = this.sql<Live>("SELECT id, code, host, guest, at FROM live WHERE id = ?", a.tmatch)[0]; if (l) this.revoke(l.code, a.ticket); }
+    await this.pair();
+    this.broadcast();
   }
 
   async alarm(): Promise<void> {
     this.ensure();
     const at = Number(this.meta("expires") || 0);
-    if (at > Date.now()) { await this.ctx.storage.setAlarm(at); return; }
+    if (at > Date.now()) {
+      // a rotation's hold ran out: the line goes on (and the alarm goes back to the crew's expiry, or the next hold)
+      if (this.exists()) { await this.pair(); this.broadcast(); }
+      const hold = this.holdEnds();
+      await this.ctx.storage.setAlarm(hold && hold > Date.now() && hold < at ? hold : at);
+      return;
+    }
     if (this.sockets().length) { await this.touch(); return; }   // someone has it open right now
     await this.wipe();
   }

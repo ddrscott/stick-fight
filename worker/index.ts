@@ -54,7 +54,8 @@
 // sockets only the frames stamped HOLD_MS before the newest (src/net/watchroom.js, shared with the
 // Node proof), and lists the match in the Lobby object (api/live).
 // A spectator's socket is tagged "spectator": nothing it sends is passed on or read (a "ping" is
-// answered without waking the object). A room a crew claimed is private: no spectators, never listed.
+// answered without waking the object). A room a crew claimed is private: never listed, and its only spectators are
+// members in that crew's line, each with a ticket the crew handed out and the room checks with the crew.
 import { DurableObject } from "cloudflare:workers";
 import { type Env, type LiveEntry, API, OLD_PREFIX, SITE_HOST, siteOrigin, BUSY, json, notFound, allowed, refusedSocket, claimRoom, CODE_RE, cleanName, track } from "./env";
 import { isBatch } from "../src/net/watchlog.js";
@@ -515,7 +516,7 @@ export class Lobby extends DurableObject<Env> {
   }
 }
 
-type Flags = { priv: boolean; off: boolean; code: string };
+type Flags = { priv: boolean; off: boolean; code: string; crew: string };
 
 export class Room extends DurableObject<Env> {
   // message-rate buckets, per socket; in memory only, so they reset if the room hibernates
@@ -525,8 +526,9 @@ export class Room extends DurableObject<Env> {
     players: (text) => { for (const w of this.players()) { try { w.send(text); } catch { /* closing */ } } },
     spectators: (except) => this.spectators(except as WebSocket | undefined),
     kick: (reason) => { for (const w of this.ctx.getWebSockets("spectator")) { try { w.close(4002, reason); } catch { /* gone */ } } },
-    list: (e) => { const code = this.flags && this.flags.code; if (code) this.ctx.waitUntil(this.lobby().put({ ...e, code }).catch(() => {})); },
-    unlist: () => { const code = this.flags && this.flags.code; if (code) this.ctx.waitUntil(this.lobby().drop(code).catch(() => {})); },
+    // (a crew's match room is never listed, whoever in its line is watching)
+    list: (e) => { const code = this.flags && !this.flags.priv && this.flags.code; if (code) this.ctx.waitUntil(this.lobby().put({ ...e, code }).catch(() => {})); },
+    unlist: () => { const code = this.flags && !this.flags.priv && this.flags.code; if (code) this.ctx.waitUntil(this.lobby().drop(code).catch(() => {})); },
   });
   private flags: Flags | null = null;
   private noise = new WeakMap<WebSocket, number>();
@@ -547,9 +549,9 @@ export class Room extends DurableObject<Env> {
   /** what the room was claimed as: its code, private (a crew's match), and the host's off switch */
   private async getFlags(): Promise<Flags> {
     if (!this.flags) {
-      const s = await this.ctx.storage.get<string | boolean>(["code", "priv", "watchOff"]);
-      this.flags = { code: String(s.get("code") || ""), priv: s.get("priv") === true, off: s.get("watchOff") === true };
-      this.desk.priv = this.flags.priv; this.desk.off = this.flags.off;
+      const s = await this.ctx.storage.get<string | boolean>(["code", "priv", "watchOff", "crew"]);
+      this.flags = { code: String(s.get("code") || ""), priv: s.get("priv") === true, off: s.get("watchOff") === true, crew: String(s.get("crew") || "") };
+      this.desk.priv = this.flags.priv; this.desk.off = this.flags.off; this.desk.crew = !!this.flags.crew;
     }
     return this.flags;
   }
@@ -569,14 +571,16 @@ export class Room extends DurableObject<Env> {
   }
 
   /** Called by the Worker when it hands out this room's code. False if the room is in use.
-   *  priv: a crew's match room, which nobody may watch and the LIVE list never shows. */
-  async claim(code = "", priv = false): Promise<boolean> {
+   *  priv: a crew's match room, which the LIVE list never shows; crew: that crew's slug, whose line members alone
+   *  may watch (each with a ticket the crew checks). */
+  async claim(code = "", priv = false, crew = ""): Promise<boolean> {
     if ((await this.expires()) > Date.now() || this.players().length) return false;
     await this.ctx.storage.deleteAll();   // anything left from an expired room
     this.desk.stop("left", true);
-    await this.ctx.storage.put(priv ? { code, priv: true } : { code });
-    this.flags = { code, priv, off: false };
-    this.desk.priv = priv; this.desk.off = false;
+    crew = priv && typeof crew === "string" && /^[a-z0-9-]{3,40}$/.test(crew) ? crew : "";
+    await this.ctx.storage.put(priv ? (crew ? { code, priv: true, crew } : { code, priv: true }) : { code });
+    this.flags = { code, priv, off: false, crew };
+    this.desk.priv = priv; this.desk.off = false; this.desk.crew = !!crew;
     await this.setExpiry(ROOM_IDLE_MS);
     return true;
   }
@@ -637,15 +641,23 @@ export class Room extends DurableObject<Env> {
   }
 
   // ---- spectators ------------------------------------------------------------------------------
-  /** A spectator's socket. Refused: no such room (a crew's match room answers the same, so its code
-   *  says nothing), the host turned spectating off, or the room has MAX_SPECTATORS already. */
-  private async watch(_url: URL): Promise<Response> {
-    await this.getFlags();
+  /** A spectator's socket. Refused: no such room (a crew's match room answers the same to anyone without a
+   *  ticket its crew vouches for, so its code says nothing), the host turned spectating off, or the room has
+   *  MAX_SPECTATORS already. A crew's match room asks the crew (worker/crew.ts watchOk) whether the ticket belongs
+   *  to a member in its line right now; the room code alone never gets in. */
+  private async watch(url: URL): Promise<Response> {
+    const fl = await this.getFlags();
     const live = (await this.expires()) > Date.now() || this.players().length > 0;
-    const reason = !live ? "no-room" : this.desk.refusal(this.spectators().length);
+    const ticket = (url.searchParams.get("ticket") || "").slice(0, 64);
+    let vouched = false;
+    if (live && fl.priv && fl.crew && /^[0-9a-f]{32}$/.test(ticket) && fl.code) {
+      try { vouched = await this.env.CREWS.get(this.env.CREWS.idFromName(fl.crew)).watchOk(fl.code, ticket); } catch { vouched = false; }
+    }
+    const reason = !live ? "no-room" : this.desk.refusal(this.spectators().length, vouched);
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     this.ctx.acceptWebSocket(server, [reason ? "refused" : "spectator"]);
+    if (!reason && vouched) server.serializeAttachment({ ticket });   // so the crew can take it back (revokeWatch)
     if (reason) {
       server.send(JSON.stringify({ t: "sys", ev: "error", reason }));
       server.close(4000, reason);
@@ -653,6 +665,16 @@ export class Room extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
   private lobby() { return this.env.LOBBY.get(this.env.LOBBY.idFromName("live")); }
+  /** The crew (worker/crew.ts): this member left its line, so their ticket is no good any more and their spectator
+   *  socket closes (as if the room had closed, 4002). */
+  async revokeWatch(ticket: string): Promise<void> {
+    for (const w of this.ctx.getWebSockets("spectator")) {
+      if ((w.deserializeAttachment() as { ticket?: string } | null)?.ticket !== ticket) continue;
+      try { w.send(JSON.stringify({ t: "w", ev: "over", reason: "line" })); w.close(4002, "line"); } catch { /* gone */ }
+    }
+    await this.getFlags();
+    this.desk.count();
+  }
 
   /** False when this socket is over its message rate; closes it if it keeps going. */
   private take(ws: WebSocket): boolean {

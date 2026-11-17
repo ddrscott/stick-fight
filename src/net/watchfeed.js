@@ -26,8 +26,10 @@ const HASH_EVERY = 30;        // rollback.js hashes every 30th frame
 /** @param {{ now: () => number, version: number }} o */
 export function createWatchFeed({ now, version }) {
   /** @type {null | ((data: string | ArrayBuffer) => void)} */ let send = null;
-  let on = false;            // this side feeds the room: the host of a quick room (never a crew's match)
-  let allowed = true;        // the host's switch
+  let on = false;            // this side feeds the room: the host of a match (a quick room, or a crew's, which only its line may watch)
+  let crew = false;          // a crew's match: the room takes it for the crew's line whatever the quick-room switch says
+  let allowed = true;        // the host's switch (quick rooms)
+  const ok = () => allowed || crew;
   /** @type {any} */ let setup = null;
   /** @type {any} */ let log = null;
   /** @type {any} */ let ls = null;
@@ -36,7 +38,7 @@ export function createWatchFeed({ now, version }) {
   let t0 = 0, lastMark = -1e9, lastLive = -1e9, score = '';
   const stats = { batches: 0, bytes: 0, ms: 0, ticks: 0 };
 
-  const say = (o) => { if (send && on && allowed) { try { send(JSON.stringify(o)); } catch { /* socket closing */ } } };
+  const say = (o) => { if (send && on && ok()) { try { send(JSON.stringify(o)); } catch { /* socket closing */ } } };
   function sendStart(sim) {
     if (!setup) return;
     if (sim) { setup.round = sim.round | 0 || 1; setup.wins = [sim.wins[0] | 0, sim.wins[1] | 0]; }
@@ -57,17 +59,17 @@ export function createWatchFeed({ now, version }) {
   /** stamp what's confirmed with the host's clock (ms into the match): the room's hold and a spectator's pace go by it */
   function mark() { if (log) { lastMark = now(); log.mark(Math.max(1, Math.round(lastMark - t0))); } }
   function upload() {
-    if (!log || !send || !on || !allowed) return;
+    if (!log || !send || !on || !ok()) return;
     for (const b of log.since(sent)) { try { send(b); } catch { return; } stats.batches++; stats.bytes += b.byteLength; }
     sent = log.marked;   // (frames confirmed since the last stamp go with the next one)
   }
 
   const feed = {
-    /** the room's socket is there. opts.on: this side is the host of a room that may be watched */
-    open(sendFn, opts = {}) { send = sendFn; on = !!opts.on; count = 0; wanted = false; setup = null; log = null; ls = null; },
+    /** the room's socket is there. opts.on: this side is the host of a room that may be watched; opts.crew: a crew's match */
+    open(sendFn, opts = {}) { send = sendFn; on = !!opts.on; crew = !!opts.crew; count = 0; wanted = false; setup = null; log = null; ls = null; },
     /** the socket opened: an off switch goes first, before any match */
-    hello() { if (send && on && !allowed) { try { send(JSON.stringify({ t: 'watch', ev: 'allow', on: false })); } catch { /* closing */ } } },
-    close() { send = null; on = false; setup = null; log = null; ls = null; count = 0; wanted = false; },
+    hello() { if (send && on && !ok()) { try { send(JSON.stringify({ t: 'watch', ev: 'allow', on: false })); } catch { /* closing */ } } },
+    close() { send = null; on = false; crew = false; setup = null; log = null; ls = null; count = 0; wanted = false; },
     /** a match starts: s is { n, seed, chars, pals, botch, rules, names, tally } (pals: each side's palette, README Progression), netcode the rollback session */
     begin(s, netcode) {
       if (!on) return;
@@ -106,7 +108,7 @@ export function createWatchFeed({ now, version }) {
     onWatching(msg) {
       count = Math.max(0, msg.n | 0);
       wanted = (msg.need | 0) >= 0;
-      if (!on || !setup || !allowed) return;
+      if (!on || !setup || !ok()) return;
       if ((msg.have | 0) !== setup.n) { sent = 0; sendStart(null); return; }   // the room doesn't know this match: its answer says what to send
       if (wanted) { sent = Math.min(msg.need | 0, log.marked); upload(); }   // (what's stamped so far; the rest follows at the next stamp)
     },
@@ -115,7 +117,7 @@ export function createWatchFeed({ now, version }) {
       v = !!v;
       if (v === allowed) return;
       allowed = v;
-      if (!send || !on) return;
+      if (!send || !on || crew) return;
       try { send(JSON.stringify({ t: 'watch', ev: 'allow', on: v })); } catch { /* closing */ }
       if (v && setup) { sent = 0; sendStart(null); } else if (!v) { count = 0; wanted = false; }
     },

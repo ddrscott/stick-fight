@@ -6,14 +6,18 @@
 //   const crew = createCrew()
 //   crew.connect(slug, { pid, name, title })   open (or switch to) a crew; reconnects by itself if dropped
 //                          (title: the player's job title, shown beside their initials on the crew goal)
-//   crew.on('state' | 'match' | 'rotate' | 'goalpay' | 'error' | 'status', fn)
+//   crew.on('state' | 'match' | 'rotate' | 'watch' | 'goalpay' | 'error' | 'status', fn)
 //                          goalpay: the crew's weekly goal was met and paid this player (src/career/store.js fromCrewGoal)
-//   crew.play(on, stay?)   ready to fight whoever else is ready (stay: the winner staying on goes first)
+//                          watch: { match, code, ticket } while this member is in line and a match is on the court
+//                          (the ticket lets src/net/watch.js into that match room), null when not
+//   crew.play(on)          PLAY: the end of the line (README, Crew rooms, Champ of the Court); off: LEAVE LINE
 //   crew.lobby(title?)     back in the lobby after a match (with the title, which a promotion may have changed)
 //   crew.result(r)         the host reports a match: { match, n, winner, wins, chars }
 //   crew.rename(name)
 //   crew.close()
-//   crew.state             the last state ({ crew, members, h2h, recent }), crew.you (this member's id)
+//   crew.state             the last state ({ crew, members, h2h, recent, court, champ, line }), crew.you (this member's id)
+//   crew.watching          the last watch ticket ({ match, code, ticket }) or null
+//   crew.spot              this member's place in line: -1 not in it, 0 up now, 1, 2, 3...
 
 import { apiUrl } from './link.js';
 import { linkUrl } from '../links.js';
@@ -28,7 +32,8 @@ export function createCrew() {
   /** @type {WebSocket | null} */ let ws = null;
   let slug = '', hello = null, want = false, tries = 0, timer = 0, status = 'closed';
   /** @type {any} */ let state = null;
-  let you = '', ready = false, stay = false;
+  let you = '', ready = false;
+  /** @type {null | { match: string, code: string, ticket: string }} */ let watching = null;
 
   function setStatus(s) { if (s !== status) { status = s; emit('status', s); } }
   function send(msg) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); }
@@ -45,10 +50,18 @@ export function createCrew() {
       if (m.t === 'sys' && m.ev === 'error') m = { t: 'error', reason: m.reason };   // the Worker's refusal (busy)
       if (m.t === 'welcome') {
         you = String(m.you || ''); tries = 0; setStatus('open');
-        if (ready) send({ t: 'play', on: true, stay });   // a reconnect keeps a pending PLAY
-      } else if (m.t === 'state') { state = m; emit('state', m); }
-      else if (m.t === 'match') { ready = false; stay = false; emit('match', m); }
+        if (ready) send({ t: 'play', on: true });   // a reconnect keeps a pending PLAY (the room keeps the place a while)
+      } else if (m.t === 'state') {
+        state = m;
+        // the room's word on the line wins: a rotation put this member back in it, or they're out of it
+        if (you && Array.isArray(m.line)) ready = m.line.some((x) => x && x.id === you);
+        emit('state', m);
+      } else if (m.t === 'match') { ready = false; watching = null; emit('match', m); }
       else if (m.t === 'rotate') emit('rotate', m);
+      else if (m.t === 'watch') {
+        watching = m.match && typeof m.code === 'string' && typeof m.ticket === 'string' ? { match: String(m.match), code: m.code, ticket: m.ticket } : null;
+        emit('watch', watching);
+      }
       else if (m.t === 'goalpay') emit('goalpay', m);
       else if (m.t === 'error') {
         if (FATAL.has(m.reason)) want = false;
@@ -73,12 +86,13 @@ export function createCrew() {
       slug = s; want = true; tries = 0; state = null; you = '';
       open();
     },
-    play(on, stayOn = false) { ready = !!on; stay = !!on && stayOn; send({ t: 'play', on: !!on, stay: !!stayOn }); },
-    lobby(title) { ready = false; stay = false; if (hello && title) hello.title = title; send({ t: 'lobby', title: title || '' }); },
+    play(on) { ready = !!on; if (!on) watching = null; send({ t: 'play', on: !!on }); },
+    /** back in the lobby (or on to watch) after a match: the room keeps a rotation's place in line */
+    lobby(title) { if (hello && title) hello.title = title; send({ t: 'lobby', title: title || '' }); },
     result(r) { send({ t: 'result', ...r }); },
     rename(name) { if (hello) hello.name = name; send({ t: 'name', name }); },
     close() {
-      want = false; clearTimeout(timer); ready = false; stay = false;
+      want = false; clearTimeout(timer); ready = false; watching = null;
       if (ws) { const w = ws; ws = null; try { w.close(1000, 'bye'); } catch { /* gone */ } }
       slug = ''; state = null; you = ''; setStatus('closed');
     },
@@ -86,6 +100,8 @@ export function createCrew() {
     get state() { return state; },
     get you() { return you; },
     get ready() { return ready; },
+    get watching() { return watching; },
+    get spot() { const l = state && Array.isArray(state.line) ? state.line.find((x) => x && x.id === you) : null; return l ? l.spot | 0 : -1; },
     get status() { return status; },
     get active() { return want; },
   };

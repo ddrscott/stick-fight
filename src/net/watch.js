@@ -3,7 +3,8 @@
 // and runs the same deterministic sim on them: no rollback, no guessing, nothing sent back.
 //
 //   const watch = createWatch({ sim, startMatch, endMatch })
-//   watch.open(code)            connect (it reconnects by itself after a drop, and picks the match back up)
+//   watch.open(code, ticket?)   connect (it reconnects by itself after a drop, and picks the match back up). ticket: a
+//                               crew match, which its room lets in only with the crew's ticket (README, Champ of the Court)
 //   watch.leave()               hang up
 //   watch.advance(ms)           main.js steps the sim through this while watch.active
 //   watch.on('status' | 'start' | 'end' | 'over' | 'count' | 'desync', fn)
@@ -46,9 +47,11 @@ const RETRIES = 6;
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
 const mute = () => false;
 
-/** the default socket: the room's watch endpoint */
-function openSocket(code) {
-  const ws = new WebSocket(apiUrl(`rooms/${encodeURIComponent(code)}/watch`, true));
+/** the default socket: the room's watch endpoint (with a crew's ticket for a crew match) */
+function openSocket(code, ticket = '') {
+  const u = apiUrl(`rooms/${encodeURIComponent(code)}/watch`, true);   // (apiUrl drops any query: the ticket goes on after)
+  if (ticket) u.searchParams.set('ticket', ticket);
+  const ws = new WebSocket(u);
   ws.binaryType = 'arraybuffer';
   /** @type {any} */
   const s = { send(d) { if (ws.readyState === WebSocket.OPEN) ws.send(d); }, close() { try { ws.close(1000, 'bye'); } catch { /* gone */ } }, onmessage: null, onclose: null };
@@ -58,7 +61,7 @@ function openSocket(code) {
 }
 
 /**
- * @param {{ sim: any, startMatch: (o: any) => void, endMatch: (reason: string) => void, openSocket?: (code: string) => any, now?: () => number }} game
+ * @param {{ sim: any, startMatch: (o: any) => void, endMatch: (reason: string) => void, openSocket?: (code: string, ticket?: string) => any, now?: () => number }} game
  */
 export function createWatch(game) {
   /** @type {Record<string, Function[]>} */
@@ -67,7 +70,7 @@ export function createWatch(game) {
   const now = game.now || (() => performance.now());
   const sim = game.sim;
   /** @type {any} */ let sock = null;
-  let code = '', state = 'idle', detail = '', count = 0, session = 0, retries = 0, retryTimer = 0, beat = 0;
+  let code = '', ticket = '', state = 'idle', detail = '', count = 0, session = 0, retries = 0, retryTimer = 0, beat = 0;
   let heardAt = 0, pongAt = 0, pingAt = 0;
   /** @type {any} */ let m = null;        // the match being watched
   /** @type {any} */ let result = null;   // the last match's result, while the room is between matches
@@ -81,7 +84,7 @@ export function createWatch(game) {
     const mine = ++session;
     clearTimeout(retryTimer);
     let refused = '';
-    const s = (game.openSocket || openSocket)(code);
+    const s = (game.openSocket || openSocket)(code, ticket);
     sock = s;
     heardAt = pongAt = now();
     s.onmessage = (data) => {
@@ -261,12 +264,12 @@ export function createWatch(game) {
 
   const watch = {
     on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); return () => { const l = handlers[ev], i = l.indexOf(fn); if (i >= 0) l.splice(i, 1); }; },
-    /** watch the room with this code */
-    open(c) {
+    /** watch the room with this code (t: a crew's ticket for its match) */
+    open(c, t = '') {
       watch.leave();
       c = String(c || '').trim().toUpperCase();
       if (!CODE_RE.test(c)) { setState('error', 'bad-code'); return false; }
-      code = c; retries = 0; count = 0; result = null;
+      code = c; ticket = String(t || '').slice(0, 64); retries = 0; count = 0; result = null;
       setState('connecting');
       connect();
       beat = /** @type {any} */ (setInterval(heartbeat, 1000));
@@ -275,7 +278,7 @@ export function createWatch(game) {
     leave() {
       const was = !!m;
       hangUp();
-      m = null; result = null; code = ''; count = 0;
+      m = null; result = null; code = ''; ticket = ''; count = 0;
       if (state !== 'idle') setState('idle');
       if (was) game.endMatch('left');
     },

@@ -7,7 +7,10 @@
 //   - each match's final state and result against the players'
 //   - who got in: from the first frame, mid-match, after leaving and coming back, across a rematch
 //   - a host whose sim was knocked off (the resync reaches spectators), a host who turns spectating off, a host
-//     who leaves mid-match, a crew match (nothing reaches the room, and it refuses spectators)
+//     who leaves mid-match, a crew match with nobody in its line (the room refuses spectators and lists nothing),
+//     and a crew match its line watches (README, Crew rooms, Champ of the Court): members with the crew's ticket
+//     watch from the first frame and mid-match with matching hashes; a bare code and a ticket the crew doesn't vouch
+//     for (a member not in line, a stranger) get no-room; a member who leaves the line is closed out; never listed
 //
 //   npm run netsim:watch                    every scenario, 2 seeds
 //   npm run netsim:watch -- --seeds 6 --only late-joiners
@@ -42,6 +45,9 @@ const SCENARIOS = {
   'turned-off':    { cond: () => cell(80, 25, 0.05), frames: [{ fps: 60 }, { fps: 60 }], watchers: [{ at: 'pre' }, { at: 8000 }], off: 16000, lateTry: 20000, matches: 1 },
   'host-leaves':   { cond: () => cell(80, 25, 0.05), frames: [{ fps: 60 }, { fps: 60 }], watchers: [{ at: 'pre' }, { at: 8000 }], hostLeaves: 18000, matches: 1 },
   'crew-match':    { cond: () => cell(80, 25, 0.05), frames: [{ fps: 60 }, { fps: 60 }], crew: true, watchers: [{ at: 'pre' }, { at: 12000 }], matches: 1 },
+  // ticket: 'a'/'b'/'c' the crew vouches for (members in its line), 'x' it doesn't (not in line, or a stranger), none: the bare code
+  'crew-line':     { cond: () => cell(120, 40, 0.08), frames: [{ fps: 60 }, { fps: 30 }], crew: true, line: true, matches: 2,
+    watchers: [{ at: 'pre', ticket: 'a' }, { at: 12000, ticket: 'b', fps: 30 }, { at: 'pre' }, { at: 8000, ticket: 'x' }, { at: 'pre', ticket: 'c', revoke: 20000 }] },
 };
 
 async function session(name, seed, wantMatches) {
@@ -70,7 +76,10 @@ async function session(name, seed, wantMatches) {
   A.net.on('start', (e) => { if (e.n === 1) matchStart = sched.t; });
   A.net.on('watching', (n) => { watchingMax = Math.max(watchingMax, n); });
   const opts = { pickFirst: true, crew: !!sc.crew };
-  at(3000, () => { A.net.host(opts).then((o) => { code = o.code; if (sc.crew) network.claimPrivate(code); }); }, A, 'timer');
+  // the crew's line: the tickets it handed out (worker/crew.ts tickets) and vouches for when the room asks (watchOk)
+  const tix = { a: crypto.randomUUID().replace(/-/g, ''), b: crypto.randomUUID().replace(/-/g, ''), c: crypto.randomUUID().replace(/-/g, ''), x: crypto.randomUUID().replace(/-/g, '') };
+  const line = new Set(sc.line ? [tix.a, tix.b, tix.c] : []);
+  at(3000, () => { A.net.host(opts).then((o) => { code = o.code; if (sc.crew) network.claimPrivate(code, sc.line ? (t) => line.has(t) : null); }); }, A, 'timer');
   at(5500, () => { if (code) B.net.join(code, opts); }, B, 'timer');
   // the spectators
   const specs = sc.watchers.map((w, i) => {
@@ -80,7 +89,7 @@ async function session(name, seed, wantMatches) {
     s.start(11 + i * 3);
     return s;
   });
-  const open = (s) => { if (code) { s.opens++; s.watch.open(code); } };
+  const open = (s) => { if (code) { s.opens++; s.watch.open(code, s.plan.ticket ? tix[s.plan.ticket] : ''); } };
   for (const s of specs) if (s.plan.at === 'pre') at(7000, () => open(s), s, 'timer');
   // the timed parts hang off the first match's start
   let armed = false;
@@ -95,6 +104,8 @@ async function session(name, seed, wantMatches) {
       // the network dies under it (nothing arrives, and it isn't told): watch.js notices and reconnects
       if (w.drop) at(matchStart + w.drop, () => { const room = network.rooms.get(code); for (const k of [...room.watchers]) if (k.owner === s) { k.closed = true; room.watchers.delete(k); room.desk.count(); } }, null, 'net');
       if (w.hide) at(matchStart + w.hide[0], () => { s.hiddenUntil = matchStart + w.hide[0] + w.hide[1]; }, null, 'net');
+      // LEAVE LINE: the crew forgets the ticket and has the room close that spectator out
+      if (w.revoke) at(matchStart + w.revoke, () => { const t = tix[w.ticket]; line.delete(t); network.revoke(code, t); }, null, 'net');
     }
     if (sc.off) at(matchStart + sc.off, () => A.net.setWatchable(false), A, 'timer');
     if (sc.lateTry) at(matchStart + sc.lateTry, () => { const s = specs[0]; s.late = true; open(s); }, specs[0], 'timer');
@@ -137,9 +148,28 @@ function evaluate(name, seed, sc, A, B, specs, room, x) {
   const fail = [];
   if (diffs || ownBad) fail.push(`${diffs + ownBad} hashes differ`);
   if (endDiffs) fail.push(`${endDiffs} final states differ`);
-  if (sc.crew) {
-    // a crew's match: the host's page sends the room nothing, the room lets nobody in and lists nothing
-    if (room.starts || room.batches) fail.push(`a crew match fed the room (${room.starts} starts, ${room.batches} batches)`);
+  if (sc.crew && sc.line) {
+    // a crew's match its line watches: members with a vouched ticket see every match through with the host's hashes,
+    // everyone else is refused as if there were no room, a member who left the line is closed out, nothing is listed
+    if (x.listedPrivate || x.listed) fail.push('a crew match was listed');
+    for (const s of specs) {
+      const w = s.plan, good = w.ticket && w.ticket !== 'x';
+      if (good && !w.revoke) {
+        for (const n of Object.keys(A.results)) if (s.started.includes(+n) && !s.results[n]) { missed++; notes.push(`${s.name} never finished match ${n}`); }
+        if (!s.started.length) fail.push(`${s.name} (in line) never got a match (${s.watch.state} ${s.watch.detail})`);
+      } else if (good && w.revoke) {
+        if (!(s.watch.state === 'error' && s.watch.detail === 'closed')) fail.push(`${s.name} left the line and kept watching (${s.watch.state} ${s.watch.detail})`);
+      } else {
+        if (s.started.length) fail.push(`${s.name} (${w.ticket ? 'not in line' : 'bare code'}) watched a crew match`);
+        if (s.watch.state !== 'error' || s.watch.detail !== 'no-room') fail.push(`${s.name} wasn't refused (${s.watch.state} ${s.watch.detail})`);
+      }
+    }
+    if (missed) fail.push(`${missed} matches not seen through`);
+    if (x.watchingMax < 1) fail.push('the host never saw anyone watching');
+    if (ownChecks === 0 || checks === 0) fail.push('no hash was checked');
+  } else if (sc.crew) {
+    // a crew's match with nobody in its line: the room lets nobody in, so no inputs go up, and it lists nothing
+    if (room.batches) fail.push(`a crew match nobody may watch sent the room inputs (${room.batches} batches)`);
     if (x.listedPrivate || x.listed) fail.push('a crew match was listed');
     for (const s of specs) { if (s.started.length) fail.push(`${s.name} watched a crew match`); if (s.watch.state !== 'error' || s.watch.detail !== 'no-room') fail.push(`${s.name} wasn't refused (${s.watch.state} ${s.watch.detail})`); }
   } else if (sc.off) {

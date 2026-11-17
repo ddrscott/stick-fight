@@ -94,11 +94,12 @@ export function newCode(): string {
   return s;
 }
 /** A fresh quick room, claimed; on the rare collision with a live room, draw again. "" if none.
- *  priv: a crew's match room, closed to spectators and kept off the LIVE list. */
-export async function claimRoom(env: Env, priv = false): Promise<string> {
+ *  priv: a crew's match room, kept off the LIVE list and closed to every spectator but the members in that
+ *  crew's line (crew: the crew's slug, which the room asks; worker/crew.ts watchOk). */
+export async function claimRoom(env: Env, priv = false, crew = ""): Promise<string> {
   for (let i = 0; i < 8; i++) {
     const code = newCode();
-    if (await env.ROOMS.get(env.ROOMS.idFromName(code)).claim(code, priv)) return code;
+    if (await env.ROOMS.get(env.ROOMS.idFromName(code)).claim(code, priv, crew)) return code;
   }
   return "";
 }
