@@ -7,14 +7,15 @@
 // room while spectators come and go: one from before the first frame, one mid-match, one who reloads, one who
 // arrives for the rematch. It checks every 30th frame's state hash on each spectator against the host's
 // confirmed hash, the LIVE list, the players' WATCHING readout, the host's off switch, the host leaving
-// mid-match, a crew room (refuses spectators, never listed) and the join limit. Exit code 1 on any failure.
+// mid-match, a crew's line watching its match (Champ of the Court: only members in line, with the crew's ticket),
+// a crew room (refuses a bare spectator, never listed) and the join limit. Exit code 1 on any failure.
 import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 import fs from 'node:fs';
 
 const argv = process.argv.slice(2);
 const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const SHOTS = argv.includes('--shots') ? argv[argv.indexOf('--shots') + 1] : '';
-const ONLY = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : '';   // quick | menus | crew: one part of the run
+const ONLY = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : '';   // quick | menus | line | crew: one part of the run
 const part = (name) => !ONLY || ONLY.split(',').includes(name);
 const API = BASE + 'api/', WS = API.replace(/^http/, 'ws');
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -271,9 +272,120 @@ try {
   for (const [n, p] of Object.entries({ FH, FG, TS, ML })) check(`no page errors on ${n}`, p.errors.length === 0, p.errors.slice(0, 2).join(' | '));
   for (const p of [FH, FG, FS, TS, ML]) await p.context().browser().close().catch(() => {});
   }
+  if (part('line')) {
+
+  // ---- 5a. Champ of the Court: the members in a crew's line watch the court, and nobody else -------------------
+  // (README, Crew rooms, Champ of the Court; Spectators). CAROL and DAVE (crew sockets, with player pages hosting the
+  // match room) are on the court. ERIN opens the crew link in a real page, presses PLAY and is put in line, which
+  // takes her straight to watching the match with the crew's ticket. Her hashes are checked against the host's. A
+  // bare code, a made-up ticket, a member who left the line and a member never in it all get nothing, and the match
+  // never shows up in api/live. Then CAROL wins: DAVE goes to the back of the line, and ERIN goes from watching
+  // straight to the pick screen against the champ.
+  const lc = await (await fetch(API + 'crews', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'LINE TEST' }) })).json();
+  check('line: made a crew room', !!lc.slug, lc.slug);
+  const lpid = (c) => c.repeat(32);
+  const hello = async (p, name) => { const s = await sock(`${WS}crews/${lc.slug}/ws`); s.ws.send(JSON.stringify({ t: 'hello', pid: lpid(p), name })); await s.next((m) => m.t === 'welcome'); return s; };
+  const la = await hello('a', 'CAROL'), lb = await hello('b', 'DAVE');
+  la.ws.send(JSON.stringify({ t: 'play', on: true })); await sleep(80); lb.ws.send(JSON.stringify({ t: 'play', on: true }));
+  const lma = await la.next((m) => m.t === 'match'), lmb = await lb.next((m) => m.t === 'match');
+  check('line: CAROL and DAVE are on the court', !!lma && !!lmb && lma.code === lmb.code, lma ? `${lma.code} ${lma.role}/${lmb && lmb.role}` : '');
+  if (lma && lmb) {
+    const LH = await player('CAROL', 1, SMALL), LG = await player('DAVE', -1, SMALL);
+    const [hostP, guestP] = lma.role === 'host' ? [LH, LG] : [LG, LH];
+    const hostSock = lma.role === 'host' ? la : lb;
+    await hostP.evaluate((c) => window.__net.host({ code: c, crew: true }), lma.code);
+    await guestP.evaluate((c) => window.__net.join(c, { crew: true }), lma.code);
+    check('line: the crew match is running', !!(await until(() => hostP.evaluate(() => window.__net.active && window.__net.netcode.frame > 240), 25000)));
+    // ERIN opens the crew: she's in the lobby, not in line (opening a crew queues nobody)
+    const erin = lpid('e');
+    const E = await page(`${BASE}crew/${lc.slug}`, { ...RULES, 'stick-fight-player': JSON.stringify({ id: erin, name: 'ERIN', email: '', crews: [{ slug: lc.slug, name: 'LINE TEST', at: Date.now() }] }) });
+    const eflow = () => E.evaluate(() => window.__flow.state);
+    check('line: the crew link opens the lobby, and ERIN is not in line', !!(await until(async () => (await eflow()) === 'crewLobby' && await E.evaluate(() => /CAROL/.test(document.body.innerText))), 30000) && !(await E.evaluate(() => window.__flow.debug.history.some((h) => /watching/.test(h)))), await eflow());
+    const court0 = await until(() => E.evaluate(() => { const b = document.querySelector('.fl-court'); return b && /ON NOW/.test(b.innerText) && /CAROL/.test(b.innerText) && /DAVE/.test(b.innerText) ? b.innerText.replace(/\s+/g, ' ') : null; }), 15000);
+    check('line: the lobby shows who is on the court', !!court0, court0 || '');
+    await shot(E, '11-crew-lobby-court');
+    // PLAY: the end of the line, which (a match being on) means watching it
+    await E.evaluate(() => { const b = [...document.querySelectorAll('.fl-crewbtns .fl-btn')].find((x) => /^PLAY/.test(x.textContent)); b && b.click(); });
+    const especs = { E };
+    hostHashes.clear(); specHashes.clear();
+    const ew = await until(async () => { await collect(hostP, especs); const s = await wstats(E); return s.flow === 'watching' && s.state === 'live' && s.frame > 120 ? s : null; }, 40000);
+    if (!ew) console.log('      ERIN:', JSON.stringify(await E.evaluate(() => ({ sockets: window.__sockets.map((w) => [w.url.replace(/^.*\/api\//, ''), w.readyState]), hist: window.__flow.debug.history.slice(-6) }))));
+    check('line: PLAY puts ERIN in line, and from the lobby she goes straight to watching the court', !!ew, ew ? `frame ${ew.frame}: ${ew.text.slice(0, 80)}` : JSON.stringify(await wstats(E)).slice(0, 200));
+    check('line: the watch view says her place in line and has LEAVE LINE', !!ew && /YOU'RE NEXT IN LINE/.test(ew.text) && /CAROL VS DAVE|DAVE VS CAROL/.test(ew.text) && /LEAVE LINE/.test(ew.text), ew ? ew.text.slice(0, 120) : '');
+    check('line: she watched with the crew\'s ticket, not the bare code', await E.evaluate(() => window.__sockets.some((w) => /\/watch\?ticket=[0-9a-f]{32}$/.test(w.url) && w.readyState === 1)));
+    await shot(E, '12-watching-from-the-line');
+    // nobody else gets in: a bare code, a made-up ticket, a member never in line, a member who left the line
+    const bare = await sock(`${WS}rooms/${lma.code}/watch`);
+    const bareNo = await bare.next((m) => m.t === 'sys');
+    check('line: the bare room code gets no-room', !!bareNo && bareNo.reason === 'no-room', JSON.stringify(bareNo));
+    const fake = await sock(`${WS}rooms/${lma.code}/watch?ticket=${'0123456789abcdef'.repeat(2)}`);
+    const fakeNo = await fake.next((m) => m.t === 'sys');
+    check('line: a non-member with a made-up ticket gets no-room', !!fakeNo && fakeNo.reason === 'no-room', JSON.stringify(fakeNo));
+    const lf = await hello('f', 'FRANK');   // in the lobby, never in line
+    const ld = await hello('d', 'GINA');
+    ld.ws.send(JSON.stringify({ t: 'play', on: true }));
+    const dt = await ld.next((m) => m.t === 'watch' && m.ticket, 8000);
+    check('line: a member who gets in line is handed a ticket for the court', !!dt && dt.code === lma.code, JSON.stringify(dt));
+    await sleep(1500);
+    check('line: a member who never pressed PLAY gets no ticket', !lf.got.some((m) => m.t === 'watch' && m.ticket), JSON.stringify(lf.got.filter((m) => m.t === 'watch')));
+    if (dt) {
+      const dIn = await sock(`${WS}rooms/${lma.code}/watch?ticket=${dt.ticket}`);
+      const dw = await dIn.next((m) => m.t === 'sys');
+      check('line: with it, she can watch', !!dw && dw.ev === 'welcome' && dw.role === 'spectator', JSON.stringify(dw));
+      ld.ws.send(JSON.stringify({ t: 'play', on: false }));   // LEAVE LINE
+      // (the room says over: line and closes the socket; wrangler dev's proxy can be slow to pass the close on)
+      const over = await until(async () => dIn.closed === 4002 || dIn.got.some((m) => m.t === 'w' && m.ev === 'over' && m.reason === 'line'), 8000);
+      check('line: LEAVE LINE takes the ticket back: her spectator socket is told it\'s over and closed', !!over, `closed ${dIn.closed}, ${JSON.stringify(dIn.got.slice(-1))}`);
+      const dAgain = await sock(`${WS}rooms/${lma.code}/watch?ticket=${dt.ticket}`);
+      const dNo = await dAgain.next((m) => m.t === 'sys');
+      check('line: a member no longer in line gets no-room with her old ticket', !!dNo && dNo.reason === 'no-room', JSON.stringify(dNo));
+    }
+    await sleep(6500);
+    check('line: the crew match never shows up in api/live while the line watches', (await live()).every((r) => r.code !== lma.code));
+    check('line: the players see the one member in line watching', !!(await until(() => hostP.evaluate(() => window.__net.watchers === 1), 15000)), String(await hostP.evaluate(() => window.__net.watchers)));
+    // ERIN's keys and messages change nothing for the players
+    for (const k of ['KeyP', 'KeyJ', 'KeyK', 'ArrowLeft', 'ArrowUp']) await E.keyboard.press(k);
+    await E.evaluate(() => { const w = window.__sockets.find((x) => /\/watch/.test(x.url) && x.readyState === 1); if (w) { w.send(JSON.stringify({ t: 'start', seed: 1 })); w.send(new Uint8Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 7]).buffer); } });
+    await sleep(2000);
+    const pl = await hostP.evaluate(() => ({ state: window.__net.state, desync: !!(window.__net.netcode && window.__net.netcode.desync) }));
+    check('line: a member watching from the line can\'t reach the players', pl.state === 'playing' && !pl.desync && (await wstats(E)).flow === 'watching', JSON.stringify(pl));
+    for (let i = 0; i < 6; i++) { await sleep(700); await collect(hostP, especs); }
+    compare('line');
+    const et = await E.evaluate(() => window.__watch.stats().totals);
+    check('line: ERIN\'s own checks against the host\'s hashes all pass', et.checks > 0 && et.bad === 0, `${et.checks} checked, ${et.bad} bad`);
+    // CAROL wins (the host's page reports it): DAVE goes to the back of the line, ERIN is up against the champ
+    const carolIdx = lma.role === 'host' ? 0 : 1;
+    hostSock.ws.send(JSON.stringify({ t: 'result', match: lma.id, n: 1, winner: carolIdx, wins: carolIdx === 0 ? [2, 0] : [0, 2], chars: ['temp', 'temp'], secs: 40 }));
+    const rot = await lb.next((m) => m.t === 'rotate', 8000);
+    check('line: the loser hears BACK OF THE LINE: CAROL stays, ERIN is next, DAVE is 1st behind her', !!rot && rot.next === 'ERIN' && rot.spot === 1, JSON.stringify(rot));
+    // (the line and the champ name members by the crew's member id: CAROL's and DAVE's are in their match messages)
+    const carolId = lmb.rival.id, daveId = lma.rival.id;
+    const st = await la.next((m) => m.t === 'state' && m.champ && Array.isArray(m.line) && m.line.some((x) => x.id === daveId), 8000);
+    const erinId = st && (st.members.find((x) => x.name === 'ERIN') || {}).id;
+    const spotOf = (id) => (st && st.line.find((x) => x.id === id) || { spot: -1 }).spot;
+    check('line: DAVE is still in line, behind ERIN, without pressing PLAY; CAROL is champ', !!st && !!erinId && spotOf(daveId) > spotOf(erinId) && spotOf(erinId) >= 0 && st.champ.id === carolId && st.champ.streak === 1, st ? JSON.stringify({ line: st.line, champ: st.champ }) : '');
+    // the players' pages come back to the crew (in a real page, after the result screen): the line goes on
+    await hostP.evaluate(() => window.__net.leave()); await guestP.evaluate(() => window.__net.leave());
+    la.ws.send(JSON.stringify({ t: 'lobby' })); lb.ws.send(JSON.stringify({ t: 'lobby' }));
+    const nm = await la.next((m) => m.t === 'match' && m.id !== lma.id, 15000);
+    check('line: the next match is the champ against ERIN', !!nm && nm.rival && nm.rival.name === 'ERIN', JSON.stringify(nm));
+    if (nm) {
+      const champP = LH;   // CAROL's page
+      await champP.evaluate(([c, role]) => (role === 'host' ? window.__net.host({ code: c, crew: true, pickFirst: true }) : window.__net.join(c, { crew: true, pickFirst: true })), [nm.code, nm.role]);
+      const pick = await until(async () => { const s = await E.evaluate(() => ({ flow: window.__flow.state, net: window.__net.state, hist: window.__flow.debug.history.slice(-6) })); return s.flow === 'onlineSelect' ? s : null; }, 30000);
+      const hist = await E.evaluate(() => window.__flow.debug.history.slice(-8));
+      const iw = hist.lastIndexOf('watching>crewLinking');
+      check('line: ERIN goes from watching straight to the pick screen against the champ (not through the lobby)', !!pick && iw >= 0 && hist[iw + 1] === 'crewLinking>onlineSelect', JSON.stringify(hist));
+      await shot(E, '13-up-against-the-champ');
+    }
+    for (const [n, p] of Object.entries({ E, LH, LG })) check(`line: no page errors on ${n}`, p.errors.length === 0, p.errors.slice(0, 2).join(' | '));
+    for (const p of [E, LH, LG]) await p.context().browser().close().catch(() => {});
+    for (const s of [la, lb, lf, ld]) { try { s.ws.close(); } catch { /* closed */ } }
+  }
+  }
   if (part('crew')) {
 
-  // ---- 5. a crew room: no spectators, never listed ------------------------------------------------------------
+  // ---- 5. a crew room: closed to spectators but its line, never listed ------------------------------------------
   const crew = await (await fetch(API + 'crews', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'WATCH TEST' }) })).json();
   check('made a crew room', !!crew.slug, crew.slug);
   const asSpec = await sock(`${WS}crews/${crew.slug}/ws?role=spectator`);

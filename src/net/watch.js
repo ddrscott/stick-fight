@@ -49,7 +49,9 @@ const mute = () => false;
 
 /** the default socket: the room's watch endpoint (with a crew's ticket for a crew match) */
 function openSocket(code, ticket = '') {
-  const ws = new WebSocket(apiUrl(`rooms/${encodeURIComponent(code)}/watch${ticket ? `?ticket=${encodeURIComponent(ticket)}` : ''}`, true));
+  const u = apiUrl(`rooms/${encodeURIComponent(code)}/watch`, true);   // (apiUrl drops any query: the ticket goes on after)
+  if (ticket) u.searchParams.set('ticket', ticket);
+  const ws = new WebSocket(u);
   ws.binaryType = 'arraybuffer';
   /** @type {any} */
   const s = { send(d) { if (ws.readyState === WebSocket.OPEN) ws.send(d); }, close() { try { ws.close(1000, 'bye'); } catch { /* gone */ } }, onmessage: null, onclose: null };
