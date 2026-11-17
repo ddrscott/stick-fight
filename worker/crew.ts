@@ -94,6 +94,13 @@ export class Crew extends DurableObject<Env> {
   private pairing = false;
   private pairAgain = false;
 
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // the lobby's connection meter (src/net/crew.js, src/net/meter.js): a page's 'ping' is answered 'pong' by the
+    // runtime, without waking the room, so it costs nothing
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
   private sql<T extends Record<string, SqlStorageValue>>(q: string, ...b: unknown[]): T[] {
     return this.ctx.storage.sql.exec<T>(q, ...b).toArray();
   }

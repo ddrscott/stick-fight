@@ -19,6 +19,7 @@
     "netsim:invariants": "node scripts/netsim/invariants.mjs",
     "test:net:handoff": "node scripts/netsim/handoff.mjs",
     "test:net:handoff:browser": "node scripts/netsim/handoff-browser.mjs",
+    "test:meter": "node scripts/netsim/meter-browser.mjs",
     "test:invariants:scenes": "node scripts/netsim/invariants-scenes.mjs",
     "test:watch": "node scripts/watch/e2e.mjs",
     "test:qr": "node scripts/qr/check.mjs",

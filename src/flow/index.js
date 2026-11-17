@@ -46,6 +46,7 @@
 import { track, trackAll } from '../analytics.js';   // cookieless game analytics (README, Analytics)
 import { LADDER, buildLadder, secretStage, retryDifficulty, upgradeLift } from './ladder.js';
 import { openSelect } from './select.js';
+import { createMeter } from '../net/meter.js';   // the connection meter (README, Multiplayer, The connection meter)
 import { openMoveList } from './movelist.js';
 import { roster, getCharacter, characterOr, TEMP_ID } from '../characters/index.js';
 import * as S from './scores.js';
@@ -389,6 +390,7 @@ export function createFlow(ctx) {
     if (panelOpen() && !ONLINE.has(state) && state !== 'watching') { idle = 0; return DEMO.has(state); }
     const dt = ms / 1000;
     t += dt; idle += ms;
+    tickMeters();
     if (ml) idle = 0;   // reading the move list isn't idling
     if (bonus.t > 0) bonus.t -= dt;
     if (DEMO.has(state) || (state === 'watching' && !watchOn())) {
@@ -1274,6 +1276,26 @@ export function createFlow(ctx) {
       if (state === 'onlineMenu' && ui.screen === shown && (q.name !== p.name || q.email !== p.email || q.crews.length !== p.crews.length)) screenOnline();
     });
   }
+  // ---- the connection meter: the screens before a match show it (README, Multiplayer, The connection meter) ----
+  /** @type {{ m: { el: HTMLElement, update(q: any): number }, src: () => any }[]} */
+  let meters = [], meterAt = 0;
+  /** a meter for this screen, read from src() four times a second while it's on the page */
+  function meterOf(src, o) {
+    const m = createMeter(o);
+    meters = meters.filter((x) => x.m.el.isConnected);
+    meters.push({ m, src });
+    try { m.update(src()); } catch { /* stub */ }
+    return m.el;
+  }
+  function tickMeters() {
+    if (!meters.length) return;
+    const now = performance.now();
+    if (now - meterAt < 250) return;
+    meterAt = now;
+    meters = meters.filter((x) => x.m.el.isConnected);
+    for (const x of meters) { try { x.m.update(x.src()); } catch { /* stub */ } }
+  }
+
   function screenHost() {
     const session = ++netSession;
     let codeEl, linkEl, waitEl, qr;
@@ -1285,7 +1307,9 @@ export function createFlow(ctx) {
       linkEl = el('div', 'fl-link', '');
       waitEl = el('div', 'fl-label fl-dots', 'OPENING A ROOM');
       statusEl = waitEl;
-      info.append(el('div', 'fl-label', 'YOUR ROOM CODE'), codeEl, linkEl, waitEl);
+      // your own connection to the room while you wait (the link to your friend shows on the pick screen)
+      const meter = meterOf(() => getNet().serverQuality?.(), { leg: true, cls: 'fl-meter' });
+      info.append(el('div', 'fl-label', 'YOUR ROOM CODE'), codeEl, linkEl, waitEl, meter);
       root.append(el('h1', 'fl-h2', 'HOST A GAME'), info, qr.el);
       const items = [];
       // spectators: on unless the host says no (kept for their next rooms; a crew's match is never watchable)
@@ -1812,7 +1836,9 @@ export function createFlow(ctx) {
     betweenRole = v.role;
     const status = el('div', 'fl-selstatus');
     const youEl = el('span'), rivalEl = el('span'), ruleEl = el('span', 'fl-uprule-line');
-    status.append(youEl, rivalEl, ruleEl);
+    // the link to the rival, before the match: bars, the path and the round trip, and the warning when it's weak
+    const meter = meterOf(() => getNet().quality?.(), { cls: 'fl-meter fl-pickmeter' });
+    status.append(youEl, rivalEl, ruleEl, meter);
     let startBtn = null;
     if (host) {
       startBtn = button('START', () => { if (t >= 0.3) getNet().startNow?.(); }, 'fl-amber');
@@ -2349,7 +2375,9 @@ export function createFlow(ctx) {
       watchB.disabled = () => !(crewCli && crewCli.ready && crewCli.watching);
       const items = [play, watchB, copy];
       const btns = el('div', 'fl-list fl-crewbtns');
-      btns.append(status, play.el, watchB.el);
+      // your connection to the crew room (the link to your rival shows on the pick screen once you're matched)
+      const meter = meterOf(() => (crewCli ? crewCli.quality : null), { leg: true, cls: 'fl-meter fl-crewmeter' });
+      btns.append(status, meter, play.el, watchB.el);
       const pair = el('div', 'fl-row fl-crewpair fl-crewshare'); pair.appendChild(copy.el);
       if (typeof navigator.share === 'function') {
         const share = button('SHARE', () => { navigator.share({ title: 'Neon Stick Fight', text: `Our crew room: ${title.textContent}`, url: link }).catch(() => {}); }, 'fl-mini');

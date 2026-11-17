@@ -55,7 +55,7 @@
 // setInterval, clearInterval, now }. on() takes 'online' | 'offline' | 'change' | 'visible'.
 
 import { rootUrl } from '../root.js';
-import { RTC_TIMEOUT_MS, REDIAL_TRY_MS, REDIAL_MAX_GAP_MS, DISCONNECT_MS, BEAT_MS, DC_STALE_MS, DC_DEAD_MS, PING_MS, PONG_MS, PROBE_MS, CONNECT_TRY_MS, LOST_MS } from './budget.js';
+import { RTC_TIMEOUT_MS, DIRECT_TRY_MS, TURN_TRY_MS, ICE_REFETCH_MS, REDIAL_TRY_MS, REDIAL_MAX_GAP_MS, DISCONNECT_MS, BEAT_MS, DC_STALE_MS, DC_DEAD_MS, PING_MS, PONG_MS, PROBE_MS, CONNECT_TRY_MS, LOST_MS } from './budget.js';
 
 export { RTC_TIMEOUT_MS };
 export const RECONNECT_MS = LOST_MS;   // the room socket's window once the DataChannel is quiet too
@@ -64,7 +64,14 @@ const OUTBOX_MAX = 256;              // control messages held while it's down
 const ICE_FETCH_MS = 2500;
 const TICK_MS = 250;                 // the link's own watchdog
 const FROZEN_MS = 3000;              // a watchdog tick this late: the page was frozen (a locked phone)
-const BEAT = 0xf0;                   // the DataChannel beat's one byte (codec.js packet types are 1..3)
+const CHECK_MS = 3000;
+const TALKING_MS = 1500;             // the rival's packets this recent: a 'left' notice from the room is doubted
+const LEFT_GRACE_MS = 5000;          // ...until their packets have stopped this long (a goodbye ends it at once)               // link.check(): the netcode's suspicion probes the socket at most this often
+const ABANDON = 4100;                // the close code for a socket the page gave up on (the room reads it as the network)
+const BEAT = 0xf0;                   // the old DataChannel beat's one byte (codec.js packet types are 1..3)
+const PROBE = 0xf1, ECHO = 0xf2;     // the link's probe (9 bytes: the type, then the sender's clock) and its echo
+const PROBES_KEPT = 40;              // the window the link's loss is measured over (20 s of probes)
+const PROBE_LATE_MS = 2000;          // a probe with no echo this long is counted lost
 
 /** The ICE servers to use: the Worker's (with TURN when it has a key), else public STUN. */
 export async function fetchIceServers() {
@@ -137,7 +144,11 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   url.searchParams.set('seat', Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) => b.toString(36).padStart(2, '0')).join(''));
   /** @type {any} */ let ws;
   let welcomed = false, wsWelcomed = false, downSince = 0, dropCode = 0, tries = 0, retryTimer = 0, tryTimer = 0;
-  let lastWsRx = 0, lastPingAt = 0, pongSeen = false, probeAt = 0;
+  let lastPeerRx = 0, leftAt = 0;   // the rival's last packet (either path); when the room said they left while still talking
+  let lastWsRx = 0, lastPingAt = 0, pongSeen = false, probeAt = 0, lastPongAt = 0, lastCheck = -1e9;
+  // this page's own trip to the room (ping to pong): the host screen's meter while it waits for a friend
+  let pingOut = 0, sRtt = 0, sJit = 0, sN = 0;
+  const ping = (t) => { lastPingAt = t; if (!pingOut) pingOut = t; try { ws.send('ping'); } catch { /* */ } };
   /** @type {string[]} */ let outbox = [];
   /** @type {any} */ let pc = null;
   /** @type {any} */ let dc = null;
@@ -146,11 +157,40 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   // when it started, whether one is wanted and when the next may go, how many in a row failed
   let gen = 0, dialing = false, dialStart = 0, firstDial = true, wantDial = false, nextDialAt = 0, dialFails = 0;
   let lastDcRx = 0, lastBeatAt = 0, beatSeen = false, discSince = 0, dcProbeAt = 0, deadSince = 0, everOpen = false;
+  // which kind of dial: 'all' (every candidate: direct when the NATs allow it) or 'turn' (TURN candidates only); the
+  // kind the next dial uses, the kind of the dial in progress, and the last kind that opened
+  /** @type {'all' | 'turn'} */ let nextKind = 'all', curKind = 'all', goodKind = /** @type {'' | 'all' | 'turn'} */ ('');
+  let guestWait = 0;   // the guest: how long to wait on the host's latest offer before the relay
+  let allFails = 0;    // direct dials that failed in a row
+  // the link's own measure of the packet path, from the probes: round trip, its jitter, and what share went unanswered
+  let pRtt = 0, pJit = 0, pN = 0, pathKey = '';
+  /** @type {{ t: number, ok: boolean }[]} */ let probes = [];
+  let pktSent = 0, pktBoth = 0;   // packets sent, and how many went over both paths
   let rtcRefused = forceRelay;   // the other side can't or won't do WebRTC ({t:'relay'}), or ?relay=1
   let lastTick = now();
   /** @type {RTCIceCandidateInit[]} */ let pendingIce = [];
-  // fetched now, while the room opens, so it's usually in hand by the time the peer arrives
-  const iceReady = forceRelay ? Promise.resolve(ICE_SERVERS) : sys.fetchIce();
+  // fetched now, while the room opens, so it's usually in hand by the time the peer arrives. A fetch that timed out
+  // on a weak signal leaves public STUN only, which can never reach TURN: asked again before a later dial
+  let iceList = ICE_SERVERS, iceAt = now(), iceFetching = /** @type {Promise<any> | null} */ (null);
+  const hasTurn = (list) => (list || []).some((sv) => [].concat(sv.urls || []).some((u) => /^turns?:/.test(String(u))));
+  function fetchIce() {
+    iceAt = now();
+    iceFetching = Promise.resolve(sys.fetchIce()).then((l) => { if (Array.isArray(l) && l.length && (hasTurn(l) || !hasTurn(iceList))) iceList = l; iceFetching = null; return iceList; }, () => { iceFetching = null; return iceList; });
+    return iceFetching;
+  }
+  const iceReady = forceRelay ? Promise.resolve(ICE_SERVERS) : fetchIce();
+  /** the ICE servers for a dial: the first fetch, or a fresh one if that had no TURN and a while has passed */
+  async function iceFor() {
+    await iceReady;
+    if (iceFetching) return iceFetching;
+    if (!forceRelay && !hasTurn(iceList) && now() - iceAt > ICE_REFETCH_MS) return fetchIce();
+    return iceList;
+  }
+  /** TURN over UDP only (the point of a TURN dial is to get off TCP), or every TURN URL if it has none */
+  function turnOnly(list) {
+    const udp = list.map((sv) => ({ ...sv, urls: [].concat(sv.urls || []).filter((u) => /^turn:/.test(String(u)) && !/transport=tcp/.test(String(u))) })).filter((sv) => sv.urls.length);
+    return udp.length ? udp : list.filter((sv) => hasTurn([sv]));
+  }
   const relayOnly = new URLSearchParams(sys.search ? sys.search() : '').get('ice') === 'relay';
   const noRtc = () => rtcRefused || typeof PC === 'undefined' || !PC;
   const wsUp = () => !!ws && ws.readyState === OPEN && wsWelcomed && !downSince;
@@ -168,15 +208,35 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     reconnecting: false,
     /** something is being repaired: our socket, the rival's (away), or a DataChannel that died mid-session */
     get recovering() { return link.reconnecting || peerAway || (everOpen && !dcOpen() && !noRtc() && peerPresent); },
+    /** which way the packets go: 'direct' (a DataChannel peer to peer), 'turn' (a DataChannel through a TURN server),
+     *  'relay' (the room's WebSocket, TCP), or '' before either */
+    get path() { return link.mode === 'p2p' ? (link.candidate === 'relay' ? 'turn' : 'direct') : link.mode === 'relay' ? 'relay' : ''; },
+    /** the link's own measure of the packet path (the probes): round trip and jitter in ms, the share of probes lost
+     *  (0..1), samples taken, and the share of packets that went over both paths (sent, sentBoth: the counts) */
+    get quality() { return { rtt: pRtt, jitter: pJit, loss: lossNow(), samples: pN, path: link.path, both: pktSent ? pktBoth / pktSent : 0, sent: pktSent, sentBoth: pktBoth }; },
+    /** this page's own trip to the room (its pings): { rtt, jitter, samples } */
+    get server() { return { rtt: sRtt, jitter: sJit, loss: 0, samples: wsUp() ? sN : 0 }; },
     get peerAway() { return peerAway; },
+    /** the netcode's hint that what we send isn't getting through (the rival's acks stopped moving): on the relay,
+     *  ping the room socket and give it PROBE_MS to answer, instead of waiting out PONG_MS. A socket whose sends
+     *  vanish while it still hears the room is found in ~2 s (the 2026-11-16 20:11 drop). At most every CHECK_MS */
+    check() {
+      const t = now();
+      if (closed || !welcomed || downSince || link.mode !== 'relay' || probeAt || t - lastCheck < CHECK_MS) return;
+      if (!(ws && ws.readyState === OPEN && pongSeen)) return;
+      lastCheck = t; probeAt = t; pingOut = 0; ping(t);
+    },
     on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); return link; },
     sendControl(obj) { sendCtl(obj, false); },
-    /** @param {ArrayBuffer} buf */
-    sendPacket(buf) {
+    /** @param {ArrayBuffer} buf @param {boolean} [both] the netcode thinks the path is shaky: the room socket too */
+    sendPacket(buf, both = false) {
       let sent = false;
       if (dcOpen()) { try { dc.send(buf); sent = true; } catch { /* fall through to the relay */ } }
-      // the channel in doubt (nothing on it lately while the beats say it should be busy): the room too
-      if ((!sent || (beatSeen && now() - lastDcRx > DC_STALE_MS)) && ws && ws.readyState === OPEN && !downSince) { try { ws.send(buf); } catch { /* closing */ } }
+      // the room too when the channel is in doubt: it has never delivered anything (opened, but silent), or nothing
+      // has come over it lately, or the netcode asks (late acks, loss, jitter: src/net/rollback.js shaky())
+      const doubt = sent && (both || !beatSeen || now() - lastDcRx > DC_STALE_MS);
+      pktSent++;
+      if ((!sent || doubt) && ws && ws.readyState === OPEN && !downSince) { try { ws.send(buf); if (sent) pktBoth++; } catch { /* closing */ } }
     },
     /** to the room itself (a {t:'watch'} message as text, or a batch of confirmed inputs): never passed on
      *  @param {string | ArrayBuffer} data */
@@ -197,7 +257,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
      *  network switch leaves it); the watchdog has to notice and redial */
     killDcForTest() { if (pc) { const p = pc; p.onconnectionstatechange = p.oniceconnectionstatechange = null; if (dc) dc.onclose = null; try { p.close(); } catch { /* */ } } },
     /** tests: what the watchdog knows */
-    get debug() { return { gen, dialing, wantDial, dialFails, lastDcRx, beatSeen, downSince, pongSeen, peerAway, mode: link.mode }; },
+    get debug() { return { gen, dialing, wantDial, dialFails, lastDcRx, beatSeen, downSince, pongSeen, peerAway, mode: link.mode, kind: curKind, ice: hasTurn(iceList) ? 'turn' : 'stun' }; },
   };
 
   /** volatile: signaling, which is useless late, so it's never held for a reconnect */
@@ -221,6 +281,52 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   /** the relay carries the packets (for now, unless WebRTC is off the table: then for good) */
   function toRelay() { if (link.mode !== 'relay') setMode('relay'); }
 
+  /** the rival is gone after all (the grace after a doubted 'left' ran out): as the room's 'left' would have done */
+  function peerGone() {
+    peerPresent = false; peerAway = false;
+    emit('peer', false);
+    teardownRtc(); wantDial = false; link.ready = false; link.mode = 'connecting';
+  }
+
+  // ---- the probes: the link's own round trip, jitter and loss on the packet path ------------------------------
+  function clockBuf(type, t) { const b = new ArrayBuffer(9), dv = new DataView(b); dv.setUint8(0, type); dv.setFloat64(1, t); return b; }
+  function lossNow() {
+    const t = now();
+    let n = 0, lost = 0;
+    for (const p of probes) { if (t - p.t < PROBE_LATE_MS) continue; n++; if (!p.ok) lost++; }
+    return n >= 4 ? lost / n : 0;
+  }
+  /** a probe or echo arrived (on `via`, 'dc' or 'ws'); true if it was one (not a game packet) */
+  function onProbe(data, via) {
+    if (data.byteLength !== 9) return false;
+    const dv = new DataView(data), type = dv.getUint8(0);
+    if (type === PROBE) {
+      const echo = clockBuf(ECHO, dv.getFloat64(1));
+      try { if (via === 'dc' && dcOpen()) dc.send(echo); else if (ws && ws.readyState === OPEN && !downSince) ws.send(echo); } catch { /* */ }
+      return true;
+    }
+    if (type !== ECHO) return false;
+    const sent = dv.getFloat64(1), t = now(), ms = t - sent;
+    if (!(ms >= 0 && ms < 10000)) return true;
+    const p = probes.find((q) => q.t === sent);
+    if (p) p.ok = true;
+    if (!pN) { pRtt = ms; pJit = 0; } else { pJit += (Math.abs(ms - pRtt) - pJit) * 0.2; pRtt += (ms - pRtt) * 0.2; }
+    pN++;
+    return true;
+  }
+  function sendProbe(t) {
+    // a new path starts a new measure
+    const key = `${link.path}:${gen}`;
+    if (key !== pathKey) { pathKey = key; probes = []; pN = 0; }
+    const b = clockBuf(PROBE, t);
+    let sent = false;
+    if (dcOpen()) { try { dc.send(b); sent = true; } catch { /* */ } }
+    else if (link.mode === 'relay' && wsUp() && peerPresent) { try { ws.send(b); sent = true; } catch { /* */ } }
+    if (!sent) return;
+    probes.push({ t, ok: false });
+    if (probes.length > PROBES_KEPT) probes.shift();
+  }
+
   // ---- the DataChannel ----------------------------------------------------------------------------------
   function wireChannel(ch) {
     dc = ch;
@@ -228,7 +334,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     ch.onopen = () => {
       if (ch !== dc) return;
       const back = everOpen && deadSince ? Math.round(now() - deadSince) : 0;
-      dialing = false; wantDial = false; dialFails = 0; firstDial = false; everOpen = true; deadSince = 0;
+      dialing = false; wantDial = false; dialFails = 0; allFails = 0; firstDial = false; everOpen = true; deadSince = 0; goodKind = curKind;
       lastDcRx = now(); beatSeen = false;
       setMode('p2p'); noteCandidate();
       if (back) { console.info(`[net] DataChannel back after ${back} ms`); emit('rejoined', { who: 'p2p', ms: back }); }
@@ -237,8 +343,11 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     ch.onclose = () => { if (ch === dc && !closed) dcDead('closed'); };
     ch.onmessage = (e) => {
       if (!(e.data instanceof ArrayBuffer)) return;
-      if (ch === dc) lastDcRx = now();
-      if (e.data.byteLength === 1 && new Uint8Array(e.data)[0] === BEAT) { if (ch === dc) beatSeen = true; return; }
+      // anything on it proves it delivers (beatSeen: the channel has carried something since it opened)
+      if (ch === dc) { lastDcRx = now(); beatSeen = true; }
+      if (e.data.byteLength === 1 && new Uint8Array(e.data)[0] === BEAT) return;
+      if (onProbe(e.data, 'dc')) return;
+      lastPeerRx = now();
       emit('packet', e.data);
     };
   }
@@ -248,6 +357,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     if (dc || pc) console.warn(`[net] DataChannel lost (${why}); redialing`);
     const wasOpen = dcOpen() || link.mode === 'p2p';
     teardownRtc();
+    nextKind = goodKind || 'all';   // redial the way that last worked first
     if (wasOpen && !deadSince) deadSince = now();
     if (link.mode !== 'connecting' || !noRtc()) toRelay();
     if (noRtc() || !peerPresent) return;
@@ -269,15 +379,18 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     } catch { /* stats are a nicety */ }
   }
   /** A fresh RTCPeerConnection once the ICE servers are in, or null if the link moved on meanwhile. */
-  async function makePc(g) {
-    const iceServers = await iceReady;
+  async function makePc(g, kind = 'all') {
+    const list = await iceFor();
     if (closed || noRtc() || !peerPresent) return null;
+    // a TURN dial with no TURN servers to hand is an ordinary one
+    if (kind === 'turn' && !hasTurn(list)) kind = 'all';
+    const iceServers = kind === 'turn' ? turnOnly(list) : list;
     const keep = pendingIce.filter((c) => c.g === undefined || c.g === g);   // candidates for this dial that came in while the ICE servers were loading
     teardownRtc();
     pendingIce = keep;
     gen = g;
-    const p = new PC({ iceServers, iceTransportPolicy: relayOnly ? 'relay' : 'all' });
-    pc = p;
+    const p = new PC({ iceServers, iceTransportPolicy: relayOnly || kind === 'turn' ? 'relay' : 'all' });
+    pc = p; curKind = kind;
     dialing = true; dialStart = now();
     p.onicecandidate = (e) => { if (e.candidate && p === pc) sendCtl({ t: 'ice', c: e.candidate.toJSON(), g }, true); };
     const onState = () => {
@@ -296,20 +409,29 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   async function dial() {
     if (role !== 'host' || noRtc()) return;
     wantDial = false;
-    const p = await makePc(gen + 1);
+    const p = await makePc(gen + 1, nextKind);
     if (!p) return;
     wireChannel(p.createDataChannel('game', { ordered: false, maxRetransmits: 0 }));
     try {
       await p.setLocalDescription(await p.createOffer());
-      if (p === pc) sendCtl({ t: 'rtc', sdp: p.localDescription, g: gen }, true);
+      // k: the kind of dial, so the guest allows the same candidates; turn: a TURN dial follows if this one fails
+      if (p === pc) sendCtl({ t: 'rtc', sdp: p.localDescription, g: gen, k: curKind, turn: hasTurn(iceList) && !relayOnly }, true);
     } catch (e) { console.warn('[net] offer failed', e); if (p === pc) dialFailed(); }
   }
   /** a dial that didn't open: try again later (the relay carries the match meanwhile) */
   function dialFailed() {
-    const wasFirst = firstDial;
-    firstDial = false;
+    const failed = curKind;
     dialFails++;
     teardownRtc();
+    // a dial with every candidate allowed didn't open: TURN-only next (Cloudflare's TURN over UDP), and on the first
+    // dial that goes now, before the relay (TCP) takes the match. After that the kind that last opened leads
+    // (mid-session, two direct redials in a row: one failing inside a dropout says nothing about the NAT)
+    if (failed === 'all') allFails++;
+    const turnNext = failed === 'all' && hasTurn(iceList) && !relayOnly && (firstDial || allFails >= 2);
+    nextKind = turnNext ? 'turn' : goodKind || 'all';
+    if (firstDial && turnNext && role === 'host' && !noRtc() && peerPresent) { dial(); return; }
+    const wasFirst = firstDial;
+    firstDial = false;
     if (wasFirst || link.mode !== 'p2p') toRelay();
     if (noRtc() || !peerPresent) return;
     wantDial = true; nextDialAt = now() + backoff();
@@ -328,8 +450,10 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     const g = typeof msg.g === 'number' ? msg.g : gen + 1;   // an old host's offers carry no generation: each is new
     try {
       if (msg.sdp.type === 'offer') {
-        const p = await makePc(g);
+        const p = await makePc(g, msg.k === 'turn' ? 'turn' : 'all');
         if (!p) return;
+        // how long to give this dial before the relay: a direct dial the host will follow with a TURN one gets both
+        guestWait = msg.k === 'turn' ? TURN_TRY_MS + 1000 : msg.turn ? DIRECT_TRY_MS + TURN_TRY_MS + 1000 : rtcTimeoutMs;
         await p.setRemoteDescription(msg.sdp);
         await p.setLocalDescription(await p.createAnswer());
         if (p === pc) sendCtl({ t: 'rtc', sdp: p.localDescription, g }, true);
@@ -340,7 +464,12 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
       const p = pc;
       for (const c of pendingIce) if (c.g === undefined || c.g === gen) await p?.addIceCandidate(c.c);
       if (p === pc) pendingIce = [];
-    } catch (e) { console.warn('[net] rtc failed', e); dialFailed(); }
+    } catch (e) {
+      // a newer dial took over while this one was being set up (its peer connection closed under it): not a failure
+      // of the current dial, which a dialFailed() here would tear down
+      if (g !== gen) return;
+      console.warn('[net] rtc failed', e); dialFailed();
+    }
   }
   function onIce(msg) {
     const g = typeof msg.g === 'number' ? msg.g : undefined;
@@ -366,7 +495,9 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   function abandon(s) {
     if (!s) return;
     s.onmessage = s.onclose = s.onerror = null;
-    try { s.close(); } catch { /* */ }
+    // ABANDON (4100): if this close does reach the room, it reads as the network, not a goodbye (worker/index.ts),
+    // so the rival hears 'away' at most. A bare close() leaves the code to the browser and the runtime
+    try { s.close(ABANDON, 'stale'); } catch { /* */ }
   }
   /** the room socket is dead though nothing said so (no pong): drop it and reopen */
   function wsDead(why) {
@@ -419,7 +550,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     if (closed || !welcomed) return;
     const t = now();
     if (downSince) { tries = 0; sys.clearTimeout(retryTimer); sys.clearTimeout(tryTimer); if (ws && ws.readyState !== OPEN) abandon(ws); connect(); }
-    else if (ws && ws.readyState === OPEN) { probeAt = t; try { ws.send('ping'); } catch { /* */ } lastPingAt = t; }
+    else if (ws && ws.readyState === OPEN) { probeAt = t; pingOut = 0; ping(t); }
     if (dcOpen()) dcProbeAt = t;
     else if (wantDial) nextDialAt = t;
     console.info(`[net] network nudge (${why})`);
@@ -432,22 +563,33 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     lastTick = t;
     // the room socket: keep it talking, and notice when it stops
     if (wsUp()) {
-      if (t - lastPingAt >= PING_MS) { lastPingAt = t; try { ws.send('ping'); } catch { /* */ } }
-      if (pongSeen && t - lastWsRx > PONG_MS) { wsDead('silent'); return; }
-      if (probeAt && t - probeAt > PROBE_MS) { const at = probeAt; probeAt = 0; if (pongSeen && lastWsRx < at) { wsDead('probe'); return; } }
+      // (every PING_MS; every second while nobody else is here, for the host screen's meter)
+      if (t - lastPingAt >= (peerPresent ? PING_MS : 1000)) ping(t);
+      // only a pong proves the socket works both ways: one whose sends vanish still receives what the room sends
+      if (pongSeen && t - lastPongAt > PONG_MS) { wsDead('silent'); return; }
+      if (probeAt && t - probeAt > PROBE_MS) { const at = probeAt; probeAt = 0; if (pongSeen && lastPongAt < at) { wsDead('probe'); return; } }
+    }
+    // the probe: every BEAT_MS down whichever path carries the packets (the DataChannel, or the relay)
+    if (peerPresent && t - lastBeatAt >= BEAT_MS) { lastBeatAt = t; sendProbe(t); }
+    // the room said the rival left while their packets were still coming: a real leave once they've stopped
+    if (leftAt && peerPresent && t - leftAt > LEFT_GRACE_MS) {
+      leftAt = 0;
+      if (t - lastPeerRx > LEFT_GRACE_MS) peerGone();
+      else { peerAway = false; emit('status', link); }   // still talking all along: the room had it wrong
     }
     if (!peerPresent || noRtc()) return;
-    // the DataChannel
+    // the DataChannel: the other side probes it every BEAT_MS, so silence means trouble, whether or not it ever
+    // delivered (a channel that opened but carries nothing is as dead as one that stopped)
     if (dcOpen()) {
-      if (t - lastBeatAt >= BEAT_MS) { lastBeatAt = t; try { dc.send(new Uint8Array([BEAT]).buffer); } catch { /* */ } }
-      if (beatSeen && t - lastDcRx > DC_DEAD_MS) { dcDead('silent'); return; }
-      if (dcProbeAt && t - dcProbeAt > PROBE_MS) { const at = dcProbeAt; dcProbeAt = 0; if (beatSeen && lastDcRx < at) { dcDead('probe'); return; } }
+      if (t - lastDcRx > DC_DEAD_MS) { dcDead(beatSeen ? 'silent' : 'never delivered'); return; }
+      if (dcProbeAt && t - dcProbeAt > PROBE_MS) { const at = dcProbeAt; dcProbeAt = 0; if (lastDcRx < at) { dcDead('probe'); return; } }
     }
     if (pc && discSince && t - discSince > DISCONNECT_MS) { dcDead('disconnected'); return; }
     // a channel or connection that ended without an event reaching us (it happens on a network switch)
     if ((dc && (dc.readyState === 'closed' || dc.readyState === 'closing')) || (pc && !dialing && (pc.connectionState === 'closed' || pc.connectionState === 'failed'))) { dcDead('ended'); return; }
     // a dial that's taking too long
-    if (dialing && !dcOpen() && t - dialStart > (firstDial ? rtcTimeoutMs : REDIAL_TRY_MS)) {
+    const firstWait = role === 'host' ? (hasTurn(iceList) && !relayOnly ? (curKind === 'turn' ? TURN_TRY_MS : DIRECT_TRY_MS) : rtcTimeoutMs) : guestWait || rtcTimeoutMs;
+    if (dialing && !dcOpen() && t - dialStart > (firstDial ? firstWait : REDIAL_TRY_MS)) {
       if (role === 'host') dialFailed();
       else { dialing = false; dialFails++; if (firstDial) { firstDial = false; toRelay(); } wantDial = true; nextDialAt = t + backoff(); }
     }
@@ -459,18 +601,23 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
 
   function onMessage(e) {
     lastWsRx = now();
-    if (e.data instanceof ArrayBuffer) { emit('packet', e.data); return; }
-    if (e.data === 'pong') { pongSeen = true; return; }
+    if (e.data instanceof ArrayBuffer) { lastPeerRx = lastWsRx; if (!onProbe(e.data, 'ws')) emit('packet', e.data); return; }
+    if (e.data === 'pong') {
+      pongSeen = true; lastPongAt = lastWsRx;
+      if (pingOut) { const ms = lastWsRx - pingOut; pingOut = 0; if (ms >= 0 && ms < 10000) { if (!sN) { sRtt = ms; sJit = 0; } else { sJit += (Math.abs(ms - sRtt) - sJit) * 0.25; sRtt += (ms - sRtt) * 0.25; } sN++; } }
+      return;
+    }
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.t === 'sys') {
       if (msg.ev === 'error') { link.error = msg.reason; finalClose(msg.reason); return; }
       if (msg.ev === 'watching') { emit('watching', msg); return; }   // spectators: how many, and what the room needs
       if (msg.ev === 'career') { emit('career', msg); return; }   // the room's award for this player's online match (worker/career.ts)
+      const rewelcome = msg.ev === 'welcome' && !!downSince;
       if (msg.ev === 'welcome') {
         welcomed = true; wsWelcomed = true;
         sys.clearTimeout(tryTimer);
-        lastPingAt = now(); try { ws.send('ping'); } catch { /* */ }   // and see whether this room answers pings
+        pingOut = 0; lastPongAt = now(); ping(lastPongAt);   // and see whether this room answers pings
         if (downSince) {   // back: what waited goes out, and the session hears it
           const ms = Math.round(now() - downSince);
           downSince = 0; link.reconnecting = false; tries = 0;
@@ -485,7 +632,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
         emit('open');   // the room is there: the host's spectator switch goes out first
       }
       if (msg.ev === 'peer' && msg.back && msg.present && peerPresent) {   // the other player's socket came back
-        const was = peerAway; peerAway = false;
+        const was = peerAway; peerAway = false; leftAt = 0;
         if (was) emit('status', link);
         emit('rejoined', { who: 'rival', ms: 0 });
         if (!dcOpen() && !noRtc() && !dialing) { wantDial = true; nextDialAt = now(); }
@@ -494,17 +641,29 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
       // the other player's socket died without a goodbye: the room holds the seat. Their DataChannel may well
       // still be up; the session's own clocks decide if they never come back
       if (msg.ev === 'peer' && !msg.present && msg.away && peerPresent) { peerAway = true; emit('status', link); return; }
+      // back on a new socket and the room has no socket for the rival: they may be reconnecting too (the room
+      // restarted, or noticed both drops). Only a goodbye or the room's 'left' notice says they're gone; the
+      // session's clocks end the match if they never come back
+      if (rewelcome && peerPresent && !msg.peer && !msg.away) { peerAway = true; emit('status', link); return; }
+      // the room says the rival left, but their packets were here a moment ago (2026-11-16 15:01: a crew match on the
+      // relay got 'left' 1 s after a 653 ms socket blip, with a packet 331 ms before): hold it as away. A real leave
+      // says goodbye first ('bye', below) and ends at once; a closed tab's packets stop, and LEFT_GRACE_MS later it's over
+      if (msg.ev === 'peer' && !msg.present && !msg.away && peerPresent && now() - lastPeerRx < TALKING_MS) {
+        console.warn('[net] the room says the rival left, but their packets are still coming: holding on');
+        leftAt = now(); peerAway = true; emit('status', link); return;
+      }
       if (msg.ev === 'welcome' || msg.ev === 'peer') {
         const present = msg.ev === 'welcome' ? !!(msg.peer || (msg.away && peerPresent)) : !!msg.present;
         if (msg.ev === 'welcome' && msg.away && peerPresent && !msg.peer) { peerAway = true; emit('status', link); }
+        if (present && peerPresent && peerAway && msg.ev === 'peer') { peerAway = false; leftAt = 0; emit('status', link); }   // there after all
         if (present === peerPresent) return;
-        peerPresent = present; peerAway = false;
+        peerPresent = present; peerAway = false; leftAt = 0;
         emit('peer', present);
         if (present) {
-          rtcRefused = forceRelay; firstDial = true; dialFails = 0; everOpen = false; deadSince = 0; setMode('connecting');
+          rtcRefused = forceRelay; firstDial = true; dialFails = 0; everOpen = false; deadSince = 0; nextKind = 'all'; goodKind = ''; setMode('connecting');
           if (forceRelay || noRtc()) { sendCtl({ t: 'relay' }, false); toRelay(); }
           else if (role === 'host') dial();
-          else { dialing = true; dialStart = now(); }   // the guest waits for the host's offer (RTC_TIMEOUT_MS)
+          else { dialing = true; dialStart = now(); guestWait = 0; }   // the guest waits for the host's offer (RTC_TIMEOUT_MS)
         } else { teardownRtc(); wantDial = false; link.ready = false; link.mode = 'connecting'; }
       }
       return;
@@ -520,7 +679,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
       return;
     }
     if (msg.t === 'relay') { rtcRefused = true; teardownRtc(); wantDial = false; toRelay(); return; }   // the other side can't or won't do WebRTC
-    if (msg.t === 'bye') { peerPresent = false; peerAway = false; emit('peer', false); return; }
+    if (msg.t === 'bye') { leftAt = 0; peerPresent = false; peerAway = false; emit('peer', false); return; }
     emit('control', msg);
   }
   connect();

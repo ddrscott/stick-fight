@@ -80,6 +80,8 @@ function createStub() {
     join: () => Promise.reject(new Error(NOT_READY)),
     startMatch() {},
     leave() {},
+    quality: () => null,
+    serverQuality: () => null,
     on: () => () => {},
   };
 }
@@ -133,6 +135,9 @@ export function adaptOnline(online) {
     watchable: () => !!online.watchable,
     setWatchable: (v) => online.setWatchable(v),
     watchers: () => online.watchers | 0,
+    // the connection meter (src/net/meter.js): the link to the rival, and this page's own trip to the room
+    quality: () => online.quality(),
+    serverQuality: () => online.serverQuality(),
     on(ev, fn) {
       const list = (handlers[ev] = handlers[ev] || []);
       list.push(fn);
