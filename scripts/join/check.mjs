@@ -159,11 +159,12 @@ try {
         return out;
       });
       const PINK = 'rgb(255, 194, 243)';
-      // the other side: A's own row on a desktop and sideways reads "ALREADY READY", whole and pink, with no (YOU) squeezing the name
+      // the other side: A's own row on a desktop and sideways reads "ALREADY (YOU) READY", the name whole and pink (sideways
+      // your row always says (YOU) since [thifpd]: README, Crew rooms, The lobby sideways)
       for (const [w, h] of [[1280, 720], [844, 390]]) {
         await A.setViewportSize({ width: w, height: h }); await sleep(300);
         const got = await until(async () => { const c = (await chipsFit(A)).filter((x) => x.mine); return c.length ? c : null; }, 10000);
-        check(`${w}x${h}: your own row with READY reads ALREADY READY, name whole and pink, no (YOU)`, got && got.every((c) => c.ok && c.whole && !c.you && c.color === PINK && c.row === 'ALREADYREADY'), JSON.stringify(got));
+        check(`${w}x${h}: your own row with READY reads ALREADY (YOU) READY, name whole and pink`, got && got.every((c) => c.ok && c.whole && c.you && c.color === PINK && c.row === 'ALREADYREADY'), JSON.stringify(got));
       }
       await A.setViewportSize({ width: 1280, height: 720 });
       const youTag = await C.evaluate(() => { const n = document.querySelector('#flow .fl-standings .fl-me .fl-snm'); return n && getComputedStyle(n).color; });
@@ -189,6 +190,8 @@ try {
       check('upright: INVITE shows COPY LINK and DONE', inv.includes('COPY LINK') && inv.includes('DONE'), inv.join(', '));
       await shot(C, 'crew-upright-invite');
     }
+    // (sideways the QR code waits behind INVITE too, since [thifpd]; upright it's already open from above)
+    if (label !== 'upright') { await C.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')).act()); await sleep(300); }
     const qr = await until(() => qrText(C), 20000, 500);
     check(`${label}: the lobby's QR code carries the clean link`, qr === CLEAN, String(qr));
     if (label === 'upright') {

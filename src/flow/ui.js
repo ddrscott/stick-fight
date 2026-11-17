@@ -93,7 +93,8 @@ export function createUI(onSound) {
   function fit() {
     tight();
     if (!screen) return;
-    if (screen.classList.contains('fl-nofit')) { if (zoomNow !== 1) { zoomNow = 1; screen.style.zoom = ''; } return; }   // it fits itself (the upright select: its carousel takes what's left)
+    // (fl-fill sideways: a grid that takes the stage exactly, its own list scrolling: the crew lobby)
+    if (screen.classList.contains('fl-nofit') || (screen.classList.contains('fl-fill') && !screen.classList.contains('fl-up'))) { if (zoomNow !== 1) { zoomNow = 1; screen.style.zoom = ''; } return; }   // it fits itself (the upright select: its carousel takes what's left)
     const st = root.getBoundingClientRect();
     if (!st.width || !st.height) return;
     // A screen with a box marked data-squeeze (the earnings panel on STAGE CLEAR, CONTINUE?, GAME OVER, the online
@@ -1145,6 +1146,126 @@ function injectStyle() {
   @container (max-height: 660px) {
     #flow > .fl-up.fl-crew .fl-playbtn { min-height: 54px; }
   }
+
+  /* The crew lobby sideways and on a desktop (README, Crew rooms, The lobby sideways): two calm columns under the
+     crew's name. The left one is you: YOU'RE <name> with EDIT (the upright bar), the status line, PLAY, INVITE and
+     your connection. The right one is the crew: the tabs, the goal folded to one line, then rank, name, W and L in
+     rows a phone held sideways reads, scrolling in their box, with your own row pinned to its foot when it's below
+     the fold. INVITE puts the QR code, the link, COPY LINK and SHARE where the crew was. Like upright, the boxes the
+     stage layout had (body, left, right) step aside (display: contents) so one grid places it all. Sizes are in cqh
+     (the stage's height) with px floors, so the rows hold their size against the stage from 375 to 720 px tall. */
+  #flow > .fl-crew.fl-fill:not(.fl-up) { --sb: #10061f; --rowh: max(15px, 4cqh); display: grid; justify-content: stretch; align-items: stretch;
+    grid-template-columns: calc((100% - 2.4cqw) * 0.36) minmax(0, 1fr);
+    grid-template-rows: max(38px, 6.4cqh) auto auto auto auto auto auto minmax(0, 1fr);
+    grid-template-areas: "t t" "me tb" "st tb" "p tb" "w tb" "x tb" "m tb" ". tb";
+    column-gap: 2.4cqw; row-gap: max(5px, 1.4cqh); padding: 1.4cqh 3cqw max(36px, 8cqh); }
+  html.dev-touch #flow > .fl-crew.fl-fill:not(.fl-up) { padding-bottom: 2.6cqh; }   /* no key legend on a touch screen */
+  #flow > .fl-crew.fl-fill.fl-sharing:not(.fl-up) { grid-template-columns: calc((100% - 4.8cqw) * 0.36) auto minmax(0, 1fr);
+    grid-template-areas: "t t t" "me q l" "st q c" "p q ." "w q ." "x q ." "m q ." ". q ."; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewbody, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewleft,
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewright, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewbtns { display: contents; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-recent, #flow > .fl-crew.fl-fill:not(.fl-up):not(.fl-sharing) > .fl-link,
+  #flow > .fl-crew.fl-fill:not(.fl-up):not(.fl-sharing) .fl-qr, #flow > .fl-crew.fl-fill:not(.fl-up):not(.fl-sharing) .fl-crewshare,
+  #flow > .fl-crew.fl-fill.fl-sharing:not(.fl-up) .fl-standings { display: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) > .fl-h2 { grid-area: t; align-self: center; justify-self: center; font-size: max(18px, 5cqh); max-width: 44cqw; white-space: nowrap; }
+  /* the left column: you */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewme { grid-area: me; display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 2cqh;
+    --c: var(--violet); min-width: 0; min-height: max(36px, 8cqh); padding: 0.3em 1.4cqw 0.1em; font-size: max(14px, 4cqh); letter-spacing: 0.06em; white-space: nowrap; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-mename { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-meedit { flex: none; font-weight: 600; color: var(--amber); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewme.fl-focus .fl-meedit { color: var(--deep); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-melong, #flow > .fl-up.fl-crew .fl-meshort { display: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-playbtn.fl-amber .fl-pl { font-size: max(20px, 5.6cqh); white-space: nowrap; }   /* LEAVE LINE on one line */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewstatus { grid-area: st; min-height: max(36px, 8cqh); font-size: max(13px, 3.4cqh); padding: 0.35em 1cqw 0.15em; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-playbtn { grid-area: p; min-height: max(56px, 17cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-playbtn .fl-pl { display: block; font-size: max(24px, 7.4cqh); line-height: 0.9; padding-top: 0.08em; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-playbtn small { font-size: max(12px, 2.9cqh); line-height: 1; margin-top: 0.4em; white-space: nowrap; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewwatchbtn { grid-area: w; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewinv { grid-area: x; display: flex; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewinv .fl-btn, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewshare .fl-btn { flex: 1 1 0; min-height: max(36px, 8cqh); font-size: max(14px, 3.8cqh); letter-spacing: 0.06em; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-invite { flex-direction: row; gap: 1.6cqh; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-invite .fl-icon { width: 1.05em; height: 1.05em; margin-top: -0.2em; flex: none; }
+  #flow > .fl-crew.fl-fill.fl-sharing:not(.fl-up) .fl-invite .fl-icon { display: none; }   /* it says DONE now */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewbtns .fl-crewmeter { grid-area: m; justify-self: center; font-size: max(12px, 2.7cqh); }
+  /* INVITE: the QR code, then the link with COPY LINK and SHARE beside it */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewbody > .fl-qr { grid-area: q; align-self: start; --qr: min(54cqh, 30cqw); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-qrlabel { font-size: max(12px, 3cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) > .fl-link { grid-area: l; align-self: end; max-width: none; text-align: left; font-size: max(12px, 3cqh); line-height: 1.2; word-break: break-all; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewshare { grid-area: c; align-self: start; display: flex; gap: 1.6cqw; }
+  /* the right column: the crew */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings { grid-area: tb; min-height: 0; align-content: start; grid-auto-rows: max-content; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+    pointer-events: auto; touch-action: pan-y; padding: 0 1.6cqw 0; background: var(--sb); font-size: var(--rowh); line-height: 1.15; column-gap: 1.4cqw; row-gap: 0; align-items: center; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings::-webkit-scrollbar { display: none; }
+  /* (no scroll-cue fade here: it dimmed the sticky tabs at the top and your pinned row at the foot; a row cut at either edge says there's more) */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.sc-more, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.sc-less { -webkit-mask-image: none; mask-image: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewtabs { position: sticky; top: 0; z-index: 3; gap: 1cqw; margin: 0 -1.6cqw; padding: 1.2cqh 1.6cqw 1cqh; background: var(--sb); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewtabs .fl-btn.fl-crewtab { height: max(30px, 6.4cqh); min-height: 0; padding: 0.2em 0 0; font-size: max(13px, 3.2cqh); letter-spacing: 0.04em; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-sth { position: sticky; top: calc(max(30px, 6.4cqh) + 2.2cqh); z-index: 2; align-self: stretch; padding: 0.8cqh 0 0.6cqh;
+    font: 600 max(12px, 2.9cqh)/1 'Teko', sans-serif; letter-spacing: 0.1em; background: var(--sb); box-shadow: 1.4cqw 0 0 var(--sb), -1.4cqw 0 0 var(--sb); }
+  /* the goal, folded: one line that opens */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold { --c: var(--amber); grid-column: 1 / -1; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 1.2cqw;
+    min-height: max(30px, 6.4cqh); margin: 0 0 1cqh; padding: 0.25em 1.2cqw 0.05em; font-size: max(13px, 3.2cqh); letter-spacing: 0.08em; color: #fff4d6; box-shadow: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold.fl-goalmet { --c: #9dffc0; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold span { flex: none; overflow: visible; color: inherit; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold .fl-gfarrow, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold .fl-gfnum { color: var(--c); font-variant-numeric: tabular-nums; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold .fl-gfkey { color: rgba(214,190,255,0.85); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold .fl-gfdays { color: rgba(214,190,255,0.85); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-gfbar { display: block; flex: 1 1 auto; min-width: 4cqw; height: max(7px, 1.4cqh); margin-top: -0.15em; border: 2px solid color-mix(in srgb, var(--c) 60%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-gfbar > i { display: block; height: 100%; background: var(--c); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold.fl-focus span { color: var(--deep); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold.fl-focus .fl-gfbar { border-color: var(--deep); } #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalfold.fl-focus .fl-gfbar > i { background: var(--deep); }
+  /* opened: the chips, what it pays, Employee of the Month (the words wrap rather than cut) */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goal { gap: 0.8cqh; padding: 0.9cqh 1.2cqw 1cqh; margin: -0.6cqh 0 1cqh; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalhead { font-size: max(13px, 3.2cqh); gap: 0.4em 1cqw; flex-wrap: wrap; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-goalhead .fl-goalkey, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-eotm .fl-eotmkey { font: 600 max(12px, 2.9cqh)/1 'Teko', sans-serif; letter-spacing: 0.1em; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalbar { height: max(7px, 1.4cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-goalwho { font-size: max(12px, 2.8cqh); gap: 0.8cqh 1cqw; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-goalnote { font-size: max(12px, 2.8cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-eotm { font-size: max(12px, 3cqh); gap: 0.3em 1cqw; flex-wrap: wrap; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-eotm .fl-eotmw { white-space: normal; }
+  /* Champ of the Court, under the goal */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-court { gap: 0.6cqh; padding: 0.8cqh 1.2cqw 0.9cqh; margin: 0 0 1cqh; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-courtrow, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-courtline { font-size: max(13px, 3.2cqh); gap: 0.5cqh 1cqw; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-courtkey { min-width: 0; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-courtnone { white-space: normal; }
+  /* the standings: rank, the name with its dot, ▶ and (YOU) on your own, W, L. Draws, VS YOU and FAVORITE are on STATS */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings { grid-template-columns: max(18px, 4.4cqh) minmax(0, 1fr) max(26px, 7cqh) max(26px, 7cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sd, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-svs,
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sfav, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth.fl-sthfav { display: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-srank, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-sname,
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-snum { align-self: stretch; display: flex; align-items: center; padding: 0.7cqh 0 0.35cqh; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-snum { justify-content: flex-end; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-sname { gap: 1cqh; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-dot { width: max(8px, 1.8cqh); height: max(8px, 1.8cqh); transform: translateY(-0.1em); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-chip { font-size: max(11px, 2.4cqh); padding: 0.25em 0.35em 0.1em; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-smore { font-size: max(12px, 3cqh); padding: 0.8cqh 0; }
+  /* your own row: a pink band, ▶, the name whole and (YOU) after it; below the fold it stays at the list's foot */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-me { position: sticky; bottom: 0; z-index: 1; background: linear-gradient(var(--pink), var(--pink)) top / 100% 2px no-repeat, #3a0c45; box-shadow: 0.7cqw 0 0 #3a0c45, -0.7cqw 0 0 #3a0c45; }
+  /* (no column gap in the standings, the cells pad instead, so your row's band and its pink rule run unbroken) */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings { column-gap: 0; grid-template-columns: max(18px, 4.4cqh) minmax(0, 1fr) calc(max(26px, 7cqh) + 1.4cqw) calc(max(26px, 7cqh) + 1.4cqw); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-sname, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-snum,
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth:not(:nth-child(1 of .fl-sth)) { padding-left: 1.4cqw; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-me { box-shadow: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth { box-shadow: none; }   /* (the heads abut now: only the outer two cover the list's padding) */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth:nth-child(1 of .fl-sth) { box-shadow: -1.6cqw 0 0 var(--sb); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth:nth-child(4 of .fl-sth) { box-shadow: 1.6cqw 0 0 var(--sb); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-srank.fl-me { margin-left: -1.6cqw; padding-left: 1.6cqw; }   /* the band to the panel's edges */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-me + .fl-snum.fl-me + .fl-snum.fl-me { margin-right: -1.6cqw; padding-right: 1.6cqw; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-youmark { flex: none; color: var(--pink); font-size: 0.8em; font-weight: 400; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-sname > .fl-youtag { flex: none; overflow: visible; color: var(--pink); font-weight: 600; }
+  /* the other views at the same row size */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-arcade, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-horde { grid-template-columns: max(18px, 4.4cqh) minmax(0, 0.7fr) max-content minmax(0, 1fr) max-content; row-gap: 0.9cqh; font-size: max(14px, 3.5cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-sdate, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-standings .fl-sth.fl-sdate { display: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-sfav, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-snote { font-size: max(12px, 3.1cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 1.6cqh; align-items: start; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-sttitle { position: static; padding: 0; background: none; box-shadow: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-stsum { font-size: max(14px, 3.8cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-stgrid { font-size: max(13px, 3.2cqh); row-gap: 0.6cqh; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-stgrid .fl-sfav, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-stpicks .fl-sfav { font-size: max(12px, 3cqh); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-stvs { grid-template-columns: minmax(0, 1fr) auto; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-strecent { font-size: max(12px, 3cqh); color: rgba(214,190,255,0.85); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) > .lg-bar { --lg: max(12px, 2.4cqh); bottom: 1.8cqh; }
+  #flow > .fl-up .fl-youmark { display: none; }   /* (upright the row's pink and YOU'RE say it, as before) */
 
   /* The crew lobby's views held upright. [twgdsx] lays the lobby out as one grid when the phone is upright
      (.fl-up, its own block); these only size what this card added inside the table (the tabs, the high score

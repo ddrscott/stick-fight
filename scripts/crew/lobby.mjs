@@ -17,10 +17,12 @@ import { chromium, executablePath } from '../../gauntlet/browser.mjs';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { goalFor, goalText, weekOf, GOAL_PAY, monthName, monthOf } from '../../src/career/crewgoal.js';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 
 const argv = process.argv.slice(2);
 const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const SHOTS = argv.includes('--shots') ? argv[argv.indexOf('--shots') + 1] : '';
+const LAYOUT_ONLY = argv.includes('--layout');   // just the landscape layout section (README, Crew rooms, The lobby sideways)
 const API = BASE + 'api/', WS = API.replace(/^http/, 'ws');
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -140,14 +142,228 @@ const minFont = (p) => p.evaluate(() => {
   return Math.round(min * 10) / 10;
 });
 
+// ---- the lobby sideways: two calm columns (README, Crew rooms, The lobby sideways) ---------------------------
+// A crew like Scott's YORKSHIRE, with 7 members and with 15, opened by members at 1280x720, 920x500, 844x390 and
+// 667x375. On each: no text overlaps another or runs past its box or the stage (bounding boxes), every name in the
+// visible standings shows whole at no less than the upright list's size for the stage, YOU'RE <name> and your own
+// row are on the screen without scrolling (your row pinned under the list when it's below the fold), nothing
+// readable glows, every corner is square, and the link, recent results, VS YOU and FAVORITE are off this screen.
+// Upright is screenshotted beside them as the reference. Then four members side by side at 920x500.
+const LAYOUT_NAMES = ['SNAKEHIT4034', 'SMP', 'JOKE MCCOY', 'SCOTT', 'DAD', 'GUEST 885', 'GUEST 611',
+  'BARISTA BOB', 'KAREN IN HR', 'THE INTERN', 'MEGAPUNCHER', 'LIL SUE', 'NIGHT SHIFT', 'GUEST 207', 'WALLY'];
+/** a crew with n members and some history: wins spread so the order is fixed, the viewer's pids kept */
+async function layoutCrew(name, n) {
+  const c = await (await post('crews', { name })).json();
+  const pids = LAYOUT_NAMES.slice(0, n).map(() => crypto.randomBytes(16).toString('hex'));
+  const socks = [];
+  for (let i = 0; i < n; i++) socks.push(await member(c.slug, pids[i], LAYOUT_NAMES[i], ['MANAGER', 'TEMP', 'INTERN', 'SENIOR'][i % 4]));
+  // (winner, loser) by index: SNAKEHIT wins most, then the rest in order; the last few never win
+  const games = [];
+  for (let w = 0; w < Math.min(n, 6); w++) for (let k = 0; k < 6 - w; k++) games.push([w, (w + 1 + k) % n]);
+  for (const [w, l] of games) {
+    if (w === l) continue;
+    socks[w].send({ t: 'play', on: true }); await sleep(40); socks[l].send({ t: 'play', on: true });
+    const m = await socks[w].next((x) => x.t === 'match'); await socks[l].next((x) => x.t === 'match');
+    const hostIsW = m.role === 'host';
+    const host = hostIsW ? socks[w] : socks[l];
+    host.send({ t: 'result', match: m.id, n: 1, winner: hostIsW ? 0 : 1, wins: hostIsW ? [2, 1] : [1, 2], chars: ['courier', 'intern'], secs: 60 });
+    await sleep(150);
+    for (const x of [socks[w], socks[l]]) { x.send({ t: 'lobby' }); x.send({ t: 'play', on: false }); }
+    await sleep(120);
+    for (const x of socks) x.q.length = 0;
+  }
+  for (const s of socks) s.close();
+  return { slug: c.slug, pids };
+}
+/** what's on the lobby screen, measured: see the comment above */
+const audit = (p) => p.evaluate(() => {
+  const scr = document.querySelector('#flow > .fl-crew');
+  const stage = document.getElementById('flow').getBoundingClientRect();
+  const vw = innerWidth, vh = innerHeight;
+  const R = (r) => `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)}`;
+  const own = (e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+  const shown = (e) => {
+    if (!e || !e.isConnected) return false;
+    const r = e.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return false;
+    const cs = getComputedStyle(e);
+    if (cs.visibility === 'hidden' || +cs.opacity === 0) return false;
+    // on top at its middle (a row scrolled under the sticky heads or the pinned row of your own isn't shown)
+    const x = Math.min(vw - 1, Math.max(0, r.left + r.width / 2)), y = Math.min(vh - 1, Math.max(0, r.top + r.height / 2));
+    const top = document.elementFromPoint(x, y);
+    return !!top && (top === e || e.contains(top) || top.contains(e));
+  };
+  const leaves = [...scr.querySelectorAll('*')].filter((e) => own(e) && shown(e));
+  // a leaf the scrolling list cuts at its edge isn't shown either (that's the list scrolling, not a clip)
+  const list = scr.querySelector('.fl-standings'), lr = list && list.getBoundingClientRect();
+  const inList = (e) => list && list.contains(e);
+  // your own row pinned at the list's foot is its bottom edge: a row scrolling under it is cut there, like under the tabs
+  const pin = scr.querySelector('.fl-v-standings > .fl-sname.fl-me'), pr = pin && pin.getBoundingClientRect();
+  const lbot = lr ? lr.top + list.clientTop + list.clientHeight : 0;   // (the list's inside edge, under its border)
+  const pinned = !!pr && Math.abs(pr.bottom - lbot) < 2;
+  const vis = leaves.filter((e) => {
+    if (!inList(e)) return true;
+    const r = e.getBoundingClientRect();
+    if (pinned && !e.closest('.fl-me') && r.bottom > pr.top + 1) return false;
+    return r.top >= lr.top - 1 && r.bottom <= lbot + 1;
+  });
+  const overlaps = [];
+  for (let i = 0; i < vis.length; i++) for (let j = i + 1; j < vis.length; j++) {
+    const a = vis[i], b = vis[j];
+    if (a.contains(b) || b.contains(a)) continue;
+    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    const ox = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left), oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+    if (ox > 1.5 && oy > 1.5) overlaps.push(`${a.textContent.trim().slice(0, 14)}@${R(ra)} x ${b.textContent.trim().slice(0, 14)}@${R(rb)}`);
+  }
+  const clips = [];
+  for (const e of vis) {
+    const r = e.getBoundingClientRect();
+    if (r.left < stage.left - 1 || r.right > stage.right + 1 || r.top < stage.top - 1 || r.bottom > stage.bottom + 1 || r.left < -1 || r.right > vw + 1 || r.bottom > vh + 1) { clips.push(`off the stage: ${e.textContent.trim().slice(0, 20)}@${R(r)}`); continue; }
+    if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== 'visible') clips.push(`cut: ${e.textContent.trim().slice(0, 20)} (${e.scrollWidth} > ${e.clientWidth})`);
+    // inside its box (a button's words inside the button)
+    const box = e.parentElement && e.parentElement.closest('.fl-btn, .fl-crewstatus, .fl-goalfold');
+    if (box) { const b = box.getBoundingClientRect(); if (r.left < b.left - 1 || r.right > b.right + 1) clips.push(`past its box: ${e.textContent.trim().slice(0, 20)}`); }
+  }
+  // the standings names, as drawn (font size times any zoom)
+  const px = (e) => parseFloat(getComputedStyle(e).fontSize) * (e.getBoundingClientRect().height / (e.offsetHeight || 1));
+  const names = [...scr.querySelectorAll('.fl-v-standings .fl-snm')].filter((e) => vis.includes(e)).map((e) => ({ name: e.textContent, px: Math.round(px(e) * 10) / 10, whole: e.scrollWidth <= e.clientWidth + 1 }));
+  const meBar = scr.querySelector('.fl-crewme'), meRow = scr.querySelector('.fl-v-standings .fl-sname.fl-me .fl-snm');
+  const youTag = scr.querySelector('.fl-v-standings .fl-sname.fl-me .fl-youtag');
+  // glow: a colored blur behind text (the plain outline is dark); corners: any radius over 2px
+  const glow = [], round = [];
+  for (const e of [scr, ...scr.querySelectorAll('*')]) {
+    if (!e.getBoundingClientRect().width) continue;
+    const cs = getComputedStyle(e);
+    if (own(e) && cs.textShadow !== 'none') {
+      for (const m of cs.textShadow.matchAll(/rgba?\(([^)]*)\)\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+([\d.]+)px/g)) {
+        const [r, g, b, a = 1] = m[1].split(',').map(Number);
+        if (+m[4] > 0 && r + g + b > 150 && a > 0.1) { glow.push(e.textContent.trim().slice(0, 16)); break; }
+      }
+    }
+    if (parseFloat(cs.borderTopLeftRadius) > 2 || parseFloat(cs.borderBottomRightRadius) > 2) round.push(e.className);
+  }
+  const anyShown = (sel) => [...scr.querySelectorAll(sel)].some(shown);
+  return {
+    stage: { w: Math.round(stage.width), h: Math.round(stage.height) },
+    overlaps, clips, names, glow, round,
+    heads: [...scr.querySelectorAll('.fl-v-standings > .fl-sth')].filter(shown).map((e) => e.textContent).filter(Boolean),
+    meBar: meBar && shown(meBar) ? meBar.textContent : '', meBarIn: !!meBar && meBar.getBoundingClientRect().bottom <= Math.min(vh, stage.bottom) + 1,
+    meRow: meRow && vis.includes(meRow) ? meRow.textContent : '', meWhole: !!meRow && meRow.scrollWidth <= meRow.clientWidth + 1,
+    youTag: !!youTag && vis.includes(youTag) && youTag.scrollWidth <= youTag.clientWidth + 1,
+    link: anyShown('.fl-link'), recent: anyShown('.fl-recent > div'), qr: anyShown('.fl-qrtile'), vs: anyShown('.fl-svs'), fav: anyShown('.fl-v-standings .fl-sfav'),
+    scrollTop: list ? list.scrollTop : -1, scrolls: !!list && list.scrollHeight > list.clientHeight + 1,
+  };
+});
+/** the lobby with its list, settled: the room's socket can blip right after the setup's sockets close, so wait out a
+ *  RECONNECTING... too (measuring a screen mid-reconnect checks nothing) */
+async function settled(p) {
+  const ok = async () => (await flow(p)) === 'crewLobby' && /SNAKEHIT/.test(await tableText(p))
+    && !(await p.evaluate(() => /RECONNECTING/.test(document.querySelector('#flow > .fl-crew')?.textContent || '')));
+  await until(ok);
+  await sleep(800);
+  await until(ok);
+}
+/** press a lobby item by its class, as the keys would (false when the screen has none) */
+const pressItem = (p, cls) => p.evaluate((c) => { const i = window.__flow.debug.ui.items.find((x) => x.el.classList.contains(c)); if (i) i.act(); return !!i; }, cls);
+async function layoutSuite() {
+  const crews = { 7: await layoutCrew('YORKSHIRE', 7), 15: await layoutCrew('YORKSHIRE', 15) };
+  check('layout: YORKSHIRE with 7 members and with 15', true, `${crews[7].slug}, ${crews[15].slug}`);
+  const prof = (k, i, auto = false, email = '') => ({ 'stick-fight-player': JSON.stringify({ id: crews[k].pids[i], name: LAYOUT_NAMES[i], auto, email, crews: [{ slug: crews[k].slug, name: 'YORKSHIRE', at: Date.now() }] }) });
+  // the upright list's names, for scale: their px over the phone's short side
+  const SIZES_L = [['1280x720', { width: 1280, height: 720 }, false], ['920x500', { width: 920, height: 500 }, false], ['844x390', { width: 844, height: 390 }, true], ['667x375', { width: 667, height: 375 }, true]];
+  let upRatio = 0;
+  for (const k of [7, 15]) {
+    // JOKE MCCOY (3rd) on the 7, and on the 15 GUEST 611 (15th, 0 and 6: below the fold at every size)
+    const who = k === 7 ? 2 : 6;
+    {
+      const p = await page(`${BASE}crew/${crews[k].slug}`, prof(k, who), { width: 390, height: 844 }, true);
+      await settled(p);
+      const a = await audit(p);
+      const r = Math.min(...a.names.map((n) => n.px)) / Math.min(390, 844);
+      if (k === 7) upRatio = r;
+      check(`layout ${k}: upright (the reference) still has YOU'RE ${LAYOUT_NAMES[who]} and its list`, a.meBar.includes(`YOU'RE ${LAYOUT_NAMES[who]}`) && a.names.length >= 5, `${a.names.length} names, ${Math.round(r * 1000) / 10}% of the short side`);
+      await shot(p, `layout-${k}-upright`);
+      await closeAll();
+    }
+    for (const [label, size, touch] of SIZES_L) {
+      const p = await page(`${BASE}crew/${crews[k].slug}`, prof(k, who), size, touch);
+      await settled(p);
+      const a = await audit(p);
+      const tag = `layout ${k} ${label}`;
+      check(`${tag}: no text overlaps other text`, !a.overlaps.length, a.overlaps.slice(0, 3).join(' | '));
+      check(`${tag}: no text is cut or runs off the stage`, !a.clips.length, a.clips.slice(0, 3).join(' | '));
+      const min = Math.min(...a.names.map((n) => n.px)), ratio = min / Math.min(a.stage.w, a.stage.h);
+      check(`${tag}: every name in the visible standings shows whole`, a.names.length >= 4 && a.names.every((n) => n.whole), `${a.names.length} names: ${a.names.filter((n) => !n.whole).map((n) => n.name).join(', ')}`);
+      check(`${tag}: names at least the upright list's size for the stage (${(upRatio * 100).toFixed(1)}%)`, ratio >= upRatio - 0.0005, `${min} px, ${(ratio * 100).toFixed(1)}% of ${Math.min(a.stage.w, a.stage.h)}`);
+      check(`${tag}: the column heads NAME, W and L all show`, ['NAME', 'W', 'L'].every((h) => a.heads.includes(h)), a.heads.join(' '));
+      check(`${tag}: YOU'RE ${LAYOUT_NAMES[who]} with EDIT is on the screen`, a.meBar.includes(`YOU'RE ${LAYOUT_NAMES[who]}`) && /EDIT/.test(a.meBar) && a.meBarIn, a.meBar);
+      check(`${tag}: your own row is on the screen without scrolling, name whole, marked (YOU)`, a.meRow === LAYOUT_NAMES[who] && a.meWhole && a.youTag && a.scrollTop === 0, JSON.stringify({ row: a.meRow, whole: a.meWhole, you: a.youTag, top: a.scrollTop }));
+      check(`${tag}: nothing readable glows, every corner square`, !a.glow.length && !a.round.length, `${a.glow.slice(0, 3).join(', ')} | ${a.round.slice(0, 3).join(', ')}`);
+      check(`${tag}: off this screen: the link, the QR code, recent results, VS YOU, FAVORITE`, !a.link && !a.qr && !a.recent && !a.vs && !a.fav, JSON.stringify({ link: a.link, qr: a.qr, recent: a.recent, vs: a.vs, fav: a.fav }));
+      if (k === 15) check(`${tag}: the 15 scroll inside the panel`, a.scrolls);
+      await shot(p, `layout-${k}-${label}`);
+      if (k === 7 && label === '920x500') {
+        // INVITE: the QR code, the link, COPY LINK; DONE (or Esc) puts the crew back, your name stays
+        await pressItem(p, 'fl-invite');
+        await sleep(400);
+        const inv = await audit(p);
+        check(`${tag}: INVITE shows the QR code and the link, and keeps YOU'RE`, inv.qr && inv.link && inv.meBar.includes("YOU'RE") && !inv.overlaps.length && !inv.clips.length, JSON.stringify({ qr: inv.qr, link: inv.link, o: inv.overlaps.slice(0, 2), c: inv.clips.slice(0, 2) }));
+        await shot(p, `layout-${k}-${label}-invite`);
+        await p.keyboard.press('Escape'); await sleep(300);
+        check(`${tag}: Esc closes INVITE first, still in the lobby`, (await flow(p)) === 'crewLobby' && !(await audit(p)).qr, await flow(p));
+        // the goal folds to one line and opens; the keys reach it, the tabs, PLAY, INVITE, EDIT, and scroll the list
+        const reach = await p.evaluate(() => window.__flow.debug.ui.items.map((i) => i.el.className.match(/fl-(crewtab|playbtn|invite|crewme|goalfold)/)?.[1]).filter(Boolean));
+        check(`${tag}: keys and pad reach the tabs, PLAY, INVITE, EDIT and the goal`, ['crewtab', 'playbtn', 'invite', 'crewme', 'goalfold'].every((x) => reach.includes(x)), reach.join(','));
+        await pressItem(p, 'fl-goalfold');
+        await sleep(300);
+        const open = await goalBox(p);
+        check(`${tag}: the goal opens to its chips and Employee of the Month`, open && open.chips.length > 0 && /EMPLOYEE OF THE MONTH/.test(open.text), open && open.text.slice(0, 120));
+        await shot(p, `layout-${k}-${label}-goal-open`);
+        await pressItem(p, 'fl-goalfold');
+        await sleep(300);
+        await closeAll();
+        // the four members side by side, Scott's test: two named, one signed in, one handed a GUEST name
+        const four = [[2, false, 'joke@example.com'], [3, false, ''], [4, false, ''], [5, true, '']];
+        const ps = [];
+        for (const [i, auto, email] of four) ps.push(await page(`${BASE}crew/${crews[7].slug}`, prof(7, i, auto, email), { width: 920, height: 500 }, false));
+        for (const q of ps) await settled(q);
+        // two of them get in line, so the chips show too
+        await pressItem(ps[1], 'fl-playbtn');
+        await sleep(1500);
+        const bars = [];
+        for (const q of ps) { const a = await audit(q); bars.push(a.meBar); check(`four sessions: ${LAYOUT_NAMES[four[bars.length - 1][0]]}'s screen: nothing overlaps or is cut`, !a.overlaps.length && !a.clips.length, [...a.overlaps, ...a.clips].slice(0, 3).join(' | ')); }
+        check('four sessions: each says who it is', four.every(([i], k) => bars[k].includes(`YOU'RE ${LAYOUT_NAMES[i]}`)), bars.join(' | '));
+        if (SHOTS) {
+          const imgs = [];
+          for (const q of ps) { await q.evaluate(() => window.__gauntlet.step(0)).catch(() => {}); imgs.push(await loadImage(await q.screenshot())); }
+          const W = 920, H = 500, gap = 8, c = createCanvas(W * 2 + gap, H * 2 + gap), g = c.getContext('2d');
+          g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+          imgs.forEach((im, k) => g.drawImage(im, (k % 2) * (W + gap), Math.floor(k / 2) * (H + gap), W, H));
+          fs.writeFileSync(`${SHOTS}/layout-four-sessions.png`, c.toBuffer('image/png'));
+        }
+        for (const q of ps) check(`four sessions: no page errors`, !q.errors.length, q.errors.join(' | ').slice(0, 200));
+        await pressItem(ps[1], 'fl-playbtn');
+      }
+      check(`${tag}: no page errors`, !p.errors.length, p.errors.join(' | ').slice(0, 200));
+      await closeAll();
+    }
+  }
+}
+
 const SIZES = [['desktop', { width: 1280, height: 720 }, false], ['phone', { width: 844, height: 390 }, true], ['upright', { width: 390, height: 844 }, true]];
 try {
-  for (const [label, size, touch] of SIZES) {
+  await layoutSuite();
+  if (!LAYOUT_ONLY) for (const [label, size, touch] of SIZES) {
     const p = await page(`${BASE}crew/${slug}`, profileOf(P.alice, 'ALICE'), size, touch);
     check(`${label}: the crew link opens the lobby`, await until(async () => (await flow(p)) === 'crewLobby'), await flow(p));
     check(`${label}: the lobby has its four tabs`, await until(() => p.evaluate(() => document.querySelectorAll('.fl-crewtab').length === 4)));
     await until(async () => /ALICE/.test(await tableText(p)));
-    // the week's goal over the standings
+    // the week's goal over the standings (sideways folded to one line first: the bar, the count, the days; it opens to the box)
+    if (label !== 'upright') {
+      const line = await until(() => p.evaluate(() => { const b = document.querySelector('.fl-crew .fl-goalfold'); return b && b.offsetParent ? b.innerText.replace(/\s+/g, ' ') : null; }));
+      check(`${label}: sideways the goal is one line: CREW GOAL, ${PROG} / ${GOAL.target}, the days left, and no box yet`, !!line && /CREW GOAL|GOAL MET/.test(line) && line.includes(`${PROG} / ${GOAL.target}`) && /DAYS|TONIGHT|NICE WORK/.test(line) && !(await goalBox(p)), line);
+      await pressItem(p, 'fl-goalfold');
+    }
     const gb = await until(() => goalBox(p));
     const words = goalText(GOAL.kind, GOAL.target);
     check(`${label}: the goal is over the standings: ${words}, ${PROG} / ${GOAL.target}`, gb && gb.text.includes('CREW GOAL') && gb.text.includes(words) && gb.text.includes(`${PROG} / ${GOAL.target}`), gb && gb.text.slice(0, 120));
@@ -205,6 +421,7 @@ try {
   }
 
   // ---- a run that only makes the crew's table ----
+  if (LAYOUT_ONLY) throw Object.assign(new Error('layout only'), { quiet: true });
   const carol = crypto.randomBytes(16).toString('hex');
   const local = JSON.stringify({ arcade: [], horde: [1, 2, 3, 4, 5].map((i) => ({ name: 'TOP', score: 900000 - i, note: '9 FLOORS' })) });
   const p = await page(`${BASE}crew/${slug}`, { ...profileOf(carol, 'CAROL'), 'stick-fight-scores': local }, { width: 1280, height: 720 }, false);
@@ -232,6 +449,8 @@ try {
   check('attract: the tables turn through this device\'s and then the crew\'s (LUNCH CREW · ARCADE, · HORDE)', seq.length === 4 && seq[2].crew && seq[2].mode === 'arcade' && seq[3].mode === 'horde', JSON.stringify(seq));
   check('run: no page errors', !p.errors.length, p.errors.join(' | ').slice(0, 200));
   await closeAll();
+} catch (e) {
+  if (!e.quiet) throw e;
 } finally {
   await closeAll();
 }
