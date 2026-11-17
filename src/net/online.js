@@ -78,8 +78,9 @@ const END_HOLD = 150;     // frames of the WINS card after the result shows (the
 // screen's patience with a rival who hasn't picked, not a network clock
 const AUTO_MS = 5000, AGREE_MS = 3000, GRACE_MS = 20000, ALIVE_MS = 3000, SILENT_MS = LOST_MS;
 const HEARD_MS = 3500;    // the host starts a match only with a word from the rival this recent (the guest's alive is every 3 s)
-const LINK_EVERY_MS = 30000;
-const WEAK_SHOW_MS = 2000, GOOD_HIDE_MS = 4000;   // the fight's readout: weak this long before the meter shows, good this long before it goes   // online_link: a sample of the link's quality this often during a match
+const LINK_EVERY_MS = 30000;   // online_link: a sample of the link's quality this often during a match
+const WEAK_SHOW_MS = 2000, GOOD_HIDE_MS = 4000;   // the fight's readout: weak this long before the meter shows, good this long before it goes
+const ACK_SUSPECT_MS = 1000;   // our inputs unacked this long: link.check() tests the room socket (on the relay)
 const STALL_LOST_MS = LOST_MS, END_WAIT_MS = LOST_MS;
 const WANTS = new Set(['rematch', 'chars', 'wait']);
 
@@ -557,6 +558,8 @@ export function createOnline(game) {
       feed.tick(game.sim);   // spectators: note what's confirmed, and send it on if anyone is watching
       // the link is gone, or can't carry this match any more: both sides end it, never two different fights
       if (lockstep && (lockstep.lost || lockstep.broken || lockstep.stalledMs > STALL_LOST_MS)) { finish('lost', lockstep.lost ? 'no-packets' : lockstep.broken ? 'broken:' + lockstep.broken : 'stalled'); return k; }
+      // what we send isn't being acked: on the relay that may be a socket whose sends vanish, so test it now
+      if (lockstep && link && link.check) { if (lockstep.ackLateMs > ACK_SUSPECT_MS) link.check(); }
       checkEnd();
       sampleLink(false);
       readout.tick();

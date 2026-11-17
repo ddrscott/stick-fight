@@ -126,6 +126,7 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
       when(last, dir = 'down') {
         const s = this.side;
         if (this.broken || s.iface !== this.iface) return -1;
+        if (dir === 'up' && this.upDead) return -1;   // staleUplink: this socket's sends vanish, for good
         let from = sched.t;
         if (!s.up || frozen(s)) { if (s.tcp !== 'survive') return -1; from = Math.max(s.downUntil, s.owner ? s.owner.frozenUntil : 0); }
         // one-way: what the page sends waits for the window to end (TCP resends it, backing off); what it's sent keeps
@@ -377,6 +378,10 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
       s.txDeadUntil = sched.t + dur; s.rxHoldFrom = sched.t + Math.min(dur, 3000 + rng() * 5000);
       at(sched.t + dur, () => fire(s, 'online'), null, 'net');
     },
+    /** a stale uplink: the phone's open sockets stop delivering what it sends, for good, while what the room sends
+     *  keeps arriving and nothing errors (a carrier NAT that dropped the flow's outbound mapping). New sockets work:
+     *  the signature of the 2026-11-16 20:11 drop on the relay (README, Reconnecting: Weak cellular) */
+    staleUplink(i) { for (const ws of sides[i].sockets) if (ws.readyState === 1) ws.upDead = true; },
     /** a symmetric NAT (carrier-grade NAT): no direct UDP path to this phone, only TURN; iceSlowMs: api/ice takes this
      *  much longer to answer (a slow DNS and TLS on a weak signal) */
     nat(i, iceSlowMs = 0) { sides[i].natStrict = true; sides[i].iceSlowMs = iceSlowMs; },

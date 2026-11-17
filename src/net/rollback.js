@@ -456,6 +456,8 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
         rollbacks: rb.count, rollbackFrames: rb.frames, avgDepth: rb.count ? rb.frames / rb.count : 0, maxDepth: rb.maxDepth, lastDepth: rb.lastDepth,
         rollbackMs: rb.ms, rollbackMaxMs: rb.maxMs, saves: rb.saves, saveMs: rb.saveMs, predictedFrames: rb.predictedFrames,
         eventsHeld: rb.eventsHeld, eventsLate: rb.eventsLate, advanceAvgMs: rb.advN ? rb.advMs / rb.advN : 0, advanceMaxMs: rb.advMax,
+        // how long what we send has gone unacknowledged while the other side should have acked it (0: acks are moving)
+        ackLateMs: localTop > ackedByRemote + delay + 1 ? t - lastAckMove : 0,
         shaky: t < shakyUntil, playMs: meter.playMs, frozenMs: meter.frozenMs, sent: meter.sent, sentBoth: meter.both,
         avgDelay: meter.delayN ? meter.delaySum / meter.delayN : delay,
       };
@@ -470,6 +472,8 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     /** a match that can't go on ('' while it can): online.js ends it as a lost connection */
     get broken() { return broken; },
     /** how long this side has been waiting on the other's inputs without running a frame */
+    /** how long our inputs have gone unacked while the other side should have them (0: acks are moving) */
+    get ackLateMs() { return localTop > ackedByRemote + delay + 1 ? now() - lastAckMove : 0; },
     get stalledMs() { return stalledMs; },
     get epoch() { return epoch; },
     get resyncs() { return resyncs; },

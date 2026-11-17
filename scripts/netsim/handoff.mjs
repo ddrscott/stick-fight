@@ -26,7 +26,9 @@ const { mulberry32 } = await import('../../src/combat/rng.js');
 installClock();
 console.info = () => {};
 const quiet = !process.env.NETSIM_DEBUG;
-if (quiet) console.warn = () => {};
+// a dropped match's own line ([net] match dropped: why, path, frame) is kept even when quiet, for the failure report
+const dropLines = [];
+if (quiet) console.warn = (...a) => { const t = a.map(String).join(' '); if (/match dropped/.test(t)) dropLines.push(`t=${Math.round(sched.t / 1000)}s ${t.slice(0, 200)}`); };
 const LEGACY = process.argv.includes('--legacy');
 // an old link fetches its ICE servers itself
 /** @type {any} */ (globalThis).fetch = async () => ({ ok: true, json: async () => ({ iceServers: [{ urls: ['stun:stun.test:3478'] }] }) });
@@ -71,6 +73,9 @@ const SCENARIOS = {
   // carrier-grade NAT on the weak phone: no direct path at all, and api/ice slow enough on that signal that the first
   // fetch can time out (then the link has public STUN only, which can't reach TURN)
   'turn-cell': { note: 'weak-cell behind a symmetric NAT (no direct path, TURN works) with a slow api/ice; 4 matches', legs: [WIFI, WEAK_CELL], matches: 4, rehost: true, judgeFrozen: 0.05, plan: (r) => weakCellPlan(r), setup: (w) => w.nat(1, 2000), events: [] },
+  // the 2026-11-16 20:11 drop: on the relay, the guest's room socket stops delivering what it sends while it keeps
+  // hearing the host (a stale carrier NAT mapping), once in each match. Nothing errors, so only a missing pong says so
+  'stale-uplink': { note: 'guest on the relay (no UDP); its room socket\'s sends vanish for good while it still hears the host, once a match', legs: [WIFI, WIFI], matches: 2, setup: (w) => w.blockUdp(1, true), events: [{ at: 20000, run: (w) => w.staleUplink(1) }, { at: 110000, run: (w) => w.staleUplink(1) }] },
   'relay-jitter': { note: 'the jitter scenario on the relay (no DataChannel): the lag numbers for the slow path', legs: [CALM, JITTERY], relay: true, slow: true, events: [] },
 };
 
@@ -183,6 +188,8 @@ async function session(name, seed, matchesArg) {
   await runUntil(limit, done);
   await runUntil(sched.t + 3000);
   const rep = evaluate(name, seed, A, B, matches, m, wire, bank);
+  if (!rep.pass) for (const l of dropLines.splice(0)) console.error(`  ${l}`);
+  dropLines.length = 0;
   if (!rep.pass || process.env.NETSIM_DEBUG) for (const c of both) {
     const s = c.net.stats();
     console.error(`  [${c.name}] state ${s.state} frame ${s.frame} confirmed ${s.confirmed} stalledMs ${Math.round(s.stalledMs || 0)} lostMs ${Math.round(s.lostMs || 0)} mode ${s.mode} ended ${c.ended} link ${JSON.stringify(c.net.link && c.net.link.debug)}`);

@@ -64,6 +64,7 @@ const OUTBOX_MAX = 256;              // control messages held while it's down
 const ICE_FETCH_MS = 2500;
 const TICK_MS = 250;                 // the link's own watchdog
 const FROZEN_MS = 3000;              // a watchdog tick this late: the page was frozen (a locked phone)
+const CHECK_MS = 3000;               // link.check(): the netcode's suspicion probes the socket at most this often
 const ABANDON = 4100;                // the close code for a socket the page gave up on (the room reads it as the network)
 const BEAT = 0xf0;                   // the old DataChannel beat's one byte (codec.js packet types are 1..3)
 const PROBE = 0xf1, ECHO = 0xf2;     // the link's probe (9 bytes: the type, then the sender's clock) and its echo
@@ -141,7 +142,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   url.searchParams.set('seat', Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) => b.toString(36).padStart(2, '0')).join(''));
   /** @type {any} */ let ws;
   let welcomed = false, wsWelcomed = false, downSince = 0, dropCode = 0, tries = 0, retryTimer = 0, tryTimer = 0;
-  let lastWsRx = 0, lastPingAt = 0, pongSeen = false, probeAt = 0, lastPongAt = 0;
+  let lastWsRx = 0, lastPingAt = 0, pongSeen = false, probeAt = 0, lastPongAt = 0, lastCheck = -1e9;
   // this page's own trip to the room (ping to pong): the host screen's meter while it waits for a friend
   let pingOut = 0, sRtt = 0, sJit = 0, sN = 0;
   const ping = (t) => { lastPingAt = t; if (!pingOut) pingOut = t; try { ws.send('ping'); } catch { /* */ } };
@@ -213,6 +214,15 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     /** this page's own trip to the room (its pings): { rtt, jitter, samples } */
     get server() { return { rtt: sRtt, jitter: sJit, loss: 0, samples: wsUp() ? sN : 0 }; },
     get peerAway() { return peerAway; },
+    /** the netcode's hint that what we send isn't getting through (the rival's acks stopped moving): on the relay,
+     *  ping the room socket and give it PROBE_MS to answer, instead of waiting out PONG_MS. A socket whose sends
+     *  vanish while it still hears the room is found in ~2 s (the 2026-11-16 20:11 drop). At most every CHECK_MS */
+    check() {
+      const t = now();
+      if (closed || !welcomed || downSince || link.mode !== 'relay' || probeAt || t - lastCheck < CHECK_MS) return;
+      if (!(ws && ws.readyState === OPEN && pongSeen)) return;
+      lastCheck = t; probeAt = t; pingOut = 0; ping(t);
+    },
     on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); return link; },
     sendControl(obj) { sendCtl(obj, false); },
     /** @param {ArrayBuffer} buf @param {boolean} [both] the netcode thinks the path is shaky: the room socket too */
