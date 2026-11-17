@@ -3,7 +3,7 @@
 // bad. Shown before a match, the way fighting games do (the crew lobby and the host screen: your own connection to
 // the room; the online pick screen: the link to your rival), and in the fight's corner readout when it drops.
 //
-//   bars(q, { leg })      0..4 (0: no reading yet). q: { rtt, jitter, loss, samples, path }; leg: q measures only
+//   bars(q, { leg })      0..4 (0: no reading yet). q: { rtt, jitter, loss, samples, path, down? }; leg: q measures only
 //                         this page to the room (half the trip), so it's held to tighter numbers
 //   createMeter(o)        { el, update(q) }: the bars, the label and the warning, styled here
 //
@@ -29,6 +29,9 @@ export function bars(q, { leg = false } = {}) {
 
 /** the meter's words for a reading */
 export function label(q, b, { leg = false } = {}) {
+  // a socket that's being dialed again isn't something to check: say what's happening (q.down, src/net/crew.js quality)
+  if (q && q.down === 'reconnecting') return 'RECONNECTING';
+  if (q && q.down === 'connecting') return 'CONNECTING';
   if (!b) return leg ? 'CHECKING YOUR CONNECTION' : 'CHECKING THE LINK';
   const ms = `${Math.round(q.rtt)} MS`;
   if (leg) return `YOUR CONNECTION · ${ms}`;

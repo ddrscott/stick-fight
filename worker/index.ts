@@ -73,7 +73,7 @@ import { isFighter } from "./roster";
 
 // the events the page may send (src/analytics.js); anything else is dropped. `match` and `pick` also
 // update the D1 rollups, so they're checked field by field (worker/stats.ts) instead of passed through
-const EVENT_NAMES = new Set(["visit", "mode", "stage", "arcade_end", "horde_end", "online_match", "online_drop", "online_rejoin", "online_link", "install", "technique", "move", "perf"]);
+const EVENT_NAMES = new Set(["visit", "mode", "stage", "arcade_end", "horde_end", "online_match", "online_drop", "online_rejoin", "online_link", "crew_link", "install", "technique", "move", "perf"]);
 const MAX_BATCH = 12;   // events in one POST (a match's end sends its result and its move counts together)
 type PageEvent = { e?: unknown; l?: unknown; v?: unknown; d?: unknown; m?: unknown };
 

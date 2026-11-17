@@ -2192,6 +2192,9 @@ export function createFlow(ctx) {
   let crewCli = null, crewSlug = '', crewMatch = null, rotating = null, crewNote = '', crewFail = '', linkTimer = 0;
   let lob = null;
   let crewView = 'standings';   // the lobby's left panel: standings, arcade, horde (the crew's high scores) or stats
+  /** what the crew room's refusal or error means, in words (the status line, NO CREW AT THAT LINK and the like) */
+  const crewSays = (reason) => (CREW_SAYS[reason] || 'SOMETHING WENT WRONG');
+  const CREW_SAYS = { 'no-crew': 'NO CREW AT THAT LINK', 'crew-full': 'THIS CREW IS FULL (50 MEMBERS)', full: 'THIS CREW ROOM IS FULL RIGHT NOW', 'bad-hello': 'SET A NAME FIRST', deleted: 'THIS PROFILE WAS DELETED', removed: 'YOU WERE REMOVED FROM THIS CREW', 'blocked-name': "THAT NAME ISN'T ALLOWED HERE: PICK ANOTHER UNDER ONLINE MENU, PROFILE", busy: 'SERVER BUSY: TRYING AGAIN SHORTLY', flood: 'TOO MUCH TRAFFIC: RECONNECTING' };
   function crewC() {
     if (crewCli) return crewCli;
     const c = createCrew();
@@ -2220,7 +2223,7 @@ export function createFlow(ctx) {
       paintBetween();
     });
     c.on('error', (reason) => {
-      const msg = { 'no-crew': 'NO CREW AT THAT LINK', 'crew-full': 'THIS CREW IS FULL (50 MEMBERS)', full: 'THIS CREW ROOM IS FULL RIGHT NOW', 'bad-hello': 'SET A NAME FIRST', deleted: 'THIS PROFILE WAS DELETED', 'blocked-name': "THAT NAME ISN'T ALLOWED HERE: PICK ANOTHER UNDER ONLINE MENU, PROFILE", busy: 'SERVER BUSY: TRYING AGAIN', flood: 'TOO MUCH TRAFFIC: RECONNECTING' }[reason] || 'SOMETHING WENT WRONG';
+      const msg = crewSays(reason);
       if (!c.active) { crewFail = msg; if (state === 'crewLobby') screenCrewLobby(); }
       else { crewNote = msg; if (lob) lob.noteUntil = performance.now() + 4000; if (state === 'crewLobby') paintLobby(); }
     });
@@ -2589,7 +2592,7 @@ export function createFlow(ctx) {
       t.appendChild(f);
     });
     if (list.length > shown.length) { const more = el('span', 'fl-smore', `AND ${list.length - shown.length} MORE`); t.appendChild(more); }
-    if (!s) { const w = el('span', 'fl-smore', c.status === 'reconnecting' ? 'RECONNECTING…' : 'CONNECTING…'); t.appendChild(w); }
+    if (!s) { const w = el('span', 'fl-smore', c.status !== 'open' && c.refused ? crewSays(c.refused) : c.status === 'reconnecting' ? 'RECONNECTING…' : 'CONNECTING…'); t.appendChild(w); }
   }
   /** the recent matches, the status line and PLAY */
   function paintLobbyRest(c, s, you, list) {
@@ -2607,7 +2610,9 @@ export function createFlow(ctx) {
     const here = list.filter((m) => m.on), others = here.filter((m) => m.id !== you);
     const readyOthers = others.filter((m) => m.on === 'ready'), playing = others.filter((m) => m.on === 'match');
     let line = '';
-    if (c.status === 'connecting') line = 'CONNECTING TO THE CREW…';
+    // the server's refusal (SERVER BUSY: the join limit) says itself rather than hide behind RECONNECTING
+    if (c.status !== 'open' && c.refused) line = crewSays(c.refused);
+    else if (c.status === 'connecting') line = 'CONNECTING TO THE CREW…';
     else if (c.status === 'reconnecting') line = 'RECONNECTING…';
     else if (crewNote) line = crewNote;
     else if (c.ready) line = c.spot === 0 ? (readyOthers.length ? "YOU'RE UP  ·  MATCHING YOU UP…" : "YOU'RE UP") : c.spot > 0 && playing.length ? `${spotLine(c)}  ·  YOU PLAY THE WINNER` : c.spot > 0 ? spotLine(c) : others.length ? "YOU'RE IN LINE  ·  WAITING FOR A RIVAL" : "YOU'RE IN LINE  ·  NOBODY ELSE IS HERE YET";
@@ -2615,7 +2620,7 @@ export function createFlow(ctx) {
     else if (playing.length) line = `${playing.map((m) => m.name).join(' VS ')} ON THE COURT  ·  PRESS PLAY TO GET IN LINE`;
     else line = others.length ? `${here.length} HERE  ·  PRESS PLAY WHEN YOU'RE SET` : 'NOBODY ELSE IS HERE YET  ·  SEND THE LINK';
     setText(lob.status, line);
-    lob.status.classList.toggle('fl-warn', !!crewNote);
+    lob.status.classList.toggle('fl-warn', !!crewNote || (c.status !== 'open' && !!c.refused));
     const pl = lob.play.el.querySelector('.fl-pl'), sm = lob.play.el.querySelector('small');
     // PLAY puts you at the end of the line; in it, the button is LEAVE LINE (Champ of the Court)
     const inLine = (s && s.line) || [];

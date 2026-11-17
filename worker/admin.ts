@@ -5,6 +5,7 @@
 //   GET  /api/admin/crews/<slug>                          -> the crew: name, members (id, name, last seen)
 //   POST /api/admin/crews/<slug>  { action: "rename", name }               -> the crew's new name
 //   POST /api/admin/crews/<slug>  { action: "rename-member", member, name? } -> a member's new name (PLAYER by default)
+//   POST /api/admin/crews/<slug>  { action: "remove-member", member }      -> that member is out of the crew (record and all)
 //   POST /api/admin/crews/<slug>  { action: "close" }                       -> the crew is gone, now
 //
 // Every call needs `Authorization: Bearer <ADMIN_TOKEN>`. `member` is a member id (from the GET) or
@@ -44,6 +45,10 @@ export async function handleAdmin(req: Request, env: Env, parts: string[]): Prom
   if (action === "rename-member") {
     const r = await crew.adminRenameMember(String(body.member || ""), String(body.name || ""));
     return r ? json({ ok: true, ...r }) : json({ error: "no-crew, no such member, or bad-name" }, 400);
+  }
+  if (action === "remove-member") {
+    const r = await crew.adminRemoveMember(String(body.member || ""));
+    return r ? json({ ok: true, removed: r }) : json({ error: "no-crew or no such member" }, 400);
   }
   if (action === "close") {
     const closed = await crew.adminClose();
