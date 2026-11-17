@@ -1,11 +1,12 @@
 // How fast the crew lobby gets in, and how fast it gets back (README, Crew rooms, Connecting).
 //
 //   npm run build && npx wrangler dev --port 8799 --persist-to /tmp/crewconnect/state --inspector-port 9799
-//   node scripts/crew/connect.mjs [http://127.0.0.1:8799/] [--gpu] [--only fresh,stall,dead,hidden,busy] [--loose] [--json out.json]
+//   node scripts/crew/connect.mjs [http://127.0.0.1:8799/] [--gpu] [--only fresh,hung,stall,dead,hidden,busy] [--loose] [--json out.json]
 //
 // A TCP proxy sits between headless Chromium and the local Worker, so the test can break the path the way a
 // phone's network breaks it:
 //   fresh   10 cold page loads of a crew link: page load to the lobby's welcome, median under 2 s, worst under 3 s
+//   hung    a cold load whose first crew dial is accepted and never upgraded: welcome under 5 s
 //   stall   the path goes down (live connections go silent, new ones are accepted and never answered: a server that
 //           takes the TCP connection and never upgrades) for 12 s, then comes back: back in under 5 s from then
 //   dead    the lobby's socket goes silent (no close, no pongs) while new connections still work: redialed and
@@ -23,7 +24,7 @@ import fs from 'node:fs';
 const argv = process.argv.slice(2);
 const UP = new URL((argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8799/').replace(/\/?$/, '/'));
 const GPU = argv.includes('--gpu'), LOOSE = argv.includes('--loose');
-const ONLY = argv.includes('--only') ? argv[argv.indexOf('--only') + 1].split(',') : ['fresh', 'stall', 'dead', 'hidden', 'busy'];
+const ONLY = argv.includes('--only') ? argv[argv.indexOf('--only') + 1].split(',') : ['fresh', 'hung', 'stall', 'dead', 'hidden', 'busy'];
 const JSON_OUT = argv.includes('--json') ? argv[argv.indexOf('--json') + 1] : '';
 const SHOTS = argv.includes('--shots') ? argv[argv.indexOf('--shots') + 1] : '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -33,7 +34,7 @@ const check = (name, ok, detail = '') => { results.push({ name, ok: !!ok }); con
 
 // ---- the proxy ----
 // mode for new connections: 'pass' | 'stall'; `busy` refuses that many crew socket upgrades the way the Worker does
-const proxy = { mode: 'pass', busy: 0, conns: new Set(), crewDials: 0 };
+const proxy = { mode: 'pass', busy: 0, stallCrew: 0, conns: new Set(), crewDials: 0 };
 /** silence every live connection (no close, no bytes either way): a NAT mapping or a wifi path that died */
 const blackhole = (filter = () => true) => { let n = 0; for (const c of proxy.conns) if (filter(c) && !c.dead) { c.dead = true; n++; } return n; };
 function refuseBusy(client, head) {
@@ -59,6 +60,7 @@ const server = net.createServer((client) => {
       const head = buf.toString('latin1', 0, Math.min(buf.length, 4096));
       c.crew = /^GET [^ ]*\/api\/crews\/[^ /]+\/ws/.test(head) && /upgrade:\s*websocket/i.test(head);
       if (c.crew) proxy.crewDials++;
+      if (c.crew && proxy.stallCrew > 0) { proxy.stallCrew--; c.dead = true; return; }   // accepted, never upgraded
       if (c.crew && proxy.busy > 0) { proxy.busy--; c.refused = true; refuseBusy(client, head); return; }
       c.up = net.connect(Number(UP.port), UP.hostname);
       c.up.on('data', (d) => { if (!c.dead) client.write(d); });
@@ -159,6 +161,16 @@ try {
     numbers.fresh = { median: Math.round(med), worst: Math.round(worst), all: times.map(Math.round) };
     check('fresh load: welcome under 2 s at the median', med < 2000, fmt(med));
     check('fresh load: welcome under 3 s, worst of 10', worst < 3000, fmt(worst));
+  }
+
+  if (ONLY.includes('hung')) {
+    // a cold load whose first crew dial is taken and never upgraded (a phone just woke, a flaky hop): measured
+    proxy.stallCrew = 1;
+    const p = await open(LINK);
+    const t = await welcomeAfter(p, 0, 60000);
+    numbers.hung = { ms: t == null ? null : Math.round(t) };
+    check('a cold load whose first dial hangs: welcome under 5 s', t != null && t < 5000, fmt(t));
+    await p.context().close();
   }
 
   if (ONLY.includes('stall')) {
