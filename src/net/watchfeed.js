@@ -23,6 +23,7 @@ import { createLog, hashNum } from './watchlog.js';
 // buffer has to cover the gap between two, so it's most of what a viewer is behind by besides the trip. Each one
 // the room takes in bills as 1/20 of a Durable Object request (README, Spectators, What it costs)
 export const UPLOAD_MS = 50;
+const MARK_EARLY_MS = 4;    // a stamp may go this much before UPLOAD_MS is up, so the host's frames don't round it up a whole frame
 const LIVE_MS = 60000;        // the score again this often, so the LIVE list knows the match is still on
 const HASH_EVERY = 30;        // rollback.js hashes every 30th frame
 
@@ -88,7 +89,8 @@ export function createWatchFeed({ now, version }) {
       if (!ls) return;
       const t = now(), sc = `${sim.round}:${sim.wins[0]}:${sim.wins[1]}`;
       if (sc !== score || t - lastLive > LIVE_MS) { score = sc; lastLive = t; setup.round = sim.round | 0; setup.wins = [sim.wins[0] | 0, sim.wins[1] | 0]; say({ t: 'watch', ev: 'score', n: setup.n, round: sim.round | 0, wins: [sim.wins[0] | 0, sim.wins[1] | 0] }); }
-      if (t - lastMark >= UPLOAD_MS) { mark(); if (wanted) upload(); }
+      // (a few ms early counts: three 60 fps frames come to 49.99 ms, and a strict >= waited for a fourth, 67 ms)
+      if (t - lastMark >= UPLOAD_MS - MARK_EARLY_MS) { mark(); if (wanted) upload(); }
       stats.ms += performance.now() - t0; stats.ticks++;
     },
     /** the match ended on frame f on both machines */

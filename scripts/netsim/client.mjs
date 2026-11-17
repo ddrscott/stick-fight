@@ -132,6 +132,10 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
       sim.roundTime = o.rules.roundTime; sim.winsNeeded = o.rules.winsNeeded;
       arena.clearBodies();
       sim.setController(0, 'net', o.lockstep.controller(0)); sim.setController(1, 'net', o.lockstep.controller(1));
+      // as main.js's online scene: only the winner's press skips the perfect finisher. Left at the sim's 'any', the
+      // loser's press skipped it on the players' sims and not on the spectators', the drift netsim:watch kept
+      // finding now and then (first-frame seed 15 on main, seed 2 on [t6sye7]; here good-wifi and first-frame)
+      sim.perfectSkip = 'winner';
       sim.resetMatch({ seed: o.seed >>> 0, fresh: true });
       life.reset();
     },
