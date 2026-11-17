@@ -82,14 +82,22 @@ export function createNetwork(cond, seed) {
 
   return {
     stats, live, rooms, roomOf,
-    /** a crew's match room: private (worker/crew.ts claims it that way) */
-    claimPrivate(code) { const r = roomOf(code); r.priv = true; r.desk.priv = true; },
+    /** a crew's match room: private (worker/crew.ts claims it that way). vouch(ticket): the crew's word that a ticket
+     *  belongs to a member in its line (worker/crew.ts watchOk); without it nobody gets in */
+    claimPrivate(code, vouch = null) { const r = roomOf(code); r.priv = true; r.desk.priv = true; if (vouch) { r.desk.crew = true; r.vouch = vouch; } },
+    /** the crew takes a ticket back (worker/index.ts Room.revokeWatch): that spectator's socket closes */
+    revoke(code, ticket) {
+      const r = rooms.get(code);
+      if (!r) return;
+      for (const w of [...r.watchers]) if (w.ticket === ticket) { w.send(JSON.stringify({ t: 'w', ev: 'over', reason: 'line' })); w.drop(4002, 'line'); }
+      at(sched.t + 1, () => r.desk.count(), null, 'net');
+    },
     /** a spectator's socket to a room (src/net/watch.js openSocket), as the Worker's /watch answers it */
-    watchSocket(code, owner) {
+    watchSocket(code, owner, ticket = '') {
       const r = rooms.get(code);
       const down = ordered();
       const sock = {
-        owner, closed: false, onmessage: null, onclose: null,
+        owner, closed: false, onmessage: null, onclose: null, ticket,
         send(data) { if (sock.closed) return; const copy = typeof data === 'string' ? data : data.slice(0); down(() => { if (!sock.closed && sock.onmessage) sock.onmessage(copy); }, owner); },   // room -> spectator
         /** the room closes it */
         drop(c, reason) { if (sock.closed) return; down(() => { if (sock.closed) return; sock.closed = true; if (r) r.watchers.delete(sock); if (sock.onclose) sock.onclose(c, reason); }, owner); },
@@ -99,7 +107,8 @@ export function createNetwork(cond, seed) {
       at(sched.t + oneWay(sched.t), () => {
         if (sock.closed) return;
         const alive = r && (r.host || r.guest);
-        const reason = !alive ? 'no-room' : r.desk.refusal(r.watchers.size);
+        const vouched = !!(alive && r.priv && r.vouch && ticket && r.vouch(ticket));
+        const reason = !alive ? 'no-room' : r.desk.refusal(r.watchers.size, vouched);
         if (reason) { sock.send(JSON.stringify({ t: 'sys', ev: 'error', reason })); sock.drop(4000, reason); return; }
         r.watchers.add(sock);
         r.desk.join(sock);
