@@ -149,7 +149,8 @@ export function createOnline(game) {
   let matchSeed = 0;   // this match's seed: with the match number it names the match in the result both pages report
   const now = () => performance.now();
   // spectators (watchfeed.js): the host tells the room about each match and, while anyone watches, its confirmed
-  // inputs. Quick rooms only: a crew's match never feeds the room
+  // inputs. A crew's match feeds its room too, for the members in the crew's line (the room lists it nowhere and lets
+  // in only spectators the crew vouches for; README, Crew rooms, Champ of the Court)
   const feed = createWatchFeed({ now, version: NET_VERSION });
   try { feed.setAllowed(localStorage.getItem(WATCH_KEY) !== '0'); } catch { /* storage off: spectators stay on */ }
   /** @type {null | ((frame: number) => any)} */ let localSource = null;
@@ -162,7 +163,7 @@ export function createOnline(game) {
 
   function wire(l) {
     link = l;
-    feed.open(typeof l.sendRoom === 'function' ? (d) => l.sendRoom(d) : null, { on: role === 'host' && !crewMode });
+    feed.open(typeof l.sendRoom === 'function' ? (d) => l.sendRoom(d) : null, { on: role === 'host', crew: crewMode });
     l.on('open', () => feed.hello());
     l.on('career', (m) => emit('career', m));   // the room's career award (src/career/store.js fromRoom)
     l.on('watching', (m) => { const was = feed.count; feed.onWatching(m || {}); if (feed.count !== was) { emit('watching', feed.count); readout.render(); } });
@@ -587,7 +588,7 @@ export function createOnline(game) {
     /** the lobby panel is up (or just closed): the attract screen shouldn't start a game */
     get busy() { return lobby.busy; },
     get active() { return !!lockstep; },
-    /** how many are watching this room (0 in a crew match: nobody can) */
+    /** how many are watching this room (in a crew match: the members in the crew's line) */
     get watchers() { return feed.count; },
     /** the host's switch: may anyone watch my quick rooms. Kept in localStorage; takes effect at once */
     get watchable() { return feed.allowed; },

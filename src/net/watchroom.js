@@ -8,8 +8,10 @@
 //     spectators(except?)  the open spectator sockets (anything with send(data))
 //     kick(reason)         close every spectator socket
 //     list(entry)          put the match in the LIVE list (or refresh it); unlist() takes it out
-//   desk.priv / desk.off   a crew's match room (never watchable) / the host's off switch
-//   desk.refusal(n)        why a spectator can't come in, '' if they can (n: how many are in already)
+//   desk.priv / desk.off   a crew's match room (never listed, and no spectator without its crew's word) / the host's off switch
+//   desk.crew              a crew's match room its crew's line may watch: the host's feed is taken (still never listed)
+//   desk.refusal(n, vouched)  why a spectator can't come in, '' if they can (n: how many are in already; vouched: the
+//                          crew said this one is in its line, which a private room needs)
 //   desk.join(sock)        a spectator came in: the welcome, the match so far, then the count to everyone
 //   desk.count(except?)    the number watching changed
 //   desk.onWatch(text)     a {t:'watch'} message from the host; returns { off } when the switch changed
@@ -52,11 +54,11 @@ export function createWatchRoom(io) {
   }
 
   const desk = {
-    priv: false, off: false,
+    priv: false, off: false, crew: false,
     get match() { return m; },
     /** the notice a player gets when they come in while people are watching */
     note,
-    refusal(n) { return desk.priv ? 'no-room' : desk.off ? 'off' : n >= MAX_SPECTATORS ? 'watch-full' : ''; },
+    refusal(n, vouched = false) { return desk.priv && !(desk.crew && vouched) ? 'no-room' : desk.off ? 'off' : n >= MAX_SPECTATORS ? 'watch-full' : ''; },
     join(sock) {
       sock.send(JSON.stringify({ t: 'sys', ev: 'welcome', role: 'spectator', watching: io.spectators().length }));
       if (m) {
@@ -82,8 +84,9 @@ export function createWatchRoom(io) {
     onWatch(text) {
       let msg;
       try { msg = JSON.parse(text); } catch { return null; }
-      if (desk.priv || !msg || typeof msg !== 'object') return null;
+      if ((desk.priv && !desk.crew) || !msg || typeof msg !== 'object') return null;
       if (msg.ev === 'allow') {
+        if (desk.priv) return null;   // a crew's line watches whatever the quick-room switch says
         const off = msg.on === false;
         if (off === desk.off) return null;
         desk.off = off;
