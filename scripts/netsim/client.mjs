@@ -283,7 +283,7 @@ export function createSpectator({ name, seed, network, frames, createWatch }) {
     lagMs: 0, lagN: 0, liveFrames: 0, stalls: 0, catchUps: 0,
     /** ms from a frame showing on the host's screen to the same frame showing here, one per draw that moved forward */
     latency: /** @type {number[]} */ ([]),
-    draws: 0, hitches: 0,
+    draws: 0, hitches: 0, bufSum: 0, bufN: 0,
     /** the time the host first showed frame f of match n (set by the session), or -1 */
     hostShownAt: /** @type {null | ((n: number, f: number) => number)} */ (null),
     /** the host's frame right now (set by the session), for measuring how far behind this side plays */
@@ -334,6 +334,7 @@ export function createSpectator({ name, seed, network, frames, createWatch }) {
       if (!watch.catching && watch.state !== 'result' && me.hostShownAt && was > 0) {
         const moved = me.hostShownAt(n, now + 1) >= 0 && me.hostShownAt(n, now + 1) <= t - (me.latency.length ? me.latency[me.latency.length - 1] : 0);
         me.draws++; if (now === was && moved) me.hitches++;
+        me.bufSum += watch.stats().buffer; me.bufN++;
       }
       for (const [f, h] of watch.hashes) me.hashes.set(`${n}:${f}`, h);
       const st = watch.state;

@@ -48,6 +48,8 @@ const JITTER_MS = 8000;           // how far back the buffer looks at how late b
 const STEADY_MS = 6000;           // no running dry this long, and the buffer starts shrinking back
 const SHRINK_PER_S = 0.25;        // ...by this share of the way to what the lateness needs, each second
 const SETTLE_MS = 400;            // after a (re)connect: the backlog's batches aren't lateness
+const LEAN_FRAMES = 60;           // the lean: this many frames off the host's timeline (0.5 s) plays 2x (capped at 1.5x) or 0x (0.85x)
+const LEAN_HOLD = 60;             // ...and further ahead than this, it stands still until the timeline catches up
 const CATCHUP = 360;              // frames behind the host's timeline before the sim runs undrawn (3 s)
 const CATCHUP_BUDGET_MS = 14;     // of each animation frame, while catching up
 const HASH_EVERY = 30;
@@ -343,18 +345,20 @@ export function createWatch(game) {
         // buffer rides the next one out
         m.acc = 0;
         if (!m.dryAt) m.dryAt = t;
-        if (!m.starved && m.frame > 0 && !m.end && t >= m.settleAt && t - m.off - m.log.newest > STAMP_GAP_MS + STAMP_SLACK_MS) {
+        if (!m.starved && m.frame > 0 && !m.end && t >= m.settleAt && t - m.off - m.log.newest > m.buffer - 20) {
           // ran dry on a late delivery: grow by a quarter (at least 50 ms), and the steady stretch starts over
           m.starved = true; totals.starved++; m.steadyAt = t;
+          if (globalThis.__WD) console.log(`DRY t=${(t/1000).toFixed(1)} buf=${m.buffer|0} stale=${(t - m.off - m.log.newest)|0} need=${needed(t)|0} n=${m.lates.length/2}`);
           m.buffer = Math.min(BUFFER_MAX_MS, Math.max(m.buffer * 1.25, m.buffer + 50)); m.grows++;
         }
         if (t - m.dryAt > 500 && t - m.startedAt > 600) setState('buffering');
         return 0;
       }
       m.dryAt = 0; m.starved = false;
-      if (behind < -12 || (m.frame === 0 && want < 1)) { m.acc = 0; return 0; }   // ahead of the host's timeline (or not begun): hold
+      // well ahead of the host's timeline (or not begun): hold. A little ahead (the buffer just grew) only slows
+      if (behind < -LEAN_HOLD || (m.frame === 0 && want < 1)) { m.acc = 0; return 0; }
       setState('live');
-      const k = Math.max(0.85, Math.min(1.5, 1 + behind / 240));
+      const k = Math.max(0.85, Math.min(1.5, 1 + behind / LEAN_FRAMES));
       m.acc = Math.min(m.acc + ms * k, 120);
       let stepped = 0;
       while (m.acc >= STEP_MS && m.frame < lim) { step(false); m.acc -= STEP_MS; stepped++; }
