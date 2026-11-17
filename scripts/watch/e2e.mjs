@@ -1,7 +1,7 @@
 // Spectators, end to end (README, Multiplayer, Spectators): real browsers through the local Worker.
 //
 //   npm run build && npx wrangler dev --port 8787      (the Worker serving dist/ and the API)
-//   node scripts/watch/e2e.mjs [http://127.0.0.1:8787/] [--shots dir]
+//   node scripts/watch/e2e.mjs [http://127.0.0.1:8787/] [--shots dir] [--only quick|menus|line|crew] [--gpu]
 //
 // A host and a guest (each its own Chromium, scripted inputs, 30-second single-round matches) play in a quick
 // room while spectators come and go: one from before the first frame, one mid-match, one who reloads, one who
@@ -16,6 +16,12 @@ const argv = process.argv.slice(2);
 const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const SHOTS = argv.includes('--shots') ? argv[argv.indexOf('--shots') + 1] : '';
 const ONLY = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : '';   // quick | menus | line | crew: one part of the run
+// --gpu: draw on the machine's GPU (Metal on a Mac), as a phone does, instead of SwiftShader. Software GL takes 90 to
+// 750 ms a draw on a busy machine; those stalls hold up the host's batches, and every spectator's buffer grows to
+// ride them out, so the latency check measures the software renderer rather than the network (README, Spectators)
+const GPU = argv.includes('--gpu');
+const GL = GPU ? (process.platform === 'darwin' ? ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] : ['--enable-gpu', '--ignore-gpu-blocklist'])
+  : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 const part = (name) => !ONLY || ONLY.split(',').includes(name);
 const API = BASE + 'api/', WS = API.replace(/^http/, 'ws');
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -28,7 +34,7 @@ const until0 = async (fn, ms = 20000, every = 200) => { const t0 = Date.now(); f
 
 const browsers = [];
 async function page(url, init = {}, size = { width: 1280, height: 720 }, touch = false) {
-  const b = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--mute-audio'] });
+  const b = await chromium.launch({ executablePath, args: [...GL, '--mute-audio'] });
   browsers.push(b);
   const ctx = await b.newContext(touch ? { viewport: size, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport: size });
   await ctx.addInitScript((kv) => {
