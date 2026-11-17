@@ -168,14 +168,14 @@ if (BASE) {
     // the crew lobby
     await page.goto(`${BASE}crew/${crew.slug}`);
     await page.waitForFunction(() => window.__flow && window.__flow.state === 'crewLobby' && document.fonts.status === 'loaded' && /ALICE/.test((document.querySelector('#flow .fl-standings') || {}).textContent || ''), null, { timeout: 30000 });
-    if (size.viewport.height > size.viewport.width) {
-      // upright the link and its code wait behind INVITE (README, Crew rooms, The lobby held upright)
-      await page.waitForFunction(() => !!document.querySelector('#flow > .fl-up.fl-crew'), null, { timeout: 10000 });
-      await sleep(300);
-      const hidden = await page.evaluate(() => { const t = document.querySelector('#flow .fl-qrtile'); return !t || !t.getBoundingClientRect().width; });
-      check(`[${size.name}] crew: no code on screen until INVITE`, hidden);
-      await page.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')).act());
-    }
+    // the link and its code wait behind INVITE, upright and (since [thifpd]) sideways too (README, Crew rooms, The lobby
+    // held upright, The lobby sideways)
+    if (size.viewport.height > size.viewport.width) await page.waitForFunction(() => !!document.querySelector('#flow > .fl-up.fl-crew'), null, { timeout: 10000 });
+    await sleep(300);
+    const hidden = await page.evaluate(() => { const t = document.querySelector('#flow .fl-qrtile'); return !t || !t.getBoundingClientRect().width; });
+    check(`[${size.name}] crew: no code on screen until INVITE`, hidden);
+    await page.evaluate(() => window.__flow.debug.ui.items.find((i) => i.el.classList.contains('fl-invite')).act());
+    await sleep(300);
     const png2 = await snap('crew-lobby');
     const m2 = await page.evaluate(measure);
     const got2 = await decode(png2);
