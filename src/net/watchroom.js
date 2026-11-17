@@ -62,8 +62,9 @@ export function createWatchRoom(io) {
     join(sock) {
       sock.send(JSON.stringify({ t: 'sys', ev: 'welcome', role: 'spectator', watching: io.spectators().length }));
       if (m) {
-        // the match so far: its setup, the frames the others have had, and the host's last resync
-        sock.send(JSON.stringify({ t: 'w', ev: 'start', ...m.setup }));
+        // the match so far: its setup, the frames the others have had, and the host's last resync. `upto` is the
+        // newest stamp in that backlog, so the spectator doesn't take the backlog's old stamps for late deliveries
+        sock.send(JSON.stringify({ t: 'w', ev: 'start', ...m.setup, upto: m.log.newest }));
         for (const b of m.log.backlog()) sock.send(b);
         if (m.sync) for (const p of m.sync.parts) if (p) sock.send(p);
       } else sock.send(JSON.stringify({ t: 'w', ev: 'idle' }));
