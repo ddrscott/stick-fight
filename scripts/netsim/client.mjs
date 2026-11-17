@@ -62,8 +62,21 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
     frames: 0, maxFrameMs: 0,
     demoRunning: false,
     /** when each frame first showed on this phone's screen: match -> { f: frames, t: times }, one entry per draw
-     *  that moved forward (the spectators' latency is measured from it, README Spectators) */
+     *  that moved forward (the spectators' latency is measured from it, README Spectators), and the same for the
+     *  frames confirmed (cf, ct) */
     shown: new Map(),
+    /** what this side's rollbacks showed and then took back, or showed late, by event type, over `simFrames` frames */
+    phantoms: /** @type {Record<string, number>} */ ({}), lateBy: /** @type {Record<string, number>} */ ({}), simFrames: 0,
+    /** @type {any} */ lastLs: null,
+    /** add the finished (or current) netcode's tallies */
+    harvest() {
+      const ls = client.lastLs; client.lastLs = null;
+      if (!ls) return;
+      const st = ls.stats();
+      for (const k in st.phantoms) client.phantoms[k] = (client.phantoms[k] || 0) + st.phantoms[k];
+      for (const k in st.lateBy) client.lateBy[k] = (client.lateBy[k] || 0) + st.lateBy[k];
+      client.simFrames += ls.frame;
+    },
   };
 
   // ---- the attract demo behind the menus (different on each phone: its own seed and its own pairs) ----
@@ -151,7 +164,14 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
       net.advance(ms * slow);
       record();
       const ls = net.netcode;
-      if (ls) { let sh = client.shown.get(net.match); if (!sh) client.shown.set(net.match, sh = { f: [], t: [] }); if (!sh.f.length || ls.frame > sh.f[sh.f.length - 1]) { sh.f.push(ls.frame); sh.t.push(t); } }
+      if (ls !== client.lastLs) { client.harvest(); client.lastLs = ls; }
+      if (ls) {
+        let sh = client.shown.get(net.match); if (!sh) client.shown.set(net.match, sh = { f: [], t: [], cf: [], ct: [] });
+        if (!sh.f.length || ls.frame > sh.f[sh.f.length - 1]) { sh.f.push(ls.frame); sh.t.push(t); }
+        // and when each frame became confirmed here (both real inputs in): the most a speculating spectator could gain
+        const c = ls.confirmed + 1;
+        if (c > 0 && (!sh.cf.length || c > sh.cf[sh.cf.length - 1])) { sh.cf.push(c); sh.ct.push(t); }
+      }
       if (inject && net.active) nudge();
     } else if (client.demoRunning) {
       sim.step(ms);

@@ -50,8 +50,8 @@
 // Spectators (README, "Multiplayer", Spectators). The one thing the room reads: messages the host
 // addresses to it, {"t":"watch",...} and the binary input batches of src/net/watchlog.js. They tell
 // it a match started (the setup a spectator needs), the score, and, while anyone is watching, the
-// inputs both machines have confirmed. The room keeps the match's log in memory only, hands spectator
-// sockets only the frames stamped HOLD_MS before the newest (src/net/watchroom.js, shared with the
+// inputs both machines have confirmed. The room keeps the match's log in memory only, hands each batch
+// on to the spectator sockets as it lands, with no hold (src/net/watchroom.js, shared with the
 // Node proof), and lists the match in the Lobby object (api/live).
 // A spectator's socket is tagged "spectator": nothing it sends is passed on or read (a "ping" is
 // answered without waking the object). A room a crew claimed is private: never listed, and its only spectators are

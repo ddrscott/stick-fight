@@ -3,7 +3,7 @@
 // spectator (watch.js) and the Node proof (scripts/netsim/watch.mjs) all run the same thing.
 //
 // A match is peer to peer, so the room never sees its inputs. While someone is watching, the host sends the
-// room the inputs both players' machines have confirmed (no rollback can change them), a few times a second:
+// room the inputs both players' machines have confirmed (no rollback can change them), about 20 times a second:
 //
 //   BATCH  u8 16 | u8 match | u32 first frame | u16 count | u8 hashes | u32 stamp
 //          | count x (u16 host's input, u16 guest's input)        (the 11-bit codes of codec.js)
@@ -12,18 +12,17 @@
 //          A batch may hold no frames: time passed on the host and nothing new was confirmed (a stall, WAITING
 //          FOR RIVAL), which a spectator shows as the same pause instead of taking it for a slow network.
 //
-// The room keeps the match's batches in one log and hands spectators only the frames stamped at least HOLD_MS
-// before the newest stamp it has, so a viewer is always behind the fight by that much whatever their page
-// does. The hold is in the host's time, not in frames: the sim runs at a quarter speed through a KO, and a
-// hold counted in frames would run a viewer dry right before every finish. A spectator who joins late gets the
-// log so far (old frames in big batches, the last few seconds stamp by stamp) and runs the sim through it.
-// The stamps also pace the playback: watch.js plays frame f about when the host did, plus its delay.
+// The room keeps the match's batches in one log and hands each one on to spectators the moment it lands (there
+// used to be a 1.5 s hold against coaching; it went in 2026-11, [tvgf59], because most people watching a crew's
+// line stand in the same room as the players). A spectator who joins late gets the log so far (old frames in
+// big batches, the last few seconds stamp by stamp) and runs the sim through it. The stamps pace the playback:
+// watch.js plays frame f about when the host confirmed it, plus the trip and its own small buffer. The stamps are
+// in the host's time, not in frames: the sim runs at a quarter speed through a KO, and a pace counted in frames
+// would run a viewer dry right before every finish.
 
 import { blockedName } from '../namefilter.js';
 export const PKT_WATCH = 16;
 export const HEADER = 13;
-/** how far behind the newest stamp the room keeps spectators (ms of the host's clock): the delay a viewer can't get around */
-export const HOLD_MS = 1500;
 /** frames per batch at most: 14 KB, under the room's 16 KB message cap */
 export const MAX_BATCH = 3400;
 /** a match longer than this stops being logged (20 minutes; 576 KB) */
@@ -87,7 +86,7 @@ function grower(Type, n = 4096) {
 export function createLog(match = 0) {
   const codes = grower(Uint16Array), hashes = grower(Uint32Array, 256);
   const marks = grower(Uint32Array, 512);   // pairs: frames held at the stamp, the stamp
-  let newest = 0, ri = 0, gi = 0, relStamp = 0, lastT = 0;
+  let newest = 0, gi = 0, relStamp = 0, lastT = 0;
   const frames = () => codes.length >> 1;
   const marked = () => (marks.length ? marks.data[marks.length - 2] : 0);
   // a stamp with no new frames is kept too (the host stood still); a long pause stretches one flat stretch
@@ -152,11 +151,9 @@ export function createLog(match = 0) {
       }
       return out;
     },
-    /** the room: the batches that have just become old enough to show (everything once `all`: the match ended) */
-    release(all = false) {
-      let to = log.released, st = relStamp;
-      if (all) { to = marked(); st = newest; }
-      else for (const M = marks.data; ri < marks.length && M[ri + 1] + HOLD_MS <= newest; ri += 2) { to = M[ri]; st = M[ri + 1]; }
+    /** the room: what spectators haven't been sent yet (all of it: nothing is held back) */
+    release() {
+      const to = marked(), st = newest;
       if (to <= log.released && st <= relStamp) return [];
       lastT = relStamp;
       const out = to > log.released ? log.batches(log.released, to) : [];

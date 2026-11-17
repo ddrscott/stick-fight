@@ -15,11 +15,14 @@
 // first spectator arriving mid-match or a room that restarted, gets the match from frame 0 in one go.
 //
 // Cost on the host: each frame, two array writes per newly confirmed frame; every UPLOAD_MS while watched, one
-// message of about 200 bytes. Nothing here touches the sim or the netcode's timing.
+// message of about 40 bytes (6 frames at 120 a second, and now and then a hash). Nothing here touches the sim or the netcode's timing.
 
 import { createLog, hashNum } from './watchlog.js';
 
-export const UPLOAD_MS = 500; // a stamp this often, and with it a batch while watched (60 frames, about 250 bytes)
+// a stamp this often, and with it a batch while watched. Every batch waits for this at most, and a spectator's
+// buffer has to cover the gap between two, so it's most of what a viewer is behind by besides the trip. Each one
+// the room takes in bills as 1/20 of a Durable Object request (README, Spectators, What it costs)
+export const UPLOAD_MS = 50;
 const LIVE_MS = 60000;        // the score again this often, so the LIVE list knows the match is still on
 const HASH_EVERY = 30;        // rollback.js hashes every 30th frame
 

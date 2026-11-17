@@ -126,7 +126,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
   let matchAt = -1;
   const tag = match & 255;   // this match's number on every input packet and hash (stale ones are dropped)
   // measurements
-  const rb = { count: 0, frames: 0, maxDepth: 0, ms: 0, maxMs: 0, lastDepth: 0, saves: 0, saveMs: 0, predictedFrames: 0, eventsHeld: 0, eventsLate: 0, advMs: 0, advMax: 0, advN: 0 };
+  const rb = { count: 0, frames: 0, maxDepth: 0, ms: 0, maxMs: 0, lastDepth: 0, saves: 0, saveMs: 0, predictedFrames: 0, eventsHeld: 0, eventsLate: 0, phantoms: /** @type {Record<string, number>} */ ({}), lateBy: /** @type {Record<string, number>} */ ({}), advMs: 0, advMax: 0, advN: 0 };
 
   const has = (p, f) => hist[p].frame[f & MASK] === f;
   const put = (p, f, code) => { hist[p].frame[f & MASK] = f; hist[p].code[f & MASK] = code; };
@@ -146,13 +146,13 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
 
   // Event policy: the first simulation of a frame fires all its events and remembers them; a re-run
   // fires only events beyond what already fired for that frame (counted, so two footsteps stay two).
-  let gate = /** @type {{ replay: boolean, map: Map<string, number>, seen: Map<string, number> }} */ ({ replay: false, map: new Map(), seen: new Map() });
+  let gate = /** @type {{ replay: boolean, final: boolean, map: Map<string, number>, seen: Map<string, number> }} */ ({ replay: false, final: false, map: new Map(), seen: new Map() });
   function eventGate(ev) {
     const sig = eventSig(ev), n = (gate.seen.get(sig) || 0) + 1;
     gate.seen.set(sig, n);
     if (n <= (gate.map.get(sig) || 0)) { rb.eventsHeld++; return false; }
     gate.map.set(sig, n);
-    if (gate.replay) rb.eventsLate++;
+    if (gate.replay) { rb.eventsLate++; if (gate.final) rb.lateBy[ev.type] = (rb.lateBy[ev.type] || 0) + 1; }
     return true;
   }
 
@@ -182,10 +182,14 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
     if (f > maxSimulated || slot.frame !== f || !slot.fired) { slot.frame = f; slot.fired = new Map(); gate.replay = false; }
     else gate.replay = true;
     gate.map = slot.fired; gate.seen.clear();
+    gate.final = gate.replay && f <= remoteTop;   // a re-run on real inputs all the way back: nothing will change this frame again
     if (matchAt >= f) matchAt = -1;   // re-running the frame it was found on (or before): find it again
     sim.eventFilter = eventGate;
     try { sim.tick(); } finally { sim.eventFilter = null; }
     if (matchAt < 0 && sim.phase === 'match') matchAt = f;
+    // what a guess showed that the real inputs didn't do (a hit, a sound) is a phantom: counted by type, for the
+    // spectators' speculative playback study (README, Spectators, Speculative playback). Nothing reads it but stats
+    if (gate.final) for (const [sig, n] of slot.fired) { const k = n - (gate.seen.get(sig) || 0); if (k > 0) { const ty = sig.slice(0, sig.indexOf('|')); rb.phantoms[ty] = (rb.phantoms[ty] || 0) + k; } }
     if (f > maxSimulated) maxSimulated = f;
     if ((f + 1) % HASH_EVERY === 0) {
       hashes.set(f, hashSim(sim));
@@ -455,7 +459,7 @@ export function createRollback({ sim, localIndex, link, sampleLocal, now = () =>
         lostMs: t - lastPacket, maxRollback: maxRb,
         rollbacks: rb.count, rollbackFrames: rb.frames, avgDepth: rb.count ? rb.frames / rb.count : 0, maxDepth: rb.maxDepth, lastDepth: rb.lastDepth,
         rollbackMs: rb.ms, rollbackMaxMs: rb.maxMs, saves: rb.saves, saveMs: rb.saveMs, predictedFrames: rb.predictedFrames,
-        eventsHeld: rb.eventsHeld, eventsLate: rb.eventsLate, advanceAvgMs: rb.advN ? rb.advMs / rb.advN : 0, advanceMaxMs: rb.advMax,
+        eventsHeld: rb.eventsHeld, eventsLate: rb.eventsLate, phantoms: { ...rb.phantoms }, lateBy: { ...rb.lateBy }, advanceAvgMs: rb.advN ? rb.advMs / rb.advN : 0, advanceMaxMs: rb.advMax,
         // how long what we send has gone unacknowledged while the other side should have acked it (0: acks are moving)
         ackLateMs: localTop > ackedByRemote + delay + 1 ? t - lastAckMove : 0,
         shaky: t < shakyUntil, playMs: meter.playMs, frozenMs: meter.frozenMs, sent: meter.sent, sentBoth: meter.both,

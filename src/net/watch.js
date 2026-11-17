@@ -15,10 +15,13 @@
 // guest gets), {t:'w', ev:'end', n, f, wins, winner, tally} (the match ended on frame f), {t:'w', ev:'over',
 // reason} (a player left, or the host closed the room to spectators) and {t:'w', ev:'count', n}.
 //
-// Pace. Each batch carries the host's clock at its last frame. The room only hands over frames HOLD_MS old,
-// and this side plays BUFFER_MS behind what it has, so the picture is about 2.5 seconds behind the fight and
-// smooth through an uneven network. It steps at the sim's own speed (main.js passes the KO slow motion in ms,
-// as it does for a player) and leans up to 50% faster or 15% slower to stay on the host's timeline. More than
+// Pace. Each batch carries the host's clock at its last frame, and the room passes each one on as it lands. This
+// side plays a small buffer behind the newest frames it has: just enough to cover the gap between two batches
+// and how late they've been coming lately (a jitter buffer). It grows the moment batches come later, or when the
+// playback runs dry, and shrinks back after a steady stretch, so on good wifi the picture is under 0.3 s behind
+// the host's screen and a shaky phone still plays smoothly. It steps at the sim's own speed (main.js passes the
+// KO slow motion in ms, as it does for a player) and leans up to 50% faster or 15% slower to stay on the host's
+// timeline, which is also how a change of buffer plays out: a few percent faster or slower, never a jump. More than
 // CATCHUP frames behind (joining mid-match, or back from a hidden tab) it stops drawing and runs the sim flat
 // out, with every effect muted, until it's back.
 //
@@ -28,16 +31,23 @@
 
 import { apiUrl } from './link.js';
 import { NET_VERSION, cleanRules, LOOK_MAX } from './online.js';
-import { createLog, decodeBatch, cleanSetup, hashHex, HOLD_MS } from './watchlog.js';
+import { createLog, decodeBatch, cleanSetup, hashHex } from './watchlog.js';
+import { UPLOAD_MS } from './watchfeed.js';
 import { hashSim } from './hash.js';
 import { decodeInput } from './codec.js';
 import { decodeState } from './state.js';
 import { gameUrl } from '../links.js';
 
 const STEP_MS = 1000 / 120;
-export const BUFFER_MS = 900;     // behind the newest frames the room has released
+export const BUFFER_MS = 200;     // where the buffer starts: behind the host's timeline as the newest batches tell it
+export const BUFFER_MIN_MS = 100; // the least it shrinks to, however steady the link
 const BUFFER_MAX_MS = 2400;       // on a network that keeps running it dry, the buffer grows to this
-const STAMP_GAP_MS = 500;         // the host stamps this often (watchfeed.js UPLOAD_MS)
+const STAMP_GAP_MS = UPLOAD_MS;   // the host stamps (and sends) this often
+const STAMP_SLACK_MS = 40;        // the host stamps on its own frames, so a gap runs a frame or two over, plus a margin
+const JITTER_MS = 8000;           // how far back the buffer looks at how late batches came
+const STEADY_MS = 6000;           // no running dry this long, and the buffer starts shrinking back
+const SHRINK_PER_S = 0.25;        // ...by this share of the way to what the lateness needs, each second
+const SETTLE_MS = 400;            // after a (re)connect: the backlog's batches aren't lateness
 const CATCHUP = 360;              // frames behind the host's timeline before the sim runs undrawn (3 s)
 const CATCHUP_BUDGET_MS = 14;     // of each animation frame, while catching up
 const HASH_EVERY = 30;
@@ -159,9 +169,10 @@ export function createWatch(game) {
       return;
     }
     // the same match again (a reconnect): keep playing from where this side is; the log takes only what's new
-    if (m && !m.done && m.setup.n === setup.n && m.setup.seed === setup.seed) { m.setup.names = setup.names; return; }
+    if (m && !m.done && m.setup.n === setup.n && m.setup.seed === setup.seed) { m.setup.names = setup.names; m.settleAt = now() + SETTLE_MS; return; }
     m = {
       setup, log: createLog(setup.n & 255), frame: 0, acc: 0, off: Infinity, end: null, done: false, catching: false, buffer: BUFFER_MS, dryAt: 0, starved: false,
+      lates: [], settleAt: now() + SETTLE_MS, steadyAt: now(), shrunkAt: now(), grows: 0, shrinks: 0,
       hashes: new Map(), checks: 0, bad: 0, badAt: [], badSince: 0, floor: 0, syncs: [], parts: new Map(), startedAt: now(),
     };
     result = null; totals.matches++;
@@ -173,9 +184,35 @@ export function createWatch(game) {
   function onBatch(buf) {
     const b = decodeBatch(buf);
     if (!b || !m || m.done || b.match !== (m.setup.n & 255)) return;
+    const fresh = b.t > m.log.newest;
     if (!m.log.add(b)) { hangUp(); retry(); return; }   // a hole (never: the socket is ordered): ask for it all again
-    // the host's clock against this one: the quickest delivery seen is the room's hold plus the trip
-    m.off = Math.min(m.off, now() - b.t);
+    // the host's clock against this one: the quickest delivery seen is the trip (and the clocks' difference)
+    const t = now(), d = t - b.t;
+    m.off = Math.min(m.off, d);
+    // how late each new stamp came, against that quickest one (not the backlog a (re)connect brings at once)
+    if (fresh && t >= m.settleAt) { m.lates.push(t, d); fit(t); }
+  }
+  /** the buffer the recent lateness needs: the gap between two stamps, the 98th percentile of how late they came, a margin */
+  function needed(t) {
+    const L = m.lates;
+    let i = 0;
+    while (i < L.length && L[i] < t - JITTER_MS) i += 2;
+    if (i) L.splice(0, i);
+    if (!L.length) return BUFFER_MIN_MS;
+    const late = [];
+    for (let j = 1; j < L.length; j += 2) late.push(L[j] - m.off);
+    late.sort((a, b) => a - b);
+    const p98 = late[Math.min(late.length - 1, Math.floor(late.length * 0.98))];
+    return Math.max(BUFFER_MIN_MS, Math.min(BUFFER_MAX_MS, STAMP_GAP_MS + STAMP_SLACK_MS + p98));
+  }
+  /** grow at once to what the lateness needs; after a steady stretch, ease back down towards it */
+  function fit(t) {
+    const need = needed(t);
+    if (need > m.buffer) { m.buffer = need; m.grows++; m.shrunkAt = t; return; }
+    if (t - m.steadyAt < STEADY_MS || need > m.buffer - 5) { m.shrunkAt = t; return; }
+    const k = Math.min(1, SHRINK_PER_S * (t - m.shrunkAt) / 1000);
+    m.shrunkAt = t;
+    if (k > 0) { m.buffer -= (m.buffer - need) * k; m.shrinks++; }
   }
   /** the host's resync, in parts: its state for the start of a frame, loaded when the playback gets there */
   function onSync(msg) {
@@ -306,7 +343,11 @@ export function createWatch(game) {
         // buffer rides the next one out
         m.acc = 0;
         if (!m.dryAt) m.dryAt = t;
-        if (!m.starved && m.frame > 0 && !m.end && t - m.off - m.log.newest > STAMP_GAP_MS + 300) { m.starved = true; totals.starved++; m.buffer = Math.min(BUFFER_MAX_MS, m.buffer + 250); }
+        if (!m.starved && m.frame > 0 && !m.end && t >= m.settleAt && t - m.off - m.log.newest > STAMP_GAP_MS + STAMP_SLACK_MS) {
+          // ran dry on a late delivery: grow by a quarter (at least 50 ms), and the steady stretch starts over
+          m.starved = true; totals.starved++; m.steadyAt = t;
+          m.buffer = Math.min(BUFFER_MAX_MS, Math.max(m.buffer * 1.25, m.buffer + 50)); m.grows++;
+        }
         if (t - m.dryAt > 500 && t - m.startedAt > 600) setState('buffering');
         return 0;
       }
@@ -335,7 +376,7 @@ export function createWatch(game) {
     /** tests: this side's hash of a frame, and the tallies */
     hashAt(f) { return m ? m.hashes.get(f) || null : null; },
     get hashes() { return m ? m.hashes : new Map(); },
-    stats() { return { state, detail, code, count, frame: m ? m.frame : 0, frames: m ? m.log.frames : 0, checks: m ? m.checks : 0, bad: m ? m.bad : 0, resyncs: m ? m.resyncs || 0 : 0, off: m ? m.off : 0, buffer: m ? m.buffer : BUFFER_MS, hold: HOLD_MS, totals: { ...totals }, result }; },
+    stats() { return { state, detail, code, count, frame: m ? m.frame : 0, frames: m ? m.log.frames : 0, checks: m ? m.checks : 0, bad: m ? m.bad : 0, resyncs: m ? m.resyncs || 0 : 0, off: m ? m.off : 0, buffer: m ? m.buffer : BUFFER_MS, grows: m ? m.grows : 0, shrinks: m ? m.shrinks : 0, totals: { ...totals }, result }; },
   };
   return watch;
 }

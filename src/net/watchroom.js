@@ -62,7 +62,7 @@ export function createWatchRoom(io) {
     join(sock) {
       sock.send(JSON.stringify({ t: 'sys', ev: 'welcome', role: 'spectator', watching: io.spectators().length }));
       if (m) {
-        // the match so far: its setup, the frames already old enough to show, and the host's last resync
+        // the match so far: its setup, the frames the others have had, and the host's last resync
         sock.send(JSON.stringify({ t: 'w', ev: 'start', ...m.setup }));
         for (const b of m.log.backlog()) sock.send(b);
         if (m.sync) for (const p of m.sync.parts) if (p) sock.send(p);
@@ -114,14 +114,14 @@ export function createWatchRoom(io) {
         // the match ended on frame f: everything held goes out now, then the result
         const f = Number(msg.f) | 0, s = cleanSetup({ ...m.setup, wins: msg.wins, tally: msg.tally });
         const whole = m.log.frames >= f;
-        for (const b of m.log.release(true)) toAll(b);
+        for (const b of m.log.release()) toAll(b);
         m = null; io.unlist();
         if (whole && s) toAll(JSON.stringify({ t: 'w', ev: 'end', n, f, wins: s.wins, winner: s.wins[0] > s.wins[1] ? 0 : s.wins[1] > s.wins[0] ? 1 : -1, tally: s.tally }));
         else toAll(JSON.stringify({ t: 'w', ev: 'over', reason: 'ended' }));
       } else if (msg.ev === 'over') desk.stop('left');
       return null;
     },
-    /** into the log, and the frames now old enough out to spectators */
+    /** into the log, and straight on to spectators */
     onBatch(buf) {
       const b = decodeBatch(buf);
       if (!b) return;
