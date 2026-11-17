@@ -43,9 +43,9 @@ export const BUFFER_MS = 200;     // where the buffer starts: behind the host's 
 export const BUFFER_MIN_MS = 100; // the least it shrinks to, however steady the link
 const BUFFER_MAX_MS = 2400;       // on a network that keeps running it dry, the buffer grows to this
 const STAMP_GAP_MS = UPLOAD_MS;   // the host stamps (and sends) this often
-const STAMP_SLACK_MS = 40;        // the host stamps on its own frames, so a gap runs a frame or two over, plus a margin
-const JITTER_MS = 8000;           // how far back the buffer looks at how late batches came
-const STEADY_MS = 6000;           // no running dry this long, and the buffer starts shrinking back
+const STAMP_SLACK_MS = 60;        // the host stamps on its own frames, so a gap runs a frame or two over, plus a margin
+const JITTER_MS = 30000;          // how far back the buffer looks at how late batches came (the worst of them)
+const STEADY_MS = 20000;          // no running dry this long, and the buffer starts shrinking back
 const SHRINK_PER_S = 0.25;        // ...by this share of the way to what the lateness needs, each second
 const SETTLE_MS = 400;            // after a (re)connect: the backlog's batches aren't lateness
 const LEAN_FRAMES = 60;           // the lean: this many frames off the host's timeline (0.5 s) plays 2x (capped at 1.5x) or 0x (0.85x)
@@ -194,18 +194,19 @@ export function createWatch(game) {
     // how late each new stamp came, against that quickest one (not the backlog a (re)connect brings at once)
     if (fresh && t >= m.settleAt) { m.lates.push(t, d); fit(t); }
   }
-  /** the buffer the recent lateness needs: the gap between two stamps, the 98th percentile of how late they came, a margin */
+  /** the buffer the recent lateness needs: the gap between two stamps, the latest any stamp came in the last
+   *  JITTER_MS, and a margin. The worst rather than a percentile: on a phone's link the late ones come in bursts,
+   *  and each one a percentile leaves out is a stop in the picture (netsim:watch: 98th over 8 s ran dry 17 times
+   *  in a first-frame session, the worst over 30 s 0 or 1, for about 30 ms more delay) */
   function needed(t) {
     const L = m.lates;
     let i = 0;
     while (i < L.length && L[i] < t - JITTER_MS) i += 2;
     if (i) L.splice(0, i);
     if (!L.length) return BUFFER_MIN_MS;
-    const late = [];
-    for (let j = 1; j < L.length; j += 2) late.push(L[j] - m.off);
-    late.sort((a, b) => a - b);
-    const p98 = late[Math.min(late.length - 1, Math.floor(late.length * 0.98))];
-    return Math.max(BUFFER_MIN_MS, Math.min(BUFFER_MAX_MS, STAMP_GAP_MS + STAMP_SLACK_MS + p98));
+    let worst = 0;
+    for (let j = 1; j < L.length; j += 2) worst = Math.max(worst, L[j] - m.off);
+    return Math.max(BUFFER_MIN_MS, Math.min(BUFFER_MAX_MS, STAMP_GAP_MS + STAMP_SLACK_MS + worst));
   }
   /** grow at once to what the lateness needs; after a steady stretch, ease back down towards it */
   function fit(t) {
@@ -348,7 +349,6 @@ export function createWatch(game) {
         if (!m.starved && m.frame > 0 && !m.end && t >= m.settleAt && t - m.off - m.log.newest > m.buffer - 20) {
           // ran dry on a late delivery: grow by a quarter (at least 50 ms), and the steady stretch starts over
           m.starved = true; totals.starved++; m.steadyAt = t;
-          if (globalThis.__WD) console.log(`DRY t=${(t/1000).toFixed(1)} buf=${m.buffer|0} stale=${(t - m.off - m.log.newest)|0} need=${needed(t)|0} n=${m.lates.length/2}`);
           m.buffer = Math.min(BUFFER_MAX_MS, Math.max(m.buffer * 1.25, m.buffer + 50)); m.grows++;
         }
         if (t - m.dryAt > 500 && t - m.startedAt > 600) setState('buffering');
