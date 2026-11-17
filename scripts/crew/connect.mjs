@@ -34,7 +34,7 @@ const check = (name, ok, detail = '') => { results.push({ name, ok: !!ok }); con
 
 // ---- the proxy ----
 // mode for new connections: 'pass' | 'stall'; `busy` refuses that many crew socket upgrades the way the Worker does
-const proxy = { mode: 'pass', busy: 0, stallCrew: 0, conns: new Set(), crewDials: 0 };
+const proxy = { mode: 'pass', busy: 0, stallCrew: 0, conns: new Set(), crewDials: 0, events: [] };
 /** silence every live connection (no close, no bytes either way): a NAT mapping or a wifi path that died */
 const blackhole = (filter = () => true) => { let n = 0; for (const c of proxy.conns) if (filter(c) && !c.dead) { c.dead = true; n++; } return n; };
 function refuseBusy(client, head) {
@@ -55,6 +55,8 @@ const server = net.createServer((client) => {
   let first = true;
   client.on('data', (buf) => {
     if (c.dead || c.refused) return;
+    // the page's analytics posts (POST api/e): the crew_link events, as the Worker gets them
+    for (const m of buf.toString('latin1').matchAll(/\{"e":"crew_link","l":(\[[^\]]*\])/g)) proxy.events.push(JSON.parse(m[1]));
     if (first) {
       first = false;
       const head = buf.toString('latin1', 0, Math.min(buf.length, 4096));
@@ -85,6 +87,7 @@ const contexts = [];
 function wsSpy() {
   const Real = window.WebSocket;
   window.__crew = [];
+  try { localStorage.setItem('stick-fight-track', '1'); } catch { /* */ }   // analytics on, on localhost (src/analytics.js)
   window.__ticks = 0; setInterval(() => window.__ticks++, 100);
   window.__vis = 'visible';
   Object.defineProperty(document, 'visibilityState', { get: () => window.__vis, configurable: true });
@@ -196,6 +199,9 @@ try {
     const t = await welcomeAfter(p, t0, 60000);
     const ms = t == null ? null : t - t0;
     numbers.dead = { ms: ms == null ? null : Math.round(ms) };
+    await sleep(500);
+    const drop = proxy.events.find((l) => l[0] === 'drop' && l[2] === 'silent'), re = proxy.events.find((l) => l[0] === 'reconnect' && l[2] === 'silent');
+    check('crew_link reaches the Worker: a drop and a reconnect, both silent', drop && re, JSON.stringify(proxy.events.slice(-3)));
     check('silently dead socket: noticed and redialed within 8 s', ms != null && ms < 8000, fmt(ms));
     await p.context().close();
   }
