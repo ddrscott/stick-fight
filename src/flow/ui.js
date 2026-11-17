@@ -1196,6 +1196,8 @@ function injectStyle() {
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings { grid-area: tb; min-height: 0; align-content: start; grid-auto-rows: max-content; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
     pointer-events: auto; touch-action: pan-y; padding: 0 1.6cqw 0; background: var(--sb); font-size: var(--rowh); line-height: 1.15; column-gap: 1.4cqw; row-gap: 0; align-items: center; }
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings::-webkit-scrollbar { display: none; }
+  /* (no scroll-cue fade here: it dimmed the sticky tabs at the top and your pinned row at the foot; a row cut at either edge says there's more) */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.sc-more, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.sc-less { -webkit-mask-image: none; mask-image: none; }
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewtabs { position: sticky; top: 0; z-index: 3; gap: 1cqw; margin: 0 -1.6cqw; padding: 1.2cqh 1.6cqw 1cqh; background: var(--sb); }
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-crewtabs .fl-btn.fl-crewtab { height: max(30px, 6.4cqh); min-height: 0; padding: 0.2em 0 0; font-size: max(13px, 3.2cqh); letter-spacing: 0.04em; }
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-sth { position: sticky; top: calc(max(30px, 6.4cqh) + 2.2cqh); z-index: 2; align-self: stretch; padding: 0.8cqh 0 0.6cqh;

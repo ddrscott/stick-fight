@@ -197,7 +197,15 @@ const audit = (p) => p.evaluate(() => {
   // a leaf the scrolling list cuts at its edge isn't shown either (that's the list scrolling, not a clip)
   const list = scr.querySelector('.fl-standings'), lr = list && list.getBoundingClientRect();
   const inList = (e) => list && list.contains(e);
-  const vis = leaves.filter((e) => { if (!inList(e)) return true; const r = e.getBoundingClientRect(); return r.top >= lr.top - 1 && r.bottom <= lr.bottom + 1; });
+  // your own row pinned at the list's foot is its bottom edge: a row scrolling under it is cut there, like under the tabs
+  const pin = scr.querySelector('.fl-v-standings > .fl-sname.fl-me'), pr = pin && pin.getBoundingClientRect();
+  const pinned = !!pr && Math.abs(pr.bottom - lr.bottom) < 2;
+  const vis = leaves.filter((e) => {
+    if (!inList(e)) return true;
+    const r = e.getBoundingClientRect();
+    if (pinned && !e.closest('.fl-me') && r.bottom > pr.top + 1) return false;
+    return r.top >= lr.top - 1 && r.bottom <= lr.bottom + 1;
+  });
   const overlaps = [];
   for (let i = 0; i < vis.length; i++) for (let j = i + 1; j < vis.length; j++) {
     const a = vis[i], b = vis[j];
