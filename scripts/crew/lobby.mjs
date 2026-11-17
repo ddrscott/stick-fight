@@ -358,7 +358,12 @@ try {
     check(`${label}: the crew link opens the lobby`, await until(async () => (await flow(p)) === 'crewLobby'), await flow(p));
     check(`${label}: the lobby has its four tabs`, await until(() => p.evaluate(() => document.querySelectorAll('.fl-crewtab').length === 4)));
     await until(async () => /ALICE/.test(await tableText(p)));
-    // the week's goal over the standings
+    // the week's goal over the standings (sideways folded to one line first: the bar, the count, the days; it opens to the box)
+    if (label !== 'upright') {
+      const line = await until(() => p.evaluate(() => { const b = document.querySelector('.fl-crew .fl-goalfold'); return b && b.offsetParent ? b.innerText.replace(/\s+/g, ' ') : null; }));
+      check(`${label}: sideways the goal is one line: CREW GOAL, ${PROG} / ${GOAL.target}, the days left, and no box yet`, !!line && /CREW GOAL|GOAL MET/.test(line) && line.includes(`${PROG} / ${GOAL.target}`) && /DAYS|TONIGHT|NICE WORK/.test(line) && !(await goalBox(p)), line);
+      await pressItem(p, 'fl-goalfold');
+    }
     const gb = await until(() => goalBox(p));
     const words = goalText(GOAL.kind, GOAL.target);
     check(`${label}: the goal is over the standings: ${words}, ${PROG} / ${GOAL.target}`, gb && gb.text.includes('CREW GOAL') && gb.text.includes(words) && gb.text.includes(`${PROG} / ${GOAL.target}`), gb && gb.text.slice(0, 120));
