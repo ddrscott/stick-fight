@@ -61,6 +61,9 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
     drawLeaks: 0, drawChecks: 0, injected: 0,
     frames: 0, maxFrameMs: 0,
     demoRunning: false,
+    /** when each frame first showed on this phone's screen: match -> { f: frames, t: times }, one entry per draw
+     *  that moved forward (the spectators' latency is measured from it, README Spectators) */
+    shown: new Map(),
   };
 
   // ---- the attract demo behind the menus (different on each phone: its own seed and its own pairs) ----
@@ -147,6 +150,8 @@ export function createClient({ name, seed, network, frames, rules, drawCheck = f
       const slow = sim.koSlow > 0 ? (sim.finisher ? 0.25 : 0.5) : 1;
       net.advance(ms * slow);
       record();
+      const ls = net.netcode;
+      if (ls) { let sh = client.shown.get(net.match); if (!sh) client.shown.set(net.match, sh = { f: [], t: [] }); if (!sh.f.length || ls.frame > sh.f[sh.f.length - 1]) { sh.f.push(ls.frame); sh.t.push(t); } }
       if (inject && net.active) nudge();
     } else if (client.demoRunning) {
       sim.step(ms);
@@ -256,6 +261,11 @@ export function createSpectator({ name, seed, network, frames, createWatch }) {
     results: /** @type {Record<number, any>} */ ({}),
     started: /** @type {number[]} */ ([]), overs: /** @type {string[]} */ ([]),
     lagMs: 0, lagN: 0, liveFrames: 0, stalls: 0, catchUps: 0,
+    /** ms from a frame showing on the host's screen to the same frame showing here, one per draw that moved forward */
+    latency: /** @type {number[]} */ ([]),
+    draws: 0, hitches: 0,
+    /** the time the host first showed frame f of match n (set by the session), or -1 */
+    hostShownAt: /** @type {null | ((n: number, f: number) => number)} */ (null),
     /** the host's frame right now (set by the session), for measuring how far behind this side plays */
     hostFrame: /** @type {null | (() => number)} */ (null),
   };
@@ -296,7 +306,15 @@ export function createSpectator({ name, seed, network, frames, createWatch }) {
     const t = sched.t, ms = Math.min(100, t - last); last = t;
     if (watch.active) {
       const slow = sim.koSlow > 0 ? (sim.finisher ? 0.25 : 0.5) : 1;
+      const was = watch.stats().frame;
       watch.advance(ms * slow);
+      const now = watch.stats().frame;
+      if (now > was && !watch.catching && me.hostShownAt) { const h = me.hostShownAt(n, now); if (h >= 0) me.latency.push(t - h); }
+      // a hitch: the picture stood still on a draw while the fight it shows had moved on (ran dry)
+      if (!watch.catching && watch.state !== 'result' && me.hostShownAt && was > 0) {
+        const moved = me.hostShownAt(n, now + 1) >= 0 && me.hostShownAt(n, now + 1) <= t - (me.latency.length ? me.latency[me.latency.length - 1] : 0);
+        me.draws++; if (now === was && moved) me.hitches++;
+      }
       for (const [f, h] of watch.hashes) me.hashes.set(`${n}:${f}`, h);
       const st = watch.state;
       if (st === 'live') { me.liveFrames++; if (me.hostFrame) { const hf = me.hostFrame(); if (hf >= 0) { me.lagMs += (hf - watch.stats().frame) * (1000 / 120); me.lagN++; } } }
