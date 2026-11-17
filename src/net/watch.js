@@ -339,6 +339,10 @@ export function createWatch(game) {
       const t = now();
       const want = Number.isFinite(m.off) ? Math.min(lim, m.log.framesAt(t - m.off - m.buffer)) : 0;
       const behind = want - m.frame;
+      // not begun, and the first frames came under SETTLE_MS ago: a backlog may still be landing, and until its newest
+      // stamp is in, `off` is too big, so starting would show frames seconds old and then jump (test:watch: a line
+      // member's first second ran 2.7 s behind)
+      if (m.frame === 0 && t < m.settleAt) { m.acc = 0; return 0; }
       if (m.catching || behind > CATCHUP) {
         m.catching = true;
         setState('catching');

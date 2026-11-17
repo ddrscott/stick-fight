@@ -90,6 +90,8 @@ async function latency(host, spec, fromT = 0) {
 const latRows = [];
 async function reportLatency(label, host, spec, fromT = 0) {
   const a = await latency(host, spec, fromT).catch(() => []);
+  // LAT_TRACE=1: the worst latency in each second of the watching, to see where a tail comes from
+  if (process.env.LAT_TRACE) { const h = await host.evaluate(() => window.__lat.host), sp = await spec.evaluate(() => window.__lat.spec); const t0 = sp.length ? sp[0][2] : 0; const by = {}; let i = 0; for (const [n, f, t] of sp) { const hh = h[n]; if (!hh || hh.f[hh.f.length - 1] < f) continue; const sec = n + ':' + Math.floor((t - t0) / 1000); (by[sec] = by[sec] || []).push(a[i++]); } console.log('TRACE', label, Object.entries(by).map(([k, v]) => k + '=' + Math.round(Math.max(...v))).join(' ')); }
   const pg = await spec.evaluate(() => { const L = window.__lat; return { lost: L.lost, wall: L.wall, drawMs: L.draws ? L.drawMs / L.draws : 0 }; }).catch(() => ({ lost: 0, wall: 1, drawMs: 0 }));
   latRows.push({ label, a, pg });
   const p50 = pct(a, 50), p95 = pct(a, 95);
