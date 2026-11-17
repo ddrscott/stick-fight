@@ -478,15 +478,17 @@ export function createOnline(game) {
     if (!ls || !link) return;
     const t = now();
     const s = ls.stats();
-    if (!linkBase || linkBase.ls !== ls) { linkBase = { ls, at: t, playMs: 0, frozenMs: 0, sent: 0, sentBoth: 0, rollbacks: 0, rollbackFrames: 0, resyncs: 0 }; linkAt = t; return; }
+    // packets: the link's own count of what went out, and over both paths (the DataChannel and the room socket)
+    const lq = link.quality || {}, pk = { sent: lq.sent || 0, sentBoth: lq.sentBoth || 0 };
+    if (!linkBase || linkBase.ls !== ls) { linkBase = { ls, at: t, playMs: 0, frozenMs: 0, ...pk, rollbacks: 0, rollbackFrames: 0, resyncs: 0 }; linkAt = t; return; }
     if (!final && t - linkAt < LINK_EVERY_MS) return;
     const b = linkBase, play = s.playMs - b.playMs;
     if (play < 2000) return;
     const q = link.quality || { loss: 0 }, rb = s.rollbacks - b.rollbacks;
     track('online_link', [link.path || link.mode || '-', crewMode ? 'crew' : 'quick', link.candidate || '-', final ? 'end' : 'mid'], Math.round(s.rtt || 0),
       [Math.round(s.jitter || 0), Math.round(1000 * (s.frozenMs - b.frozenMs) / play) / 10, Math.round((s.avgDelay || s.delay || 0) * 10) / 10, rb ? Math.round(10 * (s.rollbackFrames - b.rollbackFrames) / rb) / 10 : 0,
-        s.sent > b.sent ? Math.round(1000 * (s.sentBoth - b.sentBoth) / (s.sent - b.sent)) / 10 : 0, Math.round(1000 * (q.loss || 0)) / 10, s.resyncs - b.resyncs, Math.round(play / 1000)]);
-    linkBase = { ls, at: t, playMs: s.playMs, frozenMs: s.frozenMs, sent: s.sent, sentBoth: s.sentBoth, rollbacks: s.rollbacks, rollbackFrames: s.rollbackFrames, resyncs: s.resyncs };
+        pk.sent > b.sent ? Math.round(1000 * (pk.sentBoth - b.sentBoth) / (pk.sent - b.sent)) / 10 : 0, Math.round(1000 * (q.loss || 0)) / 10, s.resyncs - b.resyncs, Math.round(play / 1000)]);
+    linkBase = { ls, at: t, playMs: s.playMs, frozenMs: s.frozenMs, ...pk, rollbacks: s.rollbacks, rollbackFrames: s.rollbackFrames, resyncs: s.resyncs };
     linkAt = t;
   }
 

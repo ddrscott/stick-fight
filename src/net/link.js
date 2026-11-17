@@ -212,8 +212,8 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
      *  'relay' (the room's WebSocket, TCP), or '' before either */
     get path() { return link.mode === 'p2p' ? (link.candidate === 'relay' ? 'turn' : 'direct') : link.mode === 'relay' ? 'relay' : ''; },
     /** the link's own measure of the packet path (the probes): round trip and jitter in ms, the share of probes lost
-     *  (0..1), samples taken, and the share of packets that went over both paths */
-    get quality() { return { rtt: pRtt, jitter: pJit, loss: lossNow(), samples: pN, path: link.path, both: pktSent ? pktBoth / pktSent : 0 }; },
+     *  (0..1), samples taken, and the share of packets that went over both paths (sent, sentBoth: the counts) */
+    get quality() { return { rtt: pRtt, jitter: pJit, loss: lossNow(), samples: pN, path: link.path, both: pktSent ? pktBoth / pktSent : 0, sent: pktSent, sentBoth: pktBoth }; },
     /** this page's own trip to the room (its pings): { rtt, jitter, samples } */
     get server() { return { rtt: sRtt, jitter: sJit, loss: 0, samples: wsUp() ? sN : 0 }; },
     get peerAway() { return peerAway; },
