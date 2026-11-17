@@ -64,7 +64,9 @@ const OUTBOX_MAX = 256;              // control messages held while it's down
 const ICE_FETCH_MS = 2500;
 const TICK_MS = 250;                 // the link's own watchdog
 const FROZEN_MS = 3000;              // a watchdog tick this late: the page was frozen (a locked phone)
-const CHECK_MS = 3000;               // link.check(): the netcode's suspicion probes the socket at most this often
+const CHECK_MS = 3000;
+const TALKING_MS = 1500;             // the rival's packets this recent: a 'left' notice from the room is doubted
+const LEFT_GRACE_MS = 5000;          // ...until their packets have stopped this long (a goodbye ends it at once)               // link.check(): the netcode's suspicion probes the socket at most this often
 const ABANDON = 4100;                // the close code for a socket the page gave up on (the room reads it as the network)
 const BEAT = 0xf0;                   // the old DataChannel beat's one byte (codec.js packet types are 1..3)
 const PROBE = 0xf1, ECHO = 0xf2;     // the link's probe (9 bytes: the type, then the sender's clock) and its echo
@@ -142,6 +144,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   url.searchParams.set('seat', Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) => b.toString(36).padStart(2, '0')).join(''));
   /** @type {any} */ let ws;
   let welcomed = false, wsWelcomed = false, downSince = 0, dropCode = 0, tries = 0, retryTimer = 0, tryTimer = 0;
+  let lastPeerRx = 0, leftAt = 0;   // the rival's last packet (either path); when the room said they left while still talking
   let lastWsRx = 0, lastPingAt = 0, pongSeen = false, probeAt = 0, lastPongAt = 0, lastCheck = -1e9;
   // this page's own trip to the room (ping to pong): the host screen's meter while it waits for a friend
   let pingOut = 0, sRtt = 0, sJit = 0, sN = 0;
@@ -278,6 +281,13 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
   /** the relay carries the packets (for now, unless WebRTC is off the table: then for good) */
   function toRelay() { if (link.mode !== 'relay') setMode('relay'); }
 
+  /** the rival is gone after all (the grace after a doubted 'left' ran out): as the room's 'left' would have done */
+  function peerGone() {
+    peerPresent = false; peerAway = false;
+    emit('peer', false);
+    teardownRtc(); wantDial = false; link.ready = false; link.mode = 'connecting';
+  }
+
   // ---- the probes: the link's own round trip, jitter and loss on the packet path ------------------------------
   function clockBuf(type, t) { const b = new ArrayBuffer(9), dv = new DataView(b); dv.setUint8(0, type); dv.setFloat64(1, t); return b; }
   function lossNow() {
@@ -337,6 +347,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
       if (ch === dc) { lastDcRx = now(); beatSeen = true; }
       if (e.data.byteLength === 1 && new Uint8Array(e.data)[0] === BEAT) return;
       if (onProbe(e.data, 'dc')) return;
+      lastPeerRx = now();
       emit('packet', e.data);
     };
   }
@@ -560,6 +571,12 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
     }
     // the probe: every BEAT_MS down whichever path carries the packets (the DataChannel, or the relay)
     if (peerPresent && t - lastBeatAt >= BEAT_MS) { lastBeatAt = t; sendProbe(t); }
+    // the room said the rival left while their packets were still coming: a real leave once they've stopped
+    if (leftAt && peerPresent && t - leftAt > LEFT_GRACE_MS) {
+      leftAt = 0;
+      if (t - lastPeerRx > LEFT_GRACE_MS) peerGone();
+      else { peerAway = false; emit('status', link); }   // still talking all along: the room had it wrong
+    }
     if (!peerPresent || noRtc()) return;
     // the DataChannel: the other side probes it every BEAT_MS, so silence means trouble, whether or not it ever
     // delivered (a channel that opened but carries nothing is as dead as one that stopped)
@@ -584,7 +601,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
 
   function onMessage(e) {
     lastWsRx = now();
-    if (e.data instanceof ArrayBuffer) { if (!onProbe(e.data, 'ws')) emit('packet', e.data); return; }
+    if (e.data instanceof ArrayBuffer) { lastPeerRx = lastWsRx; if (!onProbe(e.data, 'ws')) emit('packet', e.data); return; }
     if (e.data === 'pong') {
       pongSeen = true; lastPongAt = lastWsRx;
       if (pingOut) { const ms = lastWsRx - pingOut; pingOut = 0; if (ms >= 0 && ms < 10000) { if (!sN) { sRtt = ms; sJit = 0; } else { sJit += (Math.abs(ms - sRtt) - sJit) * 0.25; sRtt += (ms - sRtt) * 0.25; } sN++; } }
@@ -615,7 +632,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
         emit('open');   // the room is there: the host's spectator switch goes out first
       }
       if (msg.ev === 'peer' && msg.back && msg.present && peerPresent) {   // the other player's socket came back
-        const was = peerAway; peerAway = false;
+        const was = peerAway; peerAway = false; leftAt = 0;
         if (was) emit('status', link);
         emit('rejoined', { who: 'rival', ms: 0 });
         if (!dcOpen() && !noRtc() && !dialing) { wantDial = true; nextDialAt = now(); }
@@ -628,11 +645,19 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
       // restarted, or noticed both drops). Only a goodbye or the room's 'left' notice says they're gone; the
       // session's clocks end the match if they never come back
       if (rewelcome && peerPresent && !msg.peer && !msg.away) { peerAway = true; emit('status', link); return; }
+      // the room says the rival left, but their packets were here a moment ago (2026-11-16 15:01: a crew match on the
+      // relay got 'left' 1 s after a 653 ms socket blip, with a packet 331 ms before): hold it as away. A real leave
+      // says goodbye first ('bye', below) and ends at once; a closed tab's packets stop, and LEFT_GRACE_MS later it's over
+      if (msg.ev === 'peer' && !msg.present && !msg.away && peerPresent && now() - lastPeerRx < TALKING_MS) {
+        console.warn('[net] the room says the rival left, but their packets are still coming: holding on');
+        leftAt = now(); peerAway = true; emit('status', link); return;
+      }
       if (msg.ev === 'welcome' || msg.ev === 'peer') {
         const present = msg.ev === 'welcome' ? !!(msg.peer || (msg.away && peerPresent)) : !!msg.present;
         if (msg.ev === 'welcome' && msg.away && peerPresent && !msg.peer) { peerAway = true; emit('status', link); }
+        if (present && peerPresent && peerAway && msg.ev === 'peer') { peerAway = false; leftAt = 0; emit('status', link); }   // there after all
         if (present === peerPresent) return;
-        peerPresent = present; peerAway = false;
+        peerPresent = present; peerAway = false; leftAt = 0;
         emit('peer', present);
         if (present) {
           rtcRefused = forceRelay; firstDial = true; dialFails = 0; everOpen = false; deadSince = 0; nextKind = 'all'; goodKind = ''; setMode('connecting');
@@ -654,7 +679,7 @@ export function createLink({ code, role, forceRelay = false, rtcTimeoutMs = RTC_
       return;
     }
     if (msg.t === 'relay') { rtcRefused = true; teardownRtc(); wantDial = false; toRelay(); return; }   // the other side can't or won't do WebRTC
-    if (msg.t === 'bye') { peerPresent = false; peerAway = false; emit('peer', false); return; }
+    if (msg.t === 'bye') { leftAt = 0; peerPresent = false; peerAway = false; emit('peer', false); return; }
     emit('control', msg);
   }
   connect();

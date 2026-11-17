@@ -81,6 +81,9 @@ const SCENARIOS = {
   // the 2026-11-16 20:11 drop: on the relay, the guest's room socket stops delivering what it sends while it keeps
   // hearing the host (a stale carrier NAT mapping), once in each match. Nothing errors, so only a missing pong says so
   'stale-uplink': { note: 'guest on the relay (no UDP); its room socket\'s sends vanish for good while it still hears the host, once a match', legs: [WIFI, WIFI], matches: 2, setup: (w) => w.blockUdp(1, true), events: [{ at: 20000, run: (w) => w.staleUplink(1) }, { at: 110000, run: (w) => w.staleUplink(1) }] },
+  // the 2026-11-16 15:01 drop: a crew match on the relay, the guest's socket blips, and 1 s later the room tells the
+  // guest its rival left, with the host's packets still arriving. Here the blip, then the wrong word from the room
+  'room-misread': { note: 'guest on the relay; its socket blips, then the room wrongly tells it the host left (host still playing)', legs: [WIFI, WEAK_CELL], matches: 2, setup: (w) => w.blockUdp(1, true), events: [{ at: 20000, run: (w) => w.dropout(1, 600, 'die') }, { at: 30000, run: (w) => w.roomSaysLeft(1) }] },
   'relay-jitter': { note: 'the jitter scenario on the relay (no DataChannel): the lag numbers for the slow path', legs: [CALM, JITTERY], relay: true, slow: true, events: [] },
 };
 
