@@ -598,7 +598,8 @@ function injectStyle() {
   .fl-selstatus .fl-pickmeter { flex-basis: 100%; font-size: 0.85em; }
   .fl-hostinfo .fl-meter { font-size: 2.2cqw; }
   .fl-crewbtns .fl-crewmeter { font-size: 1.7cqw; align-self: center; }
-  #flow .fl-tall .fl-hostinfo .fl-meter, #flow .fl-tall .fl-crewbtns .fl-crewmeter { font-size: 3.6cqw; }
+  #flow .fl-tall .fl-hostinfo .fl-meter { font-size: 3.6cqw; }
+  #flow .fl-tall .fl-crewbtns .fl-crewmeter { font-size: 4.6cqw; }
   .fl-uprule-line { color: #9dffc0; }
   .fl-post { gap: 1.3cqh; }
   .fl-set { display: flex; align-items: baseline; gap: 2.4cqw; font-family: 'Bungee', 'Arial Black', sans-serif; line-height: 1; }
@@ -872,6 +873,8 @@ function injectStyle() {
   #flow .fl-tall .fl-h2 { font-size: 7.2cqw; }
   #flow .fl-tall .fl-label { font-size: 3.5cqw; line-height: 1.1; }
   #flow .fl-tall .fl-selstatus { flex-direction: column; align-items: center; gap: 0.5cqh; font-size: 3.8cqw; min-height: 0; }
+  /* held upright the status is a column: the rule line and the meter wrap inside the screen instead of running off it */
+  #flow .fl-tall .fl-selstatus .fl-uprule-line, #flow .fl-tall .fl-selstatus .fl-pickmeter { flex-basis: auto; max-width: 100%; white-space: normal; }
   #flow .fl-ring { position: relative; align-self: stretch; margin: 0 -4cqw; flex: 1 1 0; min-height: 120px; max-height: 400px; overflow: hidden; touch-action: none; pointer-events: auto; }
   #flow .fl-carousel .fl-card { position: absolute; left: 50%; top: 0; height: 100%; width: auto; aspect-ratio: 0.7; translate: -50% 0; padding: 0 0 1.2cqh;
     transition: background 80ms, border-color 80ms; transform-origin: 50% 50%; will-change: transform;

@@ -28,7 +28,12 @@ console.info = () => {};
 const quiet = !process.env.NETSIM_DEBUG;
 // a dropped match's own line ([net] match dropped: why, path, frame) is kept even when quiet, for the failure report
 const dropLines = [];
-if (quiet) console.warn = (...a) => { const t = a.map(String).join(' '); if (/match dropped/.test(t)) dropLines.push(`t=${Math.round(sched.t / 1000)}s ${t.slice(0, 200)}`); };
+const warnRing = [];   // the last [net] warnings, printed when a session fails (NETSIM_TRACE=1)
+if (quiet) console.warn = (...a) => {
+  const t = a.map(String).join(' ');
+  if (/match dropped/.test(t)) dropLines.push(`t=${Math.round(sched.t / 1000)}s ${t.slice(0, 200)}`);
+  if (process.env.NETSIM_TRACE) { warnRing.push(`t=${(sched.t / 1000).toFixed(1)}s ${t.slice(0, 160)}`); if (warnRing.length > 80) warnRing.shift(); }
+};
 const LEGACY = process.argv.includes('--legacy');
 // an old link fetches its ICE servers itself
 /** @type {any} */ (globalThis).fetch = async () => ({ ok: true, json: async () => ({ iceServers: [{ urls: ['stun:stun.test:3478'] }] }) });
@@ -188,7 +193,8 @@ async function session(name, seed, matchesArg) {
   await runUntil(limit, done);
   await runUntil(sched.t + 3000);
   const rep = evaluate(name, seed, A, B, matches, m, wire, bank);
-  if (!rep.pass) for (const l of dropLines.splice(0)) console.error(`  ${l}`);
+  if (!rep.pass) for (const l of [...warnRing, ...dropLines]) console.error(`  ${l}`);
+  warnRing.length = 0;
   dropLines.length = 0;
   if (!rep.pass || process.env.NETSIM_DEBUG) for (const c of both) {
     const s = c.net.stats();
