@@ -34,8 +34,27 @@ const LEGACY = process.argv.includes('--legacy');
 const labelOf = onlineMod.showsReconnecting || ((_s, l) => !!l && !!l.reconnecting);
 
 const CALM = { base: 35, jitter: 10, loss: 0.01 };
+// weak-cell ([t6sye7]): one phone on home wifi, the other on a weak cellular signal. Phone to phone that's about
+// 2 * (15 + 7 + 70 + 48) = 280 ms of round trip with ~100 ms of jitter (half-normal on each leg, both ways) and 3% loss
+const WIFI = { base: 12, jitter: 5, loss: 0.003 };
+const WEAK_CELL = { base: 55, jitter: 60, loss: 0.03 };
+/** The weak phone's dropouts: 2 to 5 s with no network every 20 to 30 s, all session, in a cycle of five: two short
+ *  enough for TCP to hold, one that kills the room socket half-open, one wifi -> cellular switch (everything made on
+ *  the old network is dead, then 'change'), and one one-way (nothing this phone sends gets out while it still hears
+ *  the other side for a few seconds: the signature of the 2026-11-16 20:11 drop, README, Reconnecting).
+ *  r: the session's rng. Returns the plan, starting `from` ms. */
+function weakCellPlan(r, from = 12000, until = 40 * 60000) {
+  const evs = [];
+  let t = from, k = 0;
+  while (t < until) {
+    const dur = 2000 + r() * 3000, kind = ['survive', 'die', 'oneway', 'switch', 'survive'][k % 5];
+    evs.push({ at: t, dur, kind });
+    t += dur + 20000 + r() * 10000; k++;
+  }
+  return evs;
+}
 const JITTERY = { base: 60, jitter: 200, jitterSwing: 200, loss: 0.05 };
-/** @type {Record<string, { legs?: [any, any], relay?: boolean, slow?: boolean, setup?: (w: any) => void, events: { at: number, run: (w: any) => void }[], note: string }>} */
+/** @type {Record<string, { legs?: [any, any], relay?: boolean, slow?: boolean, matches?: number, seeds?: number, judgeFrozen?: number, plan?: (r: () => number) => { at: number, dur: number, kind: string }[], setup?: (w: any) => void, events: { at: number, run: (w: any) => void }[], note: string }>} */
 const SCENARIOS = {
   'drop-3s':    { note: 'guest loses all network for 3 s (TCP holds)', events: [{ at: 20000, run: (w) => w.dropout(1, 3000, 'survive') }] },
   'drop-10s':   { note: 'guest loses all network for 10 s (its socket dies half-open)', events: [{ at: 20000, run: (w) => w.dropout(1, 10000, 'die') }] },
@@ -46,11 +65,21 @@ const SCENARIOS = {
   'background': { note: 'guest locks the phone 12 s (iOS: frozen, socket killed), later the host backgrounds 8 s (Android)', events: [{ at: 20000, run: (w) => w.freeze(1, 12000) }, { at: 60000, run: (w) => w.hide(0, 8000) }] },
   // measured, not judged on time: ordered TCP holds every packet behind a lost or late one, so the fight stalls
   // often and takes longer (README, Reconnecting: the relay on a jittery phone)
+  // the bar for [t6sye7]: ten matches in a row on 5 seeds, nothing dropped, the fight frozen under 5% of the time
+  // outside the dropouts themselves (judgeFrozen), hashes and results agreeing
+  'weak-cell': { note: 'guest on weak cellular (~280 ms, ~100 ms jitter, 3% loss) with a 2-5 s dropout every 20-30 s (some half-open, some a network switch); host on wifi; 10 matches', legs: [WIFI, WEAK_CELL], matches: 10, seeds: 5, judgeFrozen: 0.05, plan: (r) => weakCellPlan(r), events: [] },
+  // carrier-grade NAT on the weak phone: no direct path at all, and api/ice slow enough on that signal that the first
+  // fetch can time out (then the link has public STUN only, which can't reach TURN)
+  'turn-cell': { note: 'guest on weak cellular behind a symmetric NAT (no direct path; TURN works) with a slow api/ice; host on wifi', legs: [WIFI, WEAK_CELL], setup: (w) => w.nat(1, 1800), events: [] },
   'relay-jitter': { note: 'the jitter scenario on the relay (no DataChannel): the lag numbers for the slow path', legs: [CALM, JITTERY], relay: true, slow: true, events: [] },
 };
 
-async function session(name, seed, matches) {
+// the frozen measure leaves out each dropout and this much after it (the first packets back are a round trip away)
+const DOWN_TAIL_MS = 500;
+
+async function session(name, seed, matchesArg) {
   const sc = SCENARIOS[name];
+  const matches = sc.matches || matchesArg;
   resetClock();
   try { if (sc.relay) localStorage.setItem('stick-fight-net', JSON.stringify({ relay: true })); else localStorage.removeItem('stick-fight-net'); } catch { /* */ }
   const r = mulberry32(seed * 2654435761 >>> 0);
@@ -61,7 +90,9 @@ async function session(name, seed, matches) {
   const A = createClient({ name: 'host', seed: seed * 2 + 1, network, frames: { fps: 60 }, rules });
   const B = createClient({ name: 'guest', seed: seed * 2 + 2, network, frames: { fps: 60 }, rules });
   const both = [A, B];
-  const m = { waitSamples: 0, samples: 0, p2p: 0, relay: 0, stalled: 0, unlabeled: 0, labeled: 0, maxStall: 0, delay: 0, depth: 0, rejoins: /** @type {Record<string, number>} */ ({}), resyncs: 0, firstStart: 0 };
+  /** @type {[number, number][]} */ const downs = [];
+  const inDown = (t) => downs.some(([a, b]) => t >= a && t < b + DOWN_TAIL_MS);
+  const m = { events: /** @type {Record<string, number>} */ ({}), outSamples: 0, outFrozen: 0, frozenRuns: /** @type {number[]} */ ([]), rtt: 0, jitter: 0, rttN: 0, turn: 0, waitSamples: 0, samples: 0, p2p: 0, relay: 0, stalled: 0, unlabeled: 0, labeled: 0, maxStall: 0, delay: 0, depth: 0, rejoins: /** @type {Record<string, number>} */ ({}), resyncs: 0, firstStart: 0 };
   const ids = roster().map((c) => c.id);
   const pickRng = mulberry32(seed + 99);
   const seenLinks = new WeakSet();
@@ -80,6 +111,17 @@ async function session(name, seed, matches) {
       if (!m.firstStart) {
         m.firstStart = sched.t;
         for (const ev of sc.events) at(sched.t + ev.at, () => ev.run(wire), null, 'net');
+        // a plan of dropouts on the guest's phone (weak-cell): each window is left out of the frozen measure
+        if (sc.plan) for (const d of sc.plan(mulberry32(seed * 7 + 3))) {
+          const t0 = sched.t + d.at;
+          downs.push([t0, t0 + d.dur]);
+          at(t0, () => {
+            m.events[d.kind] = (m.events[d.kind] || 0) + 1;
+            if (d.kind === 'oneway') { wire.oneway(1, d.dur); return; }
+            if (d.kind === 'switch') wire.switchNetwork(1);
+            wire.dropout(1, d.dur, d.kind === 'survive' ? 'survive' : 'die');
+          }, null, 'net');
+        }
       }
     });
   }
@@ -98,6 +140,9 @@ async function session(name, seed, matches) {
       m.delay += s.delay || 0; m.depth += s.lastDepth || 0;
       const waiting = Math.max(s.stalledMs || 0, s.endWaitMs || 0);
       if (waiting > 50) m.waitSamples++;
+      if (!inDown(sched.t)) { m.outSamples++; if (waiting > 50) m.outFrozen++; }
+      if (s.rtt) { m.rtt += s.rtt; m.jitter += s.jitter || 0; m.rttN++; }
+      if (s.mode === 'p2p' && l && l.candidate === 'relay') m.turn++;   // the DataChannel through a TURN server
       if (waiting > 500) { m.stalled++; if (label) m.labeled++; }
       if (waiting > 1500 && (s.lostMs || 0) > 1000 && !label) m.unlabeled++;
       m.maxStall = Math.max(m.maxStall, s.stalledMs || 0);
@@ -131,39 +176,44 @@ function evaluate(name, seed, A, B, matches, m, wire) {
     if (a.hash !== b.hash || a.frame !== b.frame) endDiverged++;
   }
   const dropped = [A.ended, B.ended].filter(Boolean).length;
-  const pass = finished >= matches && !dropped && diffs === 0 && !resultDiffs && !endDiverged && m.unlabeled === 0;
+  const frozenPct = m.outSamples ? m.outFrozen / m.outSamples : 0;
+  const frozenOk = !SCENARIOS[name].judgeFrozen || frozenPct < SCENARIOS[name].judgeFrozen;
+  const pass = finished >= matches && !dropped && diffs === 0 && !resultDiffs && !endDiverged && m.unlabeled === 0 && frozenOk;
   return {
-    name, seed, pass, finished, dropped, ended: [A.ended || '-', B.ended || '-'].join('/'), checks, diffs, resultDiffs, endDiverged,
+    name, seed, pass, finished, dropped, ended: endedWhy.join(' ') || '-', checks, diffs, resultDiffs, endDiverged,
     resyncs: m.resyncs, rejoins: m.rejoins, unlabeled: m.unlabeled, labeledPct: m.stalled ? m.labeled / m.stalled : 1,
     maxStall: m.maxStall / 1000, stallPct: m.samples ? m.waitSamples / m.samples : 0, perMatch: finished ? (sched.t - m.firstStart) / 1000 / finished : 0, p2pPct: m.samples ? m.p2p / m.samples : 0, delay: m.samples ? m.delay / m.samples : 0, depth: m.samples ? m.depth / m.samples : 0,
-    dials: wire.stats.pcs, away: wire.stats.roomAway, minutes: sched.t / 60000,
+    dials: wire.stats.pcs, away: wire.stats.roomAway, minutes: sched.t / 60000, stunOnly: wire.stats.iceStunOnly,
+    frozenPct, frozenOk, rtt: m.rttN ? m.rtt / m.rttN : 0, jitter: m.rttN ? m.jitter / m.rttN : 0, turnPct: m.samples ? m.turn / m.samples : 0, relayPct: m.samples ? m.relay / m.samples : 0, events: m.events,
   };
 }
 
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 if (argv.includes('--list')) { for (const [k, v] of Object.entries(SCENARIOS)) console.log(`${k.padEnd(13)} ${v.note}`); process.exit(0); }
-const seeds = +arg('seeds', 3), matches = +arg('matches', 2), first = +arg('seed', 1), only = arg('only', '');
+const seedsArg = arg('seeds', ''), matches = +arg('matches', 2), first = +arg('seed', 1), only = arg('only', '');
 const names = Object.keys(SCENARIOS).filter((n) => !only || only.split(',').includes(n));
 const rows = [];
 const t0 = Date.now();
 console.log(`handoff: the real link over a fake network${LEGACY ? ' (legacy room)' : ''}; ${matches} best-of-3 matches a session\n`);
 for (const name of names) {
+  const seeds = seedsArg ? +seedsArg : SCENARIOS[name].seeds || 3;
   for (let s = first; s < first + seeds; s++) {
     const rep = await session(name, s, matches);
     rows.push(rep);
     const rj = Object.entries(rep.rejoins).map(([k, v]) => `${k}:${v}`).join(',') || '-';
     process.stdout.write(`${name.padEnd(13)} seed ${s}  ${(rep.pass ? 'ok' : 'FAIL').padEnd(4)}  matches ${rep.finished}/${matches}  dropped ${rep.dropped} (${rep.ended})  hashes ${String(rep.checks).padStart(4)} differ ${rep.diffs}  resyncs ${rep.resyncs}  ` +
-      `max stall ${rep.maxStall.toFixed(1)} s  stalled ${(rep.stallPct * 100).toFixed(1)}%  ${rep.perMatch.toFixed(0)} s/match  RECONNECTING ${(rep.labeledPct * 100).toFixed(0)}% of stalls (${rep.unlabeled} unlabeled)  p2p ${(rep.p2pPct * 100).toFixed(0)}%  delay ${rep.delay.toFixed(1)}  rb ${rep.depth.toFixed(1)}  dials ${rep.dials}  away ${rep.away}  rejoins ${rj}\n`);
+      `max stall ${rep.maxStall.toFixed(1)} s  stalled ${(rep.stallPct * 100).toFixed(1)}%  ${rep.perMatch.toFixed(0)} s/match  RECONNECTING ${(rep.labeledPct * 100).toFixed(0)}% of stalls (${rep.unlabeled} unlabeled)  p2p ${(rep.p2pPct * 100).toFixed(0)}% turn ${(rep.turnPct * 100).toFixed(0)}% relay ${(rep.relayPct * 100).toFixed(0)}%  frozen outside dropouts ${(rep.frozenPct * 100).toFixed(1)}%${rep.frozenOk ? '' : ' (OVER)'}  rtt ${rep.rtt.toFixed(0)} ±${rep.jitter.toFixed(0)}  delay ${rep.delay.toFixed(1)}  rb ${rep.depth.toFixed(1)}  dials ${rep.dials}  away ${rep.away}  rejoins ${rj}${Object.keys(rep.events).length ? '  events ' + Object.entries(rep.events).map(([k, v]) => `${k}:${v}`).join(',') : ''}\n`);
   }
 }
 const by = {};
 for (const r of rows) (by[r.name] = by[r.name] || []).push(r);
-console.log('\nscenario       pass  dropped  hash diffs  max stall  stalled  s/match  p2p   delay  rb    resyncs');
+console.log('\nscenario       pass  dropped  hash diffs  max stall  stalled  frozen*  s/match  p2p   delay  rb    resyncs  rtt');
 for (const [n, rs] of Object.entries(by)) {
   const avg = (k) => rs.reduce((s, r) => s + r[k], 0) / rs.length, sum = (k) => rs.reduce((s, r) => s + r[k], 0);
-  console.log(`${n.padEnd(14)} ${String(rs.filter((r) => r.pass).length).padStart(2)}/${rs.length}  ${String(sum('dropped')).padStart(4)}     ${String(sum('diffs')).padStart(4)}       ${Math.max(...rs.map((r) => r.maxStall)).toFixed(1).padStart(5)} s  ${(avg('stallPct') * 100).toFixed(1).padStart(5)}%  ${avg('perMatch').toFixed(0).padStart(5)}    ${(avg('p2pPct') * 100).toFixed(0).padStart(3)}%  ${avg('delay').toFixed(1).padStart(4)}  ${avg('depth').toFixed(1).padStart(4)}  ${String(sum('resyncs')).padStart(4)}`);
+  console.log(`${n.padEnd(14)} ${String(rs.filter((r) => r.pass).length).padStart(2)}/${rs.length}  ${String(sum('dropped')).padStart(4)}     ${String(sum('diffs')).padStart(4)}       ${Math.max(...rs.map((r) => r.maxStall)).toFixed(1).padStart(5)} s  ${(avg('stallPct') * 100).toFixed(1).padStart(5)}%  ${(avg('frozenPct') * 100).toFixed(1).padStart(5)}%  ${avg('perMatch').toFixed(0).padStart(5)}    ${(avg('p2pPct') * 100).toFixed(0).padStart(3)}%  ${avg('delay').toFixed(1).padStart(4)}  ${avg('depth').toFixed(1).padStart(4)}  ${String(sum('resyncs')).padStart(4)}     ${avg('rtt').toFixed(0)} ±${avg('jitter').toFixed(0)}`);
 }
+console.log('* frozen: the share of 100 ms samples with the fight waiting on inputs, leaving out each dropout and 0.5 s after it');
 const failed = rows.filter((r) => !r.pass).length;
 console.log(`\n${rows.length} sessions, ${failed} failed; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 process.exit(failed ? 1 : 0);

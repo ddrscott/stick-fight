@@ -13,6 +13,8 @@
 import { sched, at } from './env.mjs';
 import { mulberry32 } from '../../src/combat/rng.js';
 
+const TURN_HOP_MS = 12;   // the extra one-way trip through a TURN server near both phones
+
 /**
  * @typedef {{ base: number, jitter: number, loss: number, jitterSwing?: number }} Leg
  *   base: one-way ms from this phone to the room (and half of a phone-to-phone path); jitter: ms (half-normal);
@@ -23,10 +25,15 @@ import { mulberry32 } from '../../src/combat/rng.js';
 export function createWire({ seed, legs, room: roomFlags = { away: true, seats: true } }) {
   const rng = mulberry32(seed ^ 0x2c1b3c6d);
   const gauss = () => { let s = 0; for (let i = 0; i < 4; i++) s += rng(); return (s - 2) / 0.577; };
-  const stats = { udpSent: 0, udpLost: 0, tcpSent: 0, wsOpened: 0, wsHalfOpen: 0, pcs: 0, pcConnected: 0, roomAway: 0, roomLeft: 0 };
+  const stats = { turnPcs: 0, iceStunOnly: 0, udpSent: 0, udpLost: 0, tcpSent: 0, wsOpened: 0, wsHalfOpen: 0, pcs: 0, pcConnected: 0, roomAway: 0, roomLeft: 0 };
   /** the two phones: host 0, guest 1 */
   const sides = legs.map((leg, i) => ({
     i, leg, owner: /** @type {any} */ (null), up: true, downUntil: 0, iface: 0, udp: 0, tcp: 'die', udpBlocked: false,
+    // one-way: until txDeadUntil nothing this phone sends gets out (weak wifi at the edge of range hears the access
+    // point but isn't heard); rxHoldFrom: when what's sent to it stops too (the far end's TCP window fills unacked)
+    txDeadUntil: 0, rxHoldFrom: 0,
+    // a symmetric NAT (carrier-grade NAT on cellular): no direct UDP path to or from this phone, TURN only
+    natStrict: false, iceSlowMs: 0,
     /** @type {Record<string, Function[]>} */ listeners: {},
     /** @type {Set<any>} */ sockets: new Set(),
   }));
@@ -34,6 +41,8 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
   const jit = (leg) => leg.jitter + (leg.jitterSwing ? leg.jitterSwing * (0.5 + 0.5 * Math.sin(2 * Math.PI * sched.t / 20000)) : 0);
   const legMs = (side) => Math.max(2, side.leg.base + Math.abs(gauss()) * jit(side.leg));
   const lossOf = (side) => side.leg.loss || 0;
+  const txDead = (side) => side.txDeadUntil > sched.t;
+  const rxHeld = (side) => txDead(side) && side.rxHoldFrom && sched.t >= side.rxHoldFrom;
 
   // ---- the room (worker/index.ts Room, the parts the players' sockets see) ----
   const rooms = new Map();
@@ -112,13 +121,16 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
         }, this.owner, 'net');
       }
       /** the path works now: the phone's network is up, it's still the network this socket was made on */
-      alive() { return !this.broken && this.side.up && this.side.iface === this.iface && !frozen(this.side); }
+      alive() { return !this.broken && this.side.up && this.side.iface === this.iface && !frozen(this.side) && !txDead(this.side); }
       /** when data sent now gets through: a time, or -1 for never */
-      when(last) {
+      when(last, dir = 'down') {
         const s = this.side;
         if (this.broken || s.iface !== this.iface) return -1;
         let from = sched.t;
         if (!s.up || frozen(s)) { if (s.tcp !== 'survive') return -1; from = Math.max(s.downUntil, s.owner ? s.owner.frozenUntil : 0); }
+        // one-way: what the page sends waits for the window to end (TCP resends it, backing off); what it's sent keeps
+        // coming until the far end's window fills with data nobody acked, then waits too
+        if ((dir === 'up' && txDead(s)) || (dir === 'down' && rxHeld(s))) from = Math.max(from, s.txDeadUntil + rng() * 1500);
         let t = from + legMs(s);
         if (rng() < lossOf(s)) t += 2 * s.leg.base + 200;   // a lost segment: TCP resends it
         return Math.max(t, last + 0.01);
@@ -126,7 +138,7 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
       send(data) {
         if (this.readyState !== 1) return;
         stats.tcpSent++;
-        const t = this.when(this.lastUp);
+        const t = this.when(this.lastUp, 'up');
         if (t < 0) return;
         this.lastUp = t;
         const copy = typeof data === 'string' ? data : data.slice(0);
@@ -161,7 +173,7 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
         this.side.sockets.delete(this);
         if (!wasOpen || !this.roomOpen) return;
         this.roomOpen = false;
-        const t = this.when(this.lastUp);
+        const t = this.when(this.lastUp, 'up');
         if (t >= 0) at(t, () => roomClosed(this, code), null, 'net');
         else at(sched.t + 3000 + rng() * 12000, () => roomClosed(this, 1006), null, 'net');   // the room notices the dead socket later
       }
@@ -186,9 +198,9 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
         if (this.readyState !== 'open') throw new Error('InvalidStateError: the channel is not open');
         stats.udpSent++;
         const a = this.pc, peer = this.peer;
-        if (!peer || !pathOk(a) || !pathOk(peer.pc)) { stats.udpLost++; return; }
+        if (!peer || !pathOk(a) || !pathOk(peer.pc) || txDead(a.side)) { stats.udpLost++; return; }
         if (rng() < lossOf(a.side) + lossOf(peer.pc.side)) { stats.udpLost++; return; }
-        const copy = buf.slice(0), t = sched.t + legMs(a.side) + legMs(peer.pc.side);
+        const copy = buf.slice(0), t = sched.t + legMs(a.side) + legMs(peer.pc.side) + (a.via === 'turn' ? TURN_HOP_MS : 0);
         at(t, () => {
           if (peer.readyState !== 'open' || !pathOk(a) || !pathOk(peer.pc) || frozen(peer.pc.side)) { stats.udpLost++; return; }
           sched.cur = peer.pc.side.owner;
@@ -205,8 +217,13 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
       remoteClosed() { if (this.readyState === 'closed') return; this.readyState = 'closed'; if (this.onclose) this.onclose({}); }
     }
     class FakeRTCPeerConnection {
-      constructor() {
+      constructor(config = {}) {
         this.id = ++pcIds; pcs.set(this.id, this); stats.pcs++;
+        // what ICE may use: TURN servers handed in, and whether only TURN candidates are allowed
+        this.turn = (config.iceServers || []).some((sv) => [].concat(sv.urls || []).some((u) => /^turns?:/.test(u)));
+        this.relayOnly = config.iceTransportPolicy === 'relay';
+        this.via = '';   // once connected: 'direct' or 'turn'
+        if (this.turn) stats.turnPcs++;
         this.side = side; this.connectionState = 'new'; this.iceConnectionState = 'new';
         this.localDescription = null; this.remoteDescription = null; this.remoteId = 0; this.cands = 0;
         this.channels = []; this.closed = false; this.bind = null; this.checking = false; this.badSince = 0;
@@ -244,9 +261,17 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
         const check = () => {
           if (this.closed || this.connectionState === 'connected') return;
           const r = pcs.get(this.remoteId);
-          if (r && !r.closed && r.remoteId === this.id && r.localDescription && pathOk(this) && pathOk(r)) {
-            const t = sched.t + 2 * (legMs(side) + legMs(r.side)) + 30;   // a round of checks, then DTLS and SCTP
-            at(t, () => { if (pathOk(this) && pathOk(r)) connectPair(this, r); else at(sched.t + 300, check, owner, 'net'); }, owner, 'net');
+          if (r && !r.closed && r.remoteId === this.id && r.localDescription && pathOk(this) && pathOk(r) && !txDead(side) && !txDead(r.side)) {
+            // which pair ICE ends up on: direct when both NATs allow it and neither end is TURN-only; else TURN if
+            // either end has TURN servers. With every candidate allowed, a TURN pair is only nominated after the
+            // direct pairs' checks time out (a few seconds on a slow link); TURN-only goes straight to it
+            const direct = !side.natStrict && !r.side.natStrict && !this.relayOnly && !r.relayOnly;
+            const turn = this.turn || r.turn;
+            if (!direct && !turn) { if (sched.t - start > 10000) { this.setState('failed'); return; } at(sched.t + 250, check, owner, 'net'); return; }
+            const via = direct ? 'direct' : 'turn';
+            const rt = 2 * (legMs(side) + legMs(r.side));
+            const t = sched.t + rt + 30 + (via === 'turn' ? rt + 2 * TURN_HOP_MS + 150 + (this.relayOnly || r.relayOnly ? 0 : 2500 + rng() * 6000) : 0);
+            at(t, () => { if (pathOk(this) && pathOk(r)) { this.via = r.via = via; connectPair(this, r); } else at(sched.t + 300, check, owner, 'net'); }, owner, 'net');
             return;
           }
           if (sched.t - start > 10000) { this.setState('failed'); return; }
@@ -260,7 +285,8 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
         this.closed = true; this.connectionState = 'closed'; this.iceConnectionState = 'closed';
       }
       async getStats() {
-        const m = new Map([['t', { type: 'transport', selectedCandidatePairId: 'p' }], ['p', { type: 'candidate-pair', localCandidateId: 'l', nominated: true, state: 'succeeded' }], ['l', { type: 'local-candidate', candidateType: 'srflx' }]]);
+        const kind = this.via === 'turn' ? 'relay' : 'srflx';
+        const m = new Map([['t', { type: 'transport', selectedCandidatePairId: 'p' }], ['p', { type: 'candidate-pair', localCandidateId: 'l', nominated: true, state: 'succeeded' }], ['l', { type: 'local-candidate', candidateType: kind }]]);
         return /** @type {any} */ (m);
       }
     }
@@ -295,7 +321,7 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
     const owner = x.side.owner;
     const tick = () => {
       if (x.closed) return;
-      const ok = pathOk(x) && !y.closed && pathOk(y);
+      const ok = pathOk(x) && !y.closed && pathOk(y) && !txDead(x.side) && !txDead(y.side);
       if (ok) { x.badSince = 0; if (x.connectionState === 'disconnected') x.setState('connected'); }
       else {
         if (!x.badSince) x.badSince = sched.t;
@@ -344,6 +370,16 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
       wire.dropout(i, dur, tcp);
       at(sched.t + dur + 5, () => fire(s, 'visible'), null, 'net');
     },
+    /** one-way: for dur ms nothing this phone sends gets out, while it still hears the other side for a few seconds
+     *  (weak wifi at the edge of range, a cell uplink that fades first). Nothing errors */
+    oneway(i, dur) {
+      const s = sides[i];
+      s.txDeadUntil = sched.t + dur; s.rxHoldFrom = sched.t + Math.min(dur, 3000 + rng() * 5000);
+      at(sched.t + dur, () => fire(s, 'online'), null, 'net');
+    },
+    /** a symmetric NAT (carrier-grade NAT): no direct UDP path to this phone, only TURN; iceSlowMs: api/ice takes this
+     *  much longer to answer (a slow DNS and TLS on a weak signal) */
+    nat(i, iceSlowMs = 0) { sides[i].natStrict = true; sides[i].iceSlowMs = iceSlowMs; },
     /** an Android phone in the background: timers run, no frames */
     hide(i, dur) { const s = sides[i]; if (s.owner) s.owner.hiddenUntil = sched.t + dur; at(sched.t + dur + 5, () => fire(s, 'visible'), null, 'net'); },
   };
@@ -355,7 +391,14 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
     const timer = (fn, ms) => at(sched.t + Math.max(0, +ms || 0), fn, owner);
     const io = {
       WebSocket: makeWS(side), RTCPeerConnection: makePC(side),
-      fetchIce: async () => [{ urls: ['stun:stun.test:3478'] }],
+      // api/ice: a request over this phone's network (DNS, TCP, TLS, the request: about three round trips). The page
+      // gives up after 2.5 s (link.js ICE_FETCH_MS) and goes on with public STUN, which can't reach a TURN server
+      fetchIce: () => new Promise((res) => {
+        const stun = [{ urls: ['stun:stun.test:3478'] }], turn = [...stun, { urls: ['turn:turn.test:3478?transport=udp'], username: 'u', credential: 'c' }];
+        const took = side.iceSlowMs + 6 * legMs(side) + (rng() < lossOf(side) * 4 ? 1000 : 0);
+        const ok = side.up && !txDead(side) && took < 2500;
+        timer(() => { if (!ok) stats.iceStunOnly++; res(ok ? turn : stun); }, Math.min(took, 2500));
+      }),
       setTimeout: timer,
       clearTimeout: (ev) => { if (ev && typeof ev === 'object') ev.dead = true; },
       setInterval: (fn, ms) => {
