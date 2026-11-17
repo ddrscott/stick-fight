@@ -1240,9 +1240,17 @@ function injectStyle() {
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-chip { font-size: max(11px, 2.4cqh); padding: 0.25em 0.35em 0.1em; }
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-smore { font-size: max(12px, 3cqh); padding: 0.8cqh 0; }
   /* your own row: a pink band, ▶, the name whole and (YOU) after it; below the fold it stays at the list's foot */
-  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-me { position: sticky; bottom: 0; z-index: 1; background: #3a0c45; box-shadow: 0.7cqw 0 0 #3a0c45, -0.7cqw 0 0 #3a0c45; }
-  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-srank.fl-me { box-shadow: 0.7cqw 0 0 #3a0c45, -1.6cqw 0 0 #3a0c45; }
-  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-snum.fl-me:last-of-type { box-shadow: 1.6cqw 0 0 #3a0c45, -0.7cqw 0 0 #3a0c45; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-me { position: sticky; bottom: 0; z-index: 1; background: linear-gradient(var(--pink), var(--pink)) top / 100% 2px no-repeat, #3a0c45; box-shadow: 0.7cqw 0 0 #3a0c45, -0.7cqw 0 0 #3a0c45; }
+  /* (no column gap in the standings, the cells pad instead, so your row's band and its pink rule run unbroken) */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings { column-gap: 0; grid-template-columns: max(18px, 4.4cqh) minmax(0, 1fr) calc(max(26px, 7cqh) + 1.4cqw) calc(max(26px, 7cqh) + 1.4cqw); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-sname, #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-snum,
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth:not(:nth-child(1 of .fl-sth)) { padding-left: 1.4cqw; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-me { box-shadow: none; }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth { box-shadow: none; }   /* (the heads abut now: only the outer two cover the list's padding) */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth:nth-child(1 of .fl-sth) { box-shadow: -1.6cqw 0 0 var(--sb); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings.fl-v-standings > .fl-sth:nth-child(4 of .fl-sth) { box-shadow: 1.6cqw 0 0 var(--sb); }
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-srank.fl-me { margin-left: -1.6cqw; padding-left: 1.6cqw; }   /* the band to the panel's edges */
+  #flow > .fl-crew.fl-fill:not(.fl-up) .fl-v-standings > .fl-me + .fl-snum.fl-me + .fl-snum.fl-me { margin-right: -1.6cqw; padding-right: 1.6cqw; }
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-youmark { flex: none; color: var(--pink); font-size: 0.8em; font-weight: 400; }
   #flow > .fl-crew.fl-fill:not(.fl-up) .fl-standings .fl-sname > .fl-youtag { flex: none; overflow: visible; color: var(--pink); font-weight: 600; }
   /* the other views at the same row size */

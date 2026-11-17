@@ -199,12 +199,13 @@ const audit = (p) => p.evaluate(() => {
   const inList = (e) => list && list.contains(e);
   // your own row pinned at the list's foot is its bottom edge: a row scrolling under it is cut there, like under the tabs
   const pin = scr.querySelector('.fl-v-standings > .fl-sname.fl-me'), pr = pin && pin.getBoundingClientRect();
-  const pinned = !!pr && Math.abs(pr.bottom - lr.bottom) < 2;
+  const lbot = lr ? lr.top + list.clientTop + list.clientHeight : 0;   // (the list's inside edge, under its border)
+  const pinned = !!pr && Math.abs(pr.bottom - lbot) < 2;
   const vis = leaves.filter((e) => {
     if (!inList(e)) return true;
     const r = e.getBoundingClientRect();
     if (pinned && !e.closest('.fl-me') && r.bottom > pr.top + 1) return false;
-    return r.top >= lr.top - 1 && r.bottom <= lr.bottom + 1;
+    return r.top >= lr.top - 1 && r.bottom <= lbot + 1;
   });
   const overlaps = [];
   for (let i = 0; i < vis.length; i++) for (let j = i + 1; j < vis.length; j++) {
@@ -245,6 +246,7 @@ const audit = (p) => p.evaluate(() => {
   return {
     stage: { w: Math.round(stage.width), h: Math.round(stage.height) },
     overlaps, clips, names, glow, round,
+    heads: [...scr.querySelectorAll('.fl-v-standings > .fl-sth')].filter(shown).map((e) => e.textContent).filter(Boolean),
     meBar: meBar && shown(meBar) ? meBar.textContent : '', meBarIn: !!meBar && meBar.getBoundingClientRect().bottom <= Math.min(vh, stage.bottom) + 1,
     meRow: meRow && vis.includes(meRow) ? meRow.textContent : '', meWhole: !!meRow && meRow.scrollWidth <= meRow.clientWidth + 1,
     youTag: !!youTag && vis.includes(youTag) && youTag.scrollWidth <= youTag.clientWidth + 1,
@@ -252,6 +254,15 @@ const audit = (p) => p.evaluate(() => {
     scrollTop: list ? list.scrollTop : -1, scrolls: !!list && list.scrollHeight > list.clientHeight + 1,
   };
 });
+/** the lobby with its list, settled: the room's socket can blip right after the setup's sockets close, so wait out a
+ *  RECONNECTING... too (measuring a screen mid-reconnect checks nothing) */
+async function settled(p) {
+  const ok = async () => (await flow(p)) === 'crewLobby' && /SNAKEHIT/.test(await tableText(p))
+    && !(await p.evaluate(() => /RECONNECTING/.test(document.querySelector('#flow > .fl-crew')?.textContent || '')));
+  await until(ok);
+  await sleep(800);
+  await until(ok);
+}
 /** press a lobby item by its class, as the keys would (false when the screen has none) */
 const pressItem = (p, cls) => p.evaluate((c) => { const i = window.__flow.debug.ui.items.find((x) => x.el.classList.contains(c)); if (i) i.act(); return !!i; }, cls);
 async function layoutSuite() {
@@ -266,8 +277,7 @@ async function layoutSuite() {
     const who = k === 7 ? 2 : 6;
     {
       const p = await page(`${BASE}crew/${crews[k].slug}`, prof(k, who), { width: 390, height: 844 }, true);
-      await until(async () => (await flow(p)) === 'crewLobby' && /SNAKEHIT/.test(await tableText(p)));
-      await sleep(800);
+      await settled(p);
       const a = await audit(p);
       const r = Math.min(...a.names.map((n) => n.px)) / Math.min(390, 844);
       if (k === 7) upRatio = r;
@@ -277,8 +287,7 @@ async function layoutSuite() {
     }
     for (const [label, size, touch] of SIZES_L) {
       const p = await page(`${BASE}crew/${crews[k].slug}`, prof(k, who), size, touch);
-      await until(async () => (await flow(p)) === 'crewLobby' && /SNAKEHIT/.test(await tableText(p)));
-      await sleep(800);
+      await settled(p);
       const a = await audit(p);
       const tag = `layout ${k} ${label}`;
       check(`${tag}: no text overlaps other text`, !a.overlaps.length, a.overlaps.slice(0, 3).join(' | '));
@@ -286,6 +295,7 @@ async function layoutSuite() {
       const min = Math.min(...a.names.map((n) => n.px)), ratio = min / Math.min(a.stage.w, a.stage.h);
       check(`${tag}: every name in the visible standings shows whole`, a.names.length >= 4 && a.names.every((n) => n.whole), `${a.names.length} names: ${a.names.filter((n) => !n.whole).map((n) => n.name).join(', ')}`);
       check(`${tag}: names at least the upright list's size for the stage (${(upRatio * 100).toFixed(1)}%)`, ratio >= upRatio - 0.0005, `${min} px, ${(ratio * 100).toFixed(1)}% of ${Math.min(a.stage.w, a.stage.h)}`);
+      check(`${tag}: the column heads NAME, W and L all show`, ['NAME', 'W', 'L'].every((h) => a.heads.includes(h)), a.heads.join(' '));
       check(`${tag}: YOU'RE ${LAYOUT_NAMES[who]} with EDIT is on the screen`, a.meBar.includes(`YOU'RE ${LAYOUT_NAMES[who]}`) && /EDIT/.test(a.meBar) && a.meBarIn, a.meBar);
       check(`${tag}: your own row is on the screen without scrolling, name whole, marked (YOU)`, a.meRow === LAYOUT_NAMES[who] && a.meWhole && a.youTag && a.scrollTop === 0, JSON.stringify({ row: a.meRow, whole: a.meWhole, you: a.youTag, top: a.scrollTop }));
       check(`${tag}: nothing readable glows, every corner square`, !a.glow.length && !a.round.length, `${a.glow.slice(0, 3).join(', ')} | ${a.round.slice(0, 3).join(', ')}`);
@@ -316,7 +326,7 @@ async function layoutSuite() {
         const four = [[2, false, 'joke@example.com'], [3, false, ''], [4, false, ''], [5, true, '']];
         const ps = [];
         for (const [i, auto, email] of four) ps.push(await page(`${BASE}crew/${crews[7].slug}`, prof(7, i, auto, email), { width: 920, height: 500 }, false));
-        for (const q of ps) await until(async () => (await flow(q)) === 'crewLobby' && /SNAKEHIT/.test(await tableText(q)));
+        for (const q of ps) await settled(q);
         // two of them get in line, so the chips show too
         await pressItem(ps[1], 'fl-playbtn');
         await sleep(1500);
