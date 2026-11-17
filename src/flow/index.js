@@ -637,6 +637,9 @@ export function createFlow(ctx) {
           if (k === 'pause' || k === 'start' || k === 'escape' || k === 'back' || k === 'select') { resume(); return; } if (k === 'moves') { openMoves(myChar()); return; } break;
         case 'charSelect': case 'onlineSelect': if (k === 'moves' && selCtl) { openMoves(selCtl.current); return; } break;
         case 'enterInitials': if (k === 'del') { cursorTo(slot - 1); return; } break;
+        case 'crewLobby':   // Q E, LB RB: the lobby's tabs, from anywhere on it
+          if ((k === 'prevtab' || k === 'nexttab') && !crewSharing) { const i = CREW_VIEWS.findIndex(([v]) => v === crewView), n = CREW_VIEWS.length; crewView = CREW_VIEWS[(i + (k === 'nexttab' ? 1 : n - 1)) % n][0]; paintLobby(); return; }
+          break;
         case 'onlineJoin': if (k === 'del') { typeCode('DEL'); return; } break;
         default: if (TEXT.has(state) && k === 'del') { teType('DEL'); return; } break;
       }
@@ -2342,12 +2345,11 @@ export function createFlow(ctx) {
       return;
     }
     const known = profile().crews.find((c) => c.slug === slug);
-    ui.show('fl-crew', (root) => {
+    ui.show('fl-crew fl-fill', (root) => {
       const title = el('h1', 'fl-h2 fl-crewname fl-read', (crewCli && crewCli.state && crewCli.state.crew.name) || (known && known.name) || 'CREW ROOM');
-      const me = profile();   // a name handed out by the link: say what it is, and where to change it
-      const sub = el('div', 'fl-label', me.auto ? `YOU'RE ${me.name}  ·  CHANGE IT UNDER ONLINE MENU, PROFILE` : 'CREW ROOM  ·  BOOKMARK THIS PAGE TO COME BACK');
-      const linkEl = el('div', 'fl-link', link);
-      root.append(title, sub, linkEl);
+      const me = profile();
+      const linkEl = el('div', 'fl-link', link);   // (behind INVITE, held either way)
+      root.append(title, linkEl);
       const body = el('div', 'fl-row fl-crewbody');
       const left = el('div', 'fl-crewleft'), right = el('div', 'fl-crewright');
       const table = el('div', 'fl-standings'), recent = el('div', 'fl-recent');
@@ -2359,6 +2361,10 @@ export function createFlow(ctx) {
         b.el.dataset.view = v; tabs.appendChild(b.el); return b;
       });
       table.appendChild(tabs);
+      // sideways the crew goal is one line (the bar, the count, the days left) that opens to its chips and Employee of
+      // the Month; upright it's the whole box as before, and this line hides (README, Crew rooms, The lobby sideways)
+      const goalB = button('', () => { crewGoalOpen = !crewGoalOpen; paintLobby(); }, 'fl-mini fl-sideonly fl-goalfold');
+      table.appendChild(goalB.el);
       left.append(table, recent);
       const status = el('div', 'fl-crewstatus');
       // (a press while still connecting counts: crew.js sends it once the room says welcome)
@@ -2386,28 +2392,45 @@ export function createFlow(ctx) {
       // Held upright (README, Crew rooms, The lobby held upright) the lobby is for whoever just opened the link:
       // who's here and PLAY. The link and its QR code wait behind INVITE, so sharing is something you choose to do.
       // The way out is the corner's ‹ MAIN MENU, held either way (the online menu is one step from there).
-      const invite = button('', () => crewShare(!crewSharing), 'fl-mini fl-uponly fl-invite');
+      const invite = button('', () => crewShare(!crewSharing), 'fl-mini fl-invite');
       invite.el.append(shareIcon(), el('span', 'fl-invlabel', 'INVITE'));
-      const pair2 = el('div', 'fl-row fl-crewpair fl-uponly'); pair2.append(invite.el);
+      const pair2 = el('div', 'fl-row fl-crewpair fl-uponly fl-crewinv'); pair2.append(invite.el);
       btns.append(pair, pair2);
       // your name, and the way to change it, where a first-timer can see it (a name handed out by the link is marked auto)
-      const you = button('', () => askName(() => go('crewLobby'), () => go('crewLobby'), 'CREW'), 'fl-mini fl-uponly fl-crewme');
-      you.el.append(el('span', 'fl-mename', `YOU'RE ${me.name || '???'}`), el('b', 'fl-meedit', me.auto ? 'SET YOUR NAME' : 'EDIT'));
+      const you = button('', () => askName(() => go('crewLobby'), () => go('crewLobby'), 'CREW'), 'fl-mini fl-crewme');
+      const edit = el('b', 'fl-meedit');   // (sideways a handed-out name says EDIT too, so GUEST 885's digits get the room)
+      if (me.auto) edit.append(el('span', 'fl-melong', 'SET YOUR NAME'), el('span', 'fl-meshort', 'EDIT')); else edit.textContent = 'EDIT';
+      you.el.append(el('span', 'fl-mename', `YOU'RE ${me.name || '???'}`), edit);
       root.insertBefore(you.el, linkEl);
       items.splice(1, 0, you);
-      items.push(invite, ...tabBtns);
+      items.push(invite, ...tabBtns, goalB);
       right.appendChild(btns);
       body.append(left, right, qrBox(link).el);   // the crew's link again, for a camera
       root.appendChild(body);
-      lob = { root, title, table, tabs, recent, status, play, invite, watch: watchB, noteUntil: crewNote ? performance.now() + 5000 : 0 };
+      lob = { root, title, table, tabs, goal: goalB, recent, status, play, invite, watch: watchB, noteUntil: crewNote ? performance.now() + 5000 : 0 };
       root.classList.toggle('fl-sharing', crewSharing);
-      return { items, focus: 0, back: () => { if (crewSharing && root.classList.contains('fl-up')) crewShare(false); else go('modeSelect'); }, backTo: 'MAIN MENU' };
+      // the arrows scroll the list from the goal's line (or a tab, when there's no goal line): down to the bottom,
+      // up to the top and then on to the tabs
+      const scrollList = (dir, k, it) => {
+        if (dir !== 'up' && dir !== 'down') return false;
+        const onGoal = it === goalB, onTab = tabBtns.includes(it), goalShown = goalB.el.offsetParent !== null;
+        if (!onGoal && !onTab) return false;
+        const room = table.scrollHeight - table.clientHeight;
+        if (room <= 1) return false;
+        if (dir === 'down' && (onGoal || !goalShown) && table.scrollTop < room - 1) { table.scrollBy({ top: table.clientHeight * 0.6 }); return true; }
+        if (dir === 'up' && table.scrollTop > 0 && (onGoal || !goalShown)) { table.scrollBy({ top: -table.clientHeight * 0.6 }); return true; }
+        return false;
+      };
+      // INVITE closes first, held either way; then MAIN MENU
+      return { items, focus: 0, move: scrollList, back: () => { if (crewSharing) crewShare(false); else go('modeSelect'); }, backTo: 'MAIN MENU',
+        legend: [['confirm', 'SELECT'], ['tab', 'TABS'], ['back', 'MENU']] };
     });
     crewShare(crewSharing);
     paintLobby();
   }
-  /** upright: INVITE swaps the crew list for the link, its QR code, COPY LINK and SHARE; DONE swaps it back */
+  /** INVITE swaps the crew list for the link, its QR code, COPY LINK and SHARE; DONE swaps it back */
   let crewSharing = false;
+  let crewGoalOpen = false;   // sideways: the crew goal's line opened to its chips and Employee of the Month
   function crewShare(on) {
     crewSharing = on;
     if (!lob) return;
@@ -2434,15 +2457,31 @@ export function createFlow(ctx) {
     if (s && s.crew && s.crew.name && lob.title.textContent !== s.crew.name) lob.title.textContent = s.crew.name;
     // the left panel: the tabs stay, the view under them is drawn again
     const t = lob.table;
-    while (t.lastChild && t.lastChild !== lob.tabs) t.removeChild(t.lastChild);
+    while (t.lastChild && t.lastChild !== lob.tabs && t.lastChild !== lob.goal.el) t.removeChild(t.lastChild);
     t.className = `fl-standings fl-v-${crewView}`;
     for (const b of lob.tabs.children) b.classList.toggle('fl-on', /** @type {HTMLElement} */ (b).dataset.view === crewView);
     lob.recent.style.display = crewView === 'standings' ? '' : 'none';   // the last matches go with the standings
     const list = members();
+    paintGoalLine(s && crewView === 'standings' ? s.goal : null);
     if (crewView === 'arcade' || crewView === 'horde') paintCrewBoard(t, crewView, s, you);
     else if (crewView === 'stats') paintCrewStats(t, s, you);
     else paintStandings(t, s, c, you, list);
     paintLobbyRest(c, s, you, list);
+  }
+  /** sideways, the crew goal folded to one line: ▸ GOAL, the bar, 20 / 27, 6 DAYS (README, Crew rooms, The lobby sideways) */
+  function paintGoalLine(g) {
+    const b = lob.goal.el;
+    b.style.display = g ? '' : 'none';
+    if (!g) return;
+    b.textContent = '';
+    b.classList.toggle('fl-goalmet', !!g.met);
+    b.classList.toggle('fl-open', crewGoalOpen);
+    const bar = el('i', 'fl-gfbar'), fill = el('i', '');
+    fill.style.width = `${Math.round((100 * Math.min(g.progress, g.target)) / Math.max(1, g.target))}%`;
+    bar.appendChild(fill);
+    const days = Math.max(0, Math.ceil((g.ends - Date.now()) / 86400000));
+    b.append(el('span', 'fl-gfarrow', crewGoalOpen ? '▾' : '▸'), el('span', 'fl-gfkey', g.met ? 'GOAL MET' : 'CREW GOAL'), bar,
+      el('span', 'fl-gfnum', `${g.progress} / ${g.target}`), el('span', 'fl-gfdays', g.met ? 'NICE WORK' : days <= 1 ? 'TONIGHT' : `${days} DAYS`));
   }
   /** The crew's weekly goal (README, Crew rooms, Crew goals): what it is, a bar, and who has played toward it by
    *  initials and title (in the order they joined in, no counts), then Employee of the Month. Cooperative and
@@ -2517,13 +2556,15 @@ export function createFlow(ctx) {
   function paintStandings(t, s, c, you, list) {
     const up = !!t.closest('.fl-up');
     const cb = courtBox(s, you);
-    if (cb) t.appendChild(cb);
-    const gb = goalBox(s, you, up);
-    if (gb) t.appendChild(gb);
+    // upright the whole goal box; sideways only once its line is opened (the line itself is paintGoalLine's), over the court
+    const gb = up || crewGoalOpen ? goalBox(s, you, up || crewGoalOpen) : null;
+    if (gb && !up) gb.classList.add('fl-goalopen');
+    if (up) { if (cb) t.appendChild(cb); if (gb) t.appendChild(gb); }
+    else { if (gb) t.appendChild(gb); if (cb) t.appendChild(cb); }
     const star = s && s.eotm && s.eotm.current ? s.eotm.id : '';   // Employee of the Month's row gets a star
     // (upright shows only rank, name with its READY/PLAYING chip, W and L: the D, VS YOU and FAVORITE cells carry fl-sd, fl-svs and fl-sfav so the layout can drop them)
     for (const h of ['', 'NAME', 'W', 'L', 'D', 'VS YOU', 'FAVORITE']) t.appendChild(el('span', `fl-sth${'WLDVS YOU'.includes(h) && h ? ' fl-snum' : ''}${h === 'D' ? ' fl-sd' : ''}${h === 'VS YOU' ? ' fl-svs' : ''}${h === 'FAVORITE' ? ' fl-sthfav' : ''}`, h));
-    const shown = list.slice(0, t.closest('.fl-up') ? 50 : 7);
+    const shown = list.slice(0, 50);   // every member, in a list that scrolls in its box (sideways your own row pins to its foot)
     shown.forEach((m, i) => {
       const mine = m.id === you;
       const cls = mine ? ' fl-me' : '';
@@ -2531,11 +2572,12 @@ export function createFlow(ctx) {
       const nm = el('span', 'fl-sname' + cls);
       const dot = el('i', `fl-dot ${m.on ? ON[m.on][1] : ''}`);
       nm.append(dot);
+      if (mine) nm.appendChild(el('b', 'fl-youmark', '▶'));   // sideways: your row at a glance (upright the row's pink and YOU'RE say it)
       if (m.id === star) nm.appendChild(el('b', 'fl-star', '★'));
       nm.append(el('span', 'fl-snm', m.name));   // the name clips, never the chip after it
       const chip = m.on === 'ready' || m.on === 'match';
-      // (YOU) goes when a chip shows, and always upright: the row's pink and YOU'RE <name> above say it, so the name gets the room
-      if (mine && !chip) nm.appendChild(el('span', 'fl-youtag', ' (YOU)'));
+      // (YOU) always sideways, whole, with the name taking any cut; upright it goes (the row's pink and YOU'RE <name> above say it)
+      if (mine) nm.appendChild(el('span', 'fl-youtag', '(YOU)'));
       if (chip) nm.appendChild(el('b', `fl-chip ${ON[m.on][1]}`, ON[m.on][0]));
       t.appendChild(nm);
       t.append(el('span', 'fl-snum' + cls, String(m.w)), el('span', 'fl-snum' + cls, String(m.l)), el('span', 'fl-snum fl-sd' + cls, String(m.d)));
@@ -2642,6 +2684,28 @@ export function createFlow(ctx) {
     }
     if (!(st.pairs || []).length) mt.appendChild(el('span', 'fl-smore', 'NO MATCHES YET'));
     mu.appendChild(mt);
+    // sideways the standings are just rank, name, W and L, so your record against each member and the last matches live
+    // here (upright they're left off, as before: README, Crew rooms, The lobby sideways)
+    const vs = sect('YOU VS');
+    vs.classList.add('fl-sideonly');
+    const vg = el('div', 'fl-stgrid fl-stvs');
+    for (const m of members()) {
+      if (m.id === you) continue;
+      const r = crewRecord(m.id);
+      if (!r || !(r.w + r.l + r.d)) continue;
+      vg.append(el('span', 'fl-sname', m.name), el('span', 'fl-snum fl-svs', `${r.w}–${r.l}${r.d ? `–${r.d}` : ''}`));
+    }
+    if (!vg.childNodes.length) vg.appendChild(el('span', 'fl-smore', 'YOU HAVEN\'T PLAYED ANYONE HERE YET'));
+    vs.appendChild(vg);
+    const rec = sect('LAST MATCHES');
+    rec.classList.add('fl-sideonly');
+    const nameOfM = (id) => (member(id) || { name: '?' }).name;
+    for (const r of (s.recent || []).slice(0, 5)) {
+      const line = r.winner < 0 ? `${nameOfM(r.host)} AND ${nameOfM(r.guest)} DREW ${r.hw}–${r.gw}`
+        : `${nameOfM(r.winner === 0 ? r.host : r.guest)} BEAT ${nameOfM(r.winner === 0 ? r.guest : r.host)} ${Math.max(r.hw, r.gw)}–${Math.min(r.hw, r.gw)}`;
+      rec.appendChild(el('span', 'fl-strecent', line));
+    }
+    if (!(s.recent || []).length) rec.appendChild(el('span', 'fl-smore', 'NO MATCHES YET'));
   }
 
   // ---- what main.js asks for ------------------------------------------------------------------------------
