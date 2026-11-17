@@ -31,11 +31,12 @@ import { track } from '../analytics.js';
 // a TCP handshake after a minute or more), on a dead socket nothing ever closed, and on 1/2/4/8 s of backoff.
 export const CONNECT_TRY_MS = 3000;   // a socket not welcomed this long after it was opened is dropped and redialed
 export const PING_EVERY_MS = 2000;    // the lobby meter's ping, which is also the liveness check
-export const PONG_MS = 6000;          // a ping with no pong this long: the socket is dead though nothing closed it
-export const PROBE_MS = 1500;         // the page woke or the network came back: a ping with this long to answer
+export const PONG_MS = 6000;          // a ping with no pong this long, or nothing at all heard this long with a ping out: dead
+const WATCH_MS = 500;                  // the watchdog's tick
+export const PROBE_MS = 1000;         // the page woke or the network came back: a ping with this long to answer
 export const QUIET_MS = 4000;         // ...sent only when nothing has come in for this long (a busy socket is fine)
 export const RETRY_MS = [0, 250, 500, 1000, 2000, 3000];   // between tries; the last one repeats
-export const BUSY_RETRY_MS = [3000, 6000, 10000, 15000];   // after a 'busy' refusal (the join limit): trying fast only spends more of it
+export const BUSY_RETRY_MS = [2000, 4000, 8000, 12000];   // after a 'busy' refusal (the join limit): trying fast only spends more of it
 const ABANDON = 4100;                  // the close code for a socket the page gave up on (as src/net/link.js)
 const FATAL = new Set(['no-crew', 'crew-full', 'bad-hello', 'full', 'deleted', 'removed']);   // deleted: this profile was deleted (worker/crew.ts forget); removed: an admin took the member out
 /** refusals worth saying on the status line instead of RECONNECTING (src/flow/index.js) */
@@ -72,19 +73,21 @@ export function createCrew(io = {}) {
   function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
   // the lobby's connection meter (src/net/meter.js): a ping every PING_EVERY_MS, which the crew room answers 'pong'
   // itself without waking (worker/crew.ts); the round trip and its jitter. A ping unanswered for PONG_MS ends the socket.
-  let pingOut = 0, pingDue = 0, qRtt = 0, qJit = 0, qN = 0, pinger = 0;
+  let pingOut = 0, pingDue = 0, pingAt = 0, qRtt = 0, qJit = 0, qN = 0, pinger = 0;
   function ping(deadline = PONG_MS) {
     if (!ws || ws.readyState !== 1 || status !== 'open') return;
     const t = now();
     if (pingOut) { pingDue = Math.min(pingDue, t + deadline); return; }
-    pingOut = t; pingDue = t + deadline;
+    pingOut = pingAt = t; pingDue = t + deadline;
     try { ws.send('ping'); } catch { /* the watchdog sees it */ }
   }
-  /** the 2 s tick: the next ping, and the watchdog on the last one */
+  /** the watchdog, every WATCH_MS: a ping past its deadline, or one out a while with nothing heard for PONG_MS, ends
+   *  the socket; then the next ping when it's due */
   function tick() {
     if (!ws || status !== 'open') return;
-    if (pingOut && now() > pingDue) { dead('silent'); return; }
-    ping();
+    const t = now();
+    if (pingOut && (t > pingDue || (t - pingOut > PROBE_MS && t - heard > PONG_MS))) { dead('silent'); return; }
+    if (!pingOut && t - pingAt >= PING_EVERY_MS) ping();
   }
   /** give up on this socket (it hung in the handshake, or went silent) and dial again at once */
   function dead(why) {
@@ -134,7 +137,7 @@ export function createCrew(io = {}) {
         you = String(m.you || ''); tries = 0; refused = ''; welcomedOnce = true; upAt = now(); setStatus('open');
         tell('crew_link', [first ? 'connect' : 'reconnect', first ? '-' : String(dropCode), first ? '-' : dropWhy || '-', String(attempts)], ms, [attempts]);
         attempts = 0; downAt = 0;
-        pingOut = 0; ping(); stopEvery(pinger); pinger = every(tick, PING_EVERY_MS);
+        pingOut = 0; ping(); stopEvery(pinger); pinger = every(tick, WATCH_MS);
         if (ready) send({ t: 'play', on: true });   // a reconnect keeps a pending PLAY (the room keeps the place a while)
       } else if (m.t === 'state') {
         state = m;
@@ -175,7 +178,10 @@ export function createCrew(io = {}) {
       if (ws) dead(`wake:${why}`); else { cancel(timer); open(); }
       return;
     }
-    if (now() - heard > QUIET_MS) ping(PROBE_MS);   // open but quiet: it has PROBE_MS to answer
+    if (now() - heard > QUIET_MS) {   // open but quiet: it has PROBE_MS to answer (checked right then, not on the next tick)
+      ping(PROBE_MS);
+      later(tick, PROBE_MS + 20);
+    }
   }
   const offs = [];
   const on = io.on || ((ev, fn) => {
