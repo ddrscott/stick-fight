@@ -380,10 +380,10 @@ export function createWire({ seed, legs, room: roomFlags = { away: true, seats: 
     },
     /** a stale uplink: the phone's open sockets stop delivering what it sends, for good, while what the room sends
      *  keeps arriving and nothing errors (a carrier NAT that dropped the flow's outbound mapping). New sockets work:
-     *  the signature of the 2026-11-16 20:11 drop on the relay (README, Reconnecting: Weak cellular) */
+     *  the signature of the 2026-11-16 20:11 drop on the relay (README, Multiplayer, Weak cellular) */
     staleUplink(i) { for (const ws of sides[i].sockets) if (ws.readyState === 1) ws.upDead = true; },
     /** the room tells this phone its rival left (present:false, no away) though the rival is still there and
-     *  playing: the shape of the 2026-11-16 15:01 drop (README, Reconnecting: Weak cellular) */
+     *  playing: the shape of the 2026-11-16 15:01 drop (README, Multiplayer, Weak cellular) */
     roomSaysLeft(i) { for (const ws of sides[i].sockets) if (ws.readyState === 1 && !ws.broken) ws.down(JSON.stringify({ t: 'sys', ev: 'peer', present: false })); },
     /** a symmetric NAT (carrier-grade NAT): no direct UDP path to this phone, only TURN; iceSlowMs: api/ice takes this
      *  much longer to answer (a slow DNS and TLS on a weak signal) */

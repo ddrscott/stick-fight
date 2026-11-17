@@ -12,7 +12,7 @@
 //                           the dial keeps going in the background and the match moves to p2p once it opens
 //   DIRECT_TRY_MS    3.5 s  with TURN servers in hand, the first dial (every candidate allowed) gets this long, then a
 //   TURN_TRY_MS      3.5 s  TURN-only dial (Cloudflare's TURN over UDP) gets this long before the relay takes over.
-//                           A redial after a failed direct one tries TURN-only next (README, Reconnecting: TURN)
+//                           A redial after a failed direct one tries TURN-only next (README, Multiplayer, Weak cellular: TURN)
 //   ICE_REFETCH_MS   10 s   api/ice that timed out (public STUN only, no TURN): asked again before a dial, this often
 //   REDIAL_TRY_MS    8 s    one redial (a fresh RTCPeerConnection, signaled over the room socket) that hasn't
 //                           opened in this long is dropped and the next one starts

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The connection meter on screen (README, Multiplayer, Reconnecting: The connection meter): `npm run test:meter`, real
+// The connection meter on screen (README, Multiplayer, The connection meter): `npm run test:meter`, real
 // Chromium against the built game and the local Worker (npm run build, then npm run dev:worker).
 //   node scripts/netsim/meter-browser.mjs [http://127.0.0.1:8787/] [--shots <dir>]
 //
@@ -75,7 +75,7 @@ const pages = [];
 async function page(url, { size, touch = false, name, id, slow = false, relay = false }) {
   const ctx = await b.newContext(touch ? { viewport: size, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport: size });
   await ctx.addInitScript((kv) => { for (const k in kv) if (localStorage.getItem(k) === null) localStorage.setItem(k, kv[k]); },
-    { 'stick-fight-player': JSON.stringify({ id: id.repeat(32), name, email: '', crews: [] }), 'stick-fight-round-time': '60', 'stick-fight-best-of': '1',
+    { 'stick-fight-player': JSON.stringify({ id: id.repeat(32), name, email: '', crews: [] }), 'stick-fight-track': '1', 'stick-fight-round-time': '60', 'stick-fight-best-of': '1',
       ...(relay ? { 'stick-fight-net': JSON.stringify({ relay: true }) } : {}) });
   if (slow) await ctx.addInitScript(slowSockets);
   // the game's own frame loop, software-rendered, holds the main thread 150 to 300 ms at a time here (a phone draws a
@@ -84,6 +84,9 @@ async function page(url, { size, touch = false, name, id, slow = false, relay = 
   await ctx.addInitScript(() => { window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 500); });
   const p = await ctx.newPage();
   p.errors = []; p.on('pageerror', (e) => p.errors.push(String(e)));
+  // the analytics beacons (localhost sends them only with stick-fight-track), caught here instead of reaching the Worker
+  p.events = [];
+  await ctx.route('**/api/e', async (r) => { try { const b = JSON.parse(r.request().postData() || 'null'); for (const e of [].concat(b || [])) p.events.push(e); } catch { /* */ } await r.fulfill({ status: 204, body: '' }); });
   p.label = name;
   await p.goto(url);
   await p.waitForFunction(() => window.__gauntlet && window.__gauntlet.ready, null, { timeout: 90000 });
@@ -139,6 +142,14 @@ try {
   await shot(G, '3-fight-weak-upright');
   await shot(H, '3-fight-weak-host');
   for (const p of [H, G]) await p.evaluate(() => window.__net.leave());
+  // 7. online_link: a sample of the link as the match ended (README, Analytics): the path, round trip, and the eight
+  // numbers, nothing about the player
+  for (const [who, p] of [['host', H], ['weak guest', G]]) {
+    const ev = await until(async () => p.events.find((e) => e.e === 'online_link'), 5000);
+    const ok = !!ev && ev.l[0] === 'relay' && ev.l[1] === 'quick' && ev.l[3] === 'end' && ev.v >= 200 && Array.isArray(ev.d) && ev.d.length === 8 && ev.d[7] >= 2
+      && !JSON.stringify(ev).includes('SLOWPOKE') && !JSON.stringify(ev).includes('HOSTY');
+    check(`${who}: online_link sent at the match's end (relay, round trip, 8 numbers, no player data)`, ok, ev ? JSON.stringify(ev) : 'none');
+  }
   await G.context().close();
 
   // ---- 3: a good link, phone held sideways ----
