@@ -26,7 +26,6 @@ installDom();
 const { createNetwork } = await import('./network.mjs');
 const { createClient, createSpectator } = await import('./client.mjs');
 const { createWatch, BUFFER_MS } = await import('../../src/net/watch.js');
-const { HOLD_MS } = await import('../../src/net/watchlog.js');
 const { roster } = await import('../../src/characters/index.js');
 const { mulberry32 } = await import('../../src/combat/rng.js');
 installClock();
@@ -36,6 +35,8 @@ const warn = console.warn; console.warn = (...a) => { if (process.env.NETSIM_DEB
 const cell = (base, jitter, loss) => ({ base, jitter, loss, drift: base * 0.4, driftPeriod: 17000, burst: { enter: 0.01, exit: 0.25, loss: 0.7 } });
 /** what: who watches and when (ms after the first match starts; 'pre' = before it), and what else happens */
 const SCENARIOS = {
+  // the bar (README, Spectators, How close): two phones and the spectators on the same good wifi, about 30 ms there and back
+  'good-wifi':     { cond: () => ({ base: 15, jitter: 6, loss: 0.005, drift: 3, driftPeriod: 17000 }), frames: [{ fps: 60 }, { fps: 60 }], watchers: [{ at: 'pre' }, { at: 'pre', fps: 30 }, { at: 12000, fps: 120 }] },
   'first-frame':   { cond: () => cell(80, 25, 0.05), frames: [{ fps: 60 }, { fps: 60 }], watchers: [{ at: 'pre' }, { at: 'pre', fps: 30 }] },
   'late-joiners':  { cond: () => cell(120, 40, 0.08), frames: [{ fps: 60 }, { fps: 30 }], watchers: [{ at: 9000 }, { at: 31000, uneven: true }, { at: 55000, fps: 120 }] },
   'come-and-go':   { cond: () => cell(150, 50, 0.08), frames: [{ uneven: true }, { fps: 60 }], watchers: [{ at: 4000, leave: 20000, back: 33000 }, { at: 'pre', drop: 25000 }, { at: 15000, hide: [30000, 9000] }] },
@@ -86,6 +87,13 @@ async function session(name, seed, wantMatches) {
     const s = createSpectator({ name: `spec${i}`, seed: seed * 31 + i * 7 + 5, network, frames: w.uneven ? { uneven: true } : { fps: w.fps || 60 }, createWatch });
     s.plan = w; s.opens = 0;
     s.hostFrame = () => (A.net.netcode ? A.net.netcode.frame : -1);
+    s.hostShownAt = (n, f) => {   // the first draw on the host with frame f or later on screen
+      const sh = A.shown.get(n);
+      if (!sh || !sh.f.length || sh.f[sh.f.length - 1] < f) return -1;
+      let lo = 0, hi = sh.f.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (sh.f[mid] >= f) hi = mid; else lo = mid + 1; }
+      return sh.t[lo];
+    };
     s.start(11 + i * 3);
     return s;
   });
@@ -114,7 +122,7 @@ async function session(name, seed, wantMatches) {
   const done = () => { arm(); const room = network.rooms.get(code); if (room && network.live.has(code)) { listed++; if (room.priv) listedPrivate++; } return (Object.keys(A.results).length >= matches && Object.keys(B.results).length >= matches) || (A.ended && B.ended); };
   const limit = 9000 + matches * 260000;
   await runUntil(limit, done);
-  await runUntil(sched.t + 6000);   // the last frames reach the spectators (the hold and the buffer), and they play them out
+  await runUntil(sched.t + 6000);   // the last frames reach the spectators, and they play them out
   const room = network.rooms.get(code);
   if (process.env.WATCH_DEBUG) {
     const dm = room.desk.match;
@@ -129,8 +137,22 @@ async function session(name, seed, wantMatches) {
 }
 
 function evaluate(name, seed, sc, A, B, specs, room, x) {
-  let checks = 0, diffs = 0, ownChecks = 0, ownBad = 0, ends = 0, endDiffs = 0, missed = 0, lag = 0, lagN = 0, stalls = 0, catchUps = 0;
+  let checks = 0, diffs = 0, ownChecks = 0, ownBad = 0, ends = 0, endDiffs = 0, missed = 0, lag = 0, lagN = 0, stalls = 0, catchUps = 0, draws = 0, hitches = 0, bufSum = 0, bufN = 0;
+  const latency = [];
   const notes = [];
+  // speculative playback (README, Spectators): a spectator that showed frames past the confirmed ones could gain at
+  // most the time from the host showing a frame to the host confirming it, and would see at most what the host's own
+  // rollbacks showed and took back (it knows more by the time it draws a frame than the host did)
+  A.harvest();
+  const confirmLag = [];
+  for (const [, sh] of A.shown) {
+    let j = 0;
+    for (let i = 0; i < sh.f.length; i++) {
+      while (j < sh.cf.length && sh.cf[j] < sh.f[i]) j++;
+      if (j >= sh.cf.length) break;
+      confirmLag.push(sh.ct[j] - sh.t[i]);
+    }
+  }
   for (const s of specs) {
     // every hash frame this spectator played, against the host's confirmed hash of it (a host that was knocked off
     // re-hashes from its resync on; before that point the spectator has the true fight and the host didn't)
@@ -144,6 +166,8 @@ function evaluate(name, seed, sc, A, B, specs, room, x) {
       if (mine.hash !== theirs.hash || mine.frame !== theirs.frame || mine.winner !== theirs.winner || mine.wins.join() !== theirs.wins.join()) { endDiffs++; notes.push(`${s.name} match ${n} ended ${mine.frame}/${mine.hash}/${mine.wins} vs host ${theirs.frame}/${theirs.hash}/${theirs.wins}`); }
     }
     lag += s.lagMs; lagN += s.lagN; stalls += t.starved; catchUps += s.catchUps;
+    for (const v of s.latency) latency.push(v);
+    draws += s.draws; hitches += s.hitches; bufSum += s.bufSum; bufN += s.bufN;
   }
   const fail = [];
   if (diffs || ownBad) fail.push(`${diffs + ownBad} hashes differ`);
@@ -192,7 +216,7 @@ function evaluate(name, seed, sc, A, B, specs, room, x) {
     if (x.watchingMax < 1) fail.push('the host never saw anyone watching');
     if (ownChecks === 0) fail.push('no hash was checked');
   }
-  return { name, seed, ok: !fail.length, fail, notes, checks, diffs, ownChecks, ownBad, ends, endDiffs, lagMs: lagN ? lag / lagN : 0, stalls, catchUps,
+  return { name, seed, ok: !fail.length, fail, notes, checks, diffs, ownChecks, ownBad, ends, endDiffs, lagMs: lagN ? lag / lagN : 0, stalls, catchUps, latency, draws, hitches, bufSum, bufN, confirmLag, phantoms: A.phantoms, lateBy: A.lateBy, simFrames: A.simFrames,
     resyncs: A.resyncs + B.resyncs, specResyncs: specs.reduce((k, s) => k + s.watch.stats().totals.resyncs, 0), matches: Object.keys(A.results).length, watchingMax: x.watchingMax,
     starts: room ? room.starts : 0, batches: room ? room.batches : 0, feed: A.net.feed.stats, minutes: sched.t / 60000 };
 }
@@ -203,14 +227,37 @@ if (argv.includes('--list')) { console.log(Object.keys(SCENARIOS).join('\n')); p
 const seeds = +arg('seeds', 2), matches = +arg('matches', 2), first = +arg('seed', 1), only = arg('only', '');
 const names = Object.keys(SCENARIOS).filter((n) => !only || only.split(',').includes(n));
 const rows = [], t0 = Date.now();
+/** the p-th percentile of a list of ms, rounded */
+function pct(a, p) { if (!a.length) return '-'; const b = Float64Array.from(a).sort(); return Math.round(b[Math.min(b.length - 1, Math.floor(b.length * p / 100))]); }
 for (const name of names) for (let s = first; s < first + seeds; s++) {
   const rep = await session(name, s, matches);
   rows.push(rep);
-  console.log(`${name.padEnd(14)} seed ${String(s).padStart(2)}  ${rep.ok ? 'ok  ' : 'FAIL'}  matches ${rep.matches}  spectator hashes vs host ${String(rep.checks).padStart(5)} (${rep.diffs} differ)  own checks ${String(rep.ownChecks).padStart(5)} (${rep.ownBad} bad)  ends ${rep.ends} (${rep.endDiffs} differ)  behind ${(rep.lagMs / 1000).toFixed(2)} s  ran dry ${rep.stalls}  catch-ups ${rep.catchUps}  resyncs ${rep.resyncs}/${rep.specResyncs} loaded  watching ${rep.watchingMax}  batches ${rep.batches}  ${rep.minutes.toFixed(1)} min` + (rep.fail.length ? `\n    ${rep.fail.join('; ')}` : '') + (rep.notes.length ? `\n    ${rep.notes.slice(0, 5).join('\n    ')}` : ''));
+  console.log(`${name.padEnd(14)} seed ${String(s).padStart(2)}  ${rep.ok ? 'ok  ' : 'FAIL'}  matches ${rep.matches}  spectator hashes vs host ${String(rep.checks).padStart(5)} (${rep.diffs} differ)  own checks ${String(rep.ownChecks).padStart(5)} (${rep.ownBad} bad)  ends ${rep.ends} (${rep.endDiffs} differ)  host-to-spectator ${pct(rep.latency, 50)}/${pct(rep.latency, 95)} ms (median/95th)  hitches ${(100 * rep.hitches / Math.max(1, rep.draws)).toFixed(2)}%  buffer ${Math.round(rep.bufSum / Math.max(1, rep.bufN))} ms  ran dry ${rep.stalls}  catch-ups ${rep.catchUps}  resyncs ${rep.resyncs}/${rep.specResyncs} loaded  watching ${rep.watchingMax}  batches ${rep.batches}  ${rep.minutes.toFixed(1)} min` + (rep.fail.length ? `\n    ${rep.fail.join('; ')}` : '') + (rep.notes.length ? `\n    ${rep.notes.slice(0, 5).join('\n    ')}` : ''));
 }
 const tot = (k) => rows.reduce((s, r) => s + r[k], 0);
+// the latency per scenario, every seed's samples together (README, Spectators, How close)
+console.log('\nscenario        host-to-spectator ms  median   95th   hitches  ran dry  avg buffer');
+for (const name of names) {
+  const rs = rows.filter((r) => r.name === name), all = rs.flatMap((r) => r.latency), d = rs.reduce((k, r) => k + r.draws, 0), h = rs.reduce((k, r) => k + r.hitches, 0);
+  console.log(`${name.padEnd(14)}  ${String(all.length).padStart(20)}  ${String(pct(all, 50)).padStart(6)}  ${String(pct(all, 95)).padStart(5)}  ${(100 * h / Math.max(1, d)).toFixed(2).padStart(6)}%  ${String(rs.reduce((k, r) => k + r.stalls, 0)).padStart(7)}  ${String(Math.round(rs.reduce((k, r) => k + r.bufSum, 0) / Math.max(1, rs.reduce((k, r) => k + r.bufN, 0)))).padStart(7)} ms`);
+}
+// what the upload costs the host (README, Spectators, On the host): its own timer around the per-frame work, and what it sent
+console.log('\nscenario        host upload  µs a frame (avg)  batches a s  bytes a s  bytes a batch');
+for (const name of names) {
+  const rs = rows.filter((r) => r.name === name), f = (k) => rs.reduce((a, r) => a + (r.feed[k] || 0), 0), sec = rs.reduce((a, r) => a + r.minutes * 60, 0);
+  console.log(`${name.padEnd(14)}  ${(1000 * f('ms') / Math.max(1, f('ticks'))).toFixed(1).padStart(28)}  ${(f('batches') / sec).toFixed(1).padStart(11)}  ${(f('bytes') / sec).toFixed(0).padStart(9)}  ${(f('bytes') / Math.max(1, f('batches'))).toFixed(0).padStart(13)}`);
+}
+// what speculating would buy and cost, from the host's own rollbacks (README, Spectators, Speculative playback)
+console.log('\nscenario        speculation could gain ms  median   95th   hits shown then undone  hits shown late  other effects undone  play min');
+for (const name of names) {
+  const rs = rows.filter((r) => r.name === name), lagAll = rs.flatMap((r) => r.confirmLag), min = rs.reduce((k, r) => k + r.simFrames, 0) / 120 / 60;
+  const sum = (key, pick) => rs.reduce((k, r) => k + Object.entries(r[key]).filter(([ty]) => pick(ty)).reduce((a, [, v]) => a + v, 0), 0);
+  const hit = (ty) => ty === 'hit' || ty === 'block' || ty === 'parry' || ty === 'grab' || ty === 'clash';
+  const per = (v) => `${v} (${(v / Math.max(1e-9, min)).toFixed(2)}/min)`;
+  console.log(`${name.padEnd(14)}  ${String(lagAll.length).padStart(25)}  ${String(pct(lagAll, 50)).padStart(6)}  ${String(pct(lagAll, 95)).padStart(5)}  ${per(sum('phantoms', hit)).padStart(22)}  ${per(sum('lateBy', hit)).padStart(15)}  ${per(sum('phantoms', (t) => !hit(t))).padStart(20)}  ${min.toFixed(1).padStart(8)}`);
+}
 const bad = rows.filter((r) => !r.ok).length;
 const lagRows = rows.filter((r) => r.lagMs > 0);
 console.log(`\n${rows.length} sessions, ${tot('matches')} matches: ${tot('checks')} spectator hashes compared with the host's (${tot('diffs')} differ), ${tot('ownChecks')} checked by the spectators themselves (${tot('ownBad')} bad), ${tot('ends')} final states (${tot('endDiffs')} differ); ` +
-  `${(lagRows.reduce((s, r) => s + r.lagMs, 0) / Math.max(1, lagRows.length) / 1000).toFixed(2)} s behind the host on average (hold ${HOLD_MS} ms + buffer ${BUFFER_MS} ms + the trip); ran out of frames on a slow delivery ${tot('stalls')} times; ${bad} sessions failed; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  `${(lagRows.reduce((s, r) => s + r.lagMs, 0) / Math.max(1, lagRows.length) / 1000).toFixed(2)} s behind the host on average (a buffer from ${BUFFER_MS} ms that adapts, plus the trip); ran out of frames on a slow delivery ${tot('stalls')} times; ${bad} sessions failed; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 process.exit(bad ? 1 : 0);

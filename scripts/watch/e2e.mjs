@@ -1,7 +1,7 @@
 // Spectators, end to end (README, Multiplayer, Spectators): real browsers through the local Worker.
 //
 //   npm run build && npx wrangler dev --port 8787      (the Worker serving dist/ and the API)
-//   node scripts/watch/e2e.mjs [http://127.0.0.1:8787/] [--shots dir]
+//   node scripts/watch/e2e.mjs [http://127.0.0.1:8787/] [--shots dir] [--only quick|menus|line|crew] [--gpu]
 //
 // A host and a guest (each its own Chromium, scripted inputs, 30-second single-round matches) play in a quick
 // room while spectators come and go: one from before the first frame, one mid-match, one who reloads, one who
@@ -16,6 +16,12 @@ const argv = process.argv.slice(2);
 const BASE = (argv.find((a) => /^https?:/.test(a)) || 'http://127.0.0.1:8787/').replace(/\/?$/, '/');
 const SHOTS = argv.includes('--shots') ? argv[argv.indexOf('--shots') + 1] : '';
 const ONLY = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : '';   // quick | menus | line | crew: one part of the run
+// --gpu: draw on the machine's GPU (Metal on a Mac), as a phone does, instead of SwiftShader. Software GL takes 90 to
+// 750 ms a draw on a busy machine; those stalls hold up the host's batches, and every spectator's buffer grows to
+// ride them out, so the latency check measures the software renderer rather than the network (README, Spectators)
+const GPU = argv.includes('--gpu');
+const GL = GPU ? (process.platform === 'darwin' ? ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] : ['--enable-gpu', '--ignore-gpu-blocklist'])
+  : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 const part = (name) => !ONLY || ONLY.split(',').includes(name);
 const API = BASE + 'api/', WS = API.replace(/^http/, 'ws');
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -28,7 +34,7 @@ const until0 = async (fn, ms = 20000, every = 200) => { const t0 = Date.now(); f
 
 const browsers = [];
 async function page(url, init = {}, size = { width: 1280, height: 720 }, touch = false) {
-  const b = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--mute-audio'] });
+  const b = await chromium.launch({ executablePath, args: [...GL, '--mute-audio'] });
   browsers.push(b);
   const ctx = await b.newContext(touch ? { viewport: size, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport: size });
   await ctx.addInitScript((kv) => {
@@ -54,8 +60,43 @@ const drive = (p, draw) => p.evaluate((n) => {
   window.__gauntlet.step(0);
   let last = performance.now(), k = 0;
   clearInterval(window.__pump);
-  window.__pump = setInterval(() => { const now = performance.now(), ms = Math.min(100, now - last); last = now; if (n && ++k % n === 0) window.__gauntlet.step(ms); else window.__game.advance(ms); }, 8);
+  // what showed when, by the wall clock all the pages share (performance.timeOrigin + now): the host's frames, and
+  // each spectator's, so the run can say how long a frame takes from the host's screen to a spectator's
+  const L = window.__lat = window.__lat || { host: {}, spec: [] };
+  const rec = () => {
+    const t = performance.timeOrigin + performance.now(), net = window.__net, w = window.__watch;
+    const ls = net && net.active && net.netcode;
+    if (ls) { const h = L.host[net.match] = L.host[net.match] || { f: [], t: [] }; if (!h.f.length || ls.frame > h.f[h.f.length - 1]) { h.f.push(ls.frame); h.t.push(t); } }
+    if (w && w.active && !w.catching && w.state === 'live') { const v = w.view(); if (v.frame > (L.lastF || 0) || v.n !== L.lastN) { L.lastF = v.frame; L.lastN = v.n; L.spec.push([v.n, v.frame, t]); } }
+  };
+  // (lost: the time the pump didn't hand the game because a pass took over 100 ms, as main.js caps a frame; drawMs: the drawn passes)
+  L.lost = L.lost || 0; L.wall = L.wall || 0; L.drawMs = L.drawMs || 0; L.draws = L.draws || 0;
+  window.__pump = setInterval(() => { const now = performance.now(), ms = Math.min(100, now - last); L.lost += now - last - ms; L.wall += now - last; last = now; if (n && ++k % n === 0) { const t0 = performance.now(); window.__gauntlet.step(ms); L.drawMs += performance.now() - t0; L.draws++; } else window.__game.advance(ms); rec(); }, 8);
 }, draw);
+// the host's frames against a spectator's: ms from the frame showing on the host to the same frame on the spectator
+const pct = (a, p) => { if (!a.length) return NaN; const b = Float64Array.from(a).sort(); return Math.round(b[Math.min(b.length - 1, Math.floor(b.length * p / 100))]); };
+async function latency(host, spec, fromT = 0) {
+  const h = await host.evaluate(() => window.__lat.host), s = await spec.evaluate(() => window.__lat.spec);
+  const out = [];
+  for (const [n, f, t] of s) {
+    const hh = h[n];
+    if (!hh || t < fromT || hh.f[hh.f.length - 1] < f) continue;
+    let lo = 0, hi = hh.f.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (hh.f[mid] >= f) hi = mid; else lo = mid + 1; }
+    out.push(t - hh.t[lo]);
+  }
+  return out;
+}
+const latRows = [];
+async function reportLatency(label, host, spec, fromT = 0) {
+  const a = await latency(host, spec, fromT).catch(() => []);
+  // LAT_TRACE=1: the worst latency in each second of the watching, to see where a tail comes from
+  if (process.env.LAT_TRACE) { const h = await host.evaluate(() => window.__lat.host), sp = await spec.evaluate(() => window.__lat.spec); const t0 = sp.length ? sp[0][2] : 0; const by = {}; let i = 0; for (const [n, f, t] of sp) { const hh = h[n]; if (!hh || hh.f[hh.f.length - 1] < f) continue; const sec = n + ':' + Math.floor((t - t0) / 1000); (by[sec] = by[sec] || []).push(a[i++]); } console.log('TRACE', label, Object.entries(by).map(([k, v]) => k + '=' + Math.round(Math.max(...v))).join(' ')); }
+  const pg = await spec.evaluate(() => { const L = window.__lat; return { lost: L.lost, wall: L.wall, drawMs: L.draws ? L.drawMs / L.draws : 0 }; }).catch(() => ({ lost: 0, wall: 1, drawMs: 0 }));
+  latRows.push({ label, a, pg });
+  const p50 = pct(a, 50), p95 = pct(a, 95);
+  check(`${label}: a frame reaches the spectator's screen under 300 ms after the host's (median) and under 450 ms at the 95th percentile`, a.length > 200 && p50 < 300 && p95 < 450, `${a.length} frames, median ${p50} ms, 95th ${p95} ms`);
+}
 // (a picture is a nicety: on a busy machine headless Chromium can take its time over one, and the run goes on)
 const shot = async (p, name) => { if (SHOTS) await p.evaluate(() => window.__gauntlet && window.__gauntlet.step(0)).catch(() => {}); if (SHOTS) await p.screenshot({ path: `${SHOTS}/${name}.png`, timeout: 90000 }).catch((e) => console.log(`      (no picture ${name}: ${String(e).split('\n')[0]})`)); };
 const live = async () => (await (await fetch(API + 'live?' + Date.now())).json()).live;
@@ -124,8 +165,6 @@ try {
   const specs = { S1 };
   const s1live = await until(async () => { await collect(H, specs); const s = await wstats(S1); return s.state === 'live' && s.frame > 30 ? s : null; }, 30000);
   check('the first spectator is watching from the first frame', !!s1live && s1live.flow === 'watching', s1live ? `frame ${s1live.frame}, ${s1live.text.slice(0, 50)}` : JSON.stringify(await wstats(S1)).slice(0, 200));
-  const lag = await Promise.all([H.evaluate(() => window.__net.netcode.frame), S1.evaluate(() => window.__watch.stats().frame)]);
-  check('the spectator runs behind the players (2 to 3 s on an idle machine; the Node proof measures it)', (lag[0] - lag[1]) / 120 > 1 && (lag[0] - lag[1]) / 120 < 6, `${((lag[0] - lag[1]) / 120).toFixed(2)} s`);
   const l1 = await liveUntil((l) => l.some((r) => r.code === code && r.watching === 1), 25000);
   const e1 = l1 && l1.find((r) => r.code === code);
   check('LIVE list has the match: code, fighters, names, round, score, spectators, start', !!e1 && e1.names.join() === 'ALICE,BOB' && e1.chars.length === 2 && e1.round >= 1 && e1.wins.length === 2 && e1.watching === 1 && e1.at > 0, JSON.stringify(e1));
@@ -172,6 +211,8 @@ try {
   check('spectators move on to the room\'s next match', !!m2, m2 ? `match ${m2.view.n}, frame ${m2.frame}` : [S1, S2].map(async (p) => 0) && JSON.stringify([(await wstats(S1)), (await wstats(S2))].map((x) => [x.state, x.detail, x.view.n, x.frame, x.frames])));
   await sleep(5000); await collect(H, specs);
   compare('quick room');
+  await reportLatency('quick room, S1 (in before the first frame, drawn)', H, S1);
+  await reportLatency('quick room, S2 (mid-match, a reload, undrawn)', H, S2);
   const own = await Promise.all([S1, S2].map((p) => p.evaluate(() => window.__watch.stats().totals)));
   check('the spectators\' own checks against the host\'s hashes all pass', own.every((t) => t.checks > 0 && t.bad === 0), own.map((t) => `${t.checks} checked, ${t.bad} bad`).join('; '));
   // what the upload costs the host: its own timer around the per-frame work, and what it sent
@@ -351,6 +392,7 @@ try {
     check('line: a member watching from the line can\'t reach the players', pl.state === 'playing' && !pl.desync && (await wstats(E)).flow === 'watching', JSON.stringify(pl));
     for (let i = 0; i < 6; i++) { await sleep(700); await collect(hostP, especs); }
     compare('line');
+    await reportLatency('line: ERIN watching from the line', hostP, E);
     const et = await E.evaluate(() => window.__watch.stats().totals);
     check('line: ERIN\'s own checks against the host\'s hashes all pass', et.checks > 0 && et.bad === 0, `${et.checks} checked, ${et.bad} bad`);
     // CAROL wins (the host's page reports it): DAVE goes to the back of the line, ERIN is up against the champ
@@ -430,6 +472,10 @@ try {
   check('the run finished', false, String(e && e.stack || e));
 } finally {
   for (const b of browsers) await b.close().catch(() => {});
+}
+if (latRows.length) {
+  console.log('\nhost-to-spectator latency (ms from a frame on the host\'s screen to the same frame on the spectator\'s)');
+  for (const r of latRows) console.log(`  ${r.label.padEnd(52)} ${String(r.a.length).padStart(6)} frames  median ${pct(r.a, 50)}  95th ${pct(r.a, 95)}  max ${pct(r.a, 100)}  (the page lost ${(100 * r.pg.lost / Math.max(1, r.pg.wall)).toFixed(1)}% of its time to passes over 100 ms; a drawn pass ${r.pg.drawMs.toFixed(0)} ms)`);
 }
 const bad = results.filter((r) => !r.ok);
 console.log(`\n${results.length - bad.length} of ${results.length} checks passed`);

@@ -15,10 +15,13 @@
 // guest gets), {t:'w', ev:'end', n, f, wins, winner, tally} (the match ended on frame f), {t:'w', ev:'over',
 // reason} (a player left, or the host closed the room to spectators) and {t:'w', ev:'count', n}.
 //
-// Pace. Each batch carries the host's clock at its last frame. The room only hands over frames HOLD_MS old,
-// and this side plays BUFFER_MS behind what it has, so the picture is about 2.5 seconds behind the fight and
-// smooth through an uneven network. It steps at the sim's own speed (main.js passes the KO slow motion in ms,
-// as it does for a player) and leans up to 50% faster or 15% slower to stay on the host's timeline. More than
+// Pace. Each batch carries the host's clock at its last frame, and the room passes each one on as it lands. This
+// side plays a small buffer behind the newest frames it has: just enough to cover the gap between two batches
+// and how late they've been coming lately (a jitter buffer). It grows the moment batches come later, or when the
+// playback runs dry, and shrinks back after a steady stretch, so on good wifi the picture is under 0.3 s behind
+// the host's screen and a shaky phone still plays smoothly. It steps at the sim's own speed (main.js passes the
+// KO slow motion in ms, as it does for a player) and leans up to 50% faster or 15% slower to stay on the host's
+// timeline, which is also how a change of buffer plays out: a few percent faster or slower, never a jump. More than
 // CATCHUP frames behind (joining mid-match, or back from a hidden tab) it stops drawing and runs the sim flat
 // out, with every effect muted, until it's back.
 //
@@ -28,17 +31,26 @@
 
 import { apiUrl } from './link.js';
 import { NET_VERSION, cleanRules, LOOK_MAX } from './online.js';
-import { createLog, decodeBatch, cleanSetup, hashHex, HOLD_MS } from './watchlog.js';
+import { createLog, decodeBatch, cleanSetup, hashHex } from './watchlog.js';
+import { UPLOAD_MS } from './watchfeed.js';
 import { hashSim } from './hash.js';
 import { decodeInput } from './codec.js';
 import { decodeState } from './state.js';
 import { gameUrl } from '../links.js';
 
 const STEP_MS = 1000 / 120;
-export const BUFFER_MS = 900;     // behind the newest frames the room has released
+export const BUFFER_MS = 200;     // where the buffer starts: behind the host's timeline as the newest batches tell it
+export const BUFFER_MIN_MS = 100; // the least it shrinks to, however steady the link
 const BUFFER_MAX_MS = 2400;       // on a network that keeps running it dry, the buffer grows to this
-const STAMP_GAP_MS = 500;         // the host stamps this often (watchfeed.js UPLOAD_MS)
-const CATCHUP = 360;              // frames behind the host's timeline before the sim runs undrawn (3 s)
+const STAMP_GAP_MS = UPLOAD_MS;   // the host stamps (and sends) this often
+const STAMP_SLACK_MS = 60;        // the host stamps on its own frames, so a gap runs a frame or two over, plus a margin
+const JITTER_MS = 30000;          // how far back the buffer looks at how late batches came (the worst of them)
+const STEADY_MS = 20000;          // no running dry this long, and the buffer starts shrinking back
+const SHRINK_PER_S = 0.25;        // ...by this share of the way to what the lateness needs, each second
+const SETTLE_MS = 400;            // after a (re)connect: the backlog's batches aren't lateness (a room that doesn't say where it ends)
+const LEAN_FRAMES = 60;           // the lean: this many frames off the host's timeline (0.5 s) plays 2x (capped at 1.5x) or 0x (0.85x)
+const LEAN_HOLD = 60;             // ...and further ahead than this, it stands still until the timeline catches up
+const CATCHUP = 180;              // frames behind the host's timeline before the sim runs undrawn (1.5 s: leaning at 1.5x closes less than that in 3 s, and a page that draws slowly never closes it)
 const CATCHUP_BUDGET_MS = 14;     // of each animation frame, while catching up
 const HASH_EVERY = 30;
 const SILENT_MS = 12000;          // a match on and nothing from the room this long: the socket is dead
@@ -159,9 +171,12 @@ export function createWatch(game) {
       return;
     }
     // the same match again (a reconnect): keep playing from where this side is; the log takes only what's new
-    if (m && !m.done && m.setup.n === setup.n && m.setup.seed === setup.seed) { m.setup.names = setup.names; return; }
+    // (upto: the newest stamp in the backlog the room sends with it, none of which is a late delivery)
+    const upto = Number(msg.upto) >>> 0;
+    if (m && !m.done && m.setup.n === setup.n && m.setup.seed === setup.seed) { m.setup.names = setup.names; m.settleAt = now() + SETTLE_MS; m.upto = Math.max(m.upto, upto); return; }
     m = {
       setup, log: createLog(setup.n & 255), frame: 0, acc: 0, off: Infinity, end: null, done: false, catching: false, buffer: BUFFER_MS, dryAt: 0, starved: false,
+      lates: [], settleAt: now() + SETTLE_MS, upto, steadyAt: now(), shrunkAt: now(), grows: 0, shrinks: 0,
       hashes: new Map(), checks: 0, bad: 0, badAt: [], badSince: 0, floor: 0, syncs: [], parts: new Map(), startedAt: now(),
     };
     result = null; totals.matches++;
@@ -173,9 +188,42 @@ export function createWatch(game) {
   function onBatch(buf) {
     const b = decodeBatch(buf);
     if (!b || !m || m.done || b.match !== (m.setup.n & 255)) return;
+    const fresh = b.t > m.log.newest;
+    // the first frames of the match on this side: when the room had none, the host uploads the match so far, a round
+    // trip after the start, so the settling starts again from here
+    if (!m.log.frames && b.count) m.settleAt = Math.max(m.settleAt, now() + SETTLE_MS);
     if (!m.log.add(b)) { hangUp(); retry(); return; }   // a hole (never: the socket is ordered): ask for it all again
-    // the host's clock against this one: the quickest delivery seen is the room's hold plus the trip
-    m.off = Math.min(m.off, now() - b.t);
+    // the host's clock against this one: the quickest delivery seen is the trip (and the clocks' difference)
+    const t = now(), d = t - b.t;
+    m.off = Math.min(m.off, d);
+    // how late each new stamp came, against that quickest one. Not a backlog: the one the room sends a (re)connect
+    // (up to `upto`), or the match so far that the host uploads when the first spectator turns up mid-match (all at
+    // once, each newer stamp in it lowering `off`, so the older ones looked late). Counted, a backlog took a late
+    // joiner's buffer to the 2.4 s cap for 30 s (netsim:watch late-joiners: 95th percentile 2.5 s)
+    if (fresh && t >= m.settleAt && b.t > m.upto && m.frame > 0 && !m.catching) { m.lates.push(t, d); fit(t); }
+  }
+  /** the buffer the recent lateness needs: the gap between two stamps, the latest any stamp came in the last
+   *  JITTER_MS, and a margin. The worst rather than a percentile: on a phone's link the late ones come in bursts,
+   *  and each one a percentile leaves out is a stop in the picture (netsim:watch: 98th over 8 s ran dry 17 times
+   *  in a first-frame session, the worst over 30 s 0 or 1, for about 30 ms more delay) */
+  function needed(t) {
+    const L = m.lates;
+    let i = 0;
+    while (i < L.length && L[i] < t - JITTER_MS) i += 2;
+    if (i) L.splice(0, i);
+    if (!L.length) return BUFFER_MIN_MS;
+    let worst = 0;
+    for (let j = 1; j < L.length; j += 2) worst = Math.max(worst, L[j] - m.off);
+    return Math.max(BUFFER_MIN_MS, Math.min(BUFFER_MAX_MS, STAMP_GAP_MS + STAMP_SLACK_MS + worst));
+  }
+  /** grow at once to what the lateness needs; after a steady stretch, ease back down towards it */
+  function fit(t) {
+    const need = needed(t);
+    if (need > m.buffer) { m.buffer = need; m.grows++; m.shrunkAt = t; return; }
+    if (t - m.steadyAt < STEADY_MS || need > m.buffer - 5) { m.shrunkAt = t; return; }
+    const k = Math.min(1, SHRINK_PER_S * (t - m.shrunkAt) / 1000);
+    m.shrunkAt = t;
+    if (k > 0) { m.buffer -= (m.buffer - need) * k; m.shrinks++; }
   }
   /** the host's resync, in parts: its state for the start of a frame, loaded when the playback gets there */
   function onSync(msg) {
@@ -194,7 +242,7 @@ export function createWatch(game) {
     // ...so a difference already counted back there was the host's sim being off, not this one: it's put right at p.f
     const gone = m.badAt.filter((f) => f < p.f).length;
     if (gone) { m.badAt = m.badAt.filter((f) => f >= p.f); m.bad -= gone; totals.bad -= gone; if (!m.bad) m.badSince = 0; }
-    if (p.f < m.frame) {   // already past it (never: the room holds frames back longer than a resync takes): reload and run back up
+    if (p.f < m.frame) {   // already past it (with no hold in the room, a resync can land after the frame it's for): reload and run back up
       const was = m.frame;
       m.frame = p.f;
       while (m.frame < was) step(true);
@@ -291,6 +339,10 @@ export function createWatch(game) {
       const t = now();
       const want = Number.isFinite(m.off) ? Math.min(lim, m.log.framesAt(t - m.off - m.buffer)) : 0;
       const behind = want - m.frame;
+      // not begun, and the first frames came under SETTLE_MS ago: a backlog may still be landing, and until its newest
+      // stamp is in, `off` is too big, so starting would show frames seconds old and then jump (test:watch: a line
+      // member's first second ran 2.7 s behind)
+      if (m.frame === 0 && t < m.settleAt) { m.acc = 0; return 0; }
       if (m.catching || behind > CATCHUP) {
         m.catching = true;
         setState('catching');
@@ -306,14 +358,19 @@ export function createWatch(game) {
         // buffer rides the next one out
         m.acc = 0;
         if (!m.dryAt) m.dryAt = t;
-        if (!m.starved && m.frame > 0 && !m.end && t - m.off - m.log.newest > STAMP_GAP_MS + 300) { m.starved = true; totals.starved++; m.buffer = Math.min(BUFFER_MAX_MS, m.buffer + 250); }
+        if (!m.starved && m.frame > 0 && !m.end && t >= m.settleAt && t - m.off - m.log.newest > m.buffer - 20) {
+          // ran dry on a late delivery: grow by a quarter (at least 50 ms), and the steady stretch starts over
+          m.starved = true; totals.starved++; m.steadyAt = t;
+          m.buffer = Math.min(BUFFER_MAX_MS, Math.max(m.buffer * 1.25, m.buffer + 50)); m.grows++;
+        }
         if (t - m.dryAt > 500 && t - m.startedAt > 600) setState('buffering');
         return 0;
       }
       m.dryAt = 0; m.starved = false;
-      if (behind < -12 || (m.frame === 0 && want < 1)) { m.acc = 0; return 0; }   // ahead of the host's timeline (or not begun): hold
+      // well ahead of the host's timeline (or not begun): hold. A little ahead (the buffer just grew) only slows
+      if (behind < -LEAN_HOLD || (m.frame === 0 && want < 1)) { m.acc = 0; return 0; }
       setState('live');
-      const k = Math.max(0.85, Math.min(1.5, 1 + behind / 240));
+      const k = Math.max(0.85, Math.min(1.5, 1 + behind / LEAN_FRAMES));
       m.acc = Math.min(m.acc + ms * k, 120);
       let stepped = 0;
       while (m.acc >= STEP_MS && m.frame < lim) { step(false); m.acc -= STEP_MS; stepped++; }
@@ -335,7 +392,7 @@ export function createWatch(game) {
     /** tests: this side's hash of a frame, and the tallies */
     hashAt(f) { return m ? m.hashes.get(f) || null : null; },
     get hashes() { return m ? m.hashes : new Map(); },
-    stats() { return { state, detail, code, count, frame: m ? m.frame : 0, frames: m ? m.log.frames : 0, checks: m ? m.checks : 0, bad: m ? m.bad : 0, resyncs: m ? m.resyncs || 0 : 0, off: m ? m.off : 0, buffer: m ? m.buffer : BUFFER_MS, hold: HOLD_MS, totals: { ...totals }, result }; },
+    stats() { return { state, detail, code, count, frame: m ? m.frame : 0, frames: m ? m.log.frames : 0, checks: m ? m.checks : 0, bad: m ? m.bad : 0, resyncs: m ? m.resyncs || 0 : 0, off: m ? m.off : 0, buffer: m ? m.buffer : BUFFER_MS, grows: m ? m.grows : 0, shrinks: m ? m.shrinks : 0, totals: { ...totals }, result }; },
   };
   return watch;
 }

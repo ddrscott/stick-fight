@@ -1418,7 +1418,7 @@ export function createFlow(ctx) {
   // ---- spectators: the LIVE list and the watch view (src/net/watch.js; README, Multiplayer, Spectators) ----
   // WATCH in the online menu lists the quick matches on right now (GET api/live, asked again every few seconds);
   // picking one, or opening play/?watch=CODE, goes to the watch view: the normal arena and HUD driven by the
-  // players' confirmed inputs a few seconds behind, with no controls, a WATCHING tag and a way out. Until a match
+  // players' confirmed inputs a split second behind, with no controls, a WATCHING tag and a way out. Until a match
   // is on (and after one that stopped short) the demo runs behind a card that says what's happening.
   const W = () => ctx.watch || null;
   const watchOn = () => !!(W() && W().active);
