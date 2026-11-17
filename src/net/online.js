@@ -81,7 +81,7 @@ const HEARD_MS = 3500;    // the host starts a match only with a word from the r
 const LINK_EVERY_MS = 30000;   // online_link: a sample of the link's quality this often during a match
 const WEAK_SHOW_MS = 2000, GOOD_HIDE_MS = 4000;   // the fight's readout: weak this long before the meter shows, good this long before it goes
 const ACK_SUSPECT_MS = 1000;   // our inputs unacked this long: link.check() tests the room socket (on the relay)
-const STALL_LOST_MS = LOST_MS, END_WAIT_MS = LOST_MS;
+const STALL_LOST_MS = LOST_MS, END_WAIT_MS = LOST_MS, END_AGAIN_MS = 1000;
 const WANTS = new Set(['rematch', 'chars', 'wait']);
 
 /** this browser's id for the all-time record (random, kept in localStorage; '' when storage is off) */
@@ -138,7 +138,7 @@ export function createOnline(game) {
   // online_link (README, Analytics): what the last sample saw, so each one covers the 30 s since
   let linkAt = 0, linkBase = /** @type {any} */ (null);
   // the end of the match: what this side last said ({t:'end'}), the other side's word, and since when we wait
-  let endSent = '', rivalEnd = /** @type {null | { n: number, f: number, h: string, e: number }} */ (null), endWait = 0;
+  let endSent = '', endSentAt = 0, endDone = /** @type {any} */ (null), rivalEnd = /** @type {null | { n: number, f: number, h: string, e: number }} */ (null), endWait = 0;
   // the player's display name (rides the ready message; the only thing about a player the other sees),
   // and the rival's. A room the menus open (quick or crew) starts on the pick screen
   // (pickFirst: the host's 'go' at match 0 instead of a start; a ?scene= lobby starts at once), and its all-time record is the
@@ -190,6 +190,9 @@ export function createOnline(game) {
       if (msg.t === 'end') {
         // the other side's final state for this match, and how many resyncs it had been through (its epoch)
         if ((msg.n | 0) === n && lockstep) rivalEnd = { n: msg.n | 0, f: msg.f | 0, h: String(msg.h), e: msg.e | 0 };
+        // this side already agreed and moved on, so the other side is still waiting: ours may have been lost (sent on a
+        // socket that had died without a word). Say it again
+        else if (endDone && (msg.n | 0) === endDone.n && !lockstep && link) link.sendControl(endDone);
         return;
       }
       if (msg.t === 'lost') { if (lockstep || between()) finish('lost', 'rival:' + String(msg.why || '').slice(0, 24)); return; }   // the other side gave up on the link
@@ -309,9 +312,11 @@ export function createOnline(game) {
     const end = at + END_HOLD;
     if (!(ls.frame >= end && ls.confirmed >= end - 1)) { endWait = 0; return; }
     const h = hashSim(game.sim), key = `${end}:${h}:${ls.epoch}`;
-    if (key !== endSent) { endSent = key; if (link) link.sendControl({ t: 'end', n, f: end, h, e: ls.epoch }); }
+    // said again every END_AGAIN_MS while waiting: one 'end' sent on a room socket that died without a word is lost, and
+    // the other side would wait out END_WAIT_MS and drop a finished match (weak-cell, [t6sye7])
+    if (key !== endSent || now() - endSentAt > END_AGAIN_MS) { endSent = key; endSentAt = now(); if (link) link.sendControl({ t: 'end', n, f: end, h, e: ls.epoch }); }
     if (!endWait) endWait = now();
-    if (word && word.f === end && word.h === h) { matchOver(); return; }
+    if (word && word.f === end && word.h === h) { endDone = { t: 'end', n, f: end, h, e: ls.epoch }; matchOver(); return; }
     if (current) ls.resync();
     if (now() - endWait > END_WAIT_MS) finish('lost', 'end-wait');
   }
