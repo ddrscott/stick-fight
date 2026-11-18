@@ -6,7 +6,7 @@
 // It checks: the name filter on crew names, crew member names and profile names; the admin route's
 // locks (no token, a wrong one); showing a crew, renaming it, renaming a member (and that the new name
 // holds when their page reconnects with the old one, and gives way when they pick a new one); closing
-// it (the lobby is told NO CREW, the crew's gone, its preview goes back to the defaults).
+// it (the lobby is told NO CREW, the crew's gone, its preview goes back to the defaults); removing a member (remove-member).
 import { readFileSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
@@ -130,6 +130,22 @@ check(!!(await alice.wait((m) => m.t === 'welcome')) && !!(await bob.wait((m) =>
   check(!!st2, 'picking a new name replaces it (ROBERTO)');
   const byId = await (await admin(slug, { action: 'rename-member', member: bobRow.id, name: 'MEMBER 2' })).json();
   check(byId.ok && byId.to === 'MEMBER 2', 'rename a member by member id, to a name you give', JSON.stringify(byId));
+
+  // remove a member (a test probe left behind): by the name they show; their open socket is told and closed
+  const probe = member(slug, pid(), 'PROBE');
+  await probe.wait((m) => m.t === 'welcome');
+  const rmv = await (await admin(slug, { action: 'remove-member', member: 'PROBE' })).json();
+  check(rmv.ok && rmv.removed && rmv.removed.name === 'PROBE', 'remove a member by the name they show', JSON.stringify(rmv));
+  const toldP = await probe.wait((m) => m.t === 'error' && m.reason === 'removed');
+  await sleep(200);
+  check(!!toldP && probe.closed === 4000, 'their socket is told removed and closed (the page stops, it does not rejoin)', String(probe.closed));
+  const after = await (await admin(slug)).json();
+  check(!after.members.some((m) => m.name === 'PROBE') && after.members.length === 2, 'GET no longer lists them', JSON.stringify(after.members.map((m) => m.name)));
+  const seen3 = await alice.wait((m) => m.t === 'state' && !m.members.some((x) => x.name === 'PROBE') && m.members.length === 2, 2000);
+  check(!!seen3, 'the lobby sees them gone');
+  const none = await admin(slug, { action: 'remove-member', member: 'NOBODY HERE' });
+  check(none.status === 400, 'removing someone who isn\'t there: 400', String(none.status));
+  probe.close();
 
   const cl = await (await admin(slug, { action: 'close' })).json();
   check(cl.ok && cl.closed === slug, 'close the crew', JSON.stringify(cl));

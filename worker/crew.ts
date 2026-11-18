@@ -810,10 +810,27 @@ export class Crew extends DurableObject<Env> {
     if (!PID_RE.test(pid) || !this.exists()) return false;
     const mid = (await sha256(`crew:${this.meta("slug")}:${pid}`)).slice(0, 16);
     if (!this.sql("SELECT 1 FROM members WHERE id = ?", mid).length) return false;
+    this.dropMember(mid, "deleted");
+    return true;
+  }
+
+  /** admin (worker/admin.ts remove-member): take one member out, found by id or by the name they show, the same
+   *  way DELETE MY PROFILE does. A lobby open as them is told `removed` and closed, and doesn't reconnect. */
+  async adminRemoveMember(who: string): Promise<{ id: string; name: string } | null> {
+    if (!this.exists()) return null;
+    const key = String(who || "").trim();
+    const row = this.sql<{ id: string; name: string }>("SELECT id, name FROM members WHERE id = ? OR name = ? ORDER BY last_seen DESC LIMIT 1", key.toLowerCase(), cleanName(key) || "")[0];
+    if (!row) return null;
+    this.dropMember(row.id, "removed");
+    return { id: row.id, name: row.name };
+  }
+
+  /** a member and everything of theirs out of the crew (forget, adminRemoveMember); their open sockets told `why` and closed */
+  private dropMember(mid: string, why: string) {
     for (const w of this.sockets()) {
       if (this.att(w).mid !== mid) continue;
-      this.send(w, { t: "error", reason: "deleted" });
-      try { w.close(4000, "deleted"); } catch { /* gone */ }
+      this.send(w, { t: "error", reason: why });
+      try { w.close(4000, why); } catch { /* gone */ }
     }
     const x = (q: string, ...b: unknown[]) => this.ctx.storage.sql.exec(q, ...b);
     x("DELETE FROM members WHERE id = ?", mid);
@@ -827,8 +844,8 @@ export class Crew extends DurableObject<Env> {
     x("DELETE FROM gcontrib WHERE member = ?", mid);   // the crew's progress keeps the count; who did it goes
     x("DELETE FROM monthly WHERE member = ?", mid);
     x("DELETE FROM meta WHERE k = ?", `held:${mid}`);
+    this.spots.delete(mid);
     this.broadcast();
-    return true;
   }
 
   /** test hook (DEV_HOOKS=1 only, worker/index.ts): this week's goal with a small target (and kind), so a test can
